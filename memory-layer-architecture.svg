@@ -1,0 +1,183 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 880" width="960" height="880">
+<style>
+  text { font-family: "SF Mono", "Fira Code", "Cascadia Code", "Courier New", monospace; }
+  .title { font-size: 22px; font-weight: 700; fill: #e2e8f0; text-anchor: middle; }
+  .subtitle { font-size: 11px; fill: #64748b; text-anchor: middle; }
+  .label { font-size: 13px; fill: #e2e8f0; }
+  .small { font-size: 10px; fill: #94a3b8; }
+  .box-title { font-size: 14px; font-weight: 700; fill: #e2e8f0; }
+  .cmd { font-size: 10px; fill: #94a3b8; }
+  .cmd-highlight { font-size: 10px; fill: #e2e8f0; }
+</style>
+<defs>
+  <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%" stop-color="#0f0f1a"/>
+    <stop offset="100%" stop-color="#1a1a2e"/>
+  </linearGradient>
+  <marker id="arrow-purple" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+    <polygon points="0 0, 8 3, 0 6" fill="#7c3aed"/>
+  </marker>
+  <marker id="arrow-blue" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+    <polygon points="0 0, 8 3, 0 6" fill="#3b82f6"/>
+  </marker>
+  <marker id="arrow-orange" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+    <polygon points="0 0, 8 3, 0 6" fill="#ea580c"/>
+  </marker>
+  <marker id="arrow-green" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+    <polygon points="0 0, 8 3, 0 6" fill="#059669"/>
+  </marker>
+  <filter id="glow-purple">
+    <feGaussianBlur stdDeviation="3" result="blur"/>
+    <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+</defs>
+
+<!-- Background -->
+<rect width="960" height="880" fill="url(#bg)"/>
+<text x="480" y="36" class="title">Pi Memory Layer — Architecture</text>
+
+<!-- ═══════════════ LAYER 1: Pi Agent ═══════════════ -->
+<text x="60" y="78" class="box-title" fill="#a855f7">1. Pi Coding Agent</text>
+<rect x="330" y="58" width="300" height="56" rx="8" fill="#1e1b4b" stroke="#7c3aed" stroke-width="1.5" filter="url(#glow-purple)"/>
+<text x="480" y="82" class="label" fill="#e2e8f0" text-anchor="middle">Pi Agent</text>
+<text x="480" y="100" class="subtitle" text-anchor="middle">calls memory-store.js via child_process</text>
+
+<!-- Arrow: Agent → Engine -->
+<path d="M 480 114 L 480 148" stroke="#7c3aed" stroke-width="2" fill="none" marker-end="url(#arrow-purple)"/>
+<rect x="420" y="125" width="120" height="16" rx="3" fill="#0f0f1a" opacity="0.95"/>
+<text x="480" y="136" class="small" text-anchor="middle" fill="#a855f7">CLI commands</text>
+
+<!-- ═══════════════ LAYER 2: Memory Engine ═══════════════ -->
+<text x="60" y="172" class="box-title" fill="#3b82f6">2. Memory Layer Engine (Node.js)</text>
+<rect x="30" y="180" width="900" height="260" rx="8" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+
+<!-- Left: Core Memory -->
+<rect x="50" y="196" width="270" height="230" rx="6" fill="#0a1628" stroke="#1e3a5f" stroke-width="1"/>
+<text x="185" y="216" class="box-title" fill="#60a5fa" text-anchor="middle">Core Memory</text>
+<text x="62" y="235" class="cmd-highlight">$ session-start</text>
+<text x="62" y="248" class="cmd">Start session, auto-recover</text>
+<text x="62" y="267" class="cmd-highlight">$ session-end</text>
+<text x="62" y="280" class="cmd">Close session, trust recovery</text>
+<text x="62" y="299" class="cmd-highlight">$ save</text>
+<text x="62" y="312" class="cmd">Save observation + dedup</text>
+<text x="62" y="331" class="cmd-highlight">$ search</text>
+<text x="62" y="344" class="cmd">FTS5 hybrid ranking</text>
+<text x="62" y="363" class="cmd-highlight">$ context</text>
+<text x="62" y="376" class="cmd">Priority-weighted context</text>
+<text x="62" y="395" class="cmd-highlight">$ get / update / delete</text>
+<text x="62" y="408" class="cmd">Observation CRUD</text>
+
+<!-- Center: Trust & Workspaces -->
+<rect x="335" y="196" width="270" height="230" rx="6" fill="#0a1628" stroke="#1e3a5f" stroke-width="1"/>
+<text x="470" y="216" class="box-title" fill="#60a5fa" text-anchor="middle">Trust &amp; Workspaces</text>
+<text x="347" y="235" class="cmd-highlight">$ link-symbol</text>
+<text x="347" y="248" class="cmd">Anchor memory to code</text>
+<text x="347" y="267" class="cmd-highlight">$ auto-link</text>
+<text x="347" y="280" class="cmd">Batch link observations</text>
+<text x="347" y="299" class="cmd-highlight">$ adjust-trust</text>
+<text x="347" y="312" class="cmd">Manual trust delta</text>
+<text x="347" y="331" class="cmd-highlight">$ sync-code-trust</text>
+<text x="347" y="344" class="cmd">jCodeMunch integration</text>
+<text x="347" y="363" class="cmd-highlight">$ list-workspaces</text>
+<text x="347" y="376" class="cmd">Formal project isolation</text>
+<text x="347" y="395" class="cmd-highlight">$ create-workspace</text>
+<text x="347" y="408" class="cmd">New named workspace</text>
+
+<!-- Right: Code Indexing -->
+<rect x="620" y="196" width="295" height="230" rx="6" fill="#0a1628" stroke="#1e3a5f" stroke-width="1"/>
+<text x="767" y="216" class="box-title" fill="#60a5fa" text-anchor="middle">Code Indexing (v3)</text>
+<text x="632" y="235" class="cmd-highlight">$ index-repo --path P</text>
+<text x="632" y="248" class="cmd">Tree-sitter AST parse</text>
+<text x="632" y="267" class="cmd-highlight">$ reindex-repo --repo R</text>
+<text x="632" y="280" class="cmd">Incremental (mtime)</text>
+<text x="632" y="299" class="cmd-highlight">$ search-code --query Q</text>
+<text x="632" y="312" class="cmd">FTS5 BM25 over symbols</text>
+<text x="632" y="331" class="cmd-highlight">$ get-code-source</text>
+<text x="632" y="344" class="cmd">Byte-accurate source</text>
+<text x="632" y="363" class="cmd-highlight">$ list-code-repos</text>
+<text x="632" y="376" class="cmd">Show indexed repos</text>
+<text x="632" y="395" class="cmd-highlight">$ search --include-code</text>
+<text x="632" y="408" class="cmd">Unified memory + code</text>
+
+<!-- Arrow: Engine right → Python (curves down then across) -->
+<path d="M 880 310 L 880 340 L 480 340 L 480 448" stroke="#ea580c" stroke-width="1.5" fill="none" stroke-dasharray="4,2" marker-end="url(#arrow-orange)"/>
+<rect x="800" y="312" width="110" height="14" rx="3" fill="#0f0f1a" opacity="0.95"/>
+<text x="855" y="322" class="small" text-anchor="middle" fill="#f97316">subprocess</text>
+
+<!-- ═══════════════ LAYER 3: Python Subprocess ═══════════════ -->
+<text x="60" y="468" class="box-title" fill="#f97316">3. Python Subprocess</text>
+<rect x="350" y="475" width="260" height="50" rx="6" fill="#1c1917" stroke="#ea580c" stroke-width="1.5"/>
+<text x="480" y="496" class="box-title" fill="#f97316" text-anchor="middle">parse_code.py</text>
+<text x="480" y="514" class="subtitle" text-anchor="middle">tree-sitter · JS · TS · SQL · AST</text>
+
+<rect x="640" y="475" width="130" height="50" rx="4" fill="#1c1917" stroke="#334155" stroke-width="1"/>
+<text x="705" y="495" class="small" text-anchor="middle" fill="#94a3b8">.venv/</text>
+<text x="705" y="514" class="small" text-anchor="middle" fill="#64748b">Python 3.10+</text>
+
+<!-- Arrow: Python → SQLite -->
+<path d="M 480 525 L 480 555" stroke="#ea580c" stroke-width="1.5" fill="none" marker-end="url(#arrow-orange)"/>
+
+<!-- ═══════════════ LAYER 4: SQLite Database ═══════════════ -->
+<text x="60" y="578" class="box-title" fill="#10b981">4. SQLite Database</text>
+<rect x="30" y="585" width="900" height="270" rx="8" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+<text x="480" y="605" class="label" fill="#10b981" text-anchor="middle">~/.pi/memory/memory.db (WAL + FTS5)</text>
+
+<!-- observations -->
+<rect x="50" y="618" width="200" height="100" rx="5" fill="#052e16" stroke="#065f46" stroke-width="1"/>
+<text x="150" y="638" class="box-title" fill="#10b981" text-anchor="middle">observations</text>
+<text x="150" y="656" class="small" text-anchor="middle" fill="#6ee7b7">id · type · title · content</text>
+<text x="150" y="670" class="small" text-anchor="middle" fill="#6ee7b7">project · scope · topic_key</text>
+<text x="150" y="692" class="small" text-anchor="middle" fill="#94a3b8">+ observations_fts (FTS5)</text>
+<text x="150" y="708" class="small" text-anchor="middle" fill="#94a3b8">+ observation_relations</text>
+
+<!-- workspaces -->
+<rect x="265" y="618" width="200" height="100" rx="5" fill="#052e16" stroke="#065f46" stroke-width="1"/>
+<text x="365" y="638" class="box-title" fill="#10b981" text-anchor="middle">workspaces</text>
+<text x="365" y="656" class="small" text-anchor="middle" fill="#6ee7b7">id · name</text>
+<text x="365" y="670" class="small" text-anchor="middle" fill="#6ee7b7">created_at · archived_at</text>
+<text x="365" y="695" class="small" text-anchor="middle" fill="#94a3b8">session_log · session_recalls</text>
+<text x="365" y="710" class="small" text-anchor="middle" fill="#94a3b8">user_prompts + fts</text>
+
+<!-- code_symbols -->
+<rect x="480" y="618" width="200" height="100" rx="5" fill="#052e16" stroke="#065f46" stroke-width="1"/>
+<text x="580" y="638" class="box-title" fill="#10b981" text-anchor="middle">code_symbols</text>
+<text x="580" y="656" class="small" text-anchor="middle" fill="#6ee7b7">name · kind · signature</text>
+<text x="580" y="670" class="small" text-anchor="middle" fill="#6ee7b7">file_path · start_byte</text>
+<text x="580" y="684" class="small" text-anchor="middle" fill="#6ee7b7">docstring · body_preview</text>
+<text x="580" y="702" class="small" text-anchor="middle" fill="#94a3b8">+ code_symbols_fts (FTS5)</text>
+
+<!-- code_files + code_repos -->
+<rect x="695" y="618" width="220" height="100" rx="5" fill="#052e16" stroke="#065f46" stroke-width="1"/>
+<text x="805" y="638" class="box-title" fill="#10b981" text-anchor="middle">code_files + repos</text>
+<text x="805" y="656" class="small" text-anchor="middle" fill="#6ee7b7">content · content_hash · mtime</text>
+<text x="805" y="670" class="small" text-anchor="middle" fill="#6ee7b7">language · size_bytes</text>
+<text x="805" y="695" class="small" text-anchor="middle" fill="#94a3b8">name · path · file_count</text>
+<text x="805" y="710" class="small" text-anchor="middle" fill="#94a3b8">· symbol_count</text>
+
+<!-- Bottom bridge tables -->
+<rect x="50" y="730" width="300" height="55" rx="5" fill="#0a1628" stroke="#1e3a5f" stroke-width="1"/>
+<text x="200" y="748" class="box-title" fill="#f97316" text-anchor="middle">symbol_links</text>
+<text x="200" y="766" class="small" text-anchor="middle" fill="#94a3b8">memory_id · symbol_id · repo · trust_score</text>
+<text x="200" y="780" class="small" text-anchor="middle" fill="#64748b">+ trust_adjustments · recall_log</text>
+
+<rect x="365" y="730" width="280" height="55" rx="5" fill="#0a1628" stroke="#1e3a5f" stroke-width="1"/>
+<text x="505" y="748" class="box-title" fill="#f97316" text-anchor="middle">procedural_memory</text>
+<text x="505" y="766" class="small" text-anchor="middle" fill="#94a3b8">id · name · status · success · attempts</text>
+<text x="505" y="780" class="small" text-anchor="middle" fill="#64748b">+ procedural_steps</text>
+
+<rect x="660" y="730" width="255" height="55" rx="5" fill="#0a1628" stroke="#1e3a5f" stroke-width="1"/>
+<text x="787" y="748" class="box-title" fill="#a855f7" text-anchor="middle">schema_version</text>
+<text x="787" y="766" class="small" text-anchor="middle" fill="#94a3b8">version · applied_at</text>
+<text x="787" y="780" class="small" text-anchor="middle" fill="#64748b">Migrations: v1 → v4</text>
+
+<!-- Legend -->
+<text x="40" y="830" class="box-title" fill="#94a3b8">Legend:</text>
+<line x1="140" y1="827" x2="165" y2="827" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+<text x="172" y="830" class="small" fill="#94a3b8">Agent → CLI</text>
+<line x1="320" y1="827" x2="345" y2="827" stroke="#3b82f6" stroke-width="2" marker-end="url(#arrow-blue)"/>
+<text x="352" y="830" class="small" fill="#94a3b8">CLI → DB</text>
+<line x1="470" y1="827" x2="495" y2="827" stroke="#ea580c" stroke-width="1.5" marker-end="url(#arrow-orange)"/>
+<text x="502" y="830" class="small" fill="#94a3b8">Python subprocess</text>
+<line x1="670" y1="827" x2="695" y2="827" stroke="#059669" stroke-width="2" marker-end="url(#arrow-green)"/>
+<text x="702" y="830" class="small" fill="#94a3b8">FTS5 indexing</text>
+</svg>
