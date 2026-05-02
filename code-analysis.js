@@ -1034,9 +1034,89 @@ function getSignalChains(db, repoId, opts = {}) {
   return { chains, gateway_count: gateways.length };
 }
 
+// ══════════════════════════════════════════════════════════
+// LAYER VIOLATIONS (architectural boundary checks)
+// ══════════════════════════════════════════════════════════
+
+function getLayerViolations(db, repoId, opts = {}) {
+  let rules = opts.rules || null;
+
+  // If no rules provided, look for .pimemory-layers.jsonc in repo root
+  if (!rules) {
+    const repo = db.prepare('SELECT path FROM code_repos WHERE id = ?').get(repoId);
+    if (!repo) return { error: 'Repo not found' };
+
+    const fs = require('fs');
+    const path = require('path');
+    const configPath = path.join(repo.path, '.pimemory-layers.jsonc');
+    if (!fs.existsSync(configPath)) {
+      return { violations: [], note: 'No .pimemory-layers.jsonc config found. Create one to enable layer violation detection.' };
+    }
+
+    try {
+      let content = fs.readFileSync(configPath, 'utf-8');
+      // Strip JSONC comments
+      content = content.replace(/\/\/.*$/gm, '');
+      rules = JSON.parse(content);
+    } catch (e) {
+      return { error: `Failed to parse .pimemory-layers.jsonc: ${e.message}` };
+    }
+  }
+
+  if (!rules || !rules.layers) {
+    return { error: 'Invalid layer rules: missing "layers" array.' };
+  }
+
+  // Get all imports for this repo
+  const imports = db.prepare(`
+    SELECT cf_source.path as source_path, cf_target.path as target_path, ci.import_type
+    FROM code_imports ci
+    JOIN code_files cf_source ON cf_source.id = ci.source_file_id
+    LEFT JOIN code_files cf_target ON cf_target.id = ci.target_file_id
+    WHERE ci.repo_id = ? AND ci.target_file_id IS NOT NULL
+  `).all(repoId);
+
+  // Determine which layer a file belongs to
+  function fileLayer(filePath, layers) {
+    for (const layer of layers) {
+      for (const prefix of layer.paths) {
+        if (filePath.includes(prefix)) return layer.name;
+      }
+    }
+    return null; // Unaffiliated file
+  }
+
+  const violations = [];
+  const layerMap = new Map();
+  for (const layer of rules.layers) {
+    layerMap.set(layer.name, new Set(layer.may_not_import || []));
+  }
+
+  for (const imp of imports) {
+    const sourceLayer = fileLayer(imp.source_path, rules.layers);
+    const targetLayer = fileLayer(imp.target_path, rules.layers);
+
+    if (!sourceLayer || !targetLayer) continue; // Skip unaffiliated files
+    if (sourceLayer === targetLayer) continue; // Same layer, ok
+
+    const forbidden = layerMap.get(sourceLayer);
+    if (forbidden && forbidden.has(targetLayer)) {
+      violations.push({
+        source: imp.source_path,
+        source_layer: sourceLayer,
+        target: imp.target_path,
+        target_layer: targetLayer,
+        rule: `${sourceLayer} may not import ${targetLayer}`,
+      });
+    }
+  }
+
+  return { violations, total: violations.length };
+}
+
 module.exports = {
   buildImportGraph, buildCallGraph, buildComplexity,
   getImportGraph, getCallHierarchy, getBlastRadius, getDeadCode, getComplexity, getFileOutline,
   getHotspots, getDependencyCycles, getSymbolImportance, getCouplingMetrics, getExtractionCandidates, getClassHierarchy,
-  getSignalChains,
+  getSignalChains, getLayerViolations,
 };
