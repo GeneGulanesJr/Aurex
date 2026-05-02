@@ -1,12 +1,13 @@
 ---
 name: memory-layer
-description: Standalone persistent memory for Pi — smart search, symbol clustering, dedup, auto-recovery, trust scoring. Zero external dependencies.
+description: Standalone persistent memory for Pi — smart search, symbol clustering, dedup, auto-recovery, trust scoring. Zero Python dependency.
 ---
 
 # Pi Memory Layer v4
 
 Persistent memory via a single SQLite database (`~/.pi/memory/memory.db`).
-All operations through `memory-store.js` — zero external dependencies, zero MCP servers.
+All operations through `memory-store.js` — zero Python dependency, zero MCP servers.
+Code parsing uses web-tree-sitter (WASM) in-process.
 
 ## CLI Quick Reference
 
@@ -30,14 +31,15 @@ All operations through `memory-store.js` — zero external dependencies, zero MC
   - Includes cross-project personal-scope observations.
   - Excludes `skill` type from project context.
 
-### Code Indexing (v3 — tree-sitter AST parser)
+### Code Indexing (v3 — tree-sitter AST parser, WASM)
 - `index-repo --path ABS_PATH [--name NAME]` — Index a local folder with tree-sitter.
 - `reindex-repo --repo NAME [--mode full|incremental]` — Incremental reindex via mtime.
 - `search-code --query TEXT [--repo NAME] [--kind TYPE] [--max-results N]` — FTS5 BM25 over code symbols.
 - `get-code-source --repo NAME --file PATH --name SYMBOL` — Byte-accurate source retrieval.
 - `list-code-repos` / `remove-code-repo --repo NAME` — Manage indexed repos.
 
-**Supported:** JavaScript, TypeScript, SQL. Requires Python 3.10+ with tree-sitter packages.
+**Supported:** JavaScript, TypeScript, TSX, SQL. Uses web-tree-sitter (WASM) — zero Python dependency.
+Grammar .wasm files bundled in `grammars/`.
 
 ### Workspace Management (v4)
 - `list-workspaces` — All workspaces with counts and archive status.
@@ -112,6 +114,7 @@ On `save`, trigram overlap checked against existing observations:
 
 ## Graceful Degradation
 
+- No web-tree-sitter → code indexing disabled gracefully, non-code features work
 - No sqlite3 → fails with install instructions
 - DB corrupted → suggest deleting `~/.pi/memory/memory.db`
 - No MCP server needed — fully self-contained

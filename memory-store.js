@@ -2,9 +2,10 @@
 /**
  * memory-store.js — Standalone Memory Layer Engine
  *
- * Zero external dependencies. Single SQLite DB (~/.pi/memory/memory.db).
+ * Zero external Python dependencies. Single SQLite DB (~/.pi/memory/memory.db).
  * Cross-OS: uses node:sqlite (Node 22.5+), falls back to better-sqlite3,
  * then sqlite3 CLI as last resort.
+ * Code parsing: uses web-tree-sitter (WASM), in-process.
  *
  * Usage: node memory-store.js <subcommand> [options]
  */
@@ -1622,33 +1623,22 @@ function findLatestSession(project) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   CODE INDEXING (v3 — tree-sitter AST via Python subprocess)
+   CODE INDEXING (v3 — tree-sitter AST via WASM, in-process)
    ═══════════════════════════════════════════════════════════ */
 
-const PARSER_SCRIPT = path.resolve(__dirname, 'parse_code.py');
-const PYTHON_BIN = path.resolve(__dirname, '.venv', 'bin', 'python3');
+const codeParser = require('./parse-code');
 
-/**
- * Call Python parse_code.py subprocess for a single file.
- * Returns array of symbol objects, or [] on failure.
- */
 function parseCodeFile(filePath) {
-  try {
-    const out = execSync(
-      `"${PYTHON_BIN}" "${PARSER_SCRIPT}" "${filePath}"`,
-      { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 30000 }
-    ).trim();
-    if (!out) return [];
-    const parsed = JSON.parse(out);
-    if (Array.isArray(parsed)) return parsed;
-    return [];
-  } catch (e) {
-    // Parser not available or parse error — return empty
-    return [];
-  }
+  return codeParser.parseFile(filePath);
 }
 
-const _IGNORE_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.venv', '__pycache__', 'coverage', '.next', '.nuxt']);
+async function ensureParserAvailable() {
+  if (codeParser.isReady()) return true;
+  await codeParser.init();
+  return codeParser.isReady();
+}
+
+const _IGNORE_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.venv', 'coverage', '.next', '.nuxt']);
 const _CODE_EXTS = new Set(['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts', '.tsx', '.sql']);
 
 function isCodeFile(filePath) {
@@ -1685,21 +1675,11 @@ function hashContent(content) {
   return String(hash);
 }
 
-function ensureParserAvailable() {
-  if (!fs.existsSync(PARSER_SCRIPT)) return false;
-  if (!fs.existsSync(PYTHON_BIN)) return false;
-  try {
-    execSync(`"${PYTHON_BIN}" -c "from tree_sitter import Language; print('ok')"`,
-      { encoding: 'utf8', timeout: 5000 });
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
 
-function indexRepoInternal(repoPath, repoName) {
-  if (!ensureParserAvailable()) {
-    return { error: 'Python tree-sitter parser not available. Run: cd ' + __dirname + ' && python3 -m venv .venv && .venv/bin/pip install tree-sitter tree-sitter-javascript tree-sitter-typescript tree-sitter-sql' };
+
+async function indexRepoInternal(repoPath, repoName) {
+  if (!await ensureParserAvailable()) {
+    return { error: 'WASM tree-sitter parser not available. Run: cd ' + __dirname + ' && npm install web-tree-sitter' };
   }
 
   const absPath = path.resolve(repoPath);
@@ -1759,7 +1739,7 @@ function indexRepoInternal(repoPath, repoName) {
   return { success: true, repo: repoName, path: absPath, files_indexed: fileCount, symbols_extracted: symbolCount, files_skipped: skipped.length, skipped };
 }
 
-function reindexRepoInternal(repo, mode) {
+async function reindexRepoInternal(repo, mode) {
   const existing = sqlJson('SELECT id, path FROM code_repos WHERE name = ?', [repo]);
   if (existing.length === 0) return { error: `Repo not found: ${repo}` };
   const { id: repoId, path: repoPath } = existing[0];
@@ -1771,7 +1751,7 @@ function reindexRepoInternal(repo, mode) {
   }
 
   // Incremental: only re-index files whose mtime changed
-  if (!ensureParserAvailable()) return { error: 'Python tree-sitter parser not available' };
+  if (!await ensureParserAvailable()) return { error: 'WASM tree-sitter parser not available' };
 
   const files = walkDir(repoPath);
   let reindexed = 0;
@@ -2032,15 +2012,17 @@ const commands = {
 const args = parseArgs(process.argv);
 const cmd = process.argv[2];
 
-ensureDb();
+(async () => {
+  ensureDb();
 
-if (cmd && commands[cmd]) {
-  const result = commands[cmd](args);
-  jsonOut(result);
-} else {
-  console.error(
-    'Usage: node memory-store.js <subcommand> [--option value ...]\n' +
-    'Subcommands: ' + Object.keys(commands).join(', ')
-  );
-  process.exit(1);
-}
+  if (cmd && commands[cmd]) {
+    const result = await commands[cmd](args);
+    jsonOut(result);
+  } else {
+    console.error(
+      'Usage: node memory-store.js <subcommand> [--option value ...]\n' +
+      'Subcommands: ' + Object.keys(commands).join(', ')
+    );
+    process.exit(1);
+  }
+})();
