@@ -71,6 +71,7 @@ Exports functions that receive `db` and return JSON results:
 module.exports = {
   buildImportGraph(db, repoId),         // walk all code_files, extract import edges
   buildCallGraph(db, repoId),           // walk all code_symbols bodies, extract call edges
+  buildComplexity(db, repoId),          // compute cyclomatic complexity for all symbols
   getImportGraph(db, repoId, opts),     // query: file-level dependency edges
   getCallHierarchy(db, repoId, opts),   // query: callers/callees with depth
   getBlastRadius(db, repoId, opts),     // query: transitive walk from symbol
@@ -310,7 +311,7 @@ For each import, resolve `target_module`:
 
 ### Code Analysis: Call Graph (`code-analysis.js`)
 
-**Extraction.** For each `code_symbol`, re-parse its body (using byte range from `start_byte`/`end_byte` stored in `code_files.content`) and extract identifier references:
+**Extraction.** During `index-repo`, after symbols and imports are extracted, for each `code_symbol` re-parse its body (using byte range from `start_byte`/`end_byte` read from `code_files.content`) and extract identifier references:
 
 1. **Method calls:** `obj.method()`, `func()` — extract the callee identifier
 2. **Constructor calls:** `new ClassName()` — extract the class name
@@ -319,22 +320,42 @@ For each import, resolve `target_module`:
 Walk the symbol body AST, collect all `call_expression` nodes, extract the function/method name from the callee.
 
 **Resolution.** For each extracted `callee_name`:
-1. Search `code_symbols` in the same repo for exact `name` match → set `callee_symbol_id`
-2. If multiple matches (e.g., same function name in different files), prefer same-file match, then match by import relationship
-3. Unresolved calls get `callee_symbol_id` = NULL and `confidence` = 0.7 (name-only heuristic)
+1. Look up the `callee_name` in the importing file's `code_imports` — if the name was imported from a known file, search `code_symbols` in that target file → set `callee_symbol_id`, `confidence` = 1.0
+2. If no import match, search `code_symbols` in the same repo for exact `name` match → prefer same-file, then same-repo → set `callee_symbol_id`, `confidence` = 0.7
+3. If still unresolved, `callee_symbol_id` = NULL (could be external package, global, or built-in)
 
 **Query.** `getCallHierarchy` supports `--direction callers|callees` and `--depth 1-5`. Uses recursive SQLite CTEs for traversal:
 
 ```sql
-WITH RECURSIVE callers AS (
-  SELECT callee_name, caller_symbol_id, 1 as depth
-  FROM code_calls WHERE callee_symbol_id = ?
+-- Callers (who calls this symbol?)
+WITH RECURSIVE upstream AS (
+  SELECT cc.caller_symbol_id, cs.name, cs.file_path, 1 as depth
+  FROM code_calls cc
+  JOIN code_symbols cs ON cs.id = cc.caller_symbol_id
+  WHERE cc.callee_symbol_id = ?
   UNION ALL
-  SELECT cc.callee_name, cc.caller_symbol_id, c.depth + 1
-  FROM code_calls cc JOIN callers c ON cc.callee_symbol_id = c.caller_symbol_id
-  WHERE c.depth < ?
+  SELECT cc.caller_symbol_id, cs.name, cs.file_path, u.depth + 1
+  FROM code_calls cc
+  JOIN upstream u ON cc.callee_symbol_id = u.caller_symbol_id
+  JOIN code_symbols cs ON cs.id = cc.caller_symbol_id
+  WHERE u.depth < ?
 )
-SELECT * FROM callers;
+SELECT * FROM upstream;
+
+-- Callees (what does this symbol call?)
+WITH RECURSIVE downstream AS (
+  SELECT cc.callee_name, cc.callee_symbol_id, cs.file_path, 1 as depth
+  FROM code_calls cc
+  LEFT JOIN code_symbols cs ON cs.id = cc.callee_symbol_id
+  WHERE cc.caller_symbol_id = ?
+  UNION ALL
+  SELECT cc.callee_name, cc.callee_symbol_id, cs.file_path, d.depth + 1
+  FROM code_calls cc
+  JOIN downstream d ON cc.caller_symbol_id = d.callee_symbol_id
+  LEFT JOIN code_symbols cs ON cs.id = cc.callee_symbol_id
+  WHERE d.depth < ?
+)
+SELECT * FROM downstream;
 ```
 
 ### Code Analysis: Blast Radius (`code-analysis.js`)
@@ -357,7 +378,7 @@ Confidence scoring:
 - 0.67 = two signals (no callers AND file not imported)  
 - 1.0 = provably unreachable (zero importers, file not an entry point, not re-exported)
 
-Entry points: `main.js`, `index.js`, `index.ts`, files with `export default`, CLI entry files.
+Entry points: `main.js`, `index.js`, `index.ts`, `mod.ts`, files with `export default` at top level, files containing a shebang line (`#!/usr/bin/env node`), and files matching patterns in `package.json` `main`/`bin`/`exports` fields (if resolvable from the indexed repo root).
 
 ### Code Analysis: Complexity (`code-analysis.js`)
 
@@ -386,7 +407,7 @@ Uses `git` CLI (not libgit2 — zero native dependencies):
 
 If `git` is unavailable, `isGitAvailable()` returns false and the `churn` subcommand returns an error message suggesting install.
 
-Results are cached in `churn_metrics`. Re-running re-computes from git (no staleness tracking — user triggers explicitly).
+Results are cached in `churn_metrics`. Add `--refresh` flag to force re-computation from git (otherwise cached results are returned if available).
 
 ### Code Analysis: File Outline (`code-analysis.js`)
 
@@ -472,7 +493,7 @@ Store in `doc_code_blocks` with `lang` (info string), `content` (block body), an
 | `dead-code` | code-analysis | `--repo X [--min-confidence 0.5] [--include-tests]` |
 | `complexity` | code-analysis | `--symbol S --repo X` or `--file F --repo X` |
 | `outline` | code-analysis | `--file F --repo X` |
-| `churn` | git-analysis | `--repo X [--file F\|--symbol S] [--days 90]` |
+| `churn` | git-analysis | `--repo X [--file F\|--symbol S] [--days 90] [--refresh]` |
 | `index-docs` | doc-indexer | `--path P --name X` |
 | `reindex-docs` | doc-indexer | `--repo X [--mode full\|incremental]` |
 | `doc-search` | doc-indexer | `--query Q --repo X [--level N] [--role TYPE]` |
