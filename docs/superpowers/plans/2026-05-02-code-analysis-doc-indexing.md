@@ -16,7 +16,7 @@
 - Modify: `schema.sql` (append new tables after existing v4 tables)
 - Modify: `memory-store.js` (add v5 migration check in DB init)
 
-- [x] **Step 1: Add import edges table to schema.sql**
+- [ ] **Step 1: Add import edges table to schema.sql**
 
 Append after the existing `symbol_complexity` index (or at end of file if not present — use `code_symbols_fts` triggers as anchor):
 
@@ -56,7 +56,7 @@ CREATE INDEX IF NOT EXISTS idx_cc_callee_name ON code_calls(repo_id, callee_name
 CREATE INDEX IF NOT EXISTS idx_cc_callee ON code_calls(callee_symbol_id);
 ```
 
-- [x] **Step 2: Add doc tables to schema.sql**
+- [ ] **Step 2: Add doc tables to schema.sql**
 
 Append after the code_calls section:
 
@@ -134,7 +134,7 @@ CREATE TRIGGER IF NOT EXISTS ds_fts_update AFTER UPDATE ON doc_sections BEGIN
 END;
 ```
 
-- [x] **Step 3: Add remaining doc + churn + complexity tables to schema.sql**
+- [ ] **Step 3: Add remaining doc + churn + complexity tables to schema.sql**
 
 Append after doc_sections_fts triggers:
 
@@ -214,7 +214,7 @@ CREATE TABLE IF NOT EXISTS symbol_complexity (
 CREATE INDEX IF NOT EXISTS idx_sc_symbol ON symbol_complexity(symbol_id);
 ```
 
-- [x] **Step 4: Update schema version pragma and add v5 migration in memory-store.js**
+- [ ] **Step 4: Update schema version pragma and add v5 migration in memory-store.js**
 
 In `memory-store.js`, find the `PRAGMA user_version` check (around where schema is initialized) and update the version from 4 to 5. The existing `initDb` / schema-apply function should already use `CREATE TABLE IF NOT EXISTS`, so appending the new tables to `schema.sql` is sufficient. Find the line:
 
@@ -236,19 +236,19 @@ if (userVersion < 5) {
 
 If the existing code already re-runs the full `schema.sql` on each DB open (as `CREATE IF NOT EXISTS`), then only the `PRAGMA user_version` bump is needed.
 
-- [x] **Step 5: Verify schema loads without errors**
+- [ ] **Step 5: Verify schema loads without errors**
 
 Run: `cd /home/genegulanesjr/Documents/GulanesKorp/PiMemoryExtension && node -e "const s=require('fs').readFileSync('schema.sql','utf8'); console.log('Schema length:', s.length, 'bytes'); console.log('Tables:', (s.match(/CREATE TABLE/g)||[]).length); console.log('FTS5:', (s.match(/CREATE VIRTUAL TABLE/g)||[]).length);"`
 Expected: Schema length ~8000+ bytes, Tables count ~20, FTS5 count ~3
 
-- [x] **Step 6: Run memory-store.js to confirm DB opens and migrates**
+- [ ] **Step 6: Run memory-store.js to confirm DB opens and migrates**
 
 Run: `node memory-store.js stats 2>&1`
 Expected: Stats output with no SQL errors. Check `~/.pi/memory/memory.db` has the new tables:
 
 Run: `node -e "const m=require('./memory-store.js'); console.log('loaded');" 2>&1 || echo "Check errors above"`
 
-- [x] **Step 7: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add schema.sql memory-store.js
@@ -264,7 +264,7 @@ git commit -m "feat: schema v5 — add code analysis and doc indexing tables"
 - Modify: `memory-store.js` (require + delegate new subcommands)
 - Create: `test/code-analysis.test.js`
 
-- [x] **Step 1: Create code-analysis.js with module skeleton and buildImportGraph**
+- [ ] **Step 1: Create code-analysis.js with module skeleton and buildImportGraph**
 
 Create `code-analysis.js`:
 
@@ -574,7 +574,7 @@ module.exports = {
 };
 ```
 
-- [x] **Step 2: Write test for buildImportGraph**
+- [ ] **Step 2: Write test for buildImportGraph**
 
 Create `test/code-analysis.test.js`:
 
@@ -686,12 +686,12 @@ describe('buildImportGraph', () => {
 });
 ```
 
-- [x] **Step 3: Run test to check for early failures (may partially fail — that's OK)**
+- [ ] **Step 3: Run test to check for early failures (may partially fail — that's OK)**
 
 Run: `cd /home/genegulanesjr/Documents/GulanesKorp/PiMemoryExtension && node --test test/code-analysis.test.js 2>&1 | head -30`
 Expected: Some tests pass (schema loads, package imports detected). Relative import resolution may partially fail depending on path matching — fix as needed.
 
-- [x] **Step 4: Wire buildImportGraph into memory-store.js index-repo pipeline**
+- [ ] **Step 4: Wire buildImportGraph into memory-store.js index-repo pipeline**
 
 In `memory-store.js`, find the `indexRepoInternal` function (or equivalent that handles `index-repo`). After symbol extraction, add:
 
@@ -709,7 +709,7 @@ if (importResult.success) {
 }
 ```
 
-- [x] **Step 5: Add import-graph subcommand to memory-store.js dispatcher**
+- [ ] **Step 5: Add import-graph subcommand to memory-store.js dispatcher**
 
 In the subcommand dispatch object (where existing commands like `'index-repo'` are mapped), add:
 
@@ -728,7 +728,7 @@ In the subcommand dispatch object (where existing commands like `'index-repo'` a
 },
 ```
 
-- [x] **Step 6: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add code-analysis.js test/code-analysis.test.js memory-store.js
@@ -742,7 +742,7 @@ git commit -m "feat: code-analysis.js — import graph extraction with regex-bas
 **Files:**
 - Modify: `code-analysis.js` (implement getImportGraph, buildCallGraph, getCallHierarchy)
 
-- [x] **Step 1: Implement getImportGraph**
+- [ ] **Step 1: Implement getImportGraph**
 
 Replace the placeholder `getImportGraph` in `code-analysis.js`:
 
@@ -836,7 +836,7 @@ function getImportGraph(db, repoId, opts) {
 }
 ```
 
-- [x] **Step 2: Implement buildCallGraph**
+- [ ] **Step 2: Implement buildCallGraph**
 
 Replace the `buildCallGraph` placeholder in `code-analysis.js`:
 
@@ -983,7 +983,7 @@ const _SKIP_CALLEE_NAMES = new Set([
 ]);
 ```
 
-- [x] **Step 3: Implement getCallHierarchy**
+- [ ] **Step 3: Implement getCallHierarchy**
 
 Replace the `getCallHierarchy` placeholder:
 
@@ -1047,7 +1047,7 @@ function getCallHierarchy(db, repoId, opts) {
 }
 ```
 
-- [x] **Step 4: Wire buildCallGraph into index-repo pipeline and add subcommands**
+- [ ] **Step 4: Wire buildCallGraph into index-repo pipeline and add subcommands**
 
 In `memory-store.js`, after the `buildImportGraph` call in `index-repo`, add:
 
@@ -1078,12 +1078,12 @@ Add subcommand dispatches:
 },
 ```
 
-- [x] **Step 5: Test call hierarchy against the test repo**
+- [ ] **Step 5: Test call hierarchy against the test repo**
 
 Run: `node memory-store.js call-hierarchy --symbol foo --repo test-index 2>&1`
 Expected: Callers/callees result or "Symbol not found" if test-index doesn't exist yet.
 
-- [x] **Step 6: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add code-analysis.js memory-store.js
@@ -1097,7 +1097,7 @@ git commit -m "feat: import graph queries + call graph extraction and hierarchy 
 **Files:**
 - Modify: `code-analysis.js` (implement remaining placeholders)
 
-- [x] **Step 1: Implement getBlastRadius**
+- [ ] **Step 1: Implement getBlastRadius**
 
 ```js
 function getBlastRadius(db, repoId, opts) {
@@ -1161,7 +1161,7 @@ function getBlastRadius(db, repoId, opts) {
 }
 ```
 
-- [x] **Step 2: Implement getDeadCode**
+- [ ] **Step 2: Implement getDeadCode**
 
 ```js
 function getDeadCode(db, repoId, opts) {
@@ -1268,7 +1268,7 @@ function getDeadCode(db, repoId, opts) {
 }
 ```
 
-- [x] **Step 3: Implement buildComplexity and getComplexity**
+- [ ] **Step 3: Implement buildComplexity and getComplexity**
 
 ```js
 function buildComplexity(db, repoId) {
@@ -1365,7 +1365,7 @@ function getComplexity(db, repoId, symbolId) {
 }
 ```
 
-- [x] **Step 4: Implement getFileOutline**
+- [ ] **Step 4: Implement getFileOutline**
 
 ```js
 function getFileOutline(db, repoId, filePath) {
@@ -1403,7 +1403,7 @@ function getFileOutline(db, repoId, filePath) {
 }
 ```
 
-- [x] **Step 5: Add remaining subcommands to memory-store.js**
+- [ ] **Step 5: Add remaining subcommands to memory-store.js**
 
 ```js
 'blast-radius': (args) => {
@@ -1445,7 +1445,7 @@ function getFileOutline(db, repoId, filePath) {
 },
 ```
 
-- [x] **Step 6: Wire buildComplexity into index-repo pipeline**
+- [ ] **Step 6: Wire buildComplexity into index-repo pipeline**
 
 After call graph in `index-repo`:
 
@@ -1457,7 +1457,7 @@ if (complexityResult.success) {
 }
 ```
 
-- [x] **Step 7: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add code-analysis.js memory-store.js
@@ -1472,7 +1472,7 @@ git commit -m "feat: blast radius, dead code detection, complexity metrics, file
 - Create: `git-analysis.js`
 - Modify: `memory-store.js` (require + churn subcommand)
 
-- [x] **Step 1: Create git-analysis.js**
+- [ ] **Step 1: Create git-analysis.js**
 
 ```js
 /**
@@ -1605,7 +1605,7 @@ function upsertChurn(db, repoId, filePath, windowDays, metrics) {
 module.exports = { getChurn, isGitAvailable };
 ```
 
-- [x] **Step 2: Add churn subcommand to memory-store.js**
+- [ ] **Step 2: Add churn subcommand to memory-store.js**
 
 ```js
 const gitAnalysis = require('./git-analysis');
@@ -1625,12 +1625,12 @@ const gitAnalysis = require('./git-analysis');
 },
 ```
 
-- [x] **Step 3: Test churn against any git repo**
+- [ ] **Step 3: Test churn against any git repo**
 
 Run: `cd /home/genegulanesjr/Documents/GulanesKorp/PiMemoryExtension && node memory-store.js churn --repo test-index --days 30 2>&1`
 Expected: Either churn results or "Repo not found" (expected if test-index was cleaned up)
 
-- [x] **Step 4: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add git-analysis.js memory-store.js
@@ -1646,7 +1646,7 @@ git commit -m "feat: git-analysis.js — churn metrics via git CLI"
 - Modify: `memory-store.js` (require + index-docs/reindex-docs subcommands)
 - Create: `test/doc-indexer.test.js`
 
-- [x] **Step 1: Create doc-indexer.js with section extraction**
+- [ ] **Step 1: Create doc-indexer.js with section extraction**
 
 Create `doc-indexer.js`:
 
@@ -2408,7 +2408,7 @@ module.exports = {
 
 This is the largest file — approximately 400 lines. Each internal function is testable independently via the `_`-prefixed exports.
 
-- [x] **Step 2: Wire doc subcommands into memory-store.js**
+- [ ] **Step 2: Wire doc subcommands into memory-store.js**
 
 ```js
 const docIndexer = require('./doc-indexer');
@@ -2489,17 +2489,17 @@ const docIndexer = require('./doc-indexer');
 },
 ```
 
-- [x] **Step 3: Test doc indexing against the PiMemoryExtension's own docs**
+- [ ] **Step 3: Test doc indexing against the PiMemoryExtension's own docs**
 
 Run: `cd /home/genegulanesjr/Documents/GulanesKorp/PiMemoryExtension && node memory-store.js index-docs --path ./docs --name pi-mem-docs 2>&1`
 Expected: Success with section/link/term/code block counts > 0
 
-- [x] **Step 4: Test doc search**
+- [ ] **Step 4: Test doc search**
 
 Run: `node memory-store.js doc-search --query "import" --repo pi-mem-docs 2>&1`
 Expected: Search results with snippets
 
-- [x] **Step 5: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add doc-indexer.js memory-store.js
@@ -2513,7 +2513,7 @@ git commit -m "feat: doc-indexer.js — markdown section extraction, links, glos
 **Files:**
 - Modify: `~/.pi/agent/extensions/memory-layer/index.ts` (add 2 new tools)
 
-- [x] **Step 1: Add memory-code tool to the Pi extension**
+- [ ] **Step 1: Add memory-code tool to the Pi extension**
 
 In `memory-layer/index.ts`, after the existing `memory-sync-code-trust` tool registration, add:
 
@@ -2578,7 +2578,7 @@ pi.registerTool({
 
 **Note:** The `mem()` helper in the extension uses `execFileSync`. The dispatch through `memory-store.js` subcommands keeps the extension thin — all logic lives in the modules.
 
-- [x] **Step 2: Add memory-doc tool to the Pi extension**
+- [ ] **Step 2: Add memory-doc tool to the Pi extension**
 
 ```ts
 pi.registerTool({
@@ -2646,7 +2646,7 @@ pi.registerTool({
 });
 ```
 
-- [x] **Step 3: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
 git add ~/.pi/agent/extensions/memory-layer/index.ts
@@ -2661,20 +2661,20 @@ git commit -m "feat: add memory-code and memory-doc tools to Pi extension"
 - Modify: `SKILL.md`
 - Modify: `README.md`
 
-- [x] **Step 1: Update SKILL.md with new subcommands and tools**
+- [ ] **Step 1: Update SKILL.md with new subcommands and tools**
 
 Add a "Code Analysis" section and "Doc Indexing" section to SKILL.md documenting the new subcommands and Pi tools. Update the version header to v5.
 
-- [x] **Step 2: Update README.md to remove Python references**
+- [ ] **Step 2: Update README.md to remove Python references**
 
 Ensure README no longer mentions Python requirements. Update feature list.
 
-- [x] **Step 3: Deploy v5 to ~/.pi/agent/skills/memory-layer/**
+- [ ] **Step 3: Deploy v5 to ~/.pi/agent/skills/memory-layer/**
 
 Run: `cd /home/genegulanesjr/Documents/GulanesKorp/PiMemoryExtension && bash install.sh 2>&1`
 Expected: "✅ Memory Layer installed." with "Parser: web-tree-sitter (WASM, zero Python dependency)"
 
-- [x] **Step 4: Verify deployed version works**
+- [ ] **Step 4: Verify deployed version works**
 
 Run: `node ~/.pi/agent/skills/memory-layer/memory-store.js stats 2>&1`
 Expected: Stats output with no errors
@@ -2682,7 +2682,7 @@ Expected: Stats output with no errors
 Run: `node ~/.pi/agent/skills/memory-layer/memory-store.js call-hierarchy --symbol test --repo test 2>&1`
 Expected: "Repo not found" (expected — no repos indexed in deployed DB yet) or valid result
 
-- [x] **Step 5: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add SKILL.md README.md
@@ -2697,7 +2697,7 @@ git commit -m "docs: update SKILL.md and README for v5 code analysis + doc index
 - Modify: `~/.pi/agent/extensions/mcp-bridge/index.ts` (remove jcodemunch and jdocmunch)
 - Modify: `~/.pi/agent/AGENTS.md` (update references)
 
-- [x] **Step 1: Strip jcodemunch and jdocmunch from MCP bridge**
+- [ ] **Step 1: Strip jcodemunch and jdocmunch from MCP bridge**
 
 In `~/.pi/agent/extensions/mcp-bridge/index.ts`, change `session_start` from:
 
@@ -2723,15 +2723,15 @@ Update the notify message:
 ctx.ui.notify("MCP bridge: connecting to Auth0 Docs…", "info");
 ```
 
-- [x] **Step 2: Update AGENTS.md to reference memory-code/memory-doc instead of MCP tools**
+- [ ] **Step 2: Update AGENTS.md to reference memory-code/memory-doc instead of MCP tools**
 
 In `~/.pi/agent/AGENTS.md`, replace references to the old MCP tool names with `memory-code` and `memory-doc`. The "Mandatory Protocols" section should now reference the memory layer's built-in code analysis and doc tools.
 
-- [x] **Step 3: Verify Pi starts without the uvx spawns**
+- [ ] **Step 3: Verify Pi starts without the uvx spawns**
 
 Restart Pi (or reload extensions) and verify the session startup notification no longer shows "connecting to jCodeMunch + jDocMunch". Startup should be noticeably faster (~300ms vs ~700ms).
 
-- [x] **Step 4: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add ~/.pi/agent/extensions/mcp-bridge/index.ts ~/.pi/agent/AGENTS.md
