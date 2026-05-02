@@ -148,9 +148,16 @@ const _JS_TS_SYMBOL_NODES = {
   'interface_declaration': 'interface',
   'type_alias_declaration': 'type',
   'enum_declaration': 'enum',
+  // v5.1: additional symbol types
+  'public_field_definition': 'property',
+  'assignment_expression': 'constant',
 };
 
 const _VARIABLE_FUNCTION_NODES = new Set(['arrow_function', 'function_expression']);
+
+// v5.1: const/let/var declarations that should be extracted as symbols
+const _CONST_PATTERN = /^const\s+([A-Z_][A-Z0-9_]*)\s*=/;
+const _NAMED_EXPORT_PATTERN = /^export\s+(?:default\s+)?/;
 
 function _getNodeName(node) {
   for (const child of node.children) {
@@ -250,7 +257,7 @@ function _extractJsTsSymbols(filePath, sourceStr, parser, languageName) {
         const key = `${name}:${kind}:${node.startIndex}`;
         if (!seen.has(key)) {
           seen.add(key);
-          const parentName = kind === 'method' ? _getParentClassName(node) : '';
+          const parentName = kind === 'method' || kind === 'property' ? _getParentClassName(node) : '';
           const qualified = parentName ? `${parentName}.${name}` : name;
           symbols.push({
             name,
@@ -270,6 +277,7 @@ function _extractJsTsSymbols(filePath, sourceStr, parser, languageName) {
         }
       }
     } else if (_VARIABLE_FUNCTION_NODES.has(node.type)) {
+      // Arrow functions and function expressions assigned to variables
       const parent = node.parent;
       if (parent && parent.type === 'variable_declarator') {
         let name = null;
@@ -299,6 +307,103 @@ function _extractJsTsSymbols(filePath, sourceStr, parser, languageName) {
               docstring: _getDocstring(parent),
               body_preview: _getBodyPreview(node, sourceStr),
               parent_name: parentName,
+            });
+          }
+        }
+      }
+    } else if (node.type === 'variable_declarator') {
+      // v5.1: Extract const/let/var assignments as constants or functions
+      // SCREAMING_SNAKE = constant; arrow function = function; _prefix = constant
+      let name = null;
+      let kind = 'constant';
+      for (const child of node.children) {
+        if (child.type === 'identifier') {
+          name = child.text;
+          break;
+        }
+      }
+      if (name) {
+        // Check if it's an arrow function assignment
+        const parent = node.parent;
+        let isArrowFn = false;
+        if (parent && (parent.type === 'lexical_declaration' || parent.type === 'variable_declaration')) {
+          for (const sib of parent.children) {
+            if (sib.type === 'const' || sib.type === 'let' || sib.type === 'var') continue;
+            if (sib === node) continue;
+            if (sib.type === 'variable_declarator') continue;
+          }
+          // Check if the value is an arrow function
+          for (const child of node.children) {
+            if (child.type === 'arrow_function' || child.type === 'function_expression') {
+              isArrowFn = true;
+              break;
+            }
+          }
+        }
+        // Determine the kind: arrow function → 'function', SCREAMING_SNAKE or _prefix → 'constant'
+        if (isArrowFn) {
+          kind = 'function';
+        } else if (/^[A-Z_][A-Z0-9_]*$/.test(name) || name.startsWith('_')) {
+          kind = 'constant';
+        } else {
+          // Skip non-constant, non-arrow assignments (like `const result = ...`)
+          // unless it's a module-level assignment pattern
+          // Actually, extract all named const/let assignments that aren't just data
+          kind = 'constant';
+        }
+        const key = `${name}:${kind}:${node.startIndex}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          const parentName = _getParentClassName(node);
+          const lineText = sourceStr.substring(node.startIndex, Math.min(node.startIndex + 200, sourceStr.length)).split('\n')[0];
+          const sig = (parent ? sourceStr.substring(parent.startIndex, parent.endIndex) : lineText).split('\n')[0];
+          symbols.push({
+            name,
+            kind,
+            language: languageName,
+            file: filePath,
+            signature: sig.length > 200 ? sig.slice(0, 197) + '...' : sig,
+            qualified_name: parentName ? `${parentName}.${name}` : name,
+            start_line: _getLineNumber(node),
+            end_line: _getEndLineNumber(node),
+            start_byte: node.startIndex,
+            end_byte: node.endIndex,
+            docstring: _getDocstring(node),
+            body_preview: '',
+            parent_name: parentName,
+          });
+        }
+      }
+    } else if (node.type === 'export_statement' || node.type === 'export_default_statement') {
+      // v5.1: Extract export default function X / class X
+      for (const child of node.children) {
+        if (child.type === 'function_declaration' || child.type === 'class_declaration') {
+          const name = _getNodeName(child);
+          if (name && !seen.has(`${name}:function:${child.startIndex}`) && !seen.has(`${name}:class:${child.startIndex}`)) {
+            // Already handled by the _JS_TS_SYMBOL_NODES walk, just mark as entry point
+            // We add an 'export' flag to existing symbols at query time instead
+          }
+        }
+        // export default X;
+        if (child.type === 'identifier' && node.type === 'export_default_statement') {
+          const name = child.text;
+          const key = `${name}:export:${node.startIndex}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            symbols.push({
+              name,
+              kind: 'export',
+              language: languageName,
+              file: filePath,
+              signature: `export default ${name}`,
+              qualified_name: name,
+              start_line: _getLineNumber(node),
+              end_line: _getEndLineNumber(node),
+              start_byte: node.startIndex,
+              end_byte: node.endIndex,
+              docstring: '',
+              body_preview: '',
+              parent_name: '',
             });
           }
         }
