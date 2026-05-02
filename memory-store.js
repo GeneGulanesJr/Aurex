@@ -99,7 +99,7 @@ function nativeJson(query, params = []) {
     const rows = stmt.all(...params);
     return rows;
   } catch (e) {
-    throw new Error(`SQL error: ${e.message}\nQuery: ${query}`);
+    throw new Error(`SQL error: ${e.message}\nQuery: ${query}`, { cause: e });
   }
 }
 
@@ -108,7 +108,7 @@ function nativeRun(query, params = []) {
     const stmt = db.prepare(query);
     stmt.run(...params);
   } catch (e) {
-    throw new Error(`SQL error: ${e.message}\nQuery: ${query}`);
+    throw new Error(`SQL error: ${e.message}\nQuery: ${query}`, { cause: e });
   }
 }
 
@@ -116,7 +116,7 @@ function nativeExec(sql) {
   try {
     db.exec(sql);
   } catch (e) {
-    throw new Error(`SQL exec error: ${e.message}`);
+    throw new Error(`SQL exec error: ${e.message}`, { cause: e });
   }
 }
 
@@ -129,38 +129,41 @@ function cliJson(query, params = []) {
     q = q.replace('?', typeof p === 'string' ? `'${esc(p)}'` : String(p));
   }
   try {
-    const out = execSync(
-      `sqlite3 -cmd ".timeout 5000" -json "${DB_PATH}"`,
-      { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, input: q }
-    ).trim();
+    const out = execSync(`sqlite3 -cmd ".timeout 5000" -json "${DB_PATH}"`, {
+      encoding: 'utf8',
+      maxBuffer: 10 * 1024 * 1024,
+      input: q,
+    }).trim();
     return out ? JSON.parse(out) : [];
   } catch (e) {
     if (e.stdout !== undefined && e.stdout.trim() === '') return [];
     if (e.stderr && e.stderr.includes('no such')) return [];
-    throw new Error(`SQL error: ${e.stderr || e.message}`);
+    throw new Error(`SQL error: ${e.stderr || e.message}`, { cause: e });
   }
 }
 
 function cliRaw(query) {
   try {
-    return execSync(
-      `sqlite3 -cmd ".timeout 5000" "${DB_PATH}"`,
-      { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, input: query }
-    ).trim();
+    return execSync(`sqlite3 -cmd ".timeout 5000" "${DB_PATH}"`, {
+      encoding: 'utf8',
+      maxBuffer: 10 * 1024 * 1024,
+      input: query,
+    }).trim();
   } catch (e) {
-    throw new Error(`SQL error: ${e.stderr || e.message}`);
+    throw new Error(`SQL error: ${e.stderr || e.message}`, { cause: e });
   }
 }
 
 function checkCliAvailable() {
   try {
     execSync('sqlite3 -version', { encoding: 'utf8', stdio: 'pipe' });
-  } catch (_) {
+  } catch (e) {
     throw new Error(
       'No SQLite backend found. Options:\n' +
-      '  1. Use Node.js ≥ 22.5 (includes built-in node:sqlite)\n' +
-      '  2. Install better-sqlite3: npm install better-sqlite3\n' +
-      '  3. Install sqlite3 CLI: apt install sqlite3 / brew install sqlite3 / choco install sqlite'
+        '  1. Use Node.js ≥ 22.5 (includes built-in node:sqlite)\n' +
+        '  2. Install better-sqlite3: npm install better-sqlite3\n' +
+        '  3. Install sqlite3 CLI: apt install sqlite3 / brew install sqlite3 / choco install sqlite',
+      { cause: e },
     );
   }
 }
@@ -209,10 +212,14 @@ function ensureDb() {
       // (some engines don't handle multiple statements in one exec)
       const statements = schema
         .split(';')
-        .map(s => s.trim())
-        .filter(s => s.length > 0 && !s.startsWith('--') && !s.startsWith('PRAGMA'));
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0 && !s.startsWith('--') && !s.startsWith('PRAGMA'));
       for (const stmt of statements) {
-        try { nativeExec(stmt); } catch (_) { /* schema may already exist */ }
+        try {
+          nativeExec(stmt);
+        } catch (_) {
+          /* schema may already exist */
+        }
       }
     }
   }
@@ -224,16 +231,19 @@ function ensureDb() {
       sqlRaw('PRAGMA journal_mode=WAL;');
       sqlRaw('PRAGMA busy_timeout=5000;');
       sqlRaw('PRAGMA wal_autocheckpoint=1000;');
-    } catch (_) { /* non-fatal */ }
+    } catch (_) {
+      /* non-fatal */
+    }
   }
 
   // Check FTS5 support
   if (_engine === 'cli') {
     try {
       sqlRaw(`CREATE VIRTUAL TABLE __fts5_probe USING fts5(x); DROP TABLE __fts5_probe;`);
-    } catch (_) {
+    } catch (e) {
       throw new Error(
-        'FTS5 not supported by this sqlite3 build — install a sqlite3 binary compiled with FTS5 enabled'
+        'FTS5 not supported by this sqlite3 build — install a sqlite3 binary compiled with FTS5 enabled',
+        { cause: e },
       );
     }
   }
@@ -249,12 +259,14 @@ function runMigrations() {
   let version = 0;
   try {
     const rows = sqlJson('PRAGMA user_version');
-    version = rows.length > 0 ? (rows[0].user_version || 0) : 0;
+    version = rows.length > 0 ? rows[0].user_version || 0 : 0;
   } catch (_) {
     try {
       const raw = sqlRaw('PRAGMA user_version');
       version = parseInt(raw, 10) || 0;
-    } catch (__) { /* assume v0 */ }
+    } catch (__) {
+      /* assume v0 */
+    }
   }
 
   if (version >= 4) return { migrated: false, version };
@@ -283,10 +295,18 @@ function runMigrations() {
   ];
 
   for (const sql of migrations) {
-    try { sqlRaw(sql); } catch (e) { console.error('Migration warning:', e.message); }
+    try {
+      sqlRaw(sql);
+    } catch (e) {
+      console.error('Migration warning:', e.message);
+    }
   }
 
-  try { sqlRaw('PRAGMA user_version = 2'); } catch (_) { /* non-fatal */ }
+  try {
+    sqlRaw('PRAGMA user_version = 2');
+  } catch (_) {
+    /* non-fatal */
+  }
 
   // — v3: code index tables —
   const v3Migrations = [
@@ -355,10 +375,18 @@ function runMigrations() {
   ];
 
   for (const sql of v3Migrations) {
-    try { sqlRaw(sql); } catch (e) { console.error('Migration v3 warning:', e.message); }
+    try {
+      sqlRaw(sql);
+    } catch (e) {
+      console.error('Migration v3 warning:', e.message);
+    }
   }
 
-  try { sqlRaw('PRAGMA user_version = 3'); } catch (_) { /* non-fatal */ }
+  try {
+    sqlRaw('PRAGMA user_version = 3');
+  } catch (_) {
+    /* non-fatal */
+  }
 
   // — v4: workspaces —
   const v4Migrations = [
@@ -372,25 +400,39 @@ function runMigrations() {
   ];
 
   for (const sql of v4Migrations) {
-    try { sqlRaw(sql); } catch (e) { console.error('Migration v4 warning:', e.message); }
+    try {
+      sqlRaw(sql);
+    } catch (e) {
+      console.error('Migration v4 warning:', e.message);
+    }
   }
 
   // Populate workspaces from existing project values
   try {
     const projects = sqlJson(
-      'SELECT DISTINCT project FROM observations WHERE project IS NOT NULL AND project != \'\' AND deleted_at IS NULL'
+      "SELECT DISTINCT project FROM observations WHERE project IS NOT NULL AND project != '' AND deleted_at IS NULL",
     );
     for (const row of projects) {
-      try { sqlRun('INSERT OR IGNORE INTO workspaces (name) VALUES (?)', [row.project]); } catch (_) {}
+      try {
+        sqlRun('INSERT OR IGNORE INTO workspaces (name) VALUES (?)', [row.project]);
+      } catch (_) {}
     }
     // Also from session_log
-    const sessProjects = sqlJson('SELECT DISTINCT project FROM session_log WHERE project IS NOT NULL AND project != \'\'');
+    const sessProjects = sqlJson(
+      "SELECT DISTINCT project FROM session_log WHERE project IS NOT NULL AND project != ''",
+    );
     for (const row of sessProjects) {
-      try { sqlRun('INSERT OR IGNORE INTO workspaces (name) VALUES (?)', [row.project]); } catch (_) {}
+      try {
+        sqlRun('INSERT OR IGNORE INTO workspaces (name) VALUES (?)', [row.project]);
+      } catch (_) {}
     }
   } catch (_) {}
 
-  try { sqlRaw('PRAGMA user_version = 4'); } catch (_) { /* non-fatal */ }
+  try {
+    sqlRaw('PRAGMA user_version = 4');
+  } catch (_) {
+    /* non-fatal */
+  }
 
   // v5: code analysis + doc indexing tables (all additive, CREATE IF NOT EXISTS)
   if (version < 5) {
@@ -402,24 +444,35 @@ function runMigrations() {
         db.exec(schema);
       } else {
         // sqlite3 CLI: use .read
-        try { sqlRaw(`.read "${SCHEMA_PATH}"`); } catch (_) {}
+        try {
+          sqlRaw(`.read "${SCHEMA_PATH}"`);
+        } catch (_) {}
       }
       sqlRaw('PRAGMA user_version = 5');
     } catch (e) {
       // If full exec fails, try individual statements (some may already exist)
       console.error('[migration v5] Full schema exec failed, trying per-statement:', e.message);
-      const stmts = schema.split(/;\s*\n/).map(s => s.trim()).filter(s => s.length > 0);
+      const stmts = schema
+        .split(/;\s*\n/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
       for (const stmt of stmts) {
-        try { sqlRaw(stmt); } catch (_) {}
+        try {
+          sqlRaw(stmt);
+        } catch (_) {}
       }
-      try { sqlRaw('PRAGMA user_version = 5'); } catch (_) {}
+      try {
+        sqlRaw('PRAGMA user_version = 5');
+      } catch (_) {}
     }
   }
 
   return { migrated: true, fromVersion: version, toVersion: 5 };
 }
 
-function jsonOut(obj) { console.log(JSON.stringify(obj, null, 2)); }
+function jsonOut(obj) {
+  console.log(JSON.stringify(obj, null, 2));
+}
 function jsonErr(msg) {
   process.stderr.write(JSON.stringify({ error: msg }) + '\n');
   process.exit(1);
@@ -446,32 +499,32 @@ function sessionStart(args) {
   const project = args.project;
   if (!project) return jsonErr('Missing --project');
 
-  const sessionRows = sqlJson(
-    'INSERT INTO session_log (project) VALUES (?) RETURNING id, started_at',
-    [project]
-  );
+  const sessionRows = sqlJson('INSERT INTO session_log (project) VALUES (?) RETURNING id, started_at', [project]);
   const sessionId = sessionRows[0].id;
 
-  const countRows = sqlJson(
-    'SELECT COUNT(*) as cnt FROM session_log WHERE project = ?',
-    [project]
-  );
+  const countRows = sqlJson('SELECT COUNT(*) as cnt FROM session_log WHERE project = ?', [project]);
   const sessionCount = countRows[0].cnt;
   const consolidateDue = sessionCount > 0 && sessionCount % 5 === 0;
 
-  const archiveCandidates = sqlJson(`
+  const archiveCandidates = sqlJson(
+    `
     SELECT project, MAX(started_at) as last_active
     FROM session_log
     WHERE project != ?
     GROUP BY project
     HAVING last_active < datetime('now', '-90 days')
-  `, [project]);
+  `,
+    [project],
+  );
 
-  const incompleteSession = sqlJson(`
+  const incompleteSession = sqlJson(
+    `
     SELECT id FROM session_log
     WHERE project = ? AND ended_at IS NULL AND id != ?
     ORDER BY started_at DESC LIMIT 1
-  `, [project, sessionId]);
+  `,
+    [project, sessionId],
+  );
 
   // Auto-recover incomplete sessions
   let recoveredSession = null;
@@ -502,10 +555,10 @@ function sessionEnd(args) {
   let trustRecoveryResult = null;
   if (auto) trustRecoveryResult = trustRecovery({ session: id });
 
-  sqlRun(
-    'UPDATE session_log SET ended_at = datetime(\'now\'), memories_saved = ? WHERE id = ?',
-    [memories, parseInt(id, 10)]
-  );
+  sqlRun("UPDATE session_log SET ended_at = datetime('now'), memories_saved = ? WHERE id = ?", [
+    memories,
+    parseInt(id, 10),
+  ]);
   const result = { ok: true, sessionId: parseInt(id, 10) };
   if (trustRecoveryResult) result.trustRecovery = trustRecoveryResult;
   return result;
@@ -533,24 +586,29 @@ function save(args) {
       // Auto-merge at high confidence (≥85% trigram overlap)
       if (bestMatch.similarity >= 0.85) {
         const keptId = bestMatch.id;
-        const rows = sqlJson(`
+        const rows = sqlJson(
+          `
           INSERT INTO observations (session_id, type, title, content, project, scope, topic_key)
           VALUES (?, ?, ?, ?, ?, ?, ?)
           RETURNING id, created_at
-        `, [String(sessionId), type, title, content, project, scope, topicKey]);
+        `,
+          [String(sessionId), type, title, content, project, scope, topicKey],
+        );
         const newId = rows[0].id;
         // Soft-delete the older duplicate, record the relation
         sqlRun(
           'INSERT OR IGNORE INTO observation_relations (source_id, target_id, relation, confidence) VALUES (?, ?, ?, ?)',
-          [newId, keptId, 'duplicate', bestMatch.similarity]
+          [newId, keptId, 'duplicate', bestMatch.similarity],
         );
         sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [keptId]);
         return {
-          id: newId, title, created_at: rows[0].created_at,
+          id: newId,
+          title,
+          created_at: rows[0].created_at,
           auto_merged: true,
           superseded_id: keptId,
           superseded_title: bestMatch.title,
-          similarity: bestMatch.similarity
+          similarity: bestMatch.similarity,
         };
       }
       // Moderate confidence (60-84%): warn but let caller decide
@@ -558,16 +616,19 @@ function save(args) {
         status: 'potential_duplicate',
         message: 'Similar observations exist. Use --force to save anyway.',
         matches: dupes.potential_duplicates.slice(0, 3),
-        hint: 'node memory-store.js save --force ...'
+        hint: 'node memory-store.js save --force ...',
       };
     }
   }
 
-  const rows = sqlJson(`
+  const rows = sqlJson(
+    `
     INSERT INTO observations (session_id, type, title, content, project, scope, topic_key)
     VALUES (?, ?, ?, ?, ?, ?, ?)
     RETURNING id, created_at
-  `, [String(sessionId), type, title, content, project, scope, topicKey]);
+  `,
+    [String(sessionId), type, title, content, project, scope, topicKey],
+  );
   return { id: rows[0].id, title, created_at: rows[0].created_at };
 }
 
@@ -579,30 +640,42 @@ function save(args) {
  */
 function rankObservations(rows, query = '') {
   const now = Date.now();
-  const queryWords = query.toLowerCase().split(/\s+/).filter(w => w.length > 1);
-  return rows.map(row => {
-    let ftsScore = 0;
-    if (row.rank !== undefined && row.rank !== null && row.rank !== 0) {
-      ftsScore = -row.rank;
-    } else if (queryWords.length > 0) {
-      // LIKE fallback: score by word overlap in title
-      const title = (row.title || '').toLowerCase();
-      const hits = queryWords.filter(w => title.includes(w)).length;
-      ftsScore = queryWords.length > 0 ? (hits / queryWords.length) * 2 : 0;
-    }
-    const ageMs = now - new Date(row.created_at + 'Z').getTime();
-    const recencyScore = Math.exp(-ageMs / (7 * 24 * 60 * 60 * 1000));
-    const trustScore = row.trust_score !== undefined && row.trust_score !== null
-      ? row.trust_score : 0.7;
-    const recallScore = Math.log(1 + (row.recall_count || 0)) * 0.2;
-    const typeBoost = {
-      decision: 1.3, architecture: 1.3, bugfix: 1.2, pattern: 1.2,
-      preference: 1.2, config: 1.1, discovery: 1.0, learning: 1.0,
-      session_summary: 0.7, skill: 0.5
-    }[row.type] || 1.0;
-    const composite = (ftsScore * 0.4 + recencyScore * 0.3 + trustScore * 0.15 + recallScore * 0.15) * typeBoost;
-    return { ...row, _score: composite };
-  }).sort((a, b) => b._score - a._score);
+  const queryWords = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w.length > 1);
+  return rows
+    .map((row) => {
+      let ftsScore = 0;
+      if (row.rank !== undefined && row.rank !== null && row.rank !== 0) {
+        ftsScore = -row.rank;
+      } else if (queryWords.length > 0) {
+        // LIKE fallback: score by word overlap in title
+        const title = (row.title || '').toLowerCase();
+        const hits = queryWords.filter((w) => title.includes(w)).length;
+        ftsScore = queryWords.length > 0 ? (hits / queryWords.length) * 2 : 0;
+      }
+      const ageMs = now - new Date(row.created_at + 'Z').getTime();
+      const recencyScore = Math.exp(-ageMs / (7 * 24 * 60 * 60 * 1000));
+      const trustScore = row.trust_score !== undefined && row.trust_score !== null ? row.trust_score : 0.7;
+      const recallScore = Math.log(1 + (row.recall_count || 0)) * 0.2;
+      const typeBoost =
+        {
+          decision: 1.3,
+          architecture: 1.3,
+          bugfix: 1.2,
+          pattern: 1.2,
+          preference: 1.2,
+          config: 1.1,
+          discovery: 1.0,
+          learning: 1.0,
+          session_summary: 0.7,
+          skill: 0.5,
+        }[row.type] || 1.0;
+      const composite = (ftsScore * 0.4 + recencyScore * 0.3 + trustScore * 0.15 + recallScore * 0.15) * typeBoost;
+      return { ...row, _score: composite };
+    })
+    .sort((a, b) => b._score - a._score);
 }
 
 function search(args) {
@@ -641,9 +714,18 @@ function search(args) {
           AND o.deleted_at IS NULL
       `;
       const params = [query];
-      if (project) { q += ' AND o.project = ?'; params.push(project); }
-      if (type)    { q += ' AND o.type = ?';    params.push(type); }
-      if (scope)   { q += ' AND o.scope = ?';   params.push(scope); }
+      if (project) {
+        q += ' AND o.project = ?';
+        params.push(project);
+      }
+      if (type) {
+        q += ' AND o.type = ?';
+        params.push(type);
+      }
+      if (scope) {
+        q += ' AND o.scope = ?';
+        params.push(scope);
+      }
       q += ' ORDER BY rank LIMIT ?';
       params.push(Math.min(limit * 3, 50));
       rows = sqlJson(q, params);
@@ -672,9 +754,18 @@ function search(args) {
     `;
     const like = `%${query.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
     const params = [like, like];
-    if (project) { q += ' AND o.project = ?'; params.push(project); }
-    if (type)    { q += ' AND o.type = ?';    params.push(type); }
-    if (scope)   { q += ' AND o.scope = ?';   params.push(scope); }
+    if (project) {
+      q += ' AND o.project = ?';
+      params.push(project);
+    }
+    if (type) {
+      q += ' AND o.type = ?';
+      params.push(type);
+    }
+    if (scope) {
+      q += ' AND o.scope = ?';
+      params.push(scope);
+    }
     q += ' ORDER BY o.created_at DESC LIMIT ?';
     params.push(Math.min(limit * 3, 50));
     rows = sqlJson(q, params);
@@ -685,10 +776,11 @@ function search(args) {
   // Wire recall tracking: log every surfaced memory for ranking feedback
   if (sessionId && ranked.length > 0) {
     for (const r of ranked) {
-      sqlRun(
-        'INSERT OR IGNORE INTO recall_log (memory_id, session_id, query) VALUES (?, ?, ?)',
-        [r.id, sessionId, query]
-      );
+      sqlRun('INSERT OR IGNORE INTO recall_log (memory_id, session_id, query) VALUES (?, ?, ?)', [
+        r.id,
+        sessionId,
+        query,
+      ]);
     }
   }
 
@@ -712,13 +804,18 @@ function context(args) {
   if (!project && !crossProject) return jsonErr('Missing --project');
 
   // Active sessions
-  const sessions = project ? sqlJson(`
+  const sessions = project
+    ? sqlJson(
+        `
     SELECT id, project, started_at, ended_at, memories_saved
     FROM session_log
     WHERE project = ?
     ORDER BY started_at DESC
     LIMIT 5
-  `, [project]) : [];
+  `,
+        [project],
+      )
+    : [];
 
   // Personal-scope observations (cross-project preferences)
   const personal = sqlJson(`
@@ -856,28 +953,37 @@ function context(args) {
   const observations = sqlJson(obsQuery, obsParams);
 
   // Active procedural workflows
-  const workflows = project ? sqlJson(`
+  const workflows = project
+    ? sqlJson(
+        `
     SELECT id, name, status, success, updated_at
     FROM procedural_memory
     WHERE (project = ? OR project IS NULL) AND status = 'active'
     ORDER BY updated_at DESC
     LIMIT 5
-  `, [project]) : [];
+  `,
+        [project],
+      )
+    : [];
 
   // Wire recall tracking
   if (sessionId && observations.length > 0) {
     for (const o of observations) {
-      sqlRun(
-        'INSERT OR IGNORE INTO recall_log (memory_id, session_id, query) VALUES (?, ?, ?)',
-        [o.id, sessionId, topicQuery || topicKey || 'context-auto']
-      );
+      sqlRun('INSERT OR IGNORE INTO recall_log (memory_id, session_id, query) VALUES (?, ?, ?)', [
+        o.id,
+        sessionId,
+        topicQuery || topicKey || 'context-auto',
+      ]);
     }
   }
 
   // Calculate stats: total across all projects vs current
   const totalAll = crossProject
     ? sqlJson('SELECT COUNT(*) as cnt FROM observations WHERE deleted_at IS NULL AND type != ?', ['skill'])[0].cnt
-    : sqlJson('SELECT COUNT(*) as cnt FROM observations WHERE project = ? AND deleted_at IS NULL AND type != ?', [project, 'skill'])[0].cnt;
+    : sqlJson('SELECT COUNT(*) as cnt FROM observations WHERE project = ? AND deleted_at IS NULL AND type != ?', [
+        project,
+        'skill',
+      ])[0].cnt;
 
   return {
     sessions,
@@ -890,36 +996,33 @@ function context(args) {
     stats: {
       total_memories: totalAll,
       total_personal: personal.length,
-      active_workflows: workflows.length
-    }
+      active_workflows: workflows.length,
+    },
   };
 }
 
 function get(args) {
   const id = args.id;
   if (!id) return jsonErr('Missing --id');
-  const rows = sqlJson(`
+  const rows = sqlJson(
+    `
     SELECT id, title, content, type, project, scope, topic_key,
            created_at, updated_at, deleted_at
     FROM observations
     WHERE id = ?
-  `, [parseInt(id, 10)]);
+  `,
+    [parseInt(id, 10)],
+  );
   if (rows.length === 0) return { error: 'Observation not found' };
 
   const obs = rows[0];
 
   // Attach symbol links
-  const links = sqlJson(
-    'SELECT symbol_id, repo, trust_score FROM symbol_links WHERE memory_id = ?',
-    [String(id)]
-  );
+  const links = sqlJson('SELECT symbol_id, repo, trust_score FROM symbol_links WHERE memory_id = ?', [String(id)]);
   if (links.length > 0) obs.symbols = links;
 
   // Attach recall count
-  const recallCount = sqlJson(
-    'SELECT COUNT(*) as cnt FROM recall_log WHERE memory_id = ?',
-    [parseInt(id, 10)]
-  );
+  const recallCount = sqlJson('SELECT COUNT(*) as cnt FROM recall_log WHERE memory_id = ?', [parseInt(id, 10)]);
   obs.recall_count = recallCount[0].cnt;
 
   return obs;
@@ -930,25 +1033,43 @@ function update(args) {
   if (!id) return jsonErr('Missing --id');
   const sets = [];
   const params = [];
-  if (args.title)     { sets.push('title = ?');      params.push(args.title); }
-  if (args.content)   { sets.push('content = ?');    params.push(args.content); }
-  if (args.type)      { sets.push('type = ?');       params.push(args.type); }
-  if (args.project)   { sets.push('project = ?');    params.push(args.project); }
-  if (args.scope)     { sets.push('scope = ?');      params.push(args.scope); }
-  if (args['topic-key']) { sets.push('topic_key = ?'); params.push(args['topic-key']); }
+  if (args.title) {
+    sets.push('title = ?');
+    params.push(args.title);
+  }
+  if (args.content) {
+    sets.push('content = ?');
+    params.push(args.content);
+  }
+  if (args.type) {
+    sets.push('type = ?');
+    params.push(args.type);
+  }
+  if (args.project) {
+    sets.push('project = ?');
+    params.push(args.project);
+  }
+  if (args.scope) {
+    sets.push('scope = ?');
+    params.push(args.scope);
+  }
+  if (args['topic-key']) {
+    sets.push('topic_key = ?');
+    params.push(args['topic-key']);
+  }
   if (sets.length === 0) return jsonErr('Nothing to update');
 
   params.push(parseInt(id, 10));
-  sqlRun(
-    `UPDATE observations SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = ?`,
-    params
-  );
+  sqlRun(`UPDATE observations SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = ?`, params);
 
-  const rows = sqlJson(`
+  const rows = sqlJson(
+    `
     SELECT id, title, content, type, project, scope, topic_key,
            created_at, updated_at
     FROM observations WHERE id = ?
-  `, [parseInt(id, 10)]);
+  `,
+    [parseInt(id, 10)],
+  );
   return rows.length > 0 ? rows[0] : { error: 'Observation not found' };
 }
 
@@ -971,13 +1092,16 @@ function timeline(args) {
   const after = parseInt(args.after || '5', 10);
   if (isNaN(id)) return jsonErr('Missing --id');
 
-  return sqlJson(`
+  return sqlJson(
+    `
     SELECT id, title, type, project, scope, created_at
     FROM observations
     WHERE id BETWEEN ? AND ?
       AND deleted_at IS NULL
     ORDER BY id
-  `, [id - before, id + after]);
+  `,
+    [id - before, id + after],
+  );
 }
 
 function suggestTopicKey(args) {
@@ -998,11 +1122,14 @@ function savePrompt(args) {
   const sessionId = args['session-id'] || findLatestSession(project);
   if (!content) return jsonErr('Missing --content');
 
-  const rows = sqlJson(`
+  const rows = sqlJson(
+    `
     INSERT INTO user_prompts (session_id, content, project)
     VALUES (?, ?, ?)
     RETURNING id, created_at
-  `, [String(sessionId), content, project]);
+  `,
+    [String(sessionId), content, project],
+  );
   return { id: rows[0].id, created_at: rows[0].created_at };
 }
 
@@ -1026,16 +1153,19 @@ function capturePassive(args) {
   const sessionId = findLatestSession(null);
   for (const item of items) {
     const summary = item.length > 80 ? item.slice(0, 77) + '…' : item;
-    sqlJson(
-      'INSERT INTO observations (session_id, type, title, content, scope) VALUES (?, ?, ?, ?, ?)',
-      [String(sessionId), 'learning', summary, item, 'project']
-    );
+    sqlJson('INSERT INTO observations (session_id, type, title, content, scope) VALUES (?, ?, ?, ?, ?)', [
+      String(sessionId),
+      'learning',
+      summary,
+      item,
+      'project',
+    ]);
     inserted++;
   }
   return { extracted: inserted, items };
 }
 
-function stats() {
+function getStats() {
   const obs = sqlJson('SELECT COUNT(*) as cnt FROM observations WHERE deleted_at IS NULL')[0].cnt;
   const prompts = sqlJson('SELECT COUNT(*) as cnt FROM user_prompts')[0].cnt;
   const sessions = sqlJson('SELECT COUNT(*) as cnt FROM session_log')[0].cnt;
@@ -1056,11 +1186,14 @@ function sessionSummary(args) {
   const sessionId = args['session-id'] || findLatestSession(project);
   if (!content) return jsonErr('Missing --content');
 
-  const rows = sqlJson(`
+  const rows = sqlJson(
+    `
     INSERT INTO observations (session_id, type, title, content, project, scope)
     VALUES (?, ?, ?, ?, ?, ?)
     RETURNING id, created_at
-  `, [String(sessionId), 'session_summary', 'Session Summary', content, project, 'project']);
+  `,
+    [String(sessionId), 'session_summary', 'Session Summary', content, project, 'project'],
+  );
   return { id: rows[0].id, title: 'Session Summary', created_at: rows[0].created_at };
 }
 
@@ -1075,10 +1208,12 @@ function linkSymbol(args) {
   if (!memoryId || !repo) return jsonErr('Missing --memory and --repo');
   const symVal = symbolId || '__unlinked__';
 
-  sqlRun(
-    'INSERT OR REPLACE INTO symbol_links (memory_id, symbol_id, repo, trust_score) VALUES (?, ?, ?, ?)',
-    [memoryId, symVal, repo, trust]
-  );
+  sqlRun('INSERT OR REPLACE INTO symbol_links (memory_id, symbol_id, repo, trust_score) VALUES (?, ?, ?, ?)', [
+    memoryId,
+    symVal,
+    repo,
+    trust,
+  ]);
   return { ok: true, memoryId, symbolId: symVal, repo, trustScore: trust };
 }
 
@@ -1086,18 +1221,23 @@ function autoLink(args) {
   const project = args.project;
   if (!project) return jsonErr('Missing --project');
 
-  const unlinked = sqlJson(`
+  const unlinked = sqlJson(
+    `
     SELECT CAST(id AS TEXT) as memory_id FROM observations
     WHERE project = ? AND deleted_at IS NULL
       AND CAST(id AS TEXT) NOT IN (SELECT memory_id FROM symbol_links)
-  `, [project]);
+  `,
+    [project],
+  );
 
   let linked = 0;
   for (const row of unlinked) {
-    sqlRun(
-      'INSERT OR IGNORE INTO symbol_links (memory_id, symbol_id, repo, trust_score) VALUES (?, ?, ?, ?)',
-      [String(row.memory_id), '__unlinked__', project, 0.7]
-    );
+    sqlRun('INSERT OR IGNORE INTO symbol_links (memory_id, symbol_id, repo, trust_score) VALUES (?, ?, ?, ?)', [
+      String(row.memory_id),
+      '__unlinked__',
+      project,
+      0.7,
+    ]);
     linked++;
   }
   return { ok: true, project, linked, unlinkedCount: unlinked.length };
@@ -1107,22 +1247,12 @@ function adjustTrust(args) {
   const memoryId = args.memory;
   const reason = args.reason;
   const delta = parseFloat(args.delta);
-  if (!memoryId || !reason || isNaN(delta))
-    return jsonErr('Missing --memory, --reason, --delta');
+  if (!memoryId || !reason || isNaN(delta)) return jsonErr('Missing --memory, --reason, --delta');
 
-  sqlRun(
-    'UPDATE symbol_links SET trust_score = MAX(0.0, trust_score + ?) WHERE memory_id = ?',
-    [delta, memoryId]
-  );
-  sqlRun(
-    'INSERT INTO trust_adjustments (memory_id, reason, delta) VALUES (?, ?, ?)',
-    [memoryId, reason, delta]
-  );
+  sqlRun('UPDATE symbol_links SET trust_score = MAX(0.0, trust_score + ?) WHERE memory_id = ?', [delta, memoryId]);
+  sqlRun('INSERT INTO trust_adjustments (memory_id, reason, delta) VALUES (?, ?, ?)', [memoryId, reason, delta]);
 
-  const updated = sqlJson(
-    'SELECT trust_score FROM symbol_links WHERE memory_id = ? LIMIT 1',
-    [memoryId]
-  );
+  const updated = sqlJson('SELECT trust_score FROM symbol_links WHERE memory_id = ? LIMIT 1', [memoryId]);
   return { ok: true, memoryId, newTrustScore: updated.length > 0 ? updated[0].trust_score : null };
 }
 
@@ -1130,10 +1260,7 @@ function recordRecall(args) {
   const sessionId = parseInt(args.session);
   const memoryId = args.memory;
   if (!sessionId || !memoryId) return jsonErr('Missing --session and --memory');
-  sqlRun(
-    'INSERT OR IGNORE INTO session_recalls (session_id, memory_id) VALUES (?, ?)',
-    [sessionId, memoryId]
-  );
+  sqlRun('INSERT OR IGNORE INTO session_recalls (session_id, memory_id) VALUES (?, ?)', [sessionId, memoryId]);
   return { ok: true };
 }
 
@@ -1145,7 +1272,7 @@ function staleLinks(args) {
      FROM symbol_links
      WHERE repo = ? AND symbol_id != '__unlinked__'
      ORDER BY trust_score ASC`,
-    [project]
+    [project],
   );
 }
 
@@ -1175,8 +1302,7 @@ function listProjects() {
 function syncCodeTrust(args) {
   const repo = args.repo;
   const changedJson = args['changed-symbols-json'] || args['changed-symbols'];
-  if (!repo || !changedJson)
-    return jsonErr('Missing --repo and --changed-symbols-json');
+  if (!repo || !changedJson) return jsonErr('Missing --repo and --changed-symbols-json');
 
   let changedData;
   try {
@@ -1204,54 +1330,57 @@ function syncCodeTrust(args) {
       }
     }
   }
-  if (changedSet.size === 0)
-    return jsonErr('No changed symbols found in input');
+  if (changedSet.size === 0) return jsonErr('No changed symbols found in input');
 
   // Get all anchored links for this repo
   const allLinks = sqlJson(
     `SELECT memory_id, symbol_id, trust_score, last_verified
      FROM symbol_links WHERE repo = ? AND symbol_id != '__unlinked__'`,
-    [repo]
+    [repo],
   );
 
   const result = { total: allLinks.length, adjusted: [], survived: [], unchanged: [] };
 
   for (const link of allLinks) {
-    const isChanged = [...changedSet].some(cs =>
-      link.symbol_id === cs ||
-      link.symbol_id.endsWith('::' + cs) ||
-      link.symbol_id.includes(cs)
+    const isChanged = [...changedSet].some(
+      (cs) => link.symbol_id === cs || link.symbol_id.endsWith('::' + cs) || link.symbol_id.includes(cs),
     );
 
     if (isChanged) {
       const delta = -0.3;
       const newTrust = Math.max(0.0, link.trust_score + delta);
       sqlRun(
-        'UPDATE symbol_links SET trust_score = ?, last_verified = datetime(\'now\') WHERE memory_id = ? AND symbol_id = ?',
-        [newTrust, link.memory_id, link.symbol_id]
+        "UPDATE symbol_links SET trust_score = ?, last_verified = datetime('now') WHERE memory_id = ? AND symbol_id = ?",
+        [newTrust, link.memory_id, link.symbol_id],
       );
-      sqlRun(
-        'INSERT INTO trust_adjustments (memory_id, reason, delta) VALUES (?, ?, ?)',
-        [link.memory_id, 'symbol_changed', delta]
-      );
+      sqlRun('INSERT INTO trust_adjustments (memory_id, reason, delta) VALUES (?, ?, ?)', [
+        link.memory_id,
+        'symbol_changed',
+        delta,
+      ]);
       result.adjusted.push({
-        memory_id: link.memory_id, symbol_id: link.symbol_id,
-        old_trust: link.trust_score, new_trust: newTrust
+        memory_id: link.memory_id,
+        symbol_id: link.symbol_id,
+        old_trust: link.trust_score,
+        new_trust: newTrust,
       });
     } else if (link.trust_score < 0.95) {
       const delta = 0.05;
       const newTrust = Math.min(1.0, link.trust_score + delta);
       sqlRun(
-        'UPDATE symbol_links SET trust_score = ?, last_verified = datetime(\'now\') WHERE memory_id = ? AND symbol_id = ?',
-        [newTrust, link.memory_id, link.symbol_id]
+        "UPDATE symbol_links SET trust_score = ?, last_verified = datetime('now') WHERE memory_id = ? AND symbol_id = ?",
+        [newTrust, link.memory_id, link.symbol_id],
       );
-      sqlRun(
-        'INSERT INTO trust_adjustments (memory_id, reason, delta) VALUES (?, ?, ?)',
-        [link.memory_id, 'survived_unchanged', delta]
-      );
+      sqlRun('INSERT INTO trust_adjustments (memory_id, reason, delta) VALUES (?, ?, ?)', [
+        link.memory_id,
+        'survived_unchanged',
+        delta,
+      ]);
       result.survived.push({
-        memory_id: link.memory_id, symbol_id: link.symbol_id,
-        old_trust: link.trust_score, new_trust: newTrust
+        memory_id: link.memory_id,
+        symbol_id: link.symbol_id,
+        old_trust: link.trust_score,
+        new_trust: newTrust,
       });
     } else {
       result.unchanged.push({ memory_id: link.memory_id, symbol_id: link.symbol_id });
@@ -1277,7 +1406,10 @@ function symbolCluster(args) {
       AND o.deleted_at IS NULL
   `;
   const params = [symbolId];
-  if (repo) { q += ' AND sl.repo = ?'; params.push(repo); }
+  if (repo) {
+    q += ' AND sl.repo = ?';
+    params.push(repo);
+  }
   q += ' ORDER BY o.created_at DESC';
 
   return { symbol: symbolId, memories: sqlJson(q, params) };
@@ -1287,15 +1419,16 @@ function related(args) {
   const id = parseInt(args.id);
   if (isNaN(id)) return jsonErr('Missing --id');
 
-  const symbols = sqlJson(
-    'SELECT symbol_id, repo FROM symbol_links WHERE memory_id = ? AND symbol_id != ?',
-    [String(id), '__unlinked__']
-  );
+  const symbols = sqlJson('SELECT symbol_id, repo FROM symbol_links WHERE memory_id = ? AND symbol_id != ?', [
+    String(id),
+    '__unlinked__',
+  ]);
   if (symbols.length === 0) return { memory_id: id, related: [] };
 
   const result = [];
   for (const sym of symbols) {
-    const cluster = sqlJson(`
+    const cluster = sqlJson(
+      `
       SELECT o.id, o.title, o.type, o.project, o.created_at
       FROM observations o
       JOIN symbol_links sl ON sl.memory_id = CAST(o.id AS TEXT)
@@ -1303,7 +1436,9 @@ function related(args) {
         AND o.id != ?
         AND o.deleted_at IS NULL
       ORDER BY o.created_at DESC LIMIT 5
-    `, [sym.symbol_id, id]);
+    `,
+      [sym.symbol_id, id],
+    );
     if (cluster.length > 0) {
       result.push({ symbol: sym.symbol_id, repo: sym.repo, memories: cluster });
     }
@@ -1326,7 +1461,9 @@ function trigramOverlap(a, b) {
   if (ta.size === 0 && tb.size === 0) return 1.0;
   if (ta.size === 0 || tb.size === 0) return 0.0;
   let shared = 0;
-  for (const t of ta) { if (tb.has(t)) shared++; }
+  for (const t of ta) {
+    if (tb.has(t)) shared++;
+  }
   return shared / Math.max(ta.size, tb.size);
 }
 
@@ -1337,7 +1474,10 @@ function checkDuplicate(title, type, project, topicKey) {
     WHERE type = ? AND deleted_at IS NULL
   `;
   const params = [type];
-  if (project) { q += ' AND project = ?'; params.push(project); }
+  if (project) {
+    q += ' AND project = ?';
+    params.push(project);
+  }
   if (topicKey) {
     q += ' ORDER BY CASE WHEN topic_key = ? THEN 0 ELSE 1 END, created_at DESC';
     params.push(topicKey);
@@ -1351,7 +1491,12 @@ function checkDuplicate(title, type, project, topicKey) {
   for (const c of candidates) {
     const score = trigramOverlap(title, c.title);
     if (score >= 0.6) {
-      duplicates.push({ id: c.id, title: c.title, similarity: Math.round(score * 100) / 100, created_at: c.created_at });
+      duplicates.push({
+        id: c.id,
+        title: c.title,
+        similarity: Math.round(score * 100) / 100,
+        created_at: c.created_at,
+      });
     }
   }
   return { potential_duplicates: duplicates };
@@ -1365,7 +1510,7 @@ function markDuplicate(args) {
 
   sqlRun(
     'INSERT OR REPLACE INTO observation_relations (source_id, target_id, relation, confidence) VALUES (?, ?, ?, ?)',
-    [source, target, 'duplicate', confidence]
+    [source, target, 'duplicate', confidence],
   );
   sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [target]);
   return { ok: true, merged: { kept: source, removed: target } };
@@ -1374,18 +1519,18 @@ function markDuplicate(args) {
 /* ── auto session recovery ──────────────────────────────── */
 
 function autoRecoverInternal(sessionId) {
-  const session = sqlJson(
-    'SELECT * FROM session_log WHERE id = ?',
-    [parseInt(sessionId)]
-  );
+  const session = sqlJson('SELECT * FROM session_log WHERE id = ?', [parseInt(sessionId)]);
   if (session.length === 0) return null;
 
-  const obs = sqlJson(`
+  const obs = sqlJson(
+    `
     SELECT id, title, type, content, created_at
     FROM observations
     WHERE session_id = ? AND deleted_at IS NULL AND type != 'skill'
     ORDER BY created_at ASC
-  `, [sessionId]);
+  `,
+    [sessionId],
+  );
 
   if (obs.length === 0) return null;
 
@@ -1407,18 +1552,21 @@ function autoRecoverInternal(sessionId) {
   }
   const summary = lines.join('\n');
 
-  sqlJson(`
+  sqlJson(
+    `
     INSERT INTO observations (session_id, type, title, content, project, scope)
     VALUES (?, 'session_summary', 'Auto-Recovered Session Summary', ?, ?, 'project')
     RETURNING id
-  `, [sessionId, summary, session[0].project]);
+  `,
+    [sessionId, summary, session[0].project],
+  );
 
   sqlRun("UPDATE session_log SET ended_at = datetime('now') WHERE id = ?", [parseInt(sessionId)]);
 
   return {
     status: 'recovered',
     observations_processed: obs.length,
-    types: Object.fromEntries(Object.entries(types).map(([k, v]) => [k, v.length]))
+    types: Object.fromEntries(Object.entries(types).map(([k, v]) => [k, v.length])),
   };
 }
 
@@ -1431,9 +1579,7 @@ function autoRecover(args) {
 }
 
 function recoverOrphans() {
-  const orphans = sqlJson(
-    "SELECT id, project FROM session_log WHERE ended_at IS NULL ORDER BY started_at DESC"
-  );
+  const orphans = sqlJson('SELECT id, project FROM session_log WHERE ended_at IS NULL ORDER BY started_at DESC');
   if (orphans.length === 0) return { recovered: [], total: 0 };
 
   const recovered = [];
@@ -1453,18 +1599,18 @@ function saveWorkflow(args) {
   const stepsRaw = args.steps || null;
   if (!id || !name) return jsonErr('Missing --id and --name');
 
-  sqlRun(
-    'INSERT OR IGNORE INTO procedural_memory (id, name, project) VALUES (?, ?, ?)',
-    [id, name, project]
-  );
+  sqlRun('INSERT OR IGNORE INTO procedural_memory (id, name, project) VALUES (?, ?, ?)', [id, name, project]);
 
   if (stepsRaw) {
-    const steps = stepsRaw.split(/\\n|\n/).map((s) => s.trim()).filter(Boolean);
+    const steps = stepsRaw
+      .split(/\\n|\n/)
+      .map((s) => s.trim())
+      .filter(Boolean);
     let stepNum = 1;
     for (const cmd of steps) {
       sqlRun(
         'INSERT OR REPLACE INTO procedural_steps (workflow, step_num, command, success, attempts) VALUES (?, ?, ?, 1.0, 1)',
-        [id, stepNum, cmd]
+        [id, stepNum, cmd],
       );
       stepNum++;
     }
@@ -1476,11 +1622,10 @@ function recordStep(args) {
   const workflow = args.workflow;
   const step = parseInt(args.step);
   const command = args.command;
-  if (!workflow || isNaN(step) || !command)
-    return jsonErr('Missing --workflow, --step, --command');
+  if (!workflow || isNaN(step) || !command) return jsonErr('Missing --workflow, --step, --command');
   sqlRun(
     'INSERT OR REPLACE INTO procedural_steps (workflow, step_num, command, success, attempts) VALUES (?, ?, ?, 1.0, 1)',
-    [workflow, step, command]
+    [workflow, step, command],
   );
   return { ok: true };
 }
@@ -1495,17 +1640,17 @@ function stepOutcome(args) {
   if (success) {
     sqlRun(
       'UPDATE procedural_steps SET success = MIN(1.0, success + 0.1), attempts = attempts + 1 WHERE workflow = ? AND step_num = ?',
-      [workflow, step]
+      [workflow, step],
     );
   } else {
     sqlRun(
       'UPDATE procedural_steps SET success = MAX(0.0, success - 0.2), attempts = attempts + 1, fail_workaround = ? WHERE workflow = ? AND step_num = ?',
-      [workaround || null, workflow, step]
+      [workaround || null, workflow, step],
     );
   }
   const updated = sqlJson(
     'SELECT success, attempts, fail_workaround FROM procedural_steps WHERE workflow = ? AND step_num = ?',
-    [workflow, step]
+    [workflow, step],
   );
   return updated.length > 0 ? { ok: true, ...updated[0] } : { ok: true };
 }
@@ -1515,10 +1660,7 @@ function getWorkflow(args) {
   if (!id) return jsonErr('Missing --id');
   const meta = sqlJson('SELECT * FROM procedural_memory WHERE id = ? LIMIT 1', [id]);
   if (meta.length === 0) return { error: 'Workflow not found' };
-  const steps = sqlJson(
-    'SELECT * FROM procedural_steps WHERE workflow = ? ORDER BY step_num',
-    [id]
-  );
+  const steps = sqlJson('SELECT * FROM procedural_steps WHERE workflow = ? ORDER BY step_num', [id]);
   return { ...meta[0], steps };
 }
 
@@ -1529,7 +1671,9 @@ function runCompact() {
   const report = { startedAt, steps: {} };
 
   try {
-    sqlRun('DELETE FROM symbol_links WHERE memory_id NOT IN (SELECT CAST(id AS TEXT) FROM observations WHERE deleted_at IS NULL)');
+    sqlRun(
+      'DELETE FROM symbol_links WHERE memory_id NOT IN (SELECT CAST(id AS TEXT) FROM observations WHERE deleted_at IS NULL)',
+    );
     report.steps.deadLinksCleaned = true;
 
     sqlRun("DELETE FROM observations WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now', '-30 days')");
@@ -1590,7 +1734,9 @@ function runCompact() {
   return report;
 }
 
-function compact() { return runCompact(); }
+function compact() {
+  return runCompact();
+}
 
 /* ── init ─────────────────────────────────────────────────── */
 function initDb() {
@@ -1604,10 +1750,14 @@ function initDb() {
     const schema = fs.readFileSync(SCHEMA_PATH, 'utf8');
     const statements = schema
       .split(';')
-      .map(s => s.trim())
-      .filter(s => s.length > 0 && !s.startsWith('--') && !s.startsWith('PRAGMA'));
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0 && !s.startsWith('--') && !s.startsWith('PRAGMA'));
     for (const stmt of statements) {
-      try { nativeExec(stmt); } catch (_) { /* may already exist */ }
+      try {
+        nativeExec(stmt);
+      } catch (_) {
+        /* may already exist */
+      }
     }
   }
 
@@ -1618,20 +1768,17 @@ function trustRecovery(args) {
   const sessionId = parseInt(args.session);
   if (!sessionId) return jsonErr('Missing --session');
 
-  const recalled = sqlJson(
-    'SELECT memory_id FROM session_recalls WHERE session_id = ?',
-    [sessionId]
-  );
+  const recalled = sqlJson('SELECT memory_id FROM session_recalls WHERE session_id = ?', [sessionId]);
   let recovered = 0;
   for (const row of recalled) {
-    sqlRun(
-      'UPDATE symbol_links SET trust_score = MIN(1.0, trust_score + 0.1) WHERE memory_id = ?',
-      [String(row.memory_id)]
-    );
-    sqlRun(
-      'INSERT INTO trust_adjustments (memory_id, reason, delta) VALUES (?, ?, ?)',
-      [String(row.memory_id), 'passive_survival', 0.1]
-    );
+    sqlRun('UPDATE symbol_links SET trust_score = MIN(1.0, trust_score + 0.1) WHERE memory_id = ?', [
+      String(row.memory_id),
+    ]);
+    sqlRun('INSERT INTO trust_adjustments (memory_id, reason, delta) VALUES (?, ?, ?)', [
+      String(row.memory_id),
+      'passive_survival',
+      0.1,
+    ]);
     recovered++;
   }
   return { ok: true, memoriesRecovered: recovered };
@@ -1696,16 +1843,14 @@ function hashContent(content) {
   let hash = 0;
   for (let i = 0; i < content.length; i++) {
     const char = content.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
+    hash = (hash << 5) - hash + char;
     hash |= 0;
   }
   return String(hash);
 }
 
-
-
 async function indexRepoInternal(repoPath, repoName) {
-  if (!await ensureParserAvailable()) {
+  if (!(await ensureParserAvailable())) {
     return { error: 'WASM tree-sitter parser not available. Run: cd ' + __dirname + ' && npm install web-tree-sitter' };
   }
 
@@ -1738,7 +1883,16 @@ async function indexRepoInternal(repoPath, repoName) {
 
       sqlRun(
         'INSERT INTO code_files (repo_id, path, language, content, content_hash, mtime, size_bytes, line_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [repoId, filePath, path.extname(filePath).slice(1), content, contentHash, stats.mtimeMs, stats.size, lines.length]
+        [
+          repoId,
+          filePath,
+          path.extname(filePath).slice(1),
+          content,
+          contentHash,
+          stats.mtimeMs,
+          stats.size,
+          lines.length,
+        ],
       );
       const fileRow = sqlJson('SELECT id FROM code_files WHERE repo_id = ? AND path = ?', [repoId, filePath]);
       const fileId = fileRow[0].id;
@@ -1749,9 +1903,23 @@ async function indexRepoInternal(repoPath, repoName) {
           `INSERT INTO code_symbols (repo_id, file_id, file_path, name, kind, signature, qualified_name,
            start_line, end_line, start_byte, end_byte, docstring, body_preview, language, parent_name)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [repoId, fileId, filePath, sym.name, sym.kind, sym.signature, sym.qualified_name,
-           sym.start_line, sym.end_line, sym.start_byte, sym.end_byte,
-           sym.docstring || '', sym.body_preview || '', sym.language, sym.parent_name || '']
+          [
+            repoId,
+            fileId,
+            filePath,
+            sym.name,
+            sym.kind,
+            sym.signature,
+            sym.qualified_name,
+            sym.start_line,
+            sym.end_line,
+            sym.start_byte,
+            sym.end_byte,
+            sym.docstring || '',
+            sym.body_preview || '',
+            sym.language,
+            sym.parent_name || '',
+          ],
         );
         symbolCount++;
       }
@@ -1761,24 +1929,43 @@ async function indexRepoInternal(repoPath, repoName) {
     }
   }
 
-  sqlRun('UPDATE code_repos SET file_count = ?, symbol_count = ?, updated_at = datetime(\'now\') WHERE id = ?', [fileCount, symbolCount, repoId]);
+  sqlRun("UPDATE code_repos SET file_count = ?, symbol_count = ?, updated_at = datetime('now') WHERE id = ?", [
+    fileCount,
+    symbolCount,
+    repoId,
+  ]);
 
-  // Build import graph, call graph, and complexity
-  let importEdges = 0, callEdges = 0, complexityCount = 0;
-  try {
-    const ig = codeAnalysis.buildImportGraph(db, repoId);
-    if (ig.success) importEdges = ig.edges;
-  } catch (_) {}
-  try {
-    const cg = codeAnalysis.buildCallGraph(db, repoId);
-    if (cg.success) callEdges = cg.calls;
-  } catch (_) {}
-  try {
-    const cc = codeAnalysis.buildComplexity(db, repoId);
-    if (cc.success) complexityCount = cc.symbols;
-  } catch (_) {}
+  // Build import graph, call graph, and complexity (requires native db — skip in CLI mode)
+  let importEdges = 0,
+    callEdges = 0,
+    complexityCount = 0;
+  if (_engine !== 'cli') {
+    try {
+      const ig = codeAnalysis.buildImportGraph(db, repoId);
+      if (ig.success) importEdges = ig.edges;
+    } catch (_) {}
+    try {
+      const cg = codeAnalysis.buildCallGraph(db, repoId);
+      if (cg.success) callEdges = cg.calls;
+    } catch (_) {}
+    try {
+      const cc = codeAnalysis.buildComplexity(db, repoId);
+      if (cc.success) complexityCount = cc.symbols;
+    } catch (_) {}
+  }
 
-  return { success: true, repo: repoName, path: absPath, files_indexed: fileCount, symbols_extracted: symbolCount, files_skipped: skipped.length, import_edges: importEdges, call_edges: callEdges, complexity_symbols: complexityCount, skipped };
+  return {
+    success: true,
+    repo: repoName,
+    path: absPath,
+    files_indexed: fileCount,
+    symbols_extracted: symbolCount,
+    files_skipped: skipped.length,
+    import_edges: importEdges,
+    call_edges: callEdges,
+    complexity_symbols: complexityCount,
+    skipped,
+  };
 }
 
 async function reindexRepoInternal(repo, mode) {
@@ -1793,7 +1980,7 @@ async function reindexRepoInternal(repo, mode) {
   }
 
   // Incremental: only re-index files whose mtime changed
-  if (!await ensureParserAvailable()) return { error: 'WASM tree-sitter parser not available' };
+  if (!(await ensureParserAvailable())) return { error: 'WASM tree-sitter parser not available' };
 
   const files = walkDir(repoPath);
   let reindexed = 0;
@@ -1821,12 +2008,25 @@ async function reindexRepoInternal(repo, mode) {
 
       if (prev) {
         sqlRun('DELETE FROM code_symbols WHERE file_id = ?', [prev.id]);
-        sqlRun('UPDATE code_files SET content = ?, content_hash = ?, mtime = ?, size_bytes = ?, line_count = ? WHERE id = ?',
-          [content, contentHash, stats.mtimeMs, stats.size, lines.length, prev.id]);
+        sqlRun(
+          'UPDATE code_files SET content = ?, content_hash = ?, mtime = ?, size_bytes = ?, line_count = ? WHERE id = ?',
+          [content, contentHash, stats.mtimeMs, stats.size, lines.length, prev.id],
+        );
         fileId = prev.id;
       } else {
-        sqlRun('INSERT INTO code_files (repo_id, path, language, content, content_hash, mtime, size_bytes, line_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-          [repoId, filePath, path.extname(filePath).slice(1), content, contentHash, stats.mtimeMs, stats.size, lines.length]);
+        sqlRun(
+          'INSERT INTO code_files (repo_id, path, language, content, content_hash, mtime, size_bytes, line_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [
+            repoId,
+            filePath,
+            path.extname(filePath).slice(1),
+            content,
+            contentHash,
+            stats.mtimeMs,
+            stats.size,
+            lines.length,
+          ],
+        );
         fileId = sqlJson('SELECT id FROM code_files WHERE repo_id = ? AND path = ?', [repoId, filePath])[0].id;
       }
 
@@ -1836,9 +2036,23 @@ async function reindexRepoInternal(repo, mode) {
           `INSERT INTO code_symbols (repo_id, file_id, file_path, name, kind, signature, qualified_name,
            start_line, end_line, start_byte, end_byte, docstring, body_preview, language, parent_name)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [repoId, fileId, filePath, sym.name, sym.kind, sym.signature, sym.qualified_name,
-           sym.start_line, sym.end_line, sym.start_byte, sym.end_byte,
-           sym.docstring || '', sym.body_preview || '', sym.language, sym.parent_name || '']
+          [
+            repoId,
+            fileId,
+            filePath,
+            sym.name,
+            sym.kind,
+            sym.signature,
+            sym.qualified_name,
+            sym.start_line,
+            sym.end_line,
+            sym.start_byte,
+            sym.end_byte,
+            sym.docstring || '',
+            sym.body_preview || '',
+            sym.language,
+            sym.parent_name || '',
+          ],
         );
         symbolCount++;
       }
@@ -1846,31 +2060,47 @@ async function reindexRepoInternal(repo, mode) {
     } catch (_) {}
   }
 
-  sqlRun('UPDATE code_repos SET file_count = (SELECT count(*) FROM code_files WHERE repo_id = ?), symbol_count = ?, updated_at = datetime(\'now\') WHERE id = ?',
-    [repoId, symbolCount, repoId]);
+  sqlRun(
+    "UPDATE code_repos SET file_count = (SELECT count(*) FROM code_files WHERE repo_id = ?), symbol_count = ?, updated_at = datetime('now') WHERE id = ?",
+    [repoId, symbolCount, repoId],
+  );
 
-  // Build import graph, call graph, and complexity
-  let importEdges = 0, callEdges = 0, complexityCount = 0;
-  try {
-    const ig = codeAnalysis.buildImportGraph(db, repoId);
-    if (ig.success) importEdges = ig.edges;
-  } catch (_) {}
-  try {
-    const cg = codeAnalysis.buildCallGraph(db, repoId);
-    if (cg.success) callEdges = cg.calls;
-  } catch (_) {}
-  try {
-    const cc = codeAnalysis.buildComplexity(db, repoId);
-    if (cc.success) complexityCount = cc.symbols;
-  } catch (_) {}
+  // Build import graph, call graph, and complexity (requires native db — skip in CLI mode)
+  let importEdges = 0,
+    callEdges = 0,
+    complexityCount = 0;
+  if (_engine !== 'cli') {
+    try {
+      const ig = codeAnalysis.buildImportGraph(db, repoId);
+      if (ig.success) importEdges = ig.edges;
+    } catch (_) {}
+    try {
+      const cg = codeAnalysis.buildCallGraph(db, repoId);
+      if (cg.success) callEdges = cg.calls;
+    } catch (_) {}
+    try {
+      const cc = codeAnalysis.buildComplexity(db, repoId);
+      if (cc.success) complexityCount = cc.symbols;
+    } catch (_) {}
+  }
 
-  return { success: true, repo, mode, files_reindexed: reindexed, files_unchanged: unchanged, symbols_extracted: symbolCount, import_edges: importEdges, call_edges: callEdges, complexity_symbols: complexityCount };
+  return {
+    success: true,
+    repo,
+    mode,
+    files_reindexed: reindexed,
+    files_unchanged: unchanged,
+    symbols_extracted: symbolCount,
+    import_edges: importEdges,
+    call_edges: callEdges,
+    complexity_symbols: complexityCount,
+  };
 }
 
 function searchCode(query, repoName, kind, maxResults) {
   ensureDb();
 
-  const ftsQuery = query.replace(/"/g, '\'\'').split(/\s+/).join(' OR ');
+  const ftsQuery = query.replace(/"/g, "''").split(/\s+/).join(' OR ');
 
   let sql = `
     SELECT
@@ -1886,8 +2116,14 @@ function searchCode(query, repoName, kind, maxResults) {
   `;
   const params = [ftsQuery];
 
-  if (repoName) { sql += ' AND r.name = ?'; params.push(repoName); }
-  if (kind) { sql += ' AND s.kind = ?'; params.push(kind); }
+  if (repoName) {
+    sql += ' AND r.name = ?';
+    params.push(repoName);
+  }
+  if (kind) {
+    sql += ' AND s.kind = ?';
+    params.push(kind);
+  }
 
   sql += ' ORDER BY bm25(code_symbols_fts) LIMIT ?';
   params.push(maxResults);
@@ -1919,7 +2155,7 @@ function getCodeSource(repoName, filePath, symbolName) {
      JOIN code_files f ON f.id = s.file_id
      JOIN code_repos r ON r.id = s.repo_id
      WHERE r.name = ? AND s.file_path = ? AND s.name = ?`,
-    [repoName, filePath, symbolName]
+    [repoName, filePath, symbolName],
   );
   if (rows.length === 0) return { success: false, error: 'Symbol not found' };
 
@@ -1944,7 +2180,7 @@ function getCodeSource(repoName, filePath, symbolName) {
 function listCodeReposInternal() {
   ensureDb();
   const repos = sqlJson(
-    'SELECT name, path, file_count, symbol_count, indexed_at, updated_at FROM code_repos ORDER BY updated_at DESC'
+    'SELECT name, path, file_count, symbol_count, indexed_at, updated_at FROM code_repos ORDER BY updated_at DESC',
   );
   return { repos, total: repos.length };
 }
@@ -2008,7 +2244,7 @@ const commands = {
   'suggest-topic-key': suggestTopicKey,
   'save-prompt': savePrompt,
   'capture-passive': capturePassive,
-  stats,
+  getStats,
   'session-summary': sessionSummary,
   'link-symbol': linkSymbol,
   'auto-link': autoLink,
@@ -2048,14 +2284,16 @@ const commands = {
   },
   'search-code': (args) => {
     const query = args.query;
-    if (!query) jsonErr('Usage: node memory-store.js search-code --query <text> [--repo NAME] [--kind TYPE] [--max-results N]');
+    if (!query)
+      jsonErr('Usage: node memory-store.js search-code --query <text> [--repo NAME] [--kind TYPE] [--max-results N]');
     return searchCode(query, args.repo || null, args.kind || null, parseInt(args['max-results'] || '20', 10));
   },
   'get-code-source': (args) => {
     const repo = args.repo;
     const file = args.file;
     const name = args.name;
-    if (!repo || !file || !name) jsonErr('Usage: node memory-store.js get-code-source --repo NAME --file PATH --name SYMBOL');
+    if (!repo || !file || !name)
+      jsonErr('Usage: node memory-store.js get-code-source --repo NAME --file PATH --name SYMBOL');
     return getCodeSource(repo, file, name);
   },
   'list-code-repos': () => listCodeReposInternal(),
@@ -2069,31 +2307,44 @@ const commands = {
 
   'import-graph': (args) => {
     const repo = args.repo;
-    if (!repo) jsonErr('Usage: node memory-store.js import-graph --repo X [--file F] [--direction imports|importers|both] [--depth N]');
+    if (!repo)
+      jsonErr(
+        'Usage: node memory-store.js import-graph --repo X [--file F] [--direction imports|importers|both] [--depth N]',
+      );
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
     if (!repoRow.length) jsonErr(`Repo "${repo}" not found. Run index-repo first.`);
     return codeAnalysis.getImportGraph(db, repoRow[0].id, {
-      file: args.file || null, direction: args.direction || 'both', depth: parseInt(args.depth || '1'),
+      file: args.file || null,
+      direction: args.direction || 'both',
+      depth: parseInt(args.depth || '1'),
     });
   },
 
   'call-hierarchy': (args) => {
-    const repo = args.repo; const symbol = args.symbol;
-    if (!repo || !symbol) jsonErr('Usage: node memory-store.js call-hierarchy --symbol S --repo X [--direction callers|callees] [--depth N]');
+    const repo = args.repo;
+    const symbol = args.symbol;
+    if (!repo || !symbol)
+      jsonErr(
+        'Usage: node memory-store.js call-hierarchy --symbol S --repo X [--direction callers|callees] [--depth N]',
+      );
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
     if (!repoRow.length) jsonErr(`Repo "${repo}" not found`);
     return codeAnalysis.getCallHierarchy(db, repoRow[0].id, {
-      symbol, direction: args.direction || 'callers', depth: parseInt(args.depth || '3'),
+      symbol,
+      direction: args.direction || 'callers',
+      depth: parseInt(args.depth || '3'),
     });
   },
 
   'blast-radius': (args) => {
-    const repo = args.repo; const symbol = args.symbol;
+    const repo = args.repo;
+    const symbol = args.symbol;
     if (!repo || !symbol) jsonErr('Usage: node memory-store.js blast-radius --symbol S --repo X [--depth N]');
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
     if (!repoRow.length) jsonErr(`Repo "${repo}" not found`);
     return codeAnalysis.getBlastRadius(db, repoRow[0].id, {
-      symbol, depth: parseInt(args.depth || '3'),
+      symbol,
+      depth: parseInt(args.depth || '3'),
     });
   },
 
@@ -2108,32 +2359,41 @@ const commands = {
     });
   },
 
-  'complexity': (args) => {
+  complexity: (args) => {
     const repo = args.repo;
     if (!repo) jsonErr('Usage: node memory-store.js complexity --repo X [--symbol S | --file F]');
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
     if (!repoRow.length) jsonErr(`Repo "${repo}" not found`);
-    const symbolId = args.symbol ? db.prepare('SELECT id FROM code_symbols WHERE repo_id = ? AND name = ?').get(repoRow[0].id, args.symbol)?.id : null;
+    const symbolId = args.symbol
+      ? db.prepare('SELECT id FROM code_symbols WHERE repo_id = ? AND name = ?').get(repoRow[0].id, args.symbol)?.id
+      : null;
     return codeAnalysis.getComplexity(db, repoRow[0].id, symbolId);
   },
 
-  'outline': (args) => {
-    const repo = args.repo; const file = args.file;
+  outline: (args) => {
+    const repo = args.repo;
+    const file = args.file;
     if (!repo || !file) jsonErr('Usage: node memory-store.js outline --file F --repo X');
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
     if (!repoRow.length) jsonErr(`Repo "${repo}" not found`);
     return codeAnalysis.getFileOutline(db, repoRow[0].id, file);
   },
 
-  'churn': (args) => {
+  churn: (args) => {
     const repo = args.repo;
     if (!repo) jsonErr('Usage: node memory-store.js churn --repo X [--file F] [--days 90] [--refresh]');
     const repoRow = sqlJson('SELECT id, path FROM code_repos WHERE name = ?', [repo]);
     if (!repoRow.length) jsonErr(`Repo "${repo}" not found`);
-    return gitAnalysis.getChurn(db, repoRow[0].id, args.file || '__all__', parseInt(args.days || '90'), args.refresh === 'true');
+    return gitAnalysis.getChurn(
+      db,
+      repoRow[0].id,
+      args.file || '__all__',
+      parseInt(args.days || '90'),
+      args.refresh === 'true',
+    );
   },
 
-  'hotspots': (args) => {
+  hotspots: (args) => {
     const repo = args.repo;
     if (!repo) jsonErr('Usage: node memory-store.js hotspots --repo X [--top N] [--days N]');
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
@@ -2144,7 +2404,7 @@ const commands = {
     });
   },
 
-  'cycles': (args) => {
+  cycles: (args) => {
     const repo = args.repo;
     if (!repo) jsonErr('Usage: node memory-store.js cycles --repo X');
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
@@ -2152,7 +2412,7 @@ const commands = {
     return codeAnalysis.getDependencyCycles(db, repoRow[0].id);
   },
 
-  'importance': (args) => {
+  importance: (args) => {
     const repo = args.repo;
     if (!repo) jsonErr('Usage: node memory-store.js importance --repo X [--top N] [--scope dir/]');
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
@@ -2163,9 +2423,10 @@ const commands = {
     });
   },
 
-  'coupling': (args) => {
+  coupling: (args) => {
     const repo = args.repo;
-    if (!repo) jsonErr('Usage: node memory-store.js coupling --repo X [--file F] [--sort-by instability|afferent|efferent]');
+    if (!repo)
+      jsonErr('Usage: node memory-store.js coupling --repo X [--file F] [--sort-by instability|afferent|efferent]');
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
     if (!repoRow.length) jsonErr(`Repo "${repo}" not found. Run index-repo first.`);
     return codeAnalysis.getCouplingMetrics(db, repoRow[0].id, {
@@ -2175,9 +2436,10 @@ const commands = {
     });
   },
 
-  'extractable': (args) => {
+  extractable: (args) => {
     const repo = args.repo;
-    if (!repo) jsonErr('Usage: node memory-store.js extractable --repo X [--min-complexity N] [--min-callers N] [--top N]');
+    if (!repo)
+      jsonErr('Usage: node memory-store.js extractable --repo X [--min-complexity N] [--min-callers N] [--top N]');
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
     if (!repoRow.length) jsonErr(`Repo "${repo}" not found. Run index-repo first.`);
     return codeAnalysis.getExtractionCandidates(db, repoRow[0].id, {
@@ -2187,10 +2449,11 @@ const commands = {
     });
   },
 
-  'hierarchy': (args) => {
+  hierarchy: (args) => {
     const repo = args.repo;
     const symbol = args.symbol || args.class;
-    if (!repo) jsonErr('Usage: node memory-store.js hierarchy --repo X --symbol S [--direction both|ancestors|descendants]');
+    if (!repo)
+      jsonErr('Usage: node memory-store.js hierarchy --repo X --symbol S [--direction both|ancestors|descendants]');
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
     if (!repoRow.length) jsonErr(`Repo "${repo}" not found. Run index-repo first.`);
     return codeAnalysis.getClassHierarchy(db, repoRow[0].id, {
@@ -2202,7 +2465,8 @@ const commands = {
 
   'signal-chains': (args) => {
     const repo = args.repo;
-    if (!repo) jsonErr('Usage: node memory-store.js signal-chains --repo X [--kind http|cli] [--symbol S] [--max-depth N]');
+    if (!repo)
+      jsonErr('Usage: node memory-store.js signal-chains --repo X [--kind http|cli] [--symbol S] [--max-depth N]');
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
     if (!repoRow.length) jsonErr(`Repo "${repo}" not found. Run index-repo first.`);
     return codeAnalysis.getSignalChains(db, repoRow[0].id, {
@@ -2219,7 +2483,11 @@ const commands = {
     if (!repoRow.length) jsonErr(`Repo "${repo}" not found. Run index-repo first.`);
     let rules = null;
     if (args.rules) {
-      try { rules = JSON.parse(args.rules); } catch (e) { jsonErr(`Invalid rules JSON: ${e.message}`); }
+      try {
+        rules = JSON.parse(args.rules);
+      } catch (e) {
+        jsonErr(`Invalid rules JSON: ${e.message}`);
+      }
     }
     return codeAnalysis.getLayerViolations(db, repoRow[0].id, { rules });
   },
@@ -2266,7 +2534,8 @@ const commands = {
   // ── v5: Doc indexing subcommands ──
 
   'index-docs': (args) => {
-    const docPath = args.path; const name = args.name;
+    const docPath = args.path;
+    const name = args.name;
     if (!docPath || !name) jsonErr('Usage: node memory-store.js index-docs --path P --name X [--ignore GLOB]');
     return docIndexer.indexDocs(db, path.resolve(docPath), name, args.ignore || null);
   },
@@ -2280,12 +2549,14 @@ const commands = {
   },
 
   'doc-search': (args) => {
-    const repo = args.repo; const query = args.query;
+    const repo = args.repo;
+    const query = args.query;
     if (!repo || !query) jsonErr('Usage: node memory-store.js doc-search --query Q --repo X [--level N] [--role TYPE]');
     const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
     if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found`);
     return docIndexer.searchDocs(db, repoRow[0].id, query, {
-      level: args.level ? parseInt(args.level) : null, role: args.role || null,
+      level: args.level ? parseInt(args.level) : null,
+      role: args.role || null,
     });
   },
 
@@ -2297,8 +2568,9 @@ const commands = {
     return docIndexer.getDocOutline(db, repoRow[0].id, args.file || null);
   },
 
-  'backlinks': (args) => {
-    const repo = args.repo; const filePath = args.path;
+  backlinks: (args) => {
+    const repo = args.repo;
+    const filePath = args.path;
     if (!repo || !filePath) jsonErr('Usage: node memory-store.js backlinks --repo X --path F');
     const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
     if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found`);
@@ -2313,7 +2585,7 @@ const commands = {
     return { broken_links: docIndexer.getBrokenLinks(db, repoRow[0].id) };
   },
 
-  'glossary': (args) => {
+  glossary: (args) => {
     const repo = args.repo;
     if (!repo) jsonErr('Usage: node memory-store.js glossary --repo X [--term T]');
     const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
@@ -2322,7 +2594,8 @@ const commands = {
   },
 
   'tutorial-path': (args) => {
-    const repo = args.repo; const section = args.section;
+    const repo = args.repo;
+    const section = args.section;
     if (!repo || !section) jsonErr('Usage: node memory-store.js tutorial-path --section S --repo X');
     const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
     if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found`);
@@ -2330,7 +2603,8 @@ const commands = {
   },
 
   'code-examples': (args) => {
-    const repo = args.repo; const query = args.query;
+    const repo = args.repo;
+    const query = args.query;
     if (!repo || !query) jsonErr('Usage: node memory-store.js code-examples --query Q --repo X [--lang X]');
     const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
     if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found`);
@@ -2338,11 +2612,49 @@ const commands = {
   },
 };
 
+/* ── commands requiring native SQLite (db.prepare) ─────── */
+const _NATIVE_DB_COMMANDS = new Set([
+  'import-graph',
+  'call-hierarchy',
+  'blast-radius',
+  'dead-code',
+  'complexity',
+  'outline',
+  'churn',
+  'hotspots',
+  'cycles',
+  'importance',
+  'coupling',
+  'extractable',
+  'hierarchy',
+  'signal-chains',
+  'layer-violations',
+  'index-docs',
+  'reindex-docs',
+  'doc-search',
+  'doc-outline',
+  'backlinks',
+  'broken-links',
+  'glossary',
+  'tutorial-path',
+  'code-examples',
+  'doc-orphans',
+  'doc-coverage',
+  'stale-pages',
+  'doc-duplicates',
+]);
+
 const args = parseArgs(process.argv);
 const cmd = process.argv[2];
 
 (async () => {
   ensureDb();
+
+  if (_NATIVE_DB_COMMANDS.has(cmd) && _engine === 'cli') {
+    jsonErr(
+      'This command requires a native SQLite backend (Node.js ≥ 22.5 or better-sqlite3). The CLI fallback is not supported.',
+    );
+  }
 
   if (cmd && commands[cmd]) {
     const result = await commands[cmd](args);
@@ -2350,7 +2662,8 @@ const cmd = process.argv[2];
   } else {
     console.error(
       'Usage: node memory-store.js <subcommand> [--option value ...]\n' +
-      'Subcommands: ' + Object.keys(commands).join(', ')
+        'Subcommands: ' +
+        Object.keys(commands).join(', '),
     );
     process.exit(1);
   }

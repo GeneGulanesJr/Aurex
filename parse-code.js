@@ -20,18 +20,18 @@ const GRAMMAR_DIR = path.resolve(__dirname, 'grammars');
 
 // Language map: file extension → { grammarFile, languageName, parserKey }
 const LANGUAGE_MAP = {
-  '.js':   { grammarFile: 'javascript.wasm',         languageName: 'javascript', parserKey: 'javascript' },
-  '.mjs':  { grammarFile: 'javascript.wasm',         languageName: 'javascript', parserKey: 'javascript' },
-  '.cjs':  { grammarFile: 'javascript.wasm',         languageName: 'javascript', parserKey: 'javascript' },
-  '.ts':   { grammarFile: 'typescript.wasm',          languageName: 'typescript', parserKey: 'typescript' },
-  '.mts':  { grammarFile: 'typescript.wasm',          languageName: 'typescript', parserKey: 'typescript' },
-  '.cts':  { grammarFile: 'typescript.wasm',          languageName: 'typescript', parserKey: 'typescript' },
-  '.tsx':  { grammarFile: 'tsx.wasm',                 languageName: 'typescript', parserKey: 'tsx' },
-  '.py':   { grammarFile: 'tree-sitter-python.wasm',  languageName: 'python',     parserKey: 'python' },
-  '.pyw':  { grammarFile: 'tree-sitter-python.wasm',  languageName: 'python',     parserKey: 'python' },
-  '.go':   { grammarFile: 'tree-sitter-go.wasm',      languageName: 'go',         parserKey: 'go' },
-  '.rs':   { grammarFile: 'tree-sitter-rust.wasm',    languageName: 'rust',       parserKey: 'rust' },
-  '.sql':  { grammarFile: 'sql.wasm',                 languageName: 'sql',        parserKey: 'sql' },
+  '.js': { grammarFile: 'javascript.wasm', languageName: 'javascript', parserKey: 'javascript' },
+  '.mjs': { grammarFile: 'javascript.wasm', languageName: 'javascript', parserKey: 'javascript' },
+  '.cjs': { grammarFile: 'javascript.wasm', languageName: 'javascript', parserKey: 'javascript' },
+  '.ts': { grammarFile: 'typescript.wasm', languageName: 'typescript', parserKey: 'typescript' },
+  '.mts': { grammarFile: 'typescript.wasm', languageName: 'typescript', parserKey: 'typescript' },
+  '.cts': { grammarFile: 'typescript.wasm', languageName: 'typescript', parserKey: 'typescript' },
+  '.tsx': { grammarFile: 'tsx.wasm', languageName: 'typescript', parserKey: 'tsx' },
+  '.py': { grammarFile: 'tree-sitter-python.wasm', languageName: 'python', parserKey: 'python' },
+  '.pyw': { grammarFile: 'tree-sitter-python.wasm', languageName: 'python', parserKey: 'python' },
+  '.go': { grammarFile: 'tree-sitter-go.wasm', languageName: 'go', parserKey: 'go' },
+  '.rs': { grammarFile: 'tree-sitter-rust.wasm', languageName: 'rust', parserKey: 'rust' },
+  '.sql': { grammarFile: 'sql.wasm', languageName: 'sql', parserKey: 'sql' },
 };
 
 // ── Module state ──
@@ -39,8 +39,8 @@ let _ready = false;
 let _initPromise = null;
 let _ParserClass = null;
 let _LanguageClass = null;
-let _parsers = {};   // parserKey → Parser instance
-let _languages = {};  // parserKey → Language object
+let _parsers = {}; // parserKey → Parser instance
+let _languages = {}; // parserKey → Language object
 
 /**
  * Initialize web-tree-sitter and load all available grammar .wasm files.
@@ -59,8 +59,7 @@ async function init() {
       await _ParserClass.init();
 
       // Load available grammars (key → wasm filename)
-      const grammarEntries = Object.entries(LANGUAGE_MAP)
-        .map(([, config]) => [config.parserKey, config.grammarFile]);
+      const grammarEntries = Object.entries(LANGUAGE_MAP).map(([, config]) => [config.parserKey, config.grammarFile]);
       // Deduplicate by parserKey
       const uniqueEntries = [...new Map(grammarEntries).entries()];
 
@@ -106,9 +105,7 @@ function info() {
     ready: _ready,
     grammars: Object.keys(_parsers),
     grammarDir: GRAMMAR_DIR,
-    availableFiles: fs.existsSync(GRAMMAR_DIR)
-      ? fs.readdirSync(GRAMMAR_DIR).filter(f => f.endsWith('.wasm'))
-      : [],
+    availableFiles: fs.existsSync(GRAMMAR_DIR) ? fs.readdirSync(GRAMMAR_DIR).filter((f) => f.endsWith('.wasm')) : [],
   };
 }
 
@@ -154,15 +151,15 @@ function parseFile(filePath) {
 // ═══════════════════════════════════════════════════════════
 
 const _JS_TS_SYMBOL_NODES = {
-  'function_declaration': 'function',
-  'generator_function_declaration': 'function',
-  'class_declaration': 'class',
-  'method_definition': 'method',
-  'interface_declaration': 'interface',
-  'type_alias_declaration': 'type',
-  'enum_declaration': 'enum',
+  function_declaration: 'function',
+  generator_function_declaration: 'function',
+  class_declaration: 'class',
+  method_definition: 'method',
+  interface_declaration: 'interface',
+  type_alias_declaration: 'type',
+  enum_declaration: 'enum',
   // v5.1: additional symbol types
-  'public_field_definition': 'property',
+  public_field_definition: 'property',
   // v5.3: removed 'assignment_expression' — reassignments like `match = ...` are not top-level symbols
 };
 
@@ -208,7 +205,10 @@ function _getDocstring(node) {
   const parent = node.parent;
   let idx = -1;
   for (let i = 0; i < parent.childCount; i++) {
-    if (parent.child(i).id === node.id) { idx = i; break; }
+    if (parent.child(i).id === node.id) {
+      idx = i;
+      break;
+    }
   }
   if (idx <= 0) return '';
   const prev = parent.child(idx - 1);
@@ -256,7 +256,6 @@ function _getEndLineNumber(node) {
   return node.endPosition.row + 1;
 }
 
-
 // v5.3: Find containing context name for inner functions/methods
 function _getContextName(node) {
   let current = node.parent;
@@ -297,8 +296,11 @@ function _getExtendsClass(node) {
 
 // v5.3: Scope-creating node types
 const _SCOPE_NODES = new Set([
-  'function_declaration', 'generator_function_declaration', 'method_definition',
-  'arrow_function', 'function_expression',
+  'function_declaration',
+  'generator_function_declaration',
+  'method_definition',
+  'arrow_function',
+  'function_expression',
 ]);
 
 function _extractJsTsSymbols(filePath, sourceStr, parser, languageName) {
@@ -325,11 +327,18 @@ function _extractJsTsSymbols(filePath, sourceStr, parser, languageName) {
           }
           const qualified = parentName ? `${parentName}.${name}` : name;
           symbols.push({
-            name, kind, language: languageName, file: filePath,
-            signature: _getSignature(node, sourceStr), qualified_name: qualified,
-            start_line: _getLineNumber(node), end_line: _getEndLineNumber(node),
-            start_byte: node.startIndex, end_byte: node.endIndex,
-            docstring: _getDocstring(node), body_preview: _getBodyPreview(node, sourceStr),
+            name,
+            kind,
+            language: languageName,
+            file: filePath,
+            signature: _getSignature(node, sourceStr),
+            qualified_name: qualified,
+            start_line: _getLineNumber(node),
+            end_line: _getEndLineNumber(node),
+            start_byte: node.startIndex,
+            end_byte: node.endIndex,
+            docstring: _getDocstring(node),
+            body_preview: _getBodyPreview(node, sourceStr),
             parent_name: parentName,
           });
         }
@@ -339,7 +348,10 @@ function _extractJsTsSymbols(filePath, sourceStr, parser, languageName) {
       if (parent && parent.type === 'variable_declarator') {
         let name = null;
         for (const child of parent.children) {
-          if (child.type === 'identifier') { name = child.text; break; }
+          if (child.type === 'identifier') {
+            name = child.text;
+            break;
+          }
         }
         if (name) {
           const key = `${name}:function:${parent.startIndex}`;
@@ -348,11 +360,18 @@ function _extractJsTsSymbols(filePath, sourceStr, parser, languageName) {
             const parentName = _getParentClassName(node);
             const qualified = parentName ? `${parentName}.${name}` : name;
             symbols.push({
-              name, kind: 'function', language: languageName, file: filePath,
-              signature: _getSignature(parent, sourceStr), qualified_name: qualified,
-              start_line: _getLineNumber(parent), end_line: _getEndLineNumber(parent),
-              start_byte: parent.startIndex, end_byte: parent.endIndex,
-              docstring: _getDocstring(parent), body_preview: _getBodyPreview(node, sourceStr),
+              name,
+              kind: 'function',
+              language: languageName,
+              file: filePath,
+              signature: _getSignature(parent, sourceStr),
+              qualified_name: qualified,
+              start_line: _getLineNumber(parent),
+              end_line: _getEndLineNumber(parent),
+              start_byte: parent.startIndex,
+              end_byte: parent.endIndex,
+              docstring: _getDocstring(parent),
+              body_preview: _getBodyPreview(node, sourceStr),
               parent_name: parentName,
             });
           }
@@ -362,32 +381,51 @@ function _extractJsTsSymbols(filePath, sourceStr, parser, languageName) {
       let name = null;
       let kind = 'constant';
       for (const child of node.children) {
-        if (child.type === 'identifier') { name = child.text; break; }
+        if (child.type === 'identifier') {
+          name = child.text;
+          break;
+        }
       }
       if (name) {
         const parent = node.parent;
         let isArrowFn = false;
         if (parent && (parent.type === 'lexical_declaration' || parent.type === 'variable_declaration')) {
           for (const child of node.children) {
-            if (child.type === 'arrow_function' || child.type === 'function_expression') { isArrowFn = true; break; }
+            if (child.type === 'arrow_function' || child.type === 'function_expression') {
+              isArrowFn = true;
+              break;
+            }
           }
         }
-        if (isArrowFn) { kind = 'function'; }
-        else if (/^[A-Z_][A-Z0-9_]*$/.test(name) || name.startsWith('_')) { kind = 'constant'; }
-        else { kind = 'constant'; }
+        if (isArrowFn) {
+          kind = 'function';
+        } else if (/^[A-Z_][A-Z0-9_]*$/.test(name) || name.startsWith('_')) {
+          kind = 'constant';
+        } else {
+          kind = 'constant';
+        }
         const key = `${name}:${kind}:${node.startIndex}`;
         if (!seen.has(key)) {
           seen.add(key);
           const parentName = _getParentClassName(node);
-          const lineText = sourceStr.substring(node.startIndex, Math.min(node.startIndex + 200, sourceStr.length)).split('\n')[0];
+          const lineText = sourceStr
+            .substring(node.startIndex, Math.min(node.startIndex + 200, sourceStr.length))
+            .split('\n')[0];
           const sig = (parent ? sourceStr.substring(parent.startIndex, parent.endIndex) : lineText).split('\n')[0];
           symbols.push({
-            name, kind, language: languageName, file: filePath,
+            name,
+            kind,
+            language: languageName,
+            file: filePath,
             signature: sig.length > 200 ? sig.slice(0, 197) + '...' : sig,
             qualified_name: parentName ? `${parentName}.${name}` : name,
-            start_line: _getLineNumber(node), end_line: _getEndLineNumber(node),
-            start_byte: node.startIndex, end_byte: node.endIndex,
-            docstring: _getDocstring(node), body_preview: '', parent_name: parentName,
+            start_line: _getLineNumber(node),
+            end_line: _getEndLineNumber(node),
+            start_byte: node.startIndex,
+            end_byte: node.endIndex,
+            docstring: _getDocstring(node),
+            body_preview: '',
+            parent_name: parentName,
           });
         }
       }
@@ -399,11 +437,19 @@ function _extractJsTsSymbols(filePath, sourceStr, parser, languageName) {
           if (!seen.has(key)) {
             seen.add(key);
             symbols.push({
-              name, kind: 'export', language: languageName, file: filePath,
-              signature: `export default ${name}`, qualified_name: name,
-              start_line: _getLineNumber(node), end_line: _getEndLineNumber(node),
-              start_byte: node.startIndex, end_byte: node.endIndex,
-              docstring: '', body_preview: '', parent_name: '',
+              name,
+              kind: 'export',
+              language: languageName,
+              file: filePath,
+              signature: `export default ${name}`,
+              qualified_name: name,
+              start_line: _getLineNumber(node),
+              end_line: _getEndLineNumber(node),
+              start_byte: node.startIndex,
+              end_byte: node.endIndex,
+              docstring: '',
+              body_preview: '',
+              parent_name: '',
             });
           }
         }
@@ -426,9 +472,9 @@ function _extractJsTsSymbols(filePath, sourceStr, parser, languageName) {
 // ═══════════════════════════════════════════════════════════
 
 const _PY_SYMBOL_NODES = {
-  'function_definition': 'function',
-  'class_definition': 'class',
-  'decorator': 'decorator',
+  function_definition: 'function',
+  class_definition: 'class',
+  decorator: 'decorator',
 };
 
 const _PY_SCOPE_NODES = new Set(['function_definition', 'class_definition', 'lambda']);
@@ -444,7 +490,10 @@ function _extractPythonSymbols(filePath, sourceStr, parser) {
     if (kind) {
       let name = '';
       for (const child of node.children) {
-        if (child.type === 'identifier') { name = child.text; break; }
+        if (child.type === 'identifier') {
+          name = child.text;
+          break;
+        }
       }
       if (name) {
         const key = `${name}:${kind}:${node.startIndex}`;
@@ -455,19 +504,33 @@ function _extractPythonSymbols(filePath, sourceStr, parser) {
             let p = node.parent;
             while (p) {
               if (p.type === 'class_definition') {
-                for (const c of p.children) { if (c.type === 'identifier') { parentName = c.text; break; } }
+                for (const c of p.children) {
+                  if (c.type === 'identifier') {
+                    parentName = c.text;
+                    break;
+                  }
+                }
                 break;
               }
               p = p.parent;
             }
           }
           symbols.push({
-            name, kind, language: 'python', file: filePath,
-            signature: sourceStr.substring(node.startIndex, Math.min(node.startIndex + 200, node.endIndex)).split('\n')[0],
+            name,
+            kind,
+            language: 'python',
+            file: filePath,
+            signature: sourceStr
+              .substring(node.startIndex, Math.min(node.startIndex + 200, node.endIndex))
+              .split('\n')[0],
             qualified_name: parentName ? `${parentName}.${name}` : name,
-            start_line: node.startPosition.row + 1, end_line: node.endPosition.row + 1,
-            start_byte: node.startIndex, end_byte: node.endIndex,
-            docstring: '', body_preview: '', parent_name: parentName,
+            start_line: node.startPosition.row + 1,
+            end_line: node.endPosition.row + 1,
+            start_byte: node.startIndex,
+            end_byte: node.endIndex,
+            docstring: '',
+            body_preview: '',
+            parent_name: parentName,
           });
         }
       }
@@ -497,9 +560,9 @@ function _extractPythonSymbols(filePath, sourceStr, parser) {
 // ═══════════════════════════════════════════════════════════
 
 const _GO_SYMBOL_NODES = {
-  'function_declaration': 'function',
-  'method_declaration': 'function',
-  'type_declaration': 'type',
+  function_declaration: 'function',
+  method_declaration: 'function',
+  type_declaration: 'type',
 };
 
 function _extractGoSymbols(filePath, sourceStr, parser) {
@@ -513,18 +576,31 @@ function _extractGoSymbols(filePath, sourceStr, parser) {
     if (node.type === 'function_declaration') {
       let name = '';
       for (const child of node.children) {
-        if (child.type === 'identifier') { name = child.text; break; }
+        if (child.type === 'identifier') {
+          name = child.text;
+          break;
+        }
       }
       if (name) {
         const key = `${name}:function:${node.startIndex}`;
         if (!seen.has(key)) {
           seen.add(key);
           symbols.push({
-            name, kind: 'function', language: 'go', file: filePath,
-            signature: sourceStr.substring(node.startIndex, Math.min(node.startIndex + 200, node.endIndex)).split('\n')[0],
-            qualified_name: name, start_line: node.startPosition.row + 1, end_line: node.endPosition.row + 1,
-            start_byte: node.startIndex, end_byte: node.endIndex,
-            docstring: '', body_preview: '', parent_name: '',
+            name,
+            kind: 'function',
+            language: 'go',
+            file: filePath,
+            signature: sourceStr
+              .substring(node.startIndex, Math.min(node.startIndex + 200, node.endIndex))
+              .split('\n')[0],
+            qualified_name: name,
+            start_line: node.startPosition.row + 1,
+            end_line: node.endPosition.row + 1,
+            start_byte: node.startIndex,
+            end_byte: node.endIndex,
+            docstring: '',
+            body_preview: '',
+            parent_name: '',
           });
         }
       }
@@ -560,12 +636,21 @@ function _extractGoSymbols(filePath, sourceStr, parser) {
         if (!seen.has(key)) {
           seen.add(key);
           symbols.push({
-            name, kind: 'function', language: 'go', file: filePath,
-            signature: sourceStr.substring(node.startIndex, Math.min(node.startIndex + 200, node.endIndex)).split('\n')[0],
+            name,
+            kind: 'function',
+            language: 'go',
+            file: filePath,
+            signature: sourceStr
+              .substring(node.startIndex, Math.min(node.startIndex + 200, node.endIndex))
+              .split('\n')[0],
             qualified_name: receiver ? `${receiver}.${name}` : name,
-            start_line: node.startPosition.row + 1, end_line: node.endPosition.row + 1,
-            start_byte: node.startIndex, end_byte: node.endIndex,
-            docstring: '', body_preview: '', parent_name: receiver,
+            start_line: node.startPosition.row + 1,
+            end_line: node.endPosition.row + 1,
+            start_byte: node.startIndex,
+            end_byte: node.endIndex,
+            docstring: '',
+            body_preview: '',
+            parent_name: receiver,
           });
         }
       }
@@ -579,11 +664,21 @@ function _extractGoSymbols(filePath, sourceStr, parser) {
           if (!seen.has(key)) {
             seen.add(key);
             symbols.push({
-              name, kind: 'type', language: 'go', file: filePath,
-              signature: sourceStr.substring(node.startIndex, Math.min(node.startIndex + 200, node.endIndex)).split('\n')[0],
-              qualified_name: name, start_line: node.startPosition.row + 1, end_line: node.endPosition.row + 1,
-              start_byte: node.startIndex, end_byte: node.endIndex,
-              docstring: '', body_preview: '', parent_name: '',
+              name,
+              kind: 'type',
+              language: 'go',
+              file: filePath,
+              signature: sourceStr
+                .substring(node.startIndex, Math.min(node.startIndex + 200, node.endIndex))
+                .split('\n')[0],
+              qualified_name: name,
+              start_line: node.startPosition.row + 1,
+              end_line: node.endPosition.row + 1,
+              start_byte: node.startIndex,
+              end_byte: node.endIndex,
+              docstring: '',
+              body_preview: '',
+              parent_name: '',
             });
           }
           break;
@@ -606,14 +701,14 @@ function _extractGoSymbols(filePath, sourceStr, parser) {
 // ═══════════════════════════════════════════════════════════
 
 const _RUST_SYMBOL_NODES = {
-  'function_item': 'function',
-  'struct_item': 'class',
-  'enum_item': 'enum',
-  'trait_item': 'interface',
-  'impl_item': 'class',
-  'type_item': 'type',
-  'constant_item': 'constant',
-  'static_item': 'constant',
+  function_item: 'function',
+  struct_item: 'class',
+  enum_item: 'enum',
+  trait_item: 'interface',
+  impl_item: 'class',
+  type_item: 'type',
+  constant_item: 'constant',
+  static_item: 'constant',
 };
 
 const _RUST_SCOPE_NODES = new Set(['function_item', 'impl_item', 'closure_expression', 'block']);
@@ -630,7 +725,8 @@ function _extractRustSymbols(filePath, sourceStr, parser) {
       let name = '';
       for (const child of node.children) {
         if (child.type === 'identifier' || child.type === 'type_identifier') {
-          name = child.text; break;
+          name = child.text;
+          break;
         }
       }
       // impl blocks have a trait name as type_identifier
@@ -648,11 +744,21 @@ function _extractRustSymbols(filePath, sourceStr, parser) {
           if (!seen.has(key)) {
             seen.add(key);
             symbols.push({
-              name, kind: 'class', language: 'rust', file: filePath,
-              signature: sourceStr.substring(node.startIndex, Math.min(node.startIndex + 200, node.endIndex)).split('\n')[0],
-              qualified_name: name, start_line: node.startPosition.row + 1, end_line: node.endPosition.row + 1,
-              start_byte: node.startIndex, end_byte: node.endIndex,
-              docstring: '', body_preview: '', parent_name: '',
+              name,
+              kind: 'class',
+              language: 'rust',
+              file: filePath,
+              signature: sourceStr
+                .substring(node.startIndex, Math.min(node.startIndex + 200, node.endIndex))
+                .split('\n')[0],
+              qualified_name: name,
+              start_line: node.startPosition.row + 1,
+              end_line: node.endPosition.row + 1,
+              start_byte: node.startIndex,
+              end_byte: node.endIndex,
+              docstring: '',
+              body_preview: '',
+              parent_name: '',
             });
           }
         }
@@ -662,19 +768,31 @@ function _extractRustSymbols(filePath, sourceStr, parser) {
           if (child.type === 'function_item' || child.type === 'function_signature_item') {
             let methodName = '';
             for (const mc of child.children) {
-              if (mc.type === 'identifier') { methodName = mc.text; break; }
+              if (mc.type === 'identifier') {
+                methodName = mc.text;
+                break;
+              }
             }
             if (methodName) {
               const key = `${implName}.${methodName}:function:${child.startIndex}`;
               if (!seen.has(key)) {
                 seen.add(key);
                 symbols.push({
-                  name: methodName, kind: 'function', language: 'rust', file: filePath,
-                  signature: sourceStr.substring(child.startIndex, Math.min(child.startIndex + 200, child.endIndex)).split('\n')[0],
+                  name: methodName,
+                  kind: 'function',
+                  language: 'rust',
+                  file: filePath,
+                  signature: sourceStr
+                    .substring(child.startIndex, Math.min(child.startIndex + 200, child.endIndex))
+                    .split('\n')[0],
                   qualified_name: implName ? `${implName}.${methodName}` : methodName,
-                  start_line: child.startPosition.row + 1, end_line: child.endPosition.row + 1,
-                  start_byte: child.startIndex, end_byte: child.endIndex,
-                  docstring: '', body_preview: '', parent_name: implName,
+                  start_line: child.startPosition.row + 1,
+                  end_line: child.endPosition.row + 1,
+                  start_byte: child.startIndex,
+                  end_byte: child.endIndex,
+                  docstring: '',
+                  body_preview: '',
+                  parent_name: implName,
                 });
               }
             }
@@ -695,12 +813,21 @@ function _extractRustSymbols(filePath, sourceStr, parser) {
             }
           }
           symbols.push({
-            name, kind, language: 'rust', file: filePath,
-            signature: sourceStr.substring(node.startIndex, Math.min(node.startIndex + 200, node.endIndex)).split('\n')[0],
+            name,
+            kind,
+            language: 'rust',
+            file: filePath,
+            signature: sourceStr
+              .substring(node.startIndex, Math.min(node.startIndex + 200, node.endIndex))
+              .split('\n')[0],
             qualified_name: parentName ? `${parentName}::${name}` : name,
-            start_line: node.startPosition.row + 1, end_line: node.endPosition.row + 1,
-            start_byte: node.startIndex, end_byte: node.endIndex,
-            docstring: '', body_preview: '', parent_name: parentName,
+            start_line: node.startPosition.row + 1,
+            end_line: node.endPosition.row + 1,
+            start_byte: node.startIndex,
+            end_byte: node.endIndex,
+            docstring: '',
+            body_preview: '',
+            parent_name: parentName,
           });
         }
       }
@@ -715,6 +842,30 @@ function _extractRustSymbols(filePath, sourceStr, parser) {
   tree.delete();
   return symbols;
 }
+
+// SQL statement types mapped from tree-sitter AST node types
+const SQL_STATEMENT_MAP = {
+  select_statement: 'select',
+  insert_statement: 'insert',
+  update_statement: 'update',
+  delete_statement: 'delete',
+  create_table_statement: 'table',
+  create_index_statement: 'index',
+  create_view_statement: 'view',
+  create_function_statement: 'function',
+  create_trigger_statement: 'trigger',
+  alter_table_statement: 'alter',
+  drop_statement: 'drop',
+  // Common alternate names across tree-sitter SQL grammars
+  select: 'select',
+  insert: 'insert',
+  insert_into: 'insert',
+  update: 'update',
+  delete: 'delete',
+  create_table: 'table',
+  create_index: 'index',
+  create_view: 'view',
+};
 
 function _extractSqlSymbols(filePath, sourceStr, parser) {
   const tree = parser.parse(sourceStr);
@@ -742,7 +893,12 @@ function _extractSqlSymbols(filePath, sourceStr, parser) {
       let sig = fullText.split('\n')[0].trim();
       if (sig.length > 200) sig = sig.slice(0, 197) + '...';
 
-      const bodyLines = fullText.split('\n').slice(1).map(l => l.trim()).filter(Boolean).slice(0, 5);
+      const bodyLines = fullText
+        .split('\n')
+        .slice(1)
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .slice(0, 5);
       const bodyPreview = bodyLines.join('\n');
 
       symbols.push({
@@ -784,18 +940,58 @@ function extractCallees(filePath) {
 
   // Skip JS/TS keywords that look like function calls
   const _SKIP = new Set([
-    'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'try', 'catch', 'finally',
-    'class', 'function', 'return', 'throw', 'new', 'typeof', 'instanceof', 'void',
-    'delete', 'in', 'of', 'yield', 'await', 'async', 'export', 'import', 'from',
-    'const', 'let', 'var', 'true', 'false', 'null', 'undefined', 'this', 'super',
-    'constructor', 'extends', 'static', 'get', 'set',
+    'if',
+    'else',
+    'for',
+    'while',
+    'do',
+    'switch',
+    'case',
+    'try',
+    'catch',
+    'finally',
+    'class',
+    'function',
+    'return',
+    'throw',
+    'new',
+    'typeof',
+    'instanceof',
+    'void',
+    'delete',
+    'in',
+    'of',
+    'yield',
+    'await',
+    'async',
+    'export',
+    'import',
+    'from',
+    'const',
+    'let',
+    'var',
+    'true',
+    'false',
+    'null',
+    'undefined',
+    'this',
+    'super',
+    'constructor',
+    'extends',
+    'static',
+    'get',
+    'set',
   ]);
 
   const parser = _parsers[langConfig.parserKey];
   if (!parser) return [];
 
   let source;
-  try { source = fs.readFileSync(filePath, 'utf-8'); } catch (_) { return []; }
+  try {
+    source = fs.readFileSync(filePath, 'utf-8');
+  } catch (_) {
+    return [];
+  }
 
   const tree = parser.parse(source);
   const root = tree.rootNode;

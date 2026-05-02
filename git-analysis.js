@@ -6,6 +6,17 @@
 
 const { execSync } = require('child_process');
 
+// Guard: reject calls when db handle is not available (CLI fallback mode)
+function _requireNativeDb(db) {
+  if (!db || typeof db.prepare !== 'function') {
+    return {
+      error:
+        'This operation requires a native SQLite backend (node:sqlite or better-sqlite3). The CLI fallback does not support churn analysis.',
+    };
+  }
+  return null;
+}
+
 function isGitAvailable() {
   try {
     execSync('git --version', { encoding: 'utf8', timeout: 3000, stdio: 'pipe' });
@@ -16,6 +27,8 @@ function isGitAvailable() {
 }
 
 function getChurn(db, repoId, target, days, refresh) {
+  const guard = _requireNativeDb(db);
+  if (guard) return guard;
   days = days || 90;
   refresh = refresh || false;
 
@@ -30,9 +43,9 @@ function getChurn(db, repoId, target, days, refresh) {
 
   // Check cache
   if (!refresh) {
-    const cached = db.prepare(
-      'SELECT * FROM churn_metrics WHERE repo_id = ? AND file_path = ? AND window_days = ?'
-    ).get(repoId, filePath || '__all__', days);
+    const cached = db
+      .prepare('SELECT * FROM churn_metrics WHERE repo_id = ? AND file_path = ? AND window_days = ?')
+      .get(repoId, filePath || '__all__', days);
     if (cached) return cached;
   }
 
@@ -48,7 +61,7 @@ function computeFileChurn(db, repo, filePath, days, since) {
   try {
     const log = execSync(
       `git -C "${repo.path}" log --follow --format="%H|%an|%aI" --since="${since}" -- "${filePath}"`,
-      { encoding: 'utf8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }
+      { encoding: 'utf8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] },
     ).trim();
 
     if (!log) {
@@ -58,15 +71,19 @@ function computeFileChurn(db, repo, filePath, days, since) {
     }
 
     const lines = log.split('\n');
-    const authors = new Set(lines.map(l => l.split('|')[1]).filter(Boolean));
-    const dates = lines.map(l => l.split('|')[2]).filter(Boolean).sort();
+    const authors = new Set(lines.map((l) => l.split('|')[1]).filter(Boolean));
+    const dates = lines
+      .map((l) => l.split('|')[2])
+      .filter(Boolean)
+      .sort();
 
     let firstSeen = dates[0];
     try {
-      const fullLog = execSync(
-        `git -C "${repo.path}" log --follow --format="%aI" -- "${filePath}"`,
-        { encoding: 'utf8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }
-      ).trim();
+      const fullLog = execSync(`git -C "${repo.path}" log --follow --format="%aI" -- "${filePath}"`, {
+        encoding: 'utf8',
+        timeout: 10000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
       const allDates = fullLog.split('\n').filter(Boolean).sort();
       if (allDates.length) firstSeen = allDates[0];
     } catch (_) {}
@@ -88,10 +105,11 @@ function computeFileChurn(db, repo, filePath, days, since) {
 
 function computeRepoChurn(db, repo, days, since) {
   try {
-    const log = execSync(
-      `git -C "${repo.path}" log --since="${since}" --format="" --name-only`,
-      { encoding: 'utf8', timeout: 30000, stdio: ['pipe', 'pipe', 'pipe'] }
-    ).trim();
+    const log = execSync(`git -C "${repo.path}" log --since="${since}" --format="" --name-only`, {
+      encoding: 'utf8',
+      timeout: 30000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
 
     const fileCounts = new Map();
     for (const line of log.split('\n')) {
@@ -119,8 +137,14 @@ function upsertChurn(db, repoId, filePath, windowDays, metrics) {
     INSERT OR REPLACE INTO churn_metrics (repo_id, file_path, commits, unique_authors, first_seen, last_modified, churn_per_week, window_days)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    repoId, filePath, metrics.commits, metrics.unique_authors,
-    metrics.first_seen, metrics.last_modified, metrics.churn_per_week, windowDays
+    repoId,
+    filePath,
+    metrics.commits,
+    metrics.unique_authors,
+    metrics.first_seen,
+    metrics.last_modified,
+    metrics.churn_per_week,
+    windowDays,
   );
 }
 

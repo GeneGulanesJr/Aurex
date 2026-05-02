@@ -27,18 +27,18 @@ Restart Pi and memory auto-wires on session start.
 
 ## Commands (called by Pi automatically)
 
-| Command | Purpose |
-|---|---|
-| `save` | Save an observation (decision, bugfix, pattern, etc.) |
-| `search` | FTS5 full-text search with hybrid ranking |
-| `search --include-code` | Search both memories AND indexed code symbols |
-| `context` | Load session context by project |
-| `index-repo --path` | Index JS/TS/SQL files with tree-sitter |
-| `search-code --query` | Search code symbols by issue description |
-| `get-code-source --repo --file --name` | Get full source of a code symbol |
-| `list-workspaces` | List all workspaces |
-| `create-workspace --name` | Create a workspace |
-| `archive-workspace --name` | Archive a workspace |
+| Command                                | Purpose                                               |
+| -------------------------------------- | ----------------------------------------------------- |
+| `save`                                 | Save an observation (decision, bugfix, pattern, etc.) |
+| `search`                               | FTS5 full-text search with hybrid ranking             |
+| `search --include-code`                | Search both memories AND indexed code symbols         |
+| `context`                              | Load session context by project                       |
+| `index-repo --path`                    | Index JS/TS/SQL files with tree-sitter                |
+| `search-code --query`                  | Search code symbols by issue description              |
+| `get-code-source --repo --file --name` | Get full source of a code symbol                      |
+| `list-workspaces`                      | List all workspaces                                   |
+| `create-workspace --name`              | Create a workspace                                    |
+| `archive-workspace --name`             | Archive a workspace                                   |
 
 ## Requirements
 

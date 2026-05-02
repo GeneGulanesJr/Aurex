@@ -1,0 +1,51 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "warn",
+    "style": "warn",
+    "pedantic": "off",
+    "restriction": "off",
+    "nursery": "off"
+  },
+  "rules": {
+    "no-underscore-dangle": "off",
+    "no-unused-vars": "warn",
+    "no-console": "off",
+    "no-undef": "off",
+    "no-magic-numbers": "off",
+    "sort-keys": "off",
+    "id-length": "off",
+    "func-style": "off",
+    "prefer-destructuring": "off",
+    "no-ternary": "off",
+    "init-declarations": "off",
+    "max-params": "off",
+    "max-statements": "warn",
+    "curly": "warn",
+    "no-await-in-loop": "warn",
+    "no-nested-ternary": "warn",
+    "no-useless-escape": "off"
+  },
+  "env": {
+    "node": true,
+    "es2024": true
+  },
+  "globals": {
+    "console": "readonly",
+    "process": "readonly",
+    "Buffer": "readonly",
+    "__dirname": "readonly",
+    "__filename": "readonly",
+    "setTimeout": "readonly",
+    "clearTimeout": "readonly",
+    "setInterval": "readonly",
+    "clearInterval": "readonly",
+    "module": "readonly",
+    "require": "readonly",
+    "exports": "readonly"
+  },
+  "ignorePatterns": ["node_modules", "grammars", "docs", ".pi"]
+}

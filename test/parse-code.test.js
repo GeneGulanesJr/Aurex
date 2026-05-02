@@ -1,23 +1,21 @@
 // test/parse-code.test.js
-const { describe, it, before } = require('node:test');
-const assert = require('node:assert/strict');
 const path = require('path');
 const fs = require('fs');
 const codeParser = require('../parse-code');
 
 describe('parse-code', () => {
-  before(async () => {
+  beforeAll(async () => {
     await codeParser.init();
   });
 
   it('should initialize successfully', () => {
-    assert.equal(codeParser.isReady(), true);
+    expect(codeParser.isReady()).toBe(true);
   });
 
   it('should report loaded grammars via info()', () => {
     const info = codeParser.info();
-    assert.equal(info.ready, true);
-    assert.ok(info.grammars.length >= 2, `Expected >= 2 grammars, got ${info.grammars.length}`);
+    expect(info.ready).toBe(true);
+    expect(info.grammars.length).toBeGreaterThanOrEqual(2);
   });
 
   it('should extract JS function declarations', () => {
@@ -26,13 +24,13 @@ describe('parse-code', () => {
     const symbols = codeParser.parseFile(tmpFile);
     fs.unlinkSync(tmpFile);
 
-    assert.ok(symbols.length >= 1, `Expected >= 1 symbol, got ${symbols.length}`);
-    const fn = symbols.find(s => s.name === 'hello');
-    assert.ok(fn, 'hello function not found');
-    assert.equal(fn.kind, 'function');
-    assert.equal(fn.start_line, 1);
-    assert.ok(fn.signature.includes('hello'));
-    assert.equal(fn.language, 'javascript');
+    expect(symbols.length).toBeGreaterThanOrEqual(1);
+    const fn = symbols.find((s) => s.name === 'hello');
+    expect(fn).toBeTruthy();
+    expect(fn.kind).toBe('function');
+    expect(fn.start_line).toBe(1);
+    expect(fn.signature).toContain('hello');
+    expect(fn.language).toBe('javascript');
   });
 
   it('should extract JS class declarations and methods', () => {
@@ -41,13 +39,13 @@ describe('parse-code', () => {
     const symbols = codeParser.parseFile(tmpFile);
     fs.unlinkSync(tmpFile);
 
-    const cls = symbols.find(s => s.name === 'MyClass' && s.kind === 'class');
-    assert.ok(cls, 'MyClass class not found');
+    const cls = symbols.find((s) => s.name === 'MyClass' && s.kind === 'class');
+    expect(cls).toBeTruthy();
 
-    const method = symbols.find(s => s.name === 'greet' && s.kind === 'method');
-    assert.ok(method, 'greet method not found');
-    assert.equal(method.parent_name, 'MyClass');
-    assert.equal(method.qualified_name, 'MyClass.greet');
+    const method = symbols.find((s) => s.name === 'greet' && s.kind === 'method');
+    expect(method).toBeTruthy();
+    expect(method.parent_name).toBe('MyClass');
+    expect(method.qualified_name).toBe('MyClass.greet');
   });
 
   it('should extract arrow function variables', () => {
@@ -56,8 +54,8 @@ describe('parse-code', () => {
     const symbols = codeParser.parseFile(tmpFile);
     fs.unlinkSync(tmpFile);
 
-    const fn = symbols.find(s => s.name === 'add' && s.kind === 'function');
-    assert.ok(fn, 'add arrow function not found');
+    const fn = symbols.find((s) => s.name === 'add' && s.kind === 'function');
+    expect(fn).toBeTruthy();
   });
 
   it('should extract TS interface and type alias', () => {
@@ -66,12 +64,12 @@ describe('parse-code', () => {
     const symbols = codeParser.parseFile(tmpFile);
     fs.unlinkSync(tmpFile);
 
-    const iface = symbols.find(s => s.name === 'User' && s.kind === 'interface');
-    assert.ok(iface, 'User interface not found');
-    assert.equal(iface.language, 'typescript');
+    const iface = symbols.find((s) => s.name === 'User' && s.kind === 'interface');
+    expect(iface).toBeTruthy();
+    expect(iface.language).toBe('typescript');
 
-    const typeAlias = symbols.find(s => s.name === 'ID' && s.kind === 'type');
-    assert.ok(typeAlias, 'ID type alias not found');
+    const typeAlias = symbols.find((s) => s.name === 'ID' && s.kind === 'type');
+    expect(typeAlias).toBeTruthy();
   });
 
   it('should extract TSX component', () => {
@@ -80,9 +78,9 @@ describe('parse-code', () => {
     const symbols = codeParser.parseFile(tmpFile);
     fs.unlinkSync(tmpFile);
 
-    const fn = symbols.find(s => s.name === 'Header');
-    assert.ok(fn, 'Header component not found');
-    assert.equal(fn.language, 'typescript');
+    const fn = symbols.find((s) => s.name === 'Header');
+    expect(fn).toBeTruthy();
+    expect(fn.language).toBe('typescript');
   });
 
   it('should extract docstrings from JSDoc comments', () => {
@@ -91,9 +89,9 @@ describe('parse-code', () => {
     const symbols = codeParser.parseFile(tmpFile);
     fs.unlinkSync(tmpFile);
 
-    const fn = symbols.find(s => s.name === 'greet');
-    assert.ok(fn, 'greet function not found');
-    assert.ok(fn.docstring.includes('greeter'), `Expected docstring to contain 'greeter', got: "${fn.docstring}"`);
+    const fn = symbols.find((s) => s.name === 'greet');
+    expect(fn).toBeTruthy();
+    expect(fn.docstring).toContain('greeter');
   });
 
   it('should return output with all required fields', () => {
@@ -102,31 +100,43 @@ describe('parse-code', () => {
     const symbols = codeParser.parseFile(tmpFile);
     fs.unlinkSync(tmpFile);
 
-    const fn = symbols.find(s => s.name === 'myFunc');
-    assert.ok(fn, 'myFunc not found');
+    const fn = symbols.find((s) => s.name === 'myFunc');
+    expect(fn).toBeTruthy();
 
-    const requiredFields = ['name', 'kind', 'language', 'file', 'signature', 'qualified_name',
-                            'start_line', 'end_line', 'start_byte', 'end_byte',
-                            'docstring', 'body_preview', 'parent_name'];
+    const requiredFields = [
+      'name',
+      'kind',
+      'language',
+      'file',
+      'signature',
+      'qualified_name',
+      'start_line',
+      'end_line',
+      'start_byte',
+      'end_byte',
+      'docstring',
+      'body_preview',
+      'parent_name',
+    ];
     for (const field of requiredFields) {
-      assert.ok(field in fn, `Missing field: ${field}`);
+      expect(fn).toHaveProperty(field);
     }
   });
 
   it('should return empty array for unsupported file types', () => {
     const symbols = codeParser.parseFile('/tmp/test.rb');
-    assert.deepEqual(symbols, []);
+    expect(symbols).toEqual([]);
   });
 
   it('should return empty array for nonexistent files', () => {
     const symbols = codeParser.parseFile('/tmp/does_not_exist_abc123.js');
-    assert.deepEqual(symbols, []);
+    expect(symbols).toEqual([]);
   });
 
   it('should return empty array when not initialized', () => {
     // This test verifies the guard — since we already initialized,
     // we test the ext-based guard instead
     const symbols = codeParser.parseFile('/tmp/test.py');
-    assert.deepEqual(symbols, []);  // .py is not in LANGUAGE_MAP
+    expect(symbols).toEqual([]); // .py is not in LANGUAGE_MAP
   });
 });
