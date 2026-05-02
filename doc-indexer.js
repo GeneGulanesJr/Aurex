@@ -148,11 +148,22 @@ function buildSectionHierarchy(sections) {
 
 // ── Link extraction ──
 function extractLinks(content) {
+  // Strip fenced code blocks first to avoid matching links inside code
+  const stripped = content.replace(/```[\s\S]*?```/g, '').replace(/`[^`]+`/g, '');
   const links = [];
   const re = /\[([^\]]*)\]\(([^)]+)\)/g;
   let match;
-  while ((match = re.exec(content)) !== null) {
+  while ((match = re.exec(stripped)) !== null) {
+    // Skip image references ![alt](url)
+    const prefix = stripped.substring(Math.max(0, match.index - 1), match.index);
+    if (prefix === '!') continue;
     const target = match[2];
+    // Skip empty, regex, or malformed targets
+    if (!target || target.startsWith('[^') || target.startsWith('http') === false &&
+        /[^\w\/.\-#_~]/.test(target.replace(/\#.*/, ''))) {
+      // Allow: paths, anchors, URLs. Skip: regex patterns, empty strings
+      if (!target.startsWith('/') && !target.startsWith('./') && !target.startsWith('../') && !target.startsWith('#') && !target.startsWith('http')) continue;
+    }
     const isInternal = !target.match(/^https?:\/\//) && !target.startsWith('mailto:');
     links.push({ target_path: target, link_text: match[1], is_internal: isInternal });
   }
@@ -339,23 +350,41 @@ function resolveLinks(db, repoId) {
     const href = link.target_path;
 
     if (href.startsWith('#')) {
+      // Anchor-only link: resolve within the same file
       const slug = slugify(href.slice(1));
       const candidates = db.prepare('SELECT id, title FROM doc_sections WHERE file_id = ?').all(link.file_id);
       for (const c of candidates) {
         if (slugify(c.title) === slug) { targetSectionId = c.id; break; }
+        // Also try partial match: doc sections often have more text than the slug
+        if (slugify(c.title).startsWith(slug) || slug.startsWith(slugify(c.title))) { targetSectionId = c.id; break; }
       }
     } else {
-      const [pathPart, anchor] = href.split('#');
-      const docs = db.prepare(
-        'SELECT df.id FROM doc_files df WHERE df.repo_id = ? AND df.path LIKE ?'
-      ).all(repoId, `%${pathPart}%`);
+      // Path link (possibly with anchor)
+      let [pathPart, anchor] = href.split('#');
+      // Normalize path: strip leading ./ or ../
+      pathPart = pathPart.replace(/^\.\/|^\.\.\//, '');
+
+      // Try exact path match first
+      let docs = db.prepare(
+        'SELECT id, path FROM doc_files WHERE repo_id = ? AND (path = ? OR path LIKE ?)'
+      ).all(repoId, pathPart, `%/${pathPart}`);
+
+      // Also try with .md extension if not present
+      if (docs.length === 0 && !pathPart.endsWith('.md') && !pathPart.endsWith('.mdx')) {
+        docs = db.prepare(
+          'SELECT id, path FROM doc_files WHERE repo_id = ? AND (path = ? OR path LIKE ?)'
+        ).all(repoId, pathPart + '.md', `%/${pathPart}.md`);
+      }
 
       if (docs.length > 0) {
         if (anchor) {
           const slug = slugify(anchor);
           for (const d of docs) {
-            const c = db.prepare('SELECT id FROM doc_sections WHERE file_id = ?').all(d.id);
-            for (const s of c) { if (slugify(s.title) === slug) { targetSectionId = s.id; break; } }
+            const candidates = db.prepare('SELECT id, title FROM doc_sections WHERE file_id = ?').all(d.id);
+            for (const c of candidates) {
+              if (slugify(c.title) === slug) { targetSectionId = c.id; break; }
+              if (slugify(c.title).startsWith(slug) || slug.startsWith(slugify(c.title))) { targetSectionId = c.id; break; }
+            }
             if (targetSectionId) break;
           }
         } else {
@@ -380,7 +409,8 @@ function resolveLinks(db, repoId) {
 
 function searchDocs(db, repoId, query, opts) {
   opts = opts || {};
-  let sql = `SELECT ds.id, ds.title, ds.level, ds.role, ds.tags, df.path as file_path
+  let sql = `SELECT ds.id, ds.title, ds.level, ds.role, ds.tags, ds.content_hash, df.path as file_path,
+    length(ds.content) as content_length
     FROM doc_sections_fts
     JOIN doc_sections ds ON ds.id = doc_sections_fts.rowid
     JOIN doc_files df ON df.id = ds.file_id
@@ -390,7 +420,26 @@ function searchDocs(db, repoId, query, opts) {
   if (opts.role) { sql += ' AND ds.role = ?'; params.push(opts.role); }
   sql += ' ORDER BY rank LIMIT 20';
   try {
-    return { results: db.prepare(sql).all(...params) };
+    const results = db.prepare(sql).all(...params);
+    // v5.1: Compute answerability heuristic (shorter, code-rich sections score higher)
+    for (const r of results) {
+      const contentRow = db.prepare('SELECT content FROM doc_sections WHERE id = ?').get(r.id);
+      if (contentRow) {
+        const content = contentRow.content || '';
+        const hasCode = content.includes('```');
+        const codeRatio = (content.match(/```[\s\S]*?```/g) || []).join('').length / Math.max(content.length, 1);
+        r.answerability = Math.min(1, (
+          (r.level >= 2 && r.level <= 4 ? 0.3 : 0.1) +
+          (r.role === 'how_to' || r.role === 'tutorial' ? 0.3 : r.role === 'api' || r.role === 'reference' ? 0.2 : 0) +
+          (content.length > 100 && content.length < 3000 ? 0.2 : 0.1) +
+          (hasCode ? 0.2 : 0) +
+          (codeRatio > 0.2 && codeRatio < 0.7 ? 0.1 : 0)
+        ));
+      }
+      delete r.content_hash;
+      delete r.content_length;
+    }
+    return { results };
   } catch (e) {
     return { error: `Search failed: ${e.message}` };
   }

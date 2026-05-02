@@ -313,19 +313,50 @@ function getDeadCode(db, repoId, opts) {
   const minConfidence = opts.minConfidence || 0.5;
   const includeTests = opts.includeTests || false;
 
-  // Gather entry points
+  // ── Gather entry points ──
   const entryFiles = new Set();
-  const entryPatterns = ['%main.js', '%index.js', '%index.ts', '%mod.ts', '%cli.js'];
+
+  // 1. Filename patterns
+  const entryPatterns = ['%main.js', '%index.js', '%index.ts', '%mod.ts', '%cli.js', '%app.js', '%app.ts', '%server.js', '%server.ts'];
   for (const pattern of entryPatterns) {
     const rows = db.prepare('SELECT id FROM code_files WHERE repo_id = ? AND path LIKE ?').all(repoId, pattern);
     for (const r of rows) entryFiles.add(r.id);
   }
+
+  // 2. Shebang files
   const shebangFiles = db.prepare("SELECT id FROM code_files WHERE repo_id = ? AND content LIKE '#!/usr/bin/env%'").all(repoId);
   for (const r of shebangFiles) entryFiles.add(r.id);
+
+  // 3. export default
   const exportDefaultFiles = db.prepare("SELECT id FROM code_files WHERE repo_id = ? AND content LIKE '%export default%'").all(repoId);
   for (const r of exportDefaultFiles) entryFiles.add(r.id);
 
-  // BFS from entry points through import graph
+  // 4. package.json bin/main/exports fields
+  const packageJsonFiles = db.prepare("SELECT id, path, content FROM code_files WHERE repo_id = ? AND path LIKE '%/package.json'").all(repoId);
+  for (const pkg of packageJsonFiles) {
+    try {
+      const pkgData = JSON.parse(pkg.content);
+      if (pkgData.main) {
+        const mainRow = db.prepare('SELECT id FROM code_files WHERE repo_id = ? AND path LIKE ?').get(repoId, `%${pkgData.main}%`);
+        if (mainRow) entryFiles.add(mainRow.id);
+      }
+      if (pkgData.bin) {
+        const bins = typeof pkgData.bin === 'string' ? [pkgData.bin] : Object.values(pkgData.bin);
+        for (const bin of bins) {
+          const binRow = db.prepare('SELECT id FROM code_files WHERE repo_id = ? AND path LIKE ?').get(repoId, `%${bin}%`);
+          if (binRow) entryFiles.add(binRow.id);
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 5. Barrel files (index.js/ts that re-export other modules)
+  const barrelFiles = db.prepare(
+    "SELECT source_file_id as file_id FROM code_imports WHERE import_type = 're-export' AND repo_id = ? GROUP BY source_file_id"
+  ).all(repoId);
+  for (const b of barrelFiles) entryFiles.add(b.file_id);
+
+  // ── BFS from entry points through import graph ──
   const reachable = new Set(entryFiles);
   const queue = [...entryFiles];
   while (queue.length > 0) {
@@ -340,21 +371,30 @@ function getDeadCode(db, repoId, opts) {
   const deadFiles = allFiles.filter(f => !reachable.has(f.id));
   const deadFileSet = new Set(deadFiles.map(f => f.id));
 
-  // Symbols with zero callers
+  // ── Symbols with zero callers ──
   const uncalledSymbols = db.prepare(`
     SELECT cs.id, cs.name, cs.file_path, cs.kind, cs.file_id FROM code_symbols cs
     WHERE cs.repo_id = ? AND cs.id NOT IN (SELECT callee_symbol_id FROM code_calls WHERE callee_symbol_id IS NOT NULL AND repo_id = ?)
   `).all(repoId, repoId);
 
+  // ── Symbols that are re-exported (barrel exports) ──
+  const reExportedNames = new Set();
+  const reExports = db.prepare(
+    "SELECT fi.path, ci.target_module FROM code_imports ci JOIN code_files fi ON fi.id = ci.source_file_id WHERE ci.import_type = 're-export' AND ci.repo_id = ?"
+  ).all(repoId);
+  for (const re of reExports) reExportedNames.add(re.target_module);
+
   const results = [];
   for (const sym of uncalledSymbols) {
     const isFileDead = deadFileSet.has(sym.file_id);
     const isReExported = db.prepare("SELECT 1 FROM code_imports WHERE target_file_id = ? AND import_type = 're-export' LIMIT 1").get(sym.file_id);
+    const isNameReExported = reExportedNames.has(sym.name);
 
     let confidence = 0;
     const signals = [];
-    if (!isReExported) { confidence += 0.33; signals.push('no_callers'); }
+    if (!isReExported && !isNameReExported) { confidence += 0.33; signals.push('no_callers'); }
     if (isFileDead) { confidence += 0.34; signals.push('unreachable_file'); }
+    if (isNameReExported) { confidence -= 0.34; signals.push('re_exported'); }
 
     if (!includeTests && /test|spec|__tests__|\.test\./.test(sym.file_path)) continue;
     if (confidence >= minConfidence) {
@@ -388,13 +428,52 @@ function buildComplexity(db, repoId) {
     if (!body) continue;
 
     let cyclomatic = 1;
-    const decisionPatterns = [/\bif\b/g, /\belse\s+if\b/g, /\bfor\b/g, /\bwhile\b/g, /\bdo\b/g, /\bcase\b/g, /\bcatch\b/g, /\&\&/g, /\|\|/g, /\?\?/g, /\?\s*[^.]/g];
-    for (const pattern of decisionPatterns) { const m = body.match(pattern); if (m) cyclomatic += m.length; }
+    const decisionPatterns = [/if\b/g, /else\s+if\b/g, /\bfor\b/g, /\bwhile\b/g, /\bdo\b/g, /\bcase\b/g, /\bcatch\b/g, /\&\&/g, /\|\|/g, /\?\?/g];
+    // Note: optional chaining (?.) is NOT a decision point per spec
+    for (const pattern of decisionPatterns) {
+      pattern.lastIndex = 0;
+      const m = body.match(pattern);
+      if (m) cyclomatic += m.length;
+    }
+    // Ternary (?:) — count only if not followed by . (to exclude ?.)
+    const ternaryRe = /\?(?:\s*[^.:])/g;
+    let ternaryMatch;
+    while ((ternaryMatch = ternaryRe.exec(body)) !== null) {
+      cyclomatic++;
+    }
 
+    // v5.1: String-aware brace counting for nesting depth
     let maxDepth = 0, currentDepth = 0;
-    for (const ch of body) {
-      if (ch === '{') { currentDepth++; maxDepth = Math.max(maxDepth, currentDepth); }
-      if (ch === '}') currentDepth--;
+    let inString = false, stringChar = '', templateDepth = 0;
+    for (let i = 0; i < body.length; i++) {
+      const ch = body[i];
+      const prev = i > 0 ? body[i - 1] : '';
+
+      // Handle string literals (skip braces inside them)
+      if (!inString && templateDepth === 0 && (ch === '"' || ch === "'")) {
+        inString = true; stringChar = ch; continue;
+      }
+      if (inString && ch === stringChar && prev !== '\\') {
+        inString = false; continue;
+      }
+      // Handle template literals (${...} inside backtick strings)
+      if (!inString && ch === '`') { templateDepth++; continue; }
+      if (templateDepth === 1 && ch === '`') { templateDepth--; continue; }
+
+      if (!inString || templateDepth > 0) {
+        if (ch === '{') {
+          currentDepth++;
+          maxDepth = Math.max(maxDepth, currentDepth);
+        }
+        if (ch === '}') {
+          if (templateDepth > 0 && body.substring(i - 1, i + 1) === '}') {
+            // Template expression ${...}
+            currentDepth++;
+            maxDepth = Math.max(maxDepth, currentDepth);
+          }
+          if (currentDepth > 0) currentDepth--;
+        }
+      }
     }
 
     const sigMatch = sym.signature ? sym.signature.match(/\(([^)]*)\)/) : null;
