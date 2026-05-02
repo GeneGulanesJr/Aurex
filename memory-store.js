@@ -2223,6 +2223,14 @@ const commands = {
     return docIndexer.getDocCoverage(db, codeRepoRow[0].id, docRepoRow[0].id);
   },
 
+  'stale-pages': (args) => {
+    const repo = args.repo;
+    if (!repo) jsonErr('Usage: node memory-store.js stale-pages --repo X');
+    const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found. Run index-docs first.`);
+    return docIndexer.getStalePages(db, repoRow[0].id);
+  },
+
   // ── v5: Doc indexing subcommands ──
 
   'index-docs': (args) => {
