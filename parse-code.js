@@ -150,7 +150,7 @@ const _JS_TS_SYMBOL_NODES = {
   'enum_declaration': 'enum',
   // v5.1: additional symbol types
   'public_field_definition': 'property',
-  'assignment_expression': 'constant',
+  // v5.3: removed 'assignment_expression' — reassignments like `match = ...` are not top-level symbols
 };
 
 const _VARIABLE_FUNCTION_NODES = new Set(['arrow_function', 'function_expression']);
@@ -243,13 +243,58 @@ function _getEndLineNumber(node) {
   return node.endPosition.row + 1;
 }
 
+
+// v5.3: Find containing context name for inner functions/methods
+function _getContextName(node) {
+  let current = node.parent;
+  while (current) {
+    if (current.type === 'class_declaration') {
+      for (const child of current.children) {
+        if (child.type === 'identifier' || child.type === 'type_identifier') return child.text;
+      }
+    }
+    if (current.type === 'object') {
+      const varDecl = current.parent;
+      if (varDecl && varDecl.type === 'variable_declarator') {
+        for (const child of varDecl.children) {
+          if (child.type === 'identifier') return child.text;
+        }
+      }
+    }
+    if (current.type === 'assignment_expression') {
+      const left = current.child(0);
+      if (left && (left.type === 'identifier' || left.type === 'member_expression')) return left.text;
+    }
+    current = current.parent;
+  }
+  return '';
+}
+
+// v5.3: Extract class extends heritage
+function _getExtendsClass(node) {
+  for (const child of node.children) {
+    if (child.type === 'heritage_clause') {
+      for (const hc of child.children) {
+        if (hc.type === 'type_identifier' || hc.type === 'identifier') return hc.text;
+      }
+    }
+  }
+  return '';
+}
+
+// v5.3: Scope-creating node types
+const _SCOPE_NODES = new Set([
+  'function_declaration', 'generator_function_declaration', 'method_definition',
+  'arrow_function', 'function_expression',
+]);
+
 function _extractJsTsSymbols(filePath, sourceStr, parser, languageName) {
   const tree = parser.parse(sourceStr);
   const root = tree.rootNode;
   const symbols = [];
   const seen = new Set();
 
-  function walk(node) {
+  function walk(node, depth) {
     if (node.type in _JS_TS_SYMBOL_NODES) {
       const kind = _JS_TS_SYMBOL_NODES[node.type];
       const name = _getNodeName(node);
@@ -257,35 +302,31 @@ function _extractJsTsSymbols(filePath, sourceStr, parser, languageName) {
         const key = `${name}:${kind}:${node.startIndex}`;
         if (!seen.has(key)) {
           seen.add(key);
-          const parentName = kind === 'method' || kind === 'property' ? _getParentClassName(node) : '';
+          let parentName = '';
+          if (kind === 'method' || kind === 'property') {
+            parentName = _getParentClassName(node);
+            if (!parentName) parentName = _getContextName(node);
+          } else if (kind === 'class') {
+            const extendsClass = _getExtendsClass(node);
+            if (extendsClass) parentName = extendsClass;
+          }
           const qualified = parentName ? `${parentName}.${name}` : name;
           symbols.push({
-            name,
-            kind,
-            language: languageName,
-            file: filePath,
-            signature: _getSignature(node, sourceStr),
-            qualified_name: qualified,
-            start_line: _getLineNumber(node),
-            end_line: _getEndLineNumber(node),
-            start_byte: node.startIndex,
-            end_byte: node.endIndex,
-            docstring: _getDocstring(node),
-            body_preview: _getBodyPreview(node, sourceStr),
+            name, kind, language: languageName, file: filePath,
+            signature: _getSignature(node, sourceStr), qualified_name: qualified,
+            start_line: _getLineNumber(node), end_line: _getEndLineNumber(node),
+            start_byte: node.startIndex, end_byte: node.endIndex,
+            docstring: _getDocstring(node), body_preview: _getBodyPreview(node, sourceStr),
             parent_name: parentName,
           });
         }
       }
-    } else if (_VARIABLE_FUNCTION_NODES.has(node.type)) {
-      // Arrow functions and function expressions assigned to variables
+    } else if (_VARIABLE_FUNCTION_NODES.has(node.type) && depth === 0) {
       const parent = node.parent;
       if (parent && parent.type === 'variable_declarator') {
         let name = null;
         for (const child of parent.children) {
-          if (child.type === 'identifier') {
-            name = child.text;
-            break;
-          }
+          if (child.type === 'identifier') { name = child.text; break; }
         }
         if (name) {
           const key = `${name}:function:${parent.startIndex}`;
@@ -294,63 +335,33 @@ function _extractJsTsSymbols(filePath, sourceStr, parser, languageName) {
             const parentName = _getParentClassName(node);
             const qualified = parentName ? `${parentName}.${name}` : name;
             symbols.push({
-              name,
-              kind: 'function',
-              language: languageName,
-              file: filePath,
-              signature: _getSignature(parent, sourceStr),
-              qualified_name: qualified,
-              start_line: _getLineNumber(parent),
-              end_line: _getEndLineNumber(parent),
-              start_byte: parent.startIndex,
-              end_byte: parent.endIndex,
-              docstring: _getDocstring(parent),
-              body_preview: _getBodyPreview(node, sourceStr),
+              name, kind: 'function', language: languageName, file: filePath,
+              signature: _getSignature(parent, sourceStr), qualified_name: qualified,
+              start_line: _getLineNumber(parent), end_line: _getEndLineNumber(parent),
+              start_byte: parent.startIndex, end_byte: parent.endIndex,
+              docstring: _getDocstring(parent), body_preview: _getBodyPreview(node, sourceStr),
               parent_name: parentName,
             });
           }
         }
       }
-    } else if (node.type === 'variable_declarator') {
-      // v5.1: Extract const/let/var assignments as constants or functions
-      // SCREAMING_SNAKE = constant; arrow function = function; _prefix = constant
+    } else if (node.type === 'variable_declarator' && depth === 0) {
       let name = null;
       let kind = 'constant';
       for (const child of node.children) {
-        if (child.type === 'identifier') {
-          name = child.text;
-          break;
-        }
+        if (child.type === 'identifier') { name = child.text; break; }
       }
       if (name) {
-        // Check if it's an arrow function assignment
         const parent = node.parent;
         let isArrowFn = false;
         if (parent && (parent.type === 'lexical_declaration' || parent.type === 'variable_declaration')) {
-          for (const sib of parent.children) {
-            if (sib.type === 'const' || sib.type === 'let' || sib.type === 'var') continue;
-            if (sib === node) continue;
-            if (sib.type === 'variable_declarator') continue;
-          }
-          // Check if the value is an arrow function
           for (const child of node.children) {
-            if (child.type === 'arrow_function' || child.type === 'function_expression') {
-              isArrowFn = true;
-              break;
-            }
+            if (child.type === 'arrow_function' || child.type === 'function_expression') { isArrowFn = true; break; }
           }
         }
-        // Determine the kind: arrow function → 'function', SCREAMING_SNAKE or _prefix → 'constant'
-        if (isArrowFn) {
-          kind = 'function';
-        } else if (/^[A-Z_][A-Z0-9_]*$/.test(name) || name.startsWith('_')) {
-          kind = 'constant';
-        } else {
-          // Skip non-constant, non-arrow assignments (like `const result = ...`)
-          // unless it's a module-level assignment pattern
-          // Actually, extract all named const/let assignments that aren't just data
-          kind = 'constant';
-        }
+        if (isArrowFn) { kind = 'function'; }
+        else if (/^[A-Z_][A-Z0-9_]*$/.test(name) || name.startsWith('_')) { kind = 'constant'; }
+        else { kind = 'constant'; }
         const key = `${name}:${kind}:${node.startIndex}`;
         if (!seen.has(key)) {
           seen.add(key);
@@ -358,84 +369,45 @@ function _extractJsTsSymbols(filePath, sourceStr, parser, languageName) {
           const lineText = sourceStr.substring(node.startIndex, Math.min(node.startIndex + 200, sourceStr.length)).split('\n')[0];
           const sig = (parent ? sourceStr.substring(parent.startIndex, parent.endIndex) : lineText).split('\n')[0];
           symbols.push({
-            name,
-            kind,
-            language: languageName,
-            file: filePath,
+            name, kind, language: languageName, file: filePath,
             signature: sig.length > 200 ? sig.slice(0, 197) + '...' : sig,
             qualified_name: parentName ? `${parentName}.${name}` : name,
-            start_line: _getLineNumber(node),
-            end_line: _getEndLineNumber(node),
-            start_byte: node.startIndex,
-            end_byte: node.endIndex,
-            docstring: _getDocstring(node),
-            body_preview: '',
-            parent_name: parentName,
+            start_line: _getLineNumber(node), end_line: _getEndLineNumber(node),
+            start_byte: node.startIndex, end_byte: node.endIndex,
+            docstring: _getDocstring(node), body_preview: '', parent_name: parentName,
           });
         }
       }
-    } else if (node.type === 'export_statement' || node.type === 'export_default_statement') {
-      // v5.1: Extract export default function X / class X
+    } else if (node.type === 'export_default_statement') {
       for (const child of node.children) {
-        if (child.type === 'function_declaration' || child.type === 'class_declaration') {
-          const name = _getNodeName(child);
-          if (name && !seen.has(`${name}:function:${child.startIndex}`) && !seen.has(`${name}:class:${child.startIndex}`)) {
-            // Already handled by the _JS_TS_SYMBOL_NODES walk, just mark as entry point
-            // We add an 'export' flag to existing symbols at query time instead
-          }
-        }
-        // export default X;
-        if (child.type === 'identifier' && node.type === 'export_default_statement') {
+        if (child.type === 'identifier') {
           const name = child.text;
           const key = `${name}:export:${node.startIndex}`;
           if (!seen.has(key)) {
             seen.add(key);
             symbols.push({
-              name,
-              kind: 'export',
-              language: languageName,
-              file: filePath,
-              signature: `export default ${name}`,
-              qualified_name: name,
-              start_line: _getLineNumber(node),
-              end_line: _getEndLineNumber(node),
-              start_byte: node.startIndex,
-              end_byte: node.endIndex,
-              docstring: '',
-              body_preview: '',
-              parent_name: '',
+              name, kind: 'export', language: languageName, file: filePath,
+              signature: `export default ${name}`, qualified_name: name,
+              start_line: _getLineNumber(node), end_line: _getEndLineNumber(node),
+              start_byte: node.startIndex, end_byte: node.endIndex,
+              docstring: '', body_preview: '', parent_name: '',
             });
           }
         }
       }
     }
 
+    // Walk into all children, incrementing depth for scope-creating nodes
+    const childDepth = _SCOPE_NODES.has(node.type) ? depth + 1 : depth;
     for (const child of node.children) {
-      if (child.type === 'statement_block') continue;
-      walk(child);
+      walk(child, childDepth);
     }
   }
 
-  walk(root);
+  walk(root, 0);
   tree.delete();
   return symbols;
 }
-
-// ═══════════════════════════════════════════════════════════
-// SQL symbol extraction
-// ═══════════════════════════════════════════════════════════
-
-const SQL_STATEMENT_MAP = {
-  'create_table': 'table',
-  'create_view': 'view',
-  'create_index': 'index',
-  'select': 'query',
-  'insert': 'query',
-  'update': 'query',
-  'delete': 'query',
-  'alter_table': 'table',
-};
-
 function _extractSqlSymbols(filePath, sourceStr, parser) {
   const tree = parser.parse(sourceStr);
   const root = tree.rootNode;
