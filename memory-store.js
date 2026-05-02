@@ -2212,6 +2212,18 @@ const commands = {
     });
   },
 
+  'layer-violations': (args) => {
+    const repo = args.repo;
+    if (!repo) jsonErr('Usage: node memory-store.js layer-violations --repo X [--rules JSON]');
+    const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Repo "${repo}" not found. Run index-repo first.`);
+    let rules = null;
+    if (args.rules) {
+      try { rules = JSON.parse(args.rules); } catch (e) { jsonErr(`Invalid rules JSON: ${e.message}`); }
+    }
+    return codeAnalysis.getLayerViolations(db, repoRow[0].id, { rules });
+  },
+
   // ── v5.2: Doc analytics subcommands ──
 
   'doc-orphans': (args) => {
