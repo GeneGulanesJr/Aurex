@@ -20,14 +20,18 @@ const GRAMMAR_DIR = path.resolve(__dirname, 'grammars');
 
 // Language map: file extension → { grammarFile, languageName, parserKey }
 const LANGUAGE_MAP = {
-  '.js':   { grammarFile: 'javascript.wasm', languageName: 'javascript', parserKey: 'javascript' },
-  '.mjs':  { grammarFile: 'javascript.wasm', languageName: 'javascript', parserKey: 'javascript' },
-  '.cjs':  { grammarFile: 'javascript.wasm', languageName: 'javascript', parserKey: 'javascript' },
-  '.ts':   { grammarFile: 'typescript.wasm', languageName: 'typescript', parserKey: 'typescript' },
-  '.mts':  { grammarFile: 'typescript.wasm', languageName: 'typescript', parserKey: 'typescript' },
-  '.cts':  { grammarFile: 'typescript.wasm', languageName: 'typescript', parserKey: 'typescript' },
-  '.tsx':  { grammarFile: 'tsx.wasm',        languageName: 'typescript', parserKey: 'tsx' },
-  '.sql':  { grammarFile: 'sql.wasm',        languageName: 'sql',         parserKey: 'sql' },
+  '.js':   { grammarFile: 'javascript.wasm',         languageName: 'javascript', parserKey: 'javascript' },
+  '.mjs':  { grammarFile: 'javascript.wasm',         languageName: 'javascript', parserKey: 'javascript' },
+  '.cjs':  { grammarFile: 'javascript.wasm',         languageName: 'javascript', parserKey: 'javascript' },
+  '.ts':   { grammarFile: 'typescript.wasm',          languageName: 'typescript', parserKey: 'typescript' },
+  '.mts':  { grammarFile: 'typescript.wasm',          languageName: 'typescript', parserKey: 'typescript' },
+  '.cts':  { grammarFile: 'typescript.wasm',          languageName: 'typescript', parserKey: 'typescript' },
+  '.tsx':  { grammarFile: 'tsx.wasm',                 languageName: 'typescript', parserKey: 'tsx' },
+  '.py':   { grammarFile: 'tree-sitter-python.wasm',  languageName: 'python',     parserKey: 'python' },
+  '.pyw':  { grammarFile: 'tree-sitter-python.wasm',  languageName: 'python',     parserKey: 'python' },
+  '.go':   { grammarFile: 'tree-sitter-go.wasm',      languageName: 'go',         parserKey: 'go' },
+  '.rs':   { grammarFile: 'tree-sitter-rust.wasm',    languageName: 'rust',       parserKey: 'rust' },
+  '.sql':  { grammarFile: 'sql.wasm',                 languageName: 'sql',        parserKey: 'sql' },
 };
 
 // ── Module state ──
@@ -132,6 +136,15 @@ function parseFile(filePath) {
 
   if (langConfig.languageName === 'sql') {
     return _extractSqlSymbols(filePath, source, parser);
+  }
+  if (langConfig.languageName === 'python') {
+    return _extractPythonSymbols(filePath, source, parser);
+  }
+  if (langConfig.languageName === 'go') {
+    return _extractGoSymbols(filePath, source, parser);
+  }
+  if (langConfig.languageName === 'rust') {
+    return _extractRustSymbols(filePath, source, parser);
   }
   return _extractJsTsSymbols(filePath, source, parser, langConfig.languageName);
 }
@@ -408,6 +421,301 @@ function _extractJsTsSymbols(filePath, sourceStr, parser, languageName) {
   tree.delete();
   return symbols;
 }
+// ═══════════════════════════════════════════════════════════
+// Python symbol extraction
+// ═══════════════════════════════════════════════════════════
+
+const _PY_SYMBOL_NODES = {
+  'function_definition': 'function',
+  'class_definition': 'class',
+  'decorator': 'decorator',
+};
+
+const _PY_SCOPE_NODES = new Set(['function_definition', 'class_definition', 'lambda']);
+
+function _extractPythonSymbols(filePath, sourceStr, parser) {
+  const tree = parser.parse(sourceStr);
+  const root = tree.rootNode;
+  const symbols = [];
+  const seen = new Set();
+
+  function walk(node, depth) {
+    const kind = _PY_SYMBOL_NODES[node.type];
+    if (kind) {
+      let name = '';
+      for (const child of node.children) {
+        if (child.type === 'identifier') { name = child.text; break; }
+      }
+      if (name) {
+        const key = `${name}:${kind}:${node.startIndex}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          let parentName = '';
+          if (kind === 'function') {
+            let p = node.parent;
+            while (p) {
+              if (p.type === 'class_definition') {
+                for (const c of p.children) { if (c.type === 'identifier') { parentName = c.text; break; } }
+                break;
+              }
+              p = p.parent;
+            }
+          }
+          symbols.push({
+            name, kind, language: 'python', file: filePath,
+            signature: sourceStr.substring(node.startIndex, Math.min(node.startIndex + 200, node.endIndex)).split('\n')[0],
+            qualified_name: parentName ? `${parentName}.${name}` : name,
+            start_line: node.startPosition.row + 1, end_line: node.endPosition.row + 1,
+            start_byte: node.startIndex, end_byte: node.endIndex,
+            docstring: '', body_preview: '', parent_name: parentName,
+          });
+        }
+      }
+    }
+    // Walk decorator children for decorated functions
+    if (node.type === 'decorator') {
+      // Decorators are captured as separate symbols
+      const name = node.text.replace(/^@/, '').split('(')[0];
+      if (name && !seen.has(`@${name}:decorator:${node.startIndex}`)) {
+        seen.add(`@${name}:decorator:${node.startIndex}`);
+      }
+    }
+
+    const childDepth = _PY_SCOPE_NODES.has(node.type) ? depth + 1 : depth;
+    for (const child of node.children) {
+      walk(child, childDepth);
+    }
+  }
+
+  walk(root, 0);
+  tree.delete();
+  return symbols;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Go symbol extraction
+// ═══════════════════════════════════════════════════════════
+
+const _GO_SYMBOL_NODES = {
+  'function_declaration': 'function',
+  'method_declaration': 'function',
+  'type_declaration': 'type',
+};
+
+function _extractGoSymbols(filePath, sourceStr, parser) {
+  const tree = parser.parse(sourceStr);
+  const root = tree.rootNode;
+  const symbols = [];
+  const seen = new Set();
+
+  function walk(node, depth) {
+    // function_declaration: func name(...)
+    if (node.type === 'function_declaration') {
+      let name = '';
+      for (const child of node.children) {
+        if (child.type === 'identifier') { name = child.text; break; }
+      }
+      if (name) {
+        const key = `${name}:function:${node.startIndex}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          symbols.push({
+            name, kind: 'function', language: 'go', file: filePath,
+            signature: sourceStr.substring(node.startIndex, Math.min(node.startIndex + 200, node.endIndex)).split('\n')[0],
+            qualified_name: name, start_line: node.startPosition.row + 1, end_line: node.endPosition.row + 1,
+            start_byte: node.startIndex, end_byte: node.endIndex,
+            docstring: '', body_preview: '', parent_name: '',
+          });
+        }
+      }
+    }
+    // method_declaration: func (r Receiver) name(...)
+    else if (node.type === 'method_declaration') {
+      let name = '';
+      let receiver = '';
+      for (const child of node.children) {
+        // Name comes after receiver, as field_identifier
+        if (child.type === 'field_identifier') name = child.text;
+        // Receiver is in the first parameter_list
+        if (child.type === 'parameter_list' && child.text.startsWith('(') && !receiver) {
+          // Walk into parameter_declaration to find the type
+          for (const pc of child.children) {
+            if (pc.type === 'parameter_declaration') {
+              for (const pcc of pc.children) {
+                if (pcc.type === 'pointer_type') {
+                  // Extract type from inside *Type
+                  for (const pccc of pcc.children) {
+                    if (pccc.type === 'type_identifier') receiver = pccc.text;
+                  }
+                } else if (pcc.type === 'type_identifier' && !receiver) {
+                  receiver = pcc.text;
+                }
+              }
+            }
+          }
+        }
+      }
+      if (name) {
+        const key = `${receiver ? receiver + '.' : ''}${name}:function:${node.startIndex}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          symbols.push({
+            name, kind: 'function', language: 'go', file: filePath,
+            signature: sourceStr.substring(node.startIndex, Math.min(node.startIndex + 200, node.endIndex)).split('\n')[0],
+            qualified_name: receiver ? `${receiver}.${name}` : name,
+            start_line: node.startPosition.row + 1, end_line: node.endPosition.row + 1,
+            start_byte: node.startIndex, end_byte: node.endIndex,
+            docstring: '', body_preview: '', parent_name: receiver,
+          });
+        }
+      }
+    }
+    // type_declaration: type Name struct/interface
+    else if (node.type === 'type_declaration') {
+      for (const child of node.children) {
+        if (child.type === 'type_identifier') {
+          const name = child.text;
+          const key = `${name}:type:${node.startIndex}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            symbols.push({
+              name, kind: 'type', language: 'go', file: filePath,
+              signature: sourceStr.substring(node.startIndex, Math.min(node.startIndex + 200, node.endIndex)).split('\n')[0],
+              qualified_name: name, start_line: node.startPosition.row + 1, end_line: node.endPosition.row + 1,
+              start_byte: node.startIndex, end_byte: node.endIndex,
+              docstring: '', body_preview: '', parent_name: '',
+            });
+          }
+          break;
+        }
+      }
+    }
+
+    for (const child of node.children) {
+      walk(child, depth);
+    }
+  }
+
+  walk(root, 0);
+  tree.delete();
+  return symbols;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Rust symbol extraction
+// ═══════════════════════════════════════════════════════════
+
+const _RUST_SYMBOL_NODES = {
+  'function_item': 'function',
+  'struct_item': 'class',
+  'enum_item': 'enum',
+  'trait_item': 'interface',
+  'impl_item': 'class',
+  'type_item': 'type',
+  'constant_item': 'constant',
+  'static_item': 'constant',
+};
+
+const _RUST_SCOPE_NODES = new Set(['function_item', 'impl_item', 'closure_expression', 'block']);
+
+function _extractRustSymbols(filePath, sourceStr, parser) {
+  const tree = parser.parse(sourceStr);
+  const root = tree.rootNode;
+  const symbols = [];
+  const seen = new Set();
+
+  function walk(node, depth) {
+    const kind = _RUST_SYMBOL_NODES[node.type];
+    if (kind && depth === 0) {
+      let name = '';
+      for (const child of node.children) {
+        if (child.type === 'identifier' || child.type === 'type_identifier') {
+          name = child.text; break;
+        }
+      }
+      // impl blocks have a trait name as type_identifier
+      if (node.type === 'impl_item') {
+        // Find the trait or type being implemented
+        let implName = '';
+        let implTarget = '';
+        for (const child of node.children) {
+          if (child.type === 'type_identifier' && !implName) implName = child.text;
+          else if (child.type === 'type_identifier' && implName && !implTarget) implTarget = child.text;
+        }
+        if (implName) {
+          name = implTarget ? `${implName} for ${implTarget}` : implName;
+          const key = `impl ${name}:class:${node.startIndex}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            symbols.push({
+              name, kind: 'class', language: 'rust', file: filePath,
+              signature: sourceStr.substring(node.startIndex, Math.min(node.startIndex + 200, node.endIndex)).split('\n')[0],
+              qualified_name: name, start_line: node.startPosition.row + 1, end_line: node.endPosition.row + 1,
+              start_byte: node.startIndex, end_byte: node.endIndex,
+              docstring: '', body_preview: '', parent_name: '',
+            });
+          }
+        }
+        // Walk into impl_item to find methods at depth+1
+        const childDepth = depth + 1;
+        for (const child of node.children) {
+          if (child.type === 'function_item' || child.type === 'function_signature_item') {
+            let methodName = '';
+            for (const mc of child.children) {
+              if (mc.type === 'identifier') { methodName = mc.text; break; }
+            }
+            if (methodName) {
+              const key = `${implName}.${methodName}:function:${child.startIndex}`;
+              if (!seen.has(key)) {
+                seen.add(key);
+                symbols.push({
+                  name: methodName, kind: 'function', language: 'rust', file: filePath,
+                  signature: sourceStr.substring(child.startIndex, Math.min(child.startIndex + 200, child.endIndex)).split('\n')[0],
+                  qualified_name: implName ? `${implName}.${methodName}` : methodName,
+                  start_line: child.startPosition.row + 1, end_line: child.endPosition.row + 1,
+                  start_byte: child.startIndex, end_byte: child.endIndex,
+                  docstring: '', body_preview: '', parent_name: implName,
+                });
+              }
+            }
+          }
+        }
+        // Don't walk deeper since we already handled methods
+        return;
+      }
+      if (name && kind !== 'constant') {
+        const key = `${name}:${kind}:${node.startIndex}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          // Detect extends for struct
+          let parentName = '';
+          if (node.type === 'struct_item') {
+            for (const child of node.children) {
+              if (child.type === 'type_identifier' && child.text !== name) parentName = child.text;
+            }
+          }
+          symbols.push({
+            name, kind, language: 'rust', file: filePath,
+            signature: sourceStr.substring(node.startIndex, Math.min(node.startIndex + 200, node.endIndex)).split('\n')[0],
+            qualified_name: parentName ? `${parentName}::${name}` : name,
+            start_line: node.startPosition.row + 1, end_line: node.endPosition.row + 1,
+            start_byte: node.startIndex, end_byte: node.endIndex,
+            docstring: '', body_preview: '', parent_name: parentName,
+          });
+        }
+      }
+    }
+    const childDepth = _RUST_SCOPE_NODES.has(node.type) ? depth + 1 : depth;
+    for (const child of node.children) {
+      walk(child, childDepth);
+    }
+  }
+
+  walk(root, 0);
+  tree.delete();
+  return symbols;
+}
+
 function _extractSqlSymbols(filePath, sourceStr, parser) {
   const tree = parser.parse(sourceStr);
   const root = tree.rootNode;
