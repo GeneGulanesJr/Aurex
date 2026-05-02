@@ -1651,6 +1651,8 @@ function findLatestSession(project) {
    ═══════════════════════════════════════════════════════════ */
 
 const codeParser = require('./parse-code');
+const codeAnalysis = require('./code-analysis');
+const gitAnalysis = require('./git-analysis');
 
 function parseCodeFile(filePath) {
   return codeParser.parseFile(filePath);
@@ -1760,7 +1762,22 @@ async function indexRepoInternal(repoPath, repoName) {
 
   sqlRun('UPDATE code_repos SET file_count = ?, symbol_count = ?, updated_at = datetime(\'now\') WHERE id = ?', [fileCount, symbolCount, repoId]);
 
-  return { success: true, repo: repoName, path: absPath, files_indexed: fileCount, symbols_extracted: symbolCount, files_skipped: skipped.length, skipped };
+  // Build import graph, call graph, and complexity
+  let importEdges = 0, callEdges = 0, complexityCount = 0;
+  try {
+    const ig = codeAnalysis.buildImportGraph(db, repoId);
+    if (ig.success) importEdges = ig.edges;
+  } catch (_) {}
+  try {
+    const cg = codeAnalysis.buildCallGraph(db, repoId);
+    if (cg.success) callEdges = cg.calls;
+  } catch (_) {}
+  try {
+    const cc = codeAnalysis.buildComplexity(db, repoId);
+    if (cc.success) complexityCount = cc.symbols;
+  } catch (_) {}
+
+  return { success: true, repo: repoName, path: absPath, files_indexed: fileCount, symbols_extracted: symbolCount, files_skipped: skipped.length, import_edges: importEdges, call_edges: callEdges, complexity_symbols: complexityCount, skipped };
 }
 
 async function reindexRepoInternal(repo, mode) {
@@ -2030,6 +2047,74 @@ const commands = {
     const repo = args.repo;
     if (!repo) jsonErr('Usage: node memory-store.js remove-code-repo --repo <repo-name>');
     return removeCodeRepoInternal(repo);
+  },
+
+  // ── v5: Code analysis subcommands ──
+
+  'import-graph': (args) => {
+    const repo = args.repo;
+    if (!repo) jsonErr('Usage: node memory-store.js import-graph --repo X [--file F] [--direction imports|importers|both] [--depth N]');
+    const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Repo "${repo}" not found. Run index-repo first.`);
+    return codeAnalysis.getImportGraph(db, repoRow[0].id, {
+      file: args.file || null, direction: args.direction || 'both', depth: parseInt(args.depth || '1'),
+    });
+  },
+
+  'call-hierarchy': (args) => {
+    const repo = args.repo; const symbol = args.symbol;
+    if (!repo || !symbol) jsonErr('Usage: node memory-store.js call-hierarchy --symbol S --repo X [--direction callers|callees] [--depth N]');
+    const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Repo "${repo}" not found`);
+    return codeAnalysis.getCallHierarchy(db, repoRow[0].id, {
+      symbol, direction: args.direction || 'callers', depth: parseInt(args.depth || '3'),
+    });
+  },
+
+  'blast-radius': (args) => {
+    const repo = args.repo; const symbol = args.symbol;
+    if (!repo || !symbol) jsonErr('Usage: node memory-store.js blast-radius --symbol S --repo X [--depth N]');
+    const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Repo "${repo}" not found`);
+    return codeAnalysis.getBlastRadius(db, repoRow[0].id, {
+      symbol, depth: parseInt(args.depth || '3'),
+    });
+  },
+
+  'dead-code': (args) => {
+    const repo = args.repo;
+    if (!repo) jsonErr('Usage: node memory-store.js dead-code --repo X [--min-confidence 0.5]');
+    const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Repo "${repo}" not found`);
+    return codeAnalysis.getDeadCode(db, repoRow[0].id, {
+      minConfidence: parseFloat(args['min-confidence'] || '0.5'),
+      includeTests: args['include-tests'] === 'true',
+    });
+  },
+
+  'complexity': (args) => {
+    const repo = args.repo;
+    if (!repo) jsonErr('Usage: node memory-store.js complexity --repo X [--symbol S | --file F]');
+    const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Repo "${repo}" not found`);
+    const symbolId = args.symbol ? db.prepare('SELECT id FROM code_symbols WHERE repo_id = ? AND name = ?').get(repoRow[0].id, args.symbol)?.id : null;
+    return codeAnalysis.getComplexity(db, repoRow[0].id, symbolId);
+  },
+
+  'outline': (args) => {
+    const repo = args.repo; const file = args.file;
+    if (!repo || !file) jsonErr('Usage: node memory-store.js outline --file F --repo X');
+    const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Repo "${repo}" not found`);
+    return codeAnalysis.getFileOutline(db, repoRow[0].id, file);
+  },
+
+  'churn': (args) => {
+    const repo = args.repo;
+    if (!repo) jsonErr('Usage: node memory-store.js churn --repo X [--file F] [--days 90] [--refresh]');
+    const repoRow = sqlJson('SELECT id, path FROM code_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Repo "${repo}" not found`);
+    return gitAnalysis.getChurn(db, repoRow[0].id, args.file || '__all__', parseInt(args.days || '90'), args.refresh === 'true');
   },
 };
 
