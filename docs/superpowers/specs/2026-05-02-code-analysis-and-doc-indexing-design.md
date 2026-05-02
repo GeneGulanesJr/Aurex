@@ -317,7 +317,7 @@ For each import, resolve `target_module`:
 2. **Constructor calls:** `new ClassName()` — extract the class name
 3. **Property access in calls:** `this.method()` — extract `method`
 
-Walk the symbol body AST, collect all `call_expression` nodes, extract the function/method name from the callee.
+Walk the symbol body AST, collect all `call_expression` nodes, extract the function/method name from the callee. **For method calls on objects** (`obj.method()`), extract only `method` (not `obj`) — the receiver is typically an import or `this`, and the method name is the relevant callee for resolution.
 
 **Resolution.** For each extracted `callee_name`:
 1. Look up the `callee_name` in the importing file's `code_imports` — if the name was imported from a known file, search `code_symbols` in that target file → set `callee_symbol_id`, `confidence` = 1.0
@@ -383,8 +383,10 @@ Entry points: `main.js`, `index.js`, `index.ts`, `mod.ts`, files with `export de
 ### Code Analysis: Complexity (`code-analysis.js`)
 
 Cyclomatic complexity = 1 + count of decision points in the symbol body:
-- `if`, `else if`, `for`, `while`, `do`, `case`, `catch`, `&&`, `||`, `??`, `?.`
-- Ternary `? :`
+- `if`, `else if`, `for`, `while`, `do`, `case`, `catch`, `&&`, `||`, `??`
+- Ternary `? :` (the `?` in conditional expressions)
+
+**Not counted:** `?.` (optional chaining — this is a navigation operator, not a decision point)
 
 **Extraction.** Re-parse the symbol's byte range via WASM tree-sitter. Walk the AST and count node types matching the decision set. Also compute:
 - Nesting depth (max depth of block nesting)
@@ -436,7 +438,7 @@ Query existing `code_symbols` table filtered by file_path. Returns all symbols i
 - Title contains "faq\|q&a" → `faq`
 - Default → `other`
 
-**Tag extraction.** Scan section content for `#hashtag` patterns (word characters after `#`, not ATX headings). Store comma-separated in `tags` column.
+**Tag extraction.** Scan section content for `#hashtag` patterns — a `#` followed by word characters, where the `#` is not preceded by another `#` (to avoid matching ATX heading syntax). Regex: `(?<!#)#(\w+)` with the first capture group as the tag. Store comma-separated in `tags` column.
 
 ### Doc Indexing: Link Extraction (`doc-indexer.js`)
 
@@ -450,7 +452,7 @@ For each link:
 2. **External link** (starts with `http://`, `https://`, `mailto:`): skip (not tracked)
 3. **Anchor-only** (`#heading`): resolve within same file
 
-`is_broken` = 1 when `target_section_id` is NULL for an internal link.
+`is_broken` = 1 when `target_section_id` is NULL for an internal link. **Note:** anchor-only links (`#heading-id`) that don't match any section heading slug are also marked broken. Heading slugs are derived by lowercasing, stripping non-alphanumeric characters, and replacing spaces with hyphens.
 
 **Backlinks.** Query `doc_links` where `target_section_id = ?` to find inbound references. Returns source section titles, file paths, and link text.
 
@@ -494,8 +496,8 @@ Store in `doc_code_blocks` with `lang` (info string), `content` (block body), an
 | `complexity` | code-analysis | `--symbol S --repo X` or `--file F --repo X` |
 | `outline` | code-analysis | `--file F --repo X` |
 | `churn` | git-analysis | `--repo X [--file F\|--symbol S] [--days 90] [--refresh]` |
-| `index-docs` | doc-indexer | `--path P --name X` |
-| `reindex-docs` | doc-indexer | `--repo X [--mode full\|incremental]` |
+| `index-docs` | doc-indexer | `--path P --name X [--ignore GLOB]` |
+| `reindex-docs` | doc-indexer | `--repo X [--mode full\|incremental] [--ignore GLOB]` |
 | `doc-search` | doc-indexer | `--query Q --repo X [--level N] [--role TYPE]` |
 | `doc-outline` | doc-indexer | `--repo X [--file F]` |
 | `backlinks` | doc-indexer | `--repo X --path F` |
@@ -575,7 +577,7 @@ The new `index-docs` command:
 5. **Extract code blocks** → populate `doc_code_blocks`
 6. **Resolve links** → update `target_section_id` and `is_broken`
 
-Both pipelines support **incremental re-index** via mtime comparison.
+Both pipelines support **incremental re-index** via mtime comparison. The `--ignore` flag accepts a glob pattern (e.g. `--ignore 'node_modules/**'`) to exclude directories during doc indexing — this is especially important for doc trees that contain built assets or vendored files.
 
 ## Error Handling
 
