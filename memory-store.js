@@ -1653,6 +1653,7 @@ function findLatestSession(project) {
 const codeParser = require('./parse-code');
 const codeAnalysis = require('./code-analysis');
 const gitAnalysis = require('./git-analysis');
+const docIndexer = require('./doc-indexer');
 
 function parseCodeFile(filePath) {
   return codeParser.parseFile(filePath);
@@ -1848,7 +1849,22 @@ async function reindexRepoInternal(repo, mode) {
   sqlRun('UPDATE code_repos SET file_count = (SELECT count(*) FROM code_files WHERE repo_id = ?), symbol_count = ?, updated_at = datetime(\'now\') WHERE id = ?',
     [repoId, symbolCount, repoId]);
 
-  return { success: true, repo, mode, files_reindexed: reindexed, files_unchanged: unchanged, symbols_extracted: symbolCount };
+  // Build import graph, call graph, and complexity
+  let importEdges = 0, callEdges = 0, complexityCount = 0;
+  try {
+    const ig = codeAnalysis.buildImportGraph(db, repoId);
+    if (ig.success) importEdges = ig.edges;
+  } catch (_) {}
+  try {
+    const cg = codeAnalysis.buildCallGraph(db, repoId);
+    if (cg.success) callEdges = cg.calls;
+  } catch (_) {}
+  try {
+    const cc = codeAnalysis.buildComplexity(db, repoId);
+    if (cc.success) complexityCount = cc.symbols;
+  } catch (_) {}
+
+  return { success: true, repo, mode, files_reindexed: reindexed, files_unchanged: unchanged, symbols_extracted: symbolCount, import_edges: importEdges, call_edges: callEdges, complexity_symbols: complexityCount };
 }
 
 function searchCode(query, repoName, kind, maxResults) {
@@ -2115,6 +2131,80 @@ const commands = {
     const repoRow = sqlJson('SELECT id, path FROM code_repos WHERE name = ?', [repo]);
     if (!repoRow.length) jsonErr(`Repo "${repo}" not found`);
     return gitAnalysis.getChurn(db, repoRow[0].id, args.file || '__all__', parseInt(args.days || '90'), args.refresh === 'true');
+  },
+
+  // ── v5: Doc indexing subcommands ──
+
+  'index-docs': (args) => {
+    const docPath = args.path; const name = args.name;
+    if (!docPath || !name) jsonErr('Usage: node memory-store.js index-docs --path P --name X [--ignore GLOB]');
+    return docIndexer.indexDocs(db, path.resolve(docPath), name, args.ignore || null);
+  },
+
+  'reindex-docs': (args) => {
+    const repo = args.repo;
+    if (!repo) jsonErr('Usage: node memory-store.js reindex-docs --repo X [--mode full|incremental] [--ignore GLOB]');
+    const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found`);
+    return docIndexer.reindexDocs(db, repoRow[0].id, args.mode || 'full', args.ignore || null);
+  },
+
+  'doc-search': (args) => {
+    const repo = args.repo; const query = args.query;
+    if (!repo || !query) jsonErr('Usage: node memory-store.js doc-search --query Q --repo X [--level N] [--role TYPE]');
+    const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found`);
+    return docIndexer.searchDocs(db, repoRow[0].id, query, {
+      level: args.level ? parseInt(args.level) : null, role: args.role || null,
+    });
+  },
+
+  'doc-outline': (args) => {
+    const repo = args.repo;
+    if (!repo) jsonErr('Usage: node memory-store.js doc-outline --repo X [--file F]');
+    const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found`);
+    return docIndexer.getDocOutline(db, repoRow[0].id, args.file || null);
+  },
+
+  'backlinks': (args) => {
+    const repo = args.repo; const filePath = args.path;
+    if (!repo || !filePath) jsonErr('Usage: node memory-store.js backlinks --repo X --path F');
+    const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found`);
+    return docIndexer.getBacklinks(db, repoRow[0].id, filePath);
+  },
+
+  'broken-links': (args) => {
+    const repo = args.repo;
+    if (!repo) jsonErr('Usage: node memory-store.js broken-links --repo X');
+    const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found`);
+    return { broken_links: docIndexer.getBrokenLinks(db, repoRow[0].id) };
+  },
+
+  'glossary': (args) => {
+    const repo = args.repo;
+    if (!repo) jsonErr('Usage: node memory-store.js glossary --repo X [--term T]');
+    const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found`);
+    return docIndexer.lookupTerm(db, repoRow[0].id, args.term || null);
+  },
+
+  'tutorial-path': (args) => {
+    const repo = args.repo; const section = args.section;
+    if (!repo || !section) jsonErr('Usage: node memory-store.js tutorial-path --section S --repo X');
+    const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found`);
+    return docIndexer.getTutorialPath(db, repoRow[0].id, parseInt(section));
+  },
+
+  'code-examples': (args) => {
+    const repo = args.repo; const query = args.query;
+    if (!repo || !query) jsonErr('Usage: node memory-store.js code-examples --query Q --repo X [--lang X]');
+    const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found`);
+    return docIndexer.findCodeExamples(db, repoRow[0].id, query, args.lang || null);
   },
 };
 
