@@ -51,6 +51,14 @@ Grammar .wasm files bundled in `grammars/`.
 - `outline --repo NAME --file F` — File symbol outline (classes, methods, standalone)
 - `churn --repo NAME [--file F] [--days 90] [--refresh true]` — Git commit frequency metrics
 
+### Code Analytics (v5.2 — hotspots, cycles, importance, coupling, extraction, hierarchy)
+- `hotspots --repo NAME [--top N] [--days N]` — Top N symbols by complexity × churn (bug risk)
+- `cycles --repo NAME` — Dependency cycles via Tarjan SCC on import graph
+- `importance --repo NAME [--top N] [--scope DIR]` — Symbol PageRank on call graph
+- `coupling --repo NAME [--file F] [--sort-by instability|afferent|efferent]` — Afferent/efferent/instability per file
+- `extractable --repo NAME [--min-complexity N] [--min-callers N] [--top N]` — Refactoring candidates (complex functions called from many files)
+- `hierarchy --repo NAME --symbol S [--direction both|ancestors|descendants]` — Class hierarchy from parent_name
+
 **Note:** Churn metrics require `git` CLI. All other analysis works on any indexed repo.
 Complexity does NOT count `?.` optional chaining as a decision point.
 Dead code confidence: 0.33 per signal (no callers, unreachable file), 1.0 = provably unreachable.
@@ -65,6 +73,8 @@ Dead code confidence: 0.33 per signal (no callers, unreachable file), 1.0 = prov
 - `glossary --repo NAME [--term T]` — Look up glossary terms (`**Term** — definition` pattern)
 - `tutorial-path --section INT --repo NAME` — Reconstruct ordered tutorial chain
 - `code-examples --query Q --repo NAME [--lang X]` — Search fenced code blocks by content
+- `doc-orphans --repo NAME [--include-same-doc]` — Find sections with zero inbound links
+- `doc-coverage --repo NAME [--doc-repo DOC_REPO]` — Which code symbols have documentation coverage
 
 **Hashtag extraction:** `(?<!#)#(\w{2,})` with negative lookbehind (excludes ATX headings).
 **Heading slugs:** lowercase → strip non-alphanumeric → replace spaces with hyphens (GitHub-compatible).
