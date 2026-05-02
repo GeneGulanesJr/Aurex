@@ -59,6 +59,14 @@ Grammar .wasm files bundled in `grammars/`.
 - `extractable --repo NAME [--min-complexity N] [--min-callers N] [--top N]` — Refactoring candidates (complex functions called from many files)
 - `hierarchy --repo NAME --symbol S [--direction both|ancestors|descendants]` — Class hierarchy from parent_name
 
+### Code Analytics (v5.3 — signal chains, layer violations, AST calls)
+- `signal-chains --repo NAME [--kind http|cli] [--symbol S] [--max-depth N]` — Detect HTTP/CLI gateways and trace call chains
+- `layer-violations --repo NAME [--rules JSON]` — Check import rules against declared architecture layers
+
+**Note:** Layer rules can be defined inline via `--rules` or in a `.pimemory-layers.jsonc` file at the repo root.
+Signal chains detect Express routes (`app.get/post/...`), router patterns, and CLI commands.
+AST call resolution (v5.3) uses tree-sitter `call_expression` nodes instead of regex for JS/TS.
+
 **Note:** Churn metrics require `git` CLI. All other analysis works on any indexed repo.
 Complexity does NOT count `?.` optional chaining as a decision point.
 Dead code confidence: 0.33 per signal (no callers, unreachable file), 1.0 = provably unreachable.
@@ -75,6 +83,10 @@ Dead code confidence: 0.33 per signal (no callers, unreachable file), 1.0 = prov
 - `code-examples --query Q --repo NAME [--lang X]` — Search fenced code blocks by content
 - `doc-orphans --repo NAME [--include-same-doc]` — Find sections with zero inbound links
 - `doc-coverage --repo NAME [--doc-repo DOC_REPO]` — Which code symbols have documentation coverage
+
+### Doc Analytics (v5.3 — stale pages, duplicates)
+- `stale-pages --repo NAME` — Find docs modified since last index (mtime comparison)
+- `doc-duplicates --repo NAME` — Find duplicate sections by content hash
 
 **Hashtag extraction:** `(?<!#)#(\w{2,})` with negative lookbehind (excludes ATX headings).
 **Heading slugs:** lowercase → strip non-alphanumeric → replace spaces with hyphens (GitHub-compatible).
