@@ -648,10 +648,50 @@ function getDocCoverage(db, repoId, docRepoId, opts = {}) {
   };
 }
 
+// ══════════════════════════════════════════════════════════
+// STALE PAGE DETECTION (files modified since last index)
+// ══════════════════════════════════════════════════════════
+
+function getStalePages(db, repoId) {
+  const fs = require('fs');
+  const path = require('path');
+
+  const repo = db.prepare('SELECT path FROM doc_repos WHERE id = ?').get(repoId);
+  if (!repo) return { error: 'Repo not found' };
+
+  const files = db.prepare('SELECT id, path, mtime, content_hash FROM doc_files WHERE repo_id = ?').all(repoId);
+  const stale = [];
+  const missing = [];
+
+  for (const file of files) {
+    const fullPath = path.join(repo.path, file.path);
+    try {
+      const stat = fs.statSync(fullPath);
+      if (file.mtime && stat.mtimeMs > file.mtime) {
+        stale.push({
+          id: file.id,
+          path: file.path,
+          indexed_mtime: file.mtime,
+          current_mtime: stat.mtimeMs,
+          reason: 'modified',
+        });
+      }
+    } catch (e) {
+      missing.push({
+        id: file.id,
+        path: file.path,
+        reason: 'missing',
+      });
+    }
+  }
+
+  return { stale, missing, total_files: files.length };
+}
+
 module.exports = {
   indexDocs, reindexDocs, searchDocs, getDocOutline, getBacklinks,
   getBrokenLinks, lookupTerm, getTutorialPath, findCodeExamples, resolveLinks,
-  getOrphanSections, getDocCoverage,
+  getOrphanSections, getDocCoverage, getStalePages,
   _parseMarkdownSections: parseMarkdownSections,
   _slugify: slugify,
 };
