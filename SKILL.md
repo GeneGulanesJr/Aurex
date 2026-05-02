@@ -3,11 +3,12 @@ name: memory-layer
 description: Standalone persistent memory for Pi — smart search, symbol clustering, dedup, auto-recovery, trust scoring. Zero Python dependency.
 ---
 
-# Pi Memory Layer v4
+# Pi Memory Layer v5
 
 Persistent memory via a single SQLite database (`~/.pi/memory/memory.db`).
 All operations through `memory-store.js` — zero Python dependency, zero MCP servers.
 Code parsing uses web-tree-sitter (WASM) in-process.
+Code analysis (imports, call graph, complexity, dead code, churn) and doc indexing (markdown sections, links, glossary, code examples) built in — no external tools needed.
 
 ## CLI Quick Reference
 
@@ -41,6 +42,34 @@ Code parsing uses web-tree-sitter (WASM) in-process.
 **Supported:** JavaScript, TypeScript, TSX, SQL. Uses web-tree-sitter (WASM) — zero Python dependency.
 Grammar .wasm files bundled in `grammars/`.
 
+### Code Analysis (v5 — import graph, call graph, complexity, dead code)
+- `import-graph --repo NAME [--file F] [--direction imports|importers|both] [--depth N]` — Import dependency graph with recursive traversal
+- `call-hierarchy --symbol S --repo NAME [--direction callers|callees] [--depth N]` — Call graph hierarchy
+- `blast-radius --symbol S --repo NAME [--depth N]` — What breaks if a symbol changes
+- `dead-code --repo NAME [--min-confidence 0.5] [--include-tests true]` — Find unused code
+- `complexity --repo NAME [--symbol S]` — Cyclomatic complexity per function
+- `outline --repo NAME --file F` — File symbol outline (classes, methods, standalone)
+- `churn --repo NAME [--file F] [--days 90] [--refresh true]` — Git commit frequency metrics
+
+**Note:** Churn metrics require `git` CLI. All other analysis works on any indexed repo.
+Complexity does NOT count `?.` optional chaining as a decision point.
+Dead code confidence: 0.33 per signal (no callers, unreachable file), 1.0 = provably unreachable.
+
+### Doc Indexing (v5 — markdown sections, links, glossary, code examples)
+- `index-docs --path P --name NAME [--ignore GLOB]` — Index a markdown doc tree
+- `reindex-docs --repo NAME [--mode full] [--ignore GLOB]` — Re-index a doc repo
+- `doc-search --query Q --repo NAME [--level N] [--role TYPE]` — Full-text search across doc sections
+- `doc-outline --repo NAME [--file F]` — Section hierarchy outline
+- `backlinks --repo NAME --path F` — Find all docs that link TO a given doc
+- `broken-links --repo NAME` — Find broken internal doc links
+- `glossary --repo NAME [--term T]` — Look up glossary terms (`**Term** — definition` pattern)
+- `tutorial-path --section INT --repo NAME` — Reconstruct ordered tutorial chain
+- `code-examples --query Q --repo NAME [--lang X]` — Search fenced code blocks by content
+
+**Hashtag extraction:** `(?<!#)#(\w{2,})` with negative lookbehind (excludes ATX headings).
+**Heading slugs:** lowercase → strip non-alphanumeric → replace spaces with hyphens (GitHub-compatible).
+**Role classification:** tutorial, api, how_to, concept, troubleshooting, changelog, faq, example, other.
+
 ### Workspace Management (v4)
 - `list-workspaces` — All workspaces with counts and archive status.
 - `create-workspace --name NAME` — Create a named workspace.
@@ -51,7 +80,7 @@ Grammar .wasm files bundled in `grammars/`.
 - `related --id INT` — memories linked to the same symbols
 - `link-symbol --memory TEXT --symbol TEXT --repo TEXT [--trust REAL]`
 - `auto-link --project NAME`
-- `sync-code-trust --repo TEXT --changed-symbols-json JSON` — trust sync with jCodeMunch
+- `sync-code-trust --repo TEXT --changed-symbols-json JSON` — trust sync with code changes
 
 ### Maintenance
 - `compact` — prune dead links, decay stale trust, VACUUM, optimize FTS5 (auto-runs every 5 sessions)
@@ -115,6 +144,7 @@ On `save`, trigram overlap checked against existing observations:
 ## Graceful Degradation
 
 - No web-tree-sitter → code indexing disabled gracefully, non-code features work
+- No git → churn metrics disabled, all other features work
 - No sqlite3 → fails with install instructions
 - DB corrupted → suggest deleting `~/.pi/memory/memory.db`
-- No MCP server needed — fully self-contained
+- No MCP server needed — fully self-contained (v5 includes code analysis + doc indexing natively)
