@@ -885,8 +885,158 @@ function getClassHierarchy(db, repoId, opts = {}) {
   return result;
 }
 
+// ══════════════════════════════════════════════════════════
+// SIGNAL CHAINS (HTTP routes, CLI commands → call graph)
+// ══════════════════════════════════════════════════════════
+
+const _HTTP_PATTERNS = [
+  /\.(get|post|put|delete|patch|head|options|all)\s*\(\s*['"\`]([^'"\`]+)['"\`]/g,
+  /\.(use|route)\s*\(\s*['"\`]([^'"\`]+)['"\`]/g,
+];
+
+const _CLI_PATTERNS = [
+  /@click\.command\s*\(/g,
+  /@app\.route\s*\(\s*['"\`]([^'"\`]+)['"\`]/g,
+];
+
+function getSignalChains(db, repoId, opts = {}) {
+  const kind = opts.kind || null; // 'http', 'cli', or null for all
+  const symbol = opts.symbol || null;
+  const maxDepth = opts.maxDepth || 5;
+
+  // Get all symbols with their signatures
+  const symbols = db.prepare(
+    'SELECT id, name, kind, file_path, signature, start_line FROM code_symbols WHERE repo_id = ?'
+  ).all(repoId);
+
+  // Build call graph for tracing
+  const calls = db.prepare(
+    'SELECT caller_symbol_id, callee_name, callee_symbol_id FROM code_calls WHERE repo_id = ?'
+  ).all(repoId);
+
+  const callGraph = new Map(); // caller_id → [{callee_id, callee_name}]
+  for (const c of calls) {
+    if (!callGraph.has(c.caller_symbol_id)) callGraph.set(c.caller_symbol_id, []);
+    callGraph.get(c.caller_symbol_id).push({ callee_id: c.callee_symbol_id, callee_name: c.callee_name });
+  }
+
+  const symbolMap = new Map(symbols.map(s => [s.id, s]));
+
+  // Detect gateways from symbol signatures
+  const gateways = [];
+  for (const sym of symbols) {
+    if (!sym.signature) continue;
+    const sig = sym.signature;
+
+    // HTTP detection
+    if (!kind || kind === 'http') {
+      for (const pat of _HTTP_PATTERNS) {
+        pat.lastIndex = 0;
+        const match = pat.exec(sig);
+        if (match) {
+          const method = match[1] ? match[1].toUpperCase() : 'ANY';
+          const path = match[2] || '/';
+          gateways.push({
+            symbol_id: sym.id, name: sym.name, kind: 'http',
+            method, path, file_path: sym.file_path, line: sym.start_line,
+          });
+          break;
+        }
+      }
+    }
+
+    // CLI detection
+    if (!kind || kind === 'cli') {
+      for (const pat of _CLI_PATTERNS) {
+        pat.lastIndex = 0;
+        const match = pat.exec(sig);
+        if (match) {
+          gateways.push({
+            symbol_id: sym.id, name: sym.name, kind: 'cli',
+            method: 'CLI', path: match[1] || sym.name, file_path: sym.file_path, line: sym.start_line,
+          });
+          break;
+        }
+      }
+    }
+  }
+
+  // If a specific symbol is requested, filter to chains containing it
+  if (symbol) {
+    const symRow = db.prepare('SELECT id, name FROM code_symbols WHERE repo_id = ? AND name = ?').get(repoId, symbol);
+    if (!symRow) return { chains: [], note: `Symbol "${symbol}" not found` };
+
+    // Trace upstream to find which gateway leads to this symbol
+    const visited = new Set();
+    const queue = [symRow.id];
+    const parentMap = new Map();
+
+    while (queue.length) {
+      const current = queue.shift();
+      if (visited.has(current)) continue;
+      visited.add(current);
+      const callers = db.prepare('SELECT caller_symbol_id FROM code_calls WHERE callee_symbol_id = ? AND repo_id = ?').all(current, repoId);
+      for (const c of callers) {
+        if (!visited.has(c.caller_symbol_id)) {
+          parentMap.set(c.caller_symbol_id, current);
+          queue.push(c.caller_symbol_id);
+        }
+      }
+    }
+
+    // Find which gateways are in the visited set
+    const relevantGateways = gateways.filter(g => visited.has(g.symbol_id));
+    if (relevantGateways.length === 0) {
+      return { chains: [], note: `No signal chain found for "${symbol}"` };
+    }
+
+    // Reconstruct chains from each gateway to the target symbol
+    const chains = relevantGateways.map(gw => {
+      const chain = [{ symbol_id: gw.symbol_id, name: gw.name, kind: gw.kind, method: gw.method, path: gw.path }];
+      let current = gw.symbol_id;
+      while (parentMap.has(current) && current !== symRow.id) {
+        const next = parentMap.get(current);
+        const nextSym = symbolMap.get(next);
+        chain.push({ symbol_id: next, name: nextSym ? nextSym.name : `id:${next}`, kind: 'callee' });
+        current = next;
+      }
+      return { gateway: gw, chain };
+    });
+
+    return { symbol: symRow.name, chains };
+  }
+
+  // Discovery mode: return all gateways with their callees traced N levels deep
+  const chains = gateways.map(gw => {
+    const chain = [{ symbol_id: gw.symbol_id, name: gw.name, kind: gw.kind, method: gw.method, path: gw.path }];
+    let current = gw.symbol_id;
+    const visited = new Set([current]);
+
+    for (let depth = 0; depth < maxDepth; depth++) {
+      const callees = callGraph.get(current) || [];
+      if (callees.length === 0) break;
+      // Follow the first resolved callee (most common path)
+      const resolved = callees.find(c => c.callee_id) || callees[0];
+      if (!resolved || visited.has(resolved.callee_id || 0)) break;
+      const calleeSym = resolved.callee_id ? symbolMap.get(resolved.callee_id) : null;
+      chain.push({
+        symbol_id: resolved.callee_id,
+        name: resolved.callee_name,
+        kind: calleeSym ? calleeSym.kind : 'unknown',
+      });
+      if (resolved.callee_id) visited.add(resolved.callee_id);
+      current = resolved.callee_id;
+    }
+
+    return { gateway: gw, chain };
+  });
+
+  return { chains, gateway_count: gateways.length };
+}
+
 module.exports = {
   buildImportGraph, buildCallGraph, buildComplexity,
   getImportGraph, getCallHierarchy, getBlastRadius, getDeadCode, getComplexity, getFileOutline,
   getHotspots, getDependencyCycles, getSymbolImportance, getCouplingMetrics, getExtractionCandidates, getClassHierarchy,
+  getSignalChains,
 };
