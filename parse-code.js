@@ -463,4 +463,93 @@ function _extractSqlSymbols(filePath, sourceStr, parser) {
   return symbols;
 }
 
-module.exports = { init, isReady, parseFile, info };
+/**
+ * Extract call expressions from a file using AST parsing.
+ * Returns array of { callee: string, line: number, is_method: boolean }.
+ * More precise than the body-regex approach used in buildCallGraph.
+ */
+function extractCallees(filePath) {
+  if (!_ready) return [];
+  const ext = path.extname(filePath).toLowerCase();
+  const langConfig = LANGUAGE_MAP[ext];
+  if (!langConfig || langConfig.languageName === 'sql') return [];
+
+  // Skip JS/TS keywords that look like function calls
+  const _SKIP = new Set([
+    'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'try', 'catch', 'finally',
+    'class', 'function', 'return', 'throw', 'new', 'typeof', 'instanceof', 'void',
+    'delete', 'in', 'of', 'yield', 'await', 'async', 'export', 'import', 'from',
+    'const', 'let', 'var', 'true', 'false', 'null', 'undefined', 'this', 'super',
+    'constructor', 'extends', 'static', 'get', 'set',
+  ]);
+
+  const parser = _parsers[langConfig.parserKey];
+  if (!parser) return [];
+
+  let source;
+  try { source = fs.readFileSync(filePath, 'utf-8'); } catch (_) { return []; }
+
+  const tree = parser.parse(source);
+  const root = tree.rootNode;
+  const callees = [];
+  const seen = new Set();
+
+  function walk(node) {
+    // call_expression: callee is the first child
+    if (node.type === 'call_expression') {
+      const calleeNode = node.child(0);
+      if (calleeNode) {
+        // Direct call: foo()
+        if (calleeNode.type === 'identifier') {
+          const name = calleeNode.text;
+          if (!_SKIP.has(name)) {
+            const key = `${name}:${node.startPosition.row + 1}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              callees.push({ callee: name, line: node.startPosition.row + 1, is_method: false });
+            }
+          }
+        }
+        // Member call: obj.method() — extract 'method'
+        else if (calleeNode.type === 'member_expression') {
+          const propNode = calleeNode.child(calleeNode.childCount - 1);
+          if (propNode && (propNode.type === 'property_identifier' || propNode.type === 'identifier')) {
+            const name = propNode.text;
+            if (!_SKIP.has(name)) {
+              const key = `${name}:${node.startPosition.row + 1}`;
+              if (!seen.has(key)) {
+                seen.add(key);
+                callees.push({ callee: name, line: node.startPosition.row + 1, is_method: true });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // new_expression: new ClassName()
+    if (node.type === 'new_expression') {
+      for (const child of node.children) {
+        if (child.type === 'identifier' || child.type === 'type_identifier') {
+          const name = child.text;
+          const key = `new_${name}:${node.startPosition.row + 1}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            callees.push({ callee: name, line: node.startPosition.row + 1, is_method: false });
+          }
+          break;
+        }
+      }
+    }
+
+    for (const child of node.children) {
+      walk(child);
+    }
+  }
+
+  walk(root);
+  tree.delete();
+  return callees;
+}
+
+module.exports = { init, isReady, parseFile, extractCallees, info };

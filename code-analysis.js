@@ -182,57 +182,89 @@ function buildCallGraph(db, repoId) {
 
   let totalCalls = 0;
 
+  // Resolve callee name to symbol ID (import-aware → same-file → repo-wide)
+  function resolveCallee(calleeName, sym, fileImportsCache, symbolsByName) {
+    let calleeSymbolId = null;
+    let confidence = 0.7;
+
+    // Import-aware resolution (cached per file)
+    const fileImports = fileImportsCache[sym.file_id] || (fileImportsCache[sym.file_id] = db.prepare(
+      'SELECT target_file_id FROM code_imports WHERE source_file_id = ? AND target_file_id IS NOT NULL'
+    ).all(sym.file_id));
+
+    for (const imp of fileImports) {
+      const matchSym = db.prepare('SELECT id FROM code_symbols WHERE file_id = ? AND name = ? LIMIT 1').get(imp.target_file_id, calleeName);
+      if (matchSym) { calleeSymbolId = matchSym.id; confidence = 1.0; break; }
+    }
+
+    if (!calleeSymbolId) {
+      const sameFile = db.prepare('SELECT id FROM code_symbols WHERE file_id = ? AND name = ? LIMIT 1').get(sym.file_id, calleeName);
+      if (sameFile) { calleeSymbolId = sameFile.id; confidence = 0.9; }
+    }
+
+    if (!calleeSymbolId) {
+      const matches = symbolsByName.get(calleeName);
+      if (matches && matches.length === 1) { calleeSymbolId = matches[0].id; confidence = 0.7; }
+    }
+
+    return { calleeSymbolId, confidence };
+  }
+
+  const fileImportsCache = {};
+
   for (const sym of symbols) {
     if (!sym.file_content || sym.end_byte <= sym.start_byte) continue;
 
-    const body = Buffer.from(sym.file_content, 'utf-8')
-      .toString('utf-8', sym.start_byte, sym.end_byte);
-
-    if (!body || body.length < 2) continue;
-
-    const callPatterns = [
-      /\b([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g,
-      /\.([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g,
-      /\bnew\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g,
-    ];
+    // v5.3: Try AST-based call extraction first (more precise)
+    let astCallees = [];
+    try {
+      const allCallees = codeParser.extractCallees(sym.file_path);
+      // Filter to callees within this symbol's line range
+      astCallees = allCallees.filter(c => c.line >= sym.start_line && c.line <= sym.end_line);
+    } catch (_) {
+      astCallees = []; // Will fall back to regex
+    }
 
     const seen = new Set();
 
-    for (const pattern of callPatterns) {
-      let match;
-      pattern.lastIndex = 0;
-      while ((match = pattern.exec(body)) !== null) {
-        const calleeName = match[1];
-        if (_SKIP_CALLEE_NAMES.has(calleeName)) continue;
-        if (seen.has(calleeName)) continue;
-        seen.add(calleeName);
+    if (astCallees.length > 0) {
+      // AST-based extraction: use callee names directly
+      for (const c of astCallees) {
+        if (_SKIP_CALLEE_NAMES.has(c.callee)) continue;
+        const key = `${c.callee}:${c.line}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
 
-        let calleeSymbolId = null;
-        let confidence = 0.7;
-
-        // Import-aware resolution
-        const fileImports = db.prepare(
-          'SELECT target_file_id FROM code_imports WHERE source_file_id = ? AND target_file_id IS NOT NULL'
-        ).all(sym.file_id);
-
-        for (const imp of fileImports) {
-          const matchSym = db.prepare('SELECT id FROM code_symbols WHERE file_id = ? AND name = ? LIMIT 1').get(imp.target_file_id, calleeName);
-          if (matchSym) { calleeSymbolId = matchSym.id; confidence = 1.0; break; }
-        }
-
-        if (!calleeSymbolId) {
-          const sameFile = db.prepare('SELECT id FROM code_symbols WHERE file_id = ? AND name = ? LIMIT 1').get(sym.file_id, calleeName);
-          if (sameFile) { calleeSymbolId = sameFile.id; confidence = 0.9; }
-        }
-
-        if (!calleeSymbolId) {
-          const matches = symbolsByName.get(calleeName);
-          if (matches && matches.length === 1) { calleeSymbolId = matches[0].id; confidence = 0.7; }
-        }
-
-        const lineNum = sym.start_line + body.substring(0, match.index).split('\n').length - 1;
-        insertStmt.run(repoId, sym.id, calleeName, calleeSymbolId, confidence, lineNum);
+        const { calleeSymbolId, confidence } = resolveCallee(c.callee, sym, fileImportsCache, symbolsByName);
+        insertStmt.run(repoId, sym.id, c.callee, calleeSymbolId, confidence, c.line);
         totalCalls++;
+      }
+    } else {
+      // Regex fallback for SQL or when AST isn't available
+      const body = Buffer.from(sym.file_content, 'utf-8')
+        .toString('utf-8', sym.start_byte, sym.end_byte);
+      if (!body || body.length < 2) continue;
+
+      const callPatterns = [
+        /\b([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g,
+        /\.([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g,
+        /\bnew\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g,
+      ];
+
+      for (const pattern of callPatterns) {
+        let match;
+        pattern.lastIndex = 0;
+        while ((match = pattern.exec(body)) !== null) {
+          const calleeName = match[1];
+          if (_SKIP_CALLEE_NAMES.has(calleeName)) continue;
+          if (seen.has(calleeName)) continue;
+          seen.add(calleeName);
+
+          const { calleeSymbolId, confidence } = resolveCallee(calleeName, sym, fileImportsCache, symbolsByName);
+          const lineNum = sym.start_line + body.substring(0, match.index).split('\n').length - 1;
+          insertStmt.run(repoId, sym.id, calleeName, calleeSymbolId, confidence, lineNum);
+          totalCalls++;
+        }
       }
     }
   }
