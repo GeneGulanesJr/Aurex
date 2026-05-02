@@ -392,7 +392,31 @@ function runMigrations() {
 
   try { sqlRaw('PRAGMA user_version = 4'); } catch (_) { /* non-fatal */ }
 
-  return { migrated: true, fromVersion: version, toVersion: 4 };
+  // v5: code analysis + doc indexing tables (all additive, CREATE IF NOT EXISTS)
+  if (version < 5) {
+    try {
+      const schema = fs.readFileSync(SCHEMA_PATH, 'utf8');
+      // Use exec() for the whole schema — node:sqlite handles multi-statement
+      // For CLI/other backends, fall back to statement-by-statement
+      if (_engine === 'node-sqlite' || _engine === 'better-sqlite3') {
+        db.exec(schema);
+      } else {
+        // sqlite3 CLI: use .read
+        try { sqlRaw(`.read "${SCHEMA_PATH}"`); } catch (_) {}
+      }
+      sqlRaw('PRAGMA user_version = 5');
+    } catch (e) {
+      // If full exec fails, try individual statements (some may already exist)
+      console.error('[migration v5] Full schema exec failed, trying per-statement:', e.message);
+      const stmts = schema.split(/;\s*\n/).map(s => s.trim()).filter(s => s.length > 0);
+      for (const stmt of stmts) {
+        try { sqlRaw(stmt); } catch (_) {}
+      }
+      try { sqlRaw('PRAGMA user_version = 5'); } catch (_) {}
+    }
+  }
+
+  return { migrated: true, fromVersion: version, toVersion: 5 };
 }
 
 function jsonOut(obj) { console.log(JSON.stringify(obj, null, 2)); }

@@ -1,7 +1,7 @@
 -- @genegulanesjr/memory-layer — Unified Schema v4
 -- Single database: ~/.pi/memory/memory.db
 -- Zero external dependencies. FTS5 search, trust scoring, dedup, recall ranking.
-PRAGMA user_version = 4;
+PRAGMA user_version = 5;
 
 -- ═══════════════════════════════════════════════════════════
 -- WORKSPACES  (v4 — formal project isolation)
@@ -291,3 +291,183 @@ CREATE TRIGGER IF NOT EXISTS cs_fts_update AFTER UPDATE ON code_symbols BEGIN
   INSERT INTO code_symbols_fts(rowid, name, kind, signature, docstring, file_path, body_preview)
   VALUES (new.id, new.name, new.kind, new.signature, new.docstring, new.file_path, new.body_preview);
 END;
+
+-- ═══════════════════════════════════════════════════════════
+-- IMPORT EDGES  (file→file dependency graph)
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS code_imports (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id         INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE,
+  source_file_id  INTEGER NOT NULL REFERENCES code_files(id) ON DELETE CASCADE,
+  target_module   TEXT NOT NULL,
+  target_file_id  INTEGER REFERENCES code_files(id) ON DELETE SET NULL,
+  import_type     TEXT NOT NULL DEFAULT 'static',
+  line_number     INTEGER,
+  UNIQUE(repo_id, source_file_id, target_module)
+);
+CREATE INDEX IF NOT EXISTS idx_ci_source ON code_imports(source_file_id);
+CREATE INDEX IF NOT EXISTS idx_ci_target ON code_imports(target_file_id);
+CREATE INDEX IF NOT EXISTS idx_ci_repo ON code_imports(repo_id);
+
+-- ═══════════════════════════════════════════════════════════
+-- CALL EDGES  (symbol→symbol call graph)
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS code_calls (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id           INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE,
+  caller_symbol_id  INTEGER NOT NULL REFERENCES code_symbols(id) ON DELETE CASCADE,
+  callee_name       TEXT NOT NULL,
+  callee_symbol_id  INTEGER REFERENCES code_symbols(id) ON DELETE SET NULL,
+  confidence        REAL NOT NULL DEFAULT 1.0,
+  line_number       INTEGER,
+  UNIQUE(repo_id, caller_symbol_id, callee_name)
+);
+CREATE INDEX IF NOT EXISTS idx_cc_caller ON code_calls(caller_symbol_id);
+CREATE INDEX IF NOT EXISTS idx_cc_callee_name ON code_calls(repo_id, callee_name);
+CREATE INDEX IF NOT EXISTS idx_cc_callee ON code_calls(callee_symbol_id);
+
+-- ═══════════════════════════════════════════════════════════
+-- DOC REPOS
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS doc_repos (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  name          TEXT NOT NULL UNIQUE,
+  path          TEXT NOT NULL UNIQUE,
+  file_count    INTEGER DEFAULT 0,
+  section_count INTEGER DEFAULT 0,
+  indexed_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ═══════════════════════════════════════════════════════════
+-- DOC FILES
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS doc_files (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id       INTEGER NOT NULL REFERENCES doc_repos(id) ON DELETE CASCADE,
+  path          TEXT NOT NULL,
+  content       TEXT NOT NULL,
+  content_hash  TEXT NOT NULL,
+  mtime         REAL,
+  UNIQUE(repo_id, path)
+);
+
+-- ═══════════════════════════════════════════════════════════
+-- DOC SECTIONS
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS doc_sections (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id       INTEGER NOT NULL REFERENCES doc_repos(id) ON DELETE CASCADE,
+  file_id       INTEGER NOT NULL REFERENCES doc_files(id) ON DELETE CASCADE,
+  title         TEXT NOT NULL,
+  level         INTEGER NOT NULL,
+  parent_id     INTEGER REFERENCES doc_sections(id) ON DELETE SET NULL,
+  content       TEXT DEFAULT '',
+  content_hash  TEXT NOT NULL,
+  byte_start    INTEGER NOT NULL,
+  byte_end      INTEGER NOT NULL,
+  role          TEXT DEFAULT 'other',
+  tags          TEXT DEFAULT '',
+  UNIQUE(repo_id, file_id, byte_start)
+);
+CREATE INDEX IF NOT EXISTS idx_ds_file ON doc_sections(file_id);
+CREATE INDEX IF NOT EXISTS idx_ds_parent ON doc_sections(parent_id);
+CREATE INDEX IF NOT EXISTS idx_ds_repo ON doc_sections(repo_id);
+CREATE INDEX IF NOT EXISTS idx_ds_level ON doc_sections(level);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS doc_sections_fts USING fts5(
+  title,
+  content,
+  tags,
+  content=doc_sections,
+  content_rowid=id
+);
+
+CREATE TRIGGER IF NOT EXISTS ds_fts_insert AFTER INSERT ON doc_sections BEGIN
+  INSERT INTO doc_sections_fts(rowid, title, content, tags)
+  VALUES (new.id, new.title, new.content, new.tags);
+END;
+CREATE TRIGGER IF NOT EXISTS ds_fts_delete AFTER DELETE ON doc_sections BEGIN
+  INSERT INTO doc_sections_fts(doc_sections_fts, rowid, title, content, tags)
+  VALUES ('delete', old.id, old.title, old.content, old.tags);
+END;
+CREATE TRIGGER IF NOT EXISTS ds_fts_update AFTER UPDATE ON doc_sections BEGIN
+  INSERT INTO doc_sections_fts(doc_sections_fts, rowid, title, content, tags)
+  VALUES ('delete', old.id, old.title, old.content, old.tags);
+  INSERT INTO doc_sections_fts(rowid, title, content, tags)
+  VALUES (new.id, new.title, new.content, new.tags);
+END;
+
+-- ═══════════════════════════════════════════════════════════
+-- DOC LINKS
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS doc_links (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_section_id INTEGER NOT NULL REFERENCES doc_sections(id) ON DELETE CASCADE,
+  target_path       TEXT NOT NULL,
+  target_section_id INTEGER REFERENCES doc_sections(id) ON DELETE SET NULL,
+  link_text         TEXT DEFAULT '',
+  is_broken         INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_dl_source ON doc_links(source_section_id);
+CREATE INDEX IF NOT EXISTS idx_dl_target ON doc_links(target_section_id);
+CREATE INDEX IF NOT EXISTS idx_dl_broken ON doc_links(is_broken);
+
+-- ═══════════════════════════════════════════════════════════
+-- DOC GLOSSARY TERMS
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS doc_terms (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id     INTEGER NOT NULL REFERENCES doc_repos(id) ON DELETE CASCADE,
+  term        TEXT NOT NULL,
+  definition  TEXT NOT NULL,
+  section_id  INTEGER REFERENCES doc_sections(id) ON DELETE SET NULL,
+  UNIQUE(repo_id, term)
+);
+CREATE INDEX IF NOT EXISTS idx_dt_term ON doc_terms(term);
+CREATE INDEX IF NOT EXISTS idx_dt_repo ON doc_terms(repo_id);
+
+-- ═══════════════════════════════════════════════════════════
+-- DOC CODE BLOCKS
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS doc_code_blocks (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  section_id  INTEGER NOT NULL REFERENCES doc_sections(id) ON DELETE CASCADE,
+  lang        TEXT DEFAULT '',
+  content     TEXT NOT NULL,
+  byte_start  INTEGER NOT NULL,
+  byte_end    INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dcb_section ON doc_code_blocks(section_id);
+CREATE INDEX IF NOT EXISTS idx_dcb_lang ON doc_code_blocks(lang);
+
+-- ═══════════════════════════════════════════════════════════
+-- CHURN METRICS
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS churn_metrics (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id       INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE,
+  file_path     TEXT NOT NULL,
+  commits       INTEGER NOT NULL DEFAULT 0,
+  unique_authors INTEGER NOT NULL DEFAULT 0,
+  first_seen    TEXT,
+  last_modified TEXT,
+  churn_per_week REAL DEFAULT 0.0,
+  window_days   INTEGER NOT NULL DEFAULT 90,
+  UNIQUE(repo_id, file_path, window_days)
+);
+CREATE INDEX IF NOT EXISTS idx_cm_repo ON churn_metrics(repo_id);
+
+-- ═══════════════════════════════════════════════════════════
+-- SYMBOL COMPLEXITY
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS symbol_complexity (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  symbol_id         INTEGER NOT NULL UNIQUE REFERENCES code_symbols(id) ON DELETE CASCADE,
+  cyclomatic        INTEGER NOT NULL DEFAULT 1,
+  nesting_depth     INTEGER NOT NULL DEFAULT 0,
+  param_count       INTEGER NOT NULL DEFAULT 0,
+  lines_of_code     INTEGER NOT NULL DEFAULT 0,
+  assessment        TEXT NOT NULL DEFAULT 'low'
+);
+CREATE INDEX IF NOT EXISTS idx_sc_symbol ON symbol_complexity(symbol_id);
