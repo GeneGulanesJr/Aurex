@@ -528,7 +528,333 @@ function getFileOutline(db, repoId, filePath) {
   return { file: filePath, classes, standalone };
 }
 
+// ══════════════════════════════════════════════════════════
+// HOTSPOTS (complexity × churn)
+// ══════════════════════════════════════════════════════════
+
+function getHotspots(db, repoId, opts = {}) {
+  const topN = opts.top || 20;
+  const days = opts.days || 90;
+
+  // Ensure churn data exists for this repo
+  const churnCount = db.prepare('SELECT count(*) as c FROM churn_metrics WHERE repo_id = ? AND window_days = ?').get(repoId, days);
+  if (!churnCount || churnCount.c === 0) {
+    return { hotspots: [], note: 'No churn data. Run `churn --repo X` first to populate git history metrics.' };
+  }
+
+  const rows = db.prepare(`
+    SELECT
+      cs.name,
+      cs.kind,
+      cs.file_path,
+      sc.cyclomatic,
+      sc.nesting_depth,
+      cm.commits,
+      cm.churn_per_week,
+      cm.unique_authors,
+      ROUND(sc.cyclomatic * LOG(1 + cm.commits), 2) as hotspot_score,
+      CASE
+        WHEN sc.cyclomatic * LOG(1 + cm.commits) >= 20 THEN 'critical'
+        WHEN sc.cyclomatic * LOG(1 + cm.commits) >= 10 THEN 'high'
+        WHEN sc.cyclomatic * LOG(1 + cm.commits) >= 5 THEN 'medium'
+        ELSE 'low'
+      END as risk
+    FROM symbol_complexity sc
+    JOIN code_symbols cs ON cs.id = sc.symbol_id
+    JOIN churn_metrics cm ON cm.repo_id = cs.repo_id AND cm.file_path = cs.file_path
+    WHERE cs.repo_id = ? AND cm.window_days = ?
+    ORDER BY hotspot_score DESC
+    LIMIT ?
+  `).all(repoId, days, topN);
+
+  return { hotspots: rows };
+}
+
+// ══════════════════════════════════════════════════════════
+// DEPENDENCY CYCLES (Tarjan's SCC on import graph)
+// ══════════════════════════════════════════════════════════
+
+function getDependencyCycles(db, repoId) {
+  // Build adjacency list from import edges (source → target)
+  const edges = db.prepare(`
+    SELECT DISTINCT cf_source.path as source, cf_target.path as target
+    FROM code_imports ci
+    JOIN code_files cf_source ON cf_source.id = ci.source_file_id
+    JOIN code_files cf_target ON cf_target.id = ci.target_file_id
+    WHERE ci.repo_id = ? AND ci.target_file_id IS NOT NULL
+  `).all(repoId);
+
+  const adj = new Map();
+  const allNodes = new Set();
+  for (const e of edges) {
+    if (!adj.has(e.source)) adj.set(e.source, []);
+    adj.get(e.source).push(e.target);
+    allNodes.add(e.source);
+    allNodes.add(e.target);
+  }
+
+  // Tarjan's SCC
+  let index = 0;
+  const stack = [];
+  const onStack = new Set();
+  const indices = new Map();
+  const lowlink = new Map();
+  const sccs = [];
+
+  function strongconnect(v) {
+    indices.set(v, index);
+    lowlink.set(v, index);
+    index++;
+    stack.push(v);
+    onStack.add(v);
+
+    for (const w of (adj.get(v) || [])) {
+      if (!indices.has(w)) {
+        strongconnect(w);
+        lowlink.set(v, Math.min(lowlink.get(v), lowlink.get(w)));
+      } else if (onStack.has(w)) {
+        lowlink.set(v, Math.min(lowlink.get(v), indices.get(w)));
+      }
+    }
+
+    if (lowlink.get(v) === indices.get(v)) {
+      const scc = [];
+      let w;
+      do {
+        w = stack.pop();
+        onStack.delete(w);
+        scc.push(w);
+      } while (w !== v);
+      if (scc.length > 1) sccs.push(scc);
+    }
+  }
+
+  for (const v of allNodes) {
+    if (!indices.has(v)) strongconnect(v);
+  }
+
+  // Find actual cycles (paths that close the loop)
+  const cycles = sccs.map(scc => {
+    const sccSet = new Set(scc);
+    const cycleEdges = [];
+    for (const node of scc) {
+      for (const neighbor of (adj.get(node) || [])) {
+        if (sccSet.has(neighbor)) {
+          cycleEdges.push({ from: node, to: neighbor });
+        }
+      }
+    }
+    return { files: scc, edges: cycleEdges, size: scc.length };
+  });
+
+  return { cycles: cycles.sort((a, b) => b.size - a.size), total_circular_files: cycles.reduce((sum, c) => sum + c.size, 0) };
+}
+
+// ══════════════════════════════════════════════════════════
+// SYMBOL IMPORTANCE (PageRank on call graph)
+// ══════════════════════════════════════════════════════════
+
+function getSymbolImportance(db, repoId, opts = {}) {
+  const topN = opts.top || 20;
+  const scope = opts.scope || null;
+
+  // Build call graph: caller → [callees] (only for symbols in this repo)
+  const calls = db.prepare(`
+    SELECT cc.caller_symbol_id, cc.callee_symbol_id
+    FROM code_calls cc
+    JOIN code_symbols cs ON cs.id = cc.caller_symbol_id
+    WHERE cc.repo_id = ? AND cc.callee_symbol_id IS NOT NULL AND cs.repo_id = ?
+  `).all(repoId, repoId);
+
+  // Get all symbols in repo (optionally scoped)
+  let symbolQuery = 'SELECT id, name, kind, file_path FROM code_symbols WHERE repo_id = ?';
+  const symbolParams = [repoId];
+  if (scope) {
+    symbolQuery += ' AND file_path LIKE ?';
+    symbolParams.push(`${scope}%`);
+  }
+  const symbols = db.prepare(symbolQuery).all(...symbolParams);
+  const symbolSet = new Set(symbols.map(s => s.id));
+  const symbolMap = new Map(symbols.map(s => [s.id, s]));
+
+  // Build outgoing edges map (only between repo symbols)
+  const outEdges = new Map();
+  for (const call of calls) {
+    if (!symbolSet.has(call.caller_symbol_id) || !symbolSet.has(call.callee_symbol_id)) continue;
+    if (!outEdges.has(call.caller_symbol_id)) outEdges.set(call.caller_symbol_id, []);
+    outEdges.get(call.caller_symbol_id).push(call.callee_symbol_id);
+  }
+
+  // Initialize PageRank
+  const d = 0.85; // damping factor
+  const n = symbolSet.size;
+  let ranks = new Map();
+  for (const id of symbolSet) ranks.set(id, 1 / n);
+
+  // Iterate (10 iterations)
+  for (let i = 0; i < 10; i++) {
+    const newRanks = new Map();
+    for (const id of symbolSet) newRanks.set(id, (1 - d) / n);
+
+    for (const [callerId, calleeIds] of outEdges) {
+      const outDegree = calleeIds.length;
+      if (outDegree === 0) continue;
+      const rankShare = ranks.get(callerId) / outDegree;
+      for (const calleeId of calleeIds) {
+        newRanks.set(calleeId, newRanks.get(calleeId) + d * rankShare);
+      }
+    }
+    ranks = newRanks;
+  }
+
+  // Sort by rank and return top N
+  const results = [...ranks.entries()]
+    .map(([id, rank]) => ({ ...symbolMap.get(id), pagerank: Math.round(rank * 10000) / 10000 }))
+    .sort((a, b) => b.pagerank - a.pagerank)
+    .slice(0, topN);
+
+  return { importance: results, total_symbols: n };
+}
+
+// ══════════════════════════════════════════════════════════
+// COUPLING METRICS (afferent/efferent/instability per file)
+// ══════════════════════════════════════════════════════════
+
+function getCouplingMetrics(db, repoId, opts = {}) {
+  const filePath = opts.file || null;
+  const minCa = opts.minCa || 0;
+  const sortBy = opts.sortBy || 'instability'; // 'instability', 'afferent', 'efferent'
+
+  // Afferent coupling (Ca): files that import this file
+  const afferentRows = db.prepare(`
+    SELECT tf.path as file_path, COUNT(DISTINCT ci.source_file_id) as ca
+    FROM code_imports ci
+    JOIN code_files tf ON tf.id = ci.target_file_id
+    WHERE ci.repo_id = ? AND ci.target_file_id IS NOT NULL
+    GROUP BY tf.path
+  `).all(repoId);
+
+  // Efferent coupling (Ce): files this file imports
+  const efferentRows = db.prepare(`
+    SELECT sf.path as file_path, COUNT(DISTINCT ci.target_file_id) as ce
+    FROM code_imports ci
+    JOIN code_files sf ON sf.id = ci.source_file_id
+    WHERE ci.repo_id = ? AND ci.target_file_id IS NOT NULL AND ci.import_type != 're-export'
+    GROUP BY sf.path
+  `).all(repoId);
+
+  const afferentMap = new Map(afferentRows.map(r => [r.file_path, r.ca]));
+  const efferentMap = new Map(efferentRows.map(r => [r.file_path, r.ce]));
+
+  // Get all files in repo
+  const allFiles = db.prepare('SELECT path FROM code_files WHERE repo_id = ?').all(repoId);
+  const results = [];
+
+  for (const f of allFiles) {
+    if (filePath && f.path !== filePath && !f.path.endsWith(filePath)) continue;
+    const ca = afferentMap.get(f.path) || 0;
+    const ce = efferentMap.get(f.path) || 0;
+    const total = ca + ce;
+    const instability = total === 0 ? 0 : Math.round((ce / total) * 100) / 100;
+    const category = instability <= 0.3 ? 'stable' : instability >= 0.7 ? 'unstable' : 'balanced';
+
+    if (ca < minCa) continue;
+    results.push({ file_path: f.path, afferent: ca, efferent: ce, instability, category });
+  }
+
+  const sortKey = sortBy === 'afferent' ? 'afferent' : sortBy === 'efferent' ? 'efferent' : 'instability';
+  results.sort((a, b) => b[sortKey] - a[sortKey]);
+
+  return { metrics: results };
+}
+
+// ══════════════════════════════════════════════════════════
+// EXTRACTION CANDIDATES (complexity × caller spread)
+// ══════════════════════════════════════════════════════════
+
+function getExtractionCandidates(db, repoId, opts = {}) {
+  const minComplexity = opts.minComplexity || 5;
+  const minCallers = opts.minCallers || 2;
+  const topN = opts.top || 20;
+
+  // Find symbols with high complexity that are called from multiple files
+  const rows = db.prepare(`
+    SELECT
+      cs.name,
+      cs.kind,
+      cs.file_path,
+      sc.cyclomatic,
+      sc.nesting_depth,
+      sc.lines_of_code,
+      COUNT(DISTINCT caller.file_path) as caller_file_count,
+      ROUND(sc.cyclomatic * LOG(1 + COUNT(DISTINCT caller.file_path)), 2) as extraction_score,
+      GROUP_CONCAT(DISTINCT caller.file_path) as caller_files
+    FROM symbol_complexity sc
+    JOIN code_symbols cs ON cs.id = sc.symbol_id
+    JOIN code_calls cc ON cc.callee_symbol_id = cs.id AND cc.repo_id = cs.repo_id
+    JOIN code_symbols caller ON caller.id = cc.caller_symbol_id AND caller.repo_id = cs.repo_id
+    WHERE cs.repo_id = ? AND sc.cyclomatic >= ?
+    GROUP BY cs.id
+    HAVING COUNT(DISTINCT caller.file_path) >= ?
+    ORDER BY extraction_score DESC
+    LIMIT ?
+  `).all(repoId, minComplexity, minCallers, topN);
+
+  // Parse caller_files from GROUP_CONCAT
+  const results = rows.map(r => ({
+    ...r,
+    caller_files: r.caller_files ? r.caller_files.split(',') : [],
+  }));
+
+  return { candidates: results };
+}
+
+// ══════════════════════════════════════════════════════════
+// CLASS HIERARCHY (parent_name → ancestors/descendants)
+// ══════════════════════════════════════════════════════════
+
+function getClassHierarchy(db, repoId, opts = {}) {
+  const className = opts.class || opts.symbol;
+  const direction = opts.direction || 'both'; // 'ancestors', 'descendants', 'both'
+
+  if (!className) return { error: 'Class name required. Pass --class or --symbol.' };
+
+  // Find the symbol
+  const sym = db.prepare('SELECT id, name, kind, file_path, parent_name FROM code_symbols WHERE repo_id = ? AND name = ?').get(repoId, className);
+  if (!sym) return { error: `Symbol "${className}" not found in repo.` };
+
+  const result = { name: sym.name, kind: sym.kind, file_path: sym.file_path, parent_name: sym.parent_name };
+
+  // Ancestors: walk parent_name chain upward
+  if (direction === 'ancestors' || direction === 'both') {
+    const ancestors = [];
+    let current = sym;
+    const visited = new Set();
+    while (current.parent_name && !visited.has(current.parent_name)) {
+      visited.add(current.parent_name);
+      const parent = db.prepare('SELECT id, name, kind, file_path, parent_name FROM code_symbols WHERE repo_id = ? AND name = ?').get(repoId, current.parent_name);
+      if (!parent) break;
+      ancestors.push({ name: parent.name, kind: parent.kind, file_path: parent.file_path });
+      current = parent;
+    }
+    result.ancestors = ancestors;
+  }
+
+  // Descendants: find symbols whose parent_name matches this class
+  if (direction === 'descendants' || direction === 'both') {
+    const descendants = db.prepare(`
+      SELECT name, kind, file_path, parent_name FROM code_symbols
+      WHERE repo_id = ? AND parent_name = ?
+      ORDER BY kind, name
+    `).all(repoId, className);
+    result.descendants = descendants;
+  }
+
+  return result;
+}
+
 module.exports = {
   buildImportGraph, buildCallGraph, buildComplexity,
   getImportGraph, getCallHierarchy, getBlastRadius, getDeadCode, getComplexity, getFileOutline,
+  getHotspots, getDependencyCycles, getSymbolImportance, getCouplingMetrics, getExtractionCandidates, getClassHierarchy,
 };

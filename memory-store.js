@@ -2133,6 +2133,96 @@ const commands = {
     return gitAnalysis.getChurn(db, repoRow[0].id, args.file || '__all__', parseInt(args.days || '90'), args.refresh === 'true');
   },
 
+  'hotspots': (args) => {
+    const repo = args.repo;
+    if (!repo) jsonErr('Usage: node memory-store.js hotspots --repo X [--top N] [--days N]');
+    const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Repo "${repo}" not found. Run index-repo first.`);
+    return codeAnalysis.getHotspots(db, repoRow[0].id, {
+      top: args.top ? parseInt(args.top) : 20,
+      days: args.days ? parseInt(args.days) : 90,
+    });
+  },
+
+  'cycles': (args) => {
+    const repo = args.repo;
+    if (!repo) jsonErr('Usage: node memory-store.js cycles --repo X');
+    const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Repo "${repo}" not found. Run index-repo first.`);
+    return codeAnalysis.getDependencyCycles(db, repoRow[0].id);
+  },
+
+  'importance': (args) => {
+    const repo = args.repo;
+    if (!repo) jsonErr('Usage: node memory-store.js importance --repo X [--top N] [--scope dir/]');
+    const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Repo "${repo}" not found. Run index-repo first.`);
+    return codeAnalysis.getSymbolImportance(db, repoRow[0].id, {
+      top: args.top ? parseInt(args.top) : 20,
+      scope: args.scope || null,
+    });
+  },
+
+  'coupling': (args) => {
+    const repo = args.repo;
+    if (!repo) jsonErr('Usage: node memory-store.js coupling --repo X [--file F] [--sort-by instability|afferent|efferent]');
+    const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Repo "${repo}" not found. Run index-repo first.`);
+    return codeAnalysis.getCouplingMetrics(db, repoRow[0].id, {
+      file: args.file || null,
+      minCa: args['min-ca'] ? parseInt(args['min-ca']) : 0,
+      sortBy: args['sort-by'] || 'instability',
+    });
+  },
+
+  'extractable': (args) => {
+    const repo = args.repo;
+    if (!repo) jsonErr('Usage: node memory-store.js extractable --repo X [--min-complexity N] [--min-callers N] [--top N]');
+    const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Repo "${repo}" not found. Run index-repo first.`);
+    return codeAnalysis.getExtractionCandidates(db, repoRow[0].id, {
+      minComplexity: args['min-complexity'] ? parseInt(args['min-complexity']) : 5,
+      minCallers: args['min-callers'] ? parseInt(args['min-callers']) : 2,
+      top: args.top ? parseInt(args.top) : 20,
+    });
+  },
+
+  'hierarchy': (args) => {
+    const repo = args.repo;
+    const symbol = args.symbol || args.class;
+    if (!repo) jsonErr('Usage: node memory-store.js hierarchy --repo X --symbol S [--direction both|ancestors|descendants]');
+    const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Repo "${repo}" not found. Run index-repo first.`);
+    return codeAnalysis.getClassHierarchy(db, repoRow[0].id, {
+      class: args.class,
+      symbol: args.symbol,
+      direction: args.direction || 'both',
+    });
+  },
+
+  // ── v5.2: Doc analytics subcommands ──
+
+  'doc-orphans': (args) => {
+    const repo = args.repo;
+    if (!repo) jsonErr('Usage: node memory-store.js doc-orphans --repo X [--include-same-doc]');
+    const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found`);
+    return docIndexer.getOrphanSections(db, repoRow[0].id, {
+      includeSameDoc: args['include-same-doc'] === 'true',
+    });
+  },
+
+  'doc-coverage': (args) => {
+    const codeRepo = args.repo;
+    const docRepo = args['doc-repo'] || codeRepo;
+    if (!codeRepo) jsonErr('Usage: node memory-store.js doc-coverage --repo X [--doc-repo Y]');
+    const codeRepoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [codeRepo]);
+    if (!codeRepoRow.length) jsonErr(`Code repo "${codeRepo}" not found. Run index-repo first.`);
+    const docRepoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [docRepo]);
+    if (!docRepoRow.length) jsonErr(`Doc repo "${docRepo}" not found. Run index-docs first.`);
+    return docIndexer.getDocCoverage(db, codeRepoRow[0].id, docRepoRow[0].id);
+  },
+
   // ── v5: Doc indexing subcommands ──
 
   'index-docs': (args) => {

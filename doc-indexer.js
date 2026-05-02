@@ -551,9 +551,107 @@ function reindexDocs(db, repoId, mode, ignoreGlob) {
   return indexDocs(db, repo.path, repo.name, ignoreGlob);
 }
 
+// ══════════════════════════════════════════════════════════
+// ORPHAN SECTIONS (zero inbound links)
+// ══════════════════════════════════════════════════════════
+
+function getOrphanSections(db, repoId, opts = {}) {
+  const includeSameDoc = opts.includeSameDoc || false;
+
+  let query, params;
+  if (includeSameDoc) {
+    query = `
+      SELECT ds.id, ds.title, ds.level, df.path as file_path, ds.role
+      FROM doc_sections ds
+      JOIN doc_files df ON df.id = ds.file_id
+      WHERE ds.repo_id = ?
+        AND ds.id NOT IN (SELECT DISTINCT target_section_id FROM doc_links WHERE target_section_id IS NOT NULL)
+      ORDER BY ds.level, ds.title
+    `;
+    params = [repoId];
+  } else {
+    query = `
+      SELECT ds.id, ds.title, ds.level, df.path as file_path, ds.role
+      FROM doc_sections ds
+      JOIN doc_files df ON df.id = ds.file_id
+      WHERE ds.repo_id = ?
+        AND ds.id NOT IN (
+          SELECT DISTINCT dl.target_section_id
+          FROM doc_links dl
+          JOIN doc_sections src ON src.id = dl.source_section_id
+          WHERE dl.target_section_id IS NOT NULL AND src.file_id != ds.file_id
+        )
+        AND ds.level > 1
+      ORDER BY ds.level, ds.title
+    `;
+    params = [repoId];
+  }
+
+  const orphans = db.prepare(query).all(...params);
+  return { orphans, total: orphans.length };
+}
+
+// ══════════════════════════════════════════════════════════
+// DOC COVERAGE (which code symbols have documentation)
+// ══════════════════════════════════════════════════════════
+
+function getDocCoverage(db, repoId, docRepoId, opts = {}) {
+  // Get all function/constant/method symbols from the code repo
+  const symbols = db.prepare(`
+    SELECT id, name, kind, file_path FROM code_symbols
+    WHERE repo_id = ? AND kind IN ('function', 'constant', 'method')
+  `).all(repoId);
+
+  // Get all doc section titles + content for matching
+  const sections = db.prepare(`
+    SELECT id, title, content, role FROM doc_sections WHERE repo_id = ?
+  `).all(docRepoId);
+
+  // Build lookup: lowercase name → section match
+  const docNames = new Map();
+  for (const s of sections) {
+    const lowerTitle = s.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+    docNames.set(lowerTitle, s);
+    // Also extract function-like references from content (e.g., `search(query)`)
+    const fnRefs = s.content.match(/\b([a-z_][a-z0-9_]{2,})\s*\(/gi) || [];
+    for (const ref of fnRefs) {
+      const name = ref.replace(/\s*\($/, '').toLowerCase();
+      if (!docNames.has(name)) docNames.set(name, s);
+    }
+  }
+
+  let documented = 0;
+  const documented_list = [];
+  const undocumented_list = [];
+
+  for (const sym of symbols) {
+    const lowerName = sym.name.toLowerCase();
+    const matched = docNames.has(lowerName) || docNames.has(lowerName.replace(/_/g, ''));
+    if (matched) {
+      documented++;
+      documented_list.push(sym);
+    } else {
+      undocumented_list.push(sym);
+    }
+  }
+
+  const total = symbols.length;
+  const coveragePct = total > 0 ? Math.round((documented / total) * 100) : 0;
+
+  return {
+    total_symbols: total,
+    documented,
+    undocumented: undocumented_list.length,
+    coverage_pct: coveragePct,
+    documented_list: documented_list.slice(0, 20),
+    undocumented_list: undocumented_list.slice(0, 20),
+  };
+}
+
 module.exports = {
   indexDocs, reindexDocs, searchDocs, getDocOutline, getBacklinks,
   getBrokenLinks, lookupTerm, getTutorialPath, findCodeExamples, resolveLinks,
+  getOrphanSections, getDocCoverage,
   _parseMarkdownSections: parseMarkdownSections,
   _slugify: slugify,
 };
