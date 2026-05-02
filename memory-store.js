@@ -2200,6 +2200,18 @@ const commands = {
     });
   },
 
+  'signal-chains': (args) => {
+    const repo = args.repo;
+    if (!repo) jsonErr('Usage: node memory-store.js signal-chains --repo X [--kind http|cli] [--symbol S] [--max-depth N]');
+    const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
+    if (!repoRow.length) jsonErr(`Repo "${repo}" not found. Run index-repo first.`);
+    return codeAnalysis.getSignalChains(db, repoRow[0].id, {
+      kind: args.kind || null,
+      symbol: args.symbol || null,
+      maxDepth: args['max-depth'] ? parseInt(args['max-depth']) : 5,
+    });
+  },
+
   // ── v5.2: Doc analytics subcommands ──
 
   'doc-orphans': (args) => {
