@@ -652,6 +652,54 @@ function getDocCoverage(db, repoId, docRepoId, opts = {}) {
 // STALE PAGE DETECTION (files modified since last index)
 // ══════════════════════════════════════════════════════════
 
+// ══════════════════════════════════════════════════════════
+// DUPLICATE SECTION DETECTION (content-hash matching)
+// ══════════════════════════════════════════════════════════
+
+function getDuplicateSections(db, repoId) {
+  // Find sections with identical content_hash
+  const duplicates = db.prepare(`
+    SELECT
+      content_hash,
+      COUNT(*) as count,
+      GROUP_CONCAT(id) as section_ids,
+      GROUP_CONCAT(title, '|||') as titles,
+      GROUP_CONCAT(file_id) as file_ids
+    FROM doc_sections
+    WHERE repo_id = ? AND content_hash != '' AND content IS NOT NULL
+    GROUP BY content_hash
+    HAVING COUNT(*) > 1
+    ORDER BY COUNT(*) DESC
+  `).all(repoId);
+
+  // Enrich with file paths
+  const results = [];
+  for (const dup of duplicates) {
+    const ids = dup.section_ids.split(',').map(Number);
+    const titles = dup.titles.split('|||');
+    const fileIds = dup.file_ids.split(',').map(Number);
+
+    const sections = [];
+    for (let i = 0; i < ids.length; i++) {
+      const fileId = fileIds[i] || fileIds[0];
+      const fileRow = db.prepare('SELECT path FROM doc_files WHERE id = ?').get(fileId);
+      sections.push({
+        id: ids[i],
+        title: titles[i] || '',
+        file_path: fileRow ? fileRow.path : '',
+      });
+    }
+
+    results.push({
+      content_hash: dup.content_hash,
+      count: dup.count,
+      sections,
+    });
+  }
+
+  return { duplicates: results, total_duplicate_groups: results.length };
+}
+
 function getStalePages(db, repoId) {
   const fs = require('fs');
   const path = require('path');
@@ -691,7 +739,7 @@ function getStalePages(db, repoId) {
 module.exports = {
   indexDocs, reindexDocs, searchDocs, getDocOutline, getBacklinks,
   getBrokenLinks, lookupTerm, getTutorialPath, findCodeExamples, resolveLinks,
-  getOrphanSections, getDocCoverage, getStalePages,
+  getOrphanSections, getDocCoverage, getStalePages, getDuplicateSections,
   _parseMarkdownSections: parseMarkdownSections,
   _slugify: slugify,
 };
