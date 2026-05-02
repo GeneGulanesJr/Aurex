@@ -42,7 +42,7 @@ Code analysis (imports, call graph, complexity, dead code, churn) and doc indexi
 - `get-code-source --repo NAME --file PATH --name SYMBOL` — Byte-accurate source retrieval.
 - `list-code-repos` / `remove-code-repo --repo NAME` — Manage indexed repos.
 
-**Supported:** JavaScript, TypeScript, TSX, SQL. Uses web-tree-sitter (WASM) — zero Python dependency.
+**Supported:** JavaScript, TypeScript, TSX, Go, Python, Rust. Uses web-tree-sitter (WASM) — zero Python dependency.
 Grammar .wasm files bundled in `grammars/`.
 
 ### Code Analysis (v5 — import graph, call graph, complexity, dead code)

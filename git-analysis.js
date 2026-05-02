@@ -5,6 +5,7 @@
  */
 
 const { execSync } = require('child_process');
+const path = require('path');
 
 // Guard: reject calls when db handle is not available (CLI fallback mode)
 function _requireNativeDb(db) {
@@ -58,6 +59,8 @@ function getChurn(db, repoId, target, days, refresh) {
 }
 
 function computeFileChurn(db, repo, filePath, days, since) {
+  // Normalize to absolute path so JOINs with code_symbols.file_path work
+  const absPath = path.isAbsolute(filePath) ? filePath : path.resolve(repo.path, filePath);
   try {
     const log = execSync(
       `git -C "${repo.path}" log --follow --format="%H|%an|%aI" --since="${since}" -- "${filePath}"`,
@@ -66,7 +69,7 @@ function computeFileChurn(db, repo, filePath, days, since) {
 
     if (!log) {
       const result = { commits: 0, unique_authors: 0, churn_per_week: 0, first_seen: null, last_modified: null };
-      upsertChurn(db, repo.id, filePath, days, result);
+      upsertChurn(db, repo.id, absPath, days, result);
       return result;
     }
 
@@ -96,7 +99,7 @@ function computeFileChurn(db, repo, filePath, days, since) {
       churn_per_week: Math.round((lines.length / (days / 7)) * 100) / 100,
     };
 
-    upsertChurn(db, repo.id, filePath, days, result);
+    upsertChurn(db, repo.id, absPath, days, result);
     return result;
   } catch (e) {
     return { error: `git log failed: ${e.message}` };

@@ -1,497 +1,28 @@
 #!/usr/bin/env node
 /**
- * memory-store.js — Standalone Memory Layer Engine
+ * memory-store.js — Pi Memory Layer CLI entry point
  *
- * Zero external Python dependencies. Single SQLite DB (~/.pi/memory/memory.db).
- * Cross-OS: uses node:sqlite (Node 22.5+), falls back to better-sqlite3,
- * then sqlite3 CLI as last resort.
- * Code parsing: uses web-tree-sitter (WASM), in-process.
+ * Database operations via db.js. Code parsing via parse-code.js (WASM).
+ * Code analysis via code-analysis.js. Doc indexing via doc-indexer.js.
  *
  * Usage: node memory-store.js <subcommand> [options]
  */
 
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
+const crypto = require('crypto');
 
-/* ── paths ────────────────────────────────────────────────── */
-const HOME = process.env.HOME || process.env.USERPROFILE || os.homedir();
-const DB_PATH = path.join(HOME, '.pi', 'memory', 'memory.db');
-const SCHEMA_PATH = path.resolve(__dirname, 'schema.sql');
+const {
+  DB_PATH, HOME,
+  sqlJson, sqlRun, sqlRaw, ensureDb,
+  getDb, getEngine,
+  jsonOut, jsonErr, parseArgs,
+} = require('./db');
 
-/* ── SQL backend resolution ───────────────────────────────── */
-
+// Lazily resolve db handle (available after ensureDb())
 let db = null;
-let _engine = null; // 'node-sqlite' | 'better-sqlite3' | 'cli'
 
-/**
- * Try to open the DB using node:sqlite (Node ≥ 22.5).
- * Returns the db object or null.
- */
-function tryNodeSqlite() {
-  try {
-    const mod = require('node:sqlite');
-    const d = new mod.DatabaseSync(DB_PATH);
-    // node:sqlite doesn't have .pragma as a method in all versions;
-    // use exec() for PRAGMAs
-    d.exec('PRAGMA journal_mode=WAL;');
-    d.exec('PRAGMA busy_timeout=5000;');
-    d.exec('PRAGMA wal_autocheckpoint=1000;');
-    return d;
-  } catch (_) {
-    return null;
-  }
-}
 
-/**
- * Try to open the DB using better-sqlite3 (npm install).
- * Returns the db object or null.
- */
-function tryBetterSqlite3() {
-  try {
-    const Database = require('better-sqlite3');
-    const d = new Database(DB_PATH);
-    d.pragma('journal_mode = WAL');
-    d.pragma('busy_timeout = 5000');
-    d.pragma('wal_autocheckpoint = 1000');
-    return d;
-  } catch (_) {
-    return null;
-  }
-}
-
-/**
- * Detect and open the appropriate SQL backend.
- * Priority: node:sqlite > better-sqlite3 > sqlite3 CLI
- */
-function openDb() {
-  // 1) node:sqlite (built-in, Node ≥ 22.5)
-  const nodeDb = tryNodeSqlite();
-  if (nodeDb) {
-    _engine = 'node-sqlite';
-    return nodeDb;
-  }
-
-  // 2) better-sqlite3 (npm package)
-  const betterDb = tryBetterSqlite3();
-  if (betterDb) {
-    _engine = 'better-sqlite3';
-    return betterDb;
-  }
-
-  // 3) sqlite3 CLI fallback
-  _engine = 'cli';
-  return null;
-}
-
-/* ── helpers ──────────────────────────────────────────────── */
-function esc(str) {
-  return typeof str === 'string' ? str.replace(/'/g, "''") : String(str);
-}
-
-/* ── native SQL layer (node:sqlite / better-sqlite3) ──────── */
-
-function nativeJson(query, params = []) {
-  // Both node:sqlite and better-sqlite3 support .prepare().all()
-  // node:sqlite uses .prepare().all(...params), better-sqlite3 too
-  try {
-    const stmt = db.prepare(query);
-    const rows = stmt.all(...params);
-    return rows;
-  } catch (e) {
-    throw new Error(`SQL error: ${e.message}\nQuery: ${query}`, { cause: e });
-  }
-}
-
-function nativeRun(query, params = []) {
-  try {
-    const stmt = db.prepare(query);
-    stmt.run(...params);
-  } catch (e) {
-    throw new Error(`SQL error: ${e.message}\nQuery: ${query}`, { cause: e });
-  }
-}
-
-function nativeExec(sql) {
-  try {
-    db.exec(sql);
-  } catch (e) {
-    throw new Error(`SQL exec error: ${e.message}`, { cause: e });
-  }
-}
-
-/* ── CLI SQL layer (fallback) ─────────────────────────────── */
-const { execSync } = require('child_process');
-
-function cliJson(query, params = []) {
-  let q = query;
-  for (const p of params) {
-    q = q.replace('?', typeof p === 'string' ? `'${esc(p)}'` : String(p));
-  }
-  try {
-    const out = execSync(`sqlite3 -cmd ".timeout 5000" -json "${DB_PATH}"`, {
-      encoding: 'utf8',
-      maxBuffer: 10 * 1024 * 1024,
-      input: q,
-    }).trim();
-    return out ? JSON.parse(out) : [];
-  } catch (e) {
-    if (e.stdout !== undefined && e.stdout.trim() === '') return [];
-    if (e.stderr && e.stderr.includes('no such')) return [];
-    throw new Error(`SQL error: ${e.stderr || e.message}`, { cause: e });
-  }
-}
-
-function cliRaw(query) {
-  try {
-    return execSync(`sqlite3 -cmd ".timeout 5000" "${DB_PATH}"`, {
-      encoding: 'utf8',
-      maxBuffer: 10 * 1024 * 1024,
-      input: query,
-    }).trim();
-  } catch (e) {
-    throw new Error(`SQL error: ${e.stderr || e.message}`, { cause: e });
-  }
-}
-
-function checkCliAvailable() {
-  try {
-    execSync('sqlite3 -version', { encoding: 'utf8', stdio: 'pipe' });
-  } catch (e) {
-    throw new Error(
-      'No SQLite backend found. Options:\n' +
-        '  1. Use Node.js ≥ 22.5 (includes built-in node:sqlite)\n' +
-        '  2. Install better-sqlite3: npm install better-sqlite3\n' +
-        '  3. Install sqlite3 CLI: apt install sqlite3 / brew install sqlite3 / choco install sqlite',
-      { cause: e },
-    );
-  }
-}
-
-/* ── unified SQL API ──────────────────────────────────────── */
-
-function sqlJson(query, params = []) {
-  if (_engine === 'cli') return cliJson(query, params);
-  return nativeJson(query, params);
-}
-
-function sqlRaw(query) {
-  if (_engine === 'cli') return cliRaw(query);
-  nativeExec(query);
-  return '';
-}
-
-function sqlRun(query, params = []) {
-  if (_engine === 'cli') {
-    // CLI fallback — just exec it
-    cliRaw(query);
-    return;
-  }
-  nativeRun(query, params);
-}
-
-/* ── ensureDb ─────────────────────────────────────────────── */
-
-function ensureDb() {
-  const dir = path.dirname(DB_PATH);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
-  if (_engine === 'cli') {
-    checkCliAvailable();
-  }
-
-  // Open/create the database
-  if (!db) db = openDb();
-
-  if (!fs.existsSync(DB_PATH) || fs.statSync(DB_PATH).size === 0) {
-    if (_engine === 'cli') {
-      sqlRaw(`.read "${SCHEMA_PATH}"`);
-    } else {
-      const schema = fs.readFileSync(SCHEMA_PATH, 'utf8');
-      // Split schema into individual statements and execute each
-      // (some engines don't handle multiple statements in one exec)
-      const statements = schema
-        .split(';')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0 && !s.startsWith('--') && !s.startsWith('PRAGMA'));
-      for (const stmt of statements) {
-        try {
-          nativeExec(stmt);
-        } catch (_) {
-          /* schema may already exist */
-        }
-      }
-    }
-  }
-
-  // WAL/busy already set during openDb() for native backends
-  // For CLI, set them here
-  if (_engine === 'cli') {
-    try {
-      sqlRaw('PRAGMA journal_mode=WAL;');
-      sqlRaw('PRAGMA busy_timeout=5000;');
-      sqlRaw('PRAGMA wal_autocheckpoint=1000;');
-    } catch (_) {
-      /* non-fatal */
-    }
-  }
-
-  // Check FTS5 support
-  if (_engine === 'cli') {
-    try {
-      sqlRaw(`CREATE VIRTUAL TABLE __fts5_probe USING fts5(x); DROP TABLE __fts5_probe;`);
-    } catch (e) {
-      throw new Error(
-        'FTS5 not supported by this sqlite3 build — install a sqlite3 binary compiled with FTS5 enabled',
-        { cause: e },
-      );
-    }
-  }
-  // Native backends (node:sqlite, better-sqlite3) ship with FTS5 built-in
-
-  // v2+ migrations
-  runMigrations();
-}
-
-/* ── migrations ───────────────────────────────────────────── */
-
-function runMigrations() {
-  let version = 0;
-  try {
-    const rows = sqlJson('PRAGMA user_version');
-    version = rows.length > 0 ? rows[0].user_version || 0 : 0;
-  } catch (_) {
-    try {
-      const raw = sqlRaw('PRAGMA user_version');
-      version = parseInt(raw, 10) || 0;
-    } catch (__) {
-      /* assume v0 */
-    }
-  }
-
-  if (version >= 4) return { migrated: false, version };
-
-  const migrations = [
-    `CREATE TABLE IF NOT EXISTS observation_relations (
-      source_id     INTEGER NOT NULL REFERENCES observations(id) ON DELETE CASCADE,
-      target_id     INTEGER NOT NULL REFERENCES observations(id) ON DELETE CASCADE,
-      relation      TEXT NOT NULL,
-      confidence    REAL NOT NULL DEFAULT 0.8,
-      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-      PRIMARY KEY (source_id, target_id, relation)
-    )`,
-    'CREATE INDEX IF NOT EXISTS idx_obs_rel_source ON observation_relations(source_id)',
-    'CREATE INDEX IF NOT EXISTS idx_obs_rel_target ON observation_relations(target_id)',
-    `CREATE TABLE IF NOT EXISTS recall_log (
-      id            INTEGER PRIMARY KEY AUTOINCREMENT,
-      memory_id     INTEGER NOT NULL REFERENCES observations(id) ON DELETE CASCADE,
-      session_id    INTEGER NOT NULL,
-      query         TEXT,
-      was_useful    INTEGER,
-      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
-    )`,
-    'CREATE INDEX IF NOT EXISTS idx_recall_memory ON recall_log(memory_id)',
-    'CREATE INDEX IF NOT EXISTS idx_recall_session ON recall_log(session_id)',
-  ];
-
-  for (const sql of migrations) {
-    try {
-      sqlRaw(sql);
-    } catch (e) {
-      console.error('Migration warning:', e.message);
-    }
-  }
-
-  try {
-    sqlRaw('PRAGMA user_version = 2');
-  } catch (_) {
-    /* non-fatal */
-  }
-
-  // — v3: code index tables —
-  const v3Migrations = [
-    `CREATE TABLE IF NOT EXISTS code_repos (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL UNIQUE,
-      path TEXT NOT NULL UNIQUE,
-      file_count INTEGER DEFAULT 0,
-      symbol_count INTEGER DEFAULT 0,
-      indexed_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )`,
-    `CREATE TABLE IF NOT EXISTS code_files (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE,
-      path TEXT NOT NULL,
-      language TEXT NOT NULL,
-      content TEXT NOT NULL,
-      content_hash TEXT NOT NULL,
-      mtime REAL,
-      size_bytes INTEGER DEFAULT 0,
-      line_count INTEGER DEFAULT 0,
-      UNIQUE(repo_id, path)
-    )`,
-    `CREATE TABLE IF NOT EXISTS code_symbols (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE,
-      file_id INTEGER NOT NULL REFERENCES code_files(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      kind TEXT NOT NULL,
-      signature TEXT,
-      file_path TEXT NOT NULL,
-      start_line INTEGER NOT NULL,
-      end_line INTEGER NOT NULL,
-      start_byte INTEGER NOT NULL,
-      end_byte INTEGER NOT NULL,
-      docstring TEXT DEFAULT '',
-      body_preview TEXT DEFAULT '',
-      language TEXT NOT NULL,
-      parent_name TEXT DEFAULT '',
-      qualified_name TEXT NOT NULL,
-      indexed_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )`,
-    'CREATE INDEX IF NOT EXISTS idx_cs_repo ON code_symbols(repo_id)',
-    'CREATE INDEX IF NOT EXISTS idx_cs_name ON code_symbols(name)',
-    'CREATE INDEX IF NOT EXISTS idx_cs_file ON code_symbols(file_id)',
-    'CREATE INDEX IF NOT EXISTS idx_cf_repo ON code_files(repo_id)',
-    `CREATE VIRTUAL TABLE IF NOT EXISTS code_symbols_fts USING fts5(
-      name, kind, signature, docstring, file_path, body_preview,
-      content=code_symbols, content_rowid=id
-    )`,
-    `CREATE TRIGGER IF NOT EXISTS cs_fts_insert AFTER INSERT ON code_symbols BEGIN
-      INSERT INTO code_symbols_fts(rowid, name, kind, signature, docstring, file_path, body_preview)
-      VALUES (new.id, new.name, new.kind, new.signature, new.docstring, new.file_path, new.body_preview);
-    END`,
-    `CREATE TRIGGER IF NOT EXISTS cs_fts_delete AFTER DELETE ON code_symbols BEGIN
-      INSERT INTO code_symbols_fts(code_symbols_fts, rowid, name, kind, signature, docstring, file_path, body_preview)
-      VALUES ('delete', old.id, old.name, old.kind, old.signature, old.docstring, old.file_path, old.body_preview);
-    END`,
-    `CREATE TRIGGER IF NOT EXISTS cs_fts_update AFTER UPDATE ON code_symbols BEGIN
-      INSERT INTO code_symbols_fts(code_symbols_fts, rowid, name, kind, signature, docstring, file_path, body_preview)
-      VALUES ('delete', old.id, old.name, old.kind, old.signature, old.docstring, old.file_path, old.body_preview);
-      INSERT INTO code_symbols_fts(rowid, name, kind, signature, docstring, file_path, body_preview)
-      VALUES (new.id, new.name, new.kind, new.signature, new.docstring, new.file_path, new.body_preview);
-    END`,
-  ];
-
-  for (const sql of v3Migrations) {
-    try {
-      sqlRaw(sql);
-    } catch (e) {
-      console.error('Migration v3 warning:', e.message);
-    }
-  }
-
-  try {
-    sqlRaw('PRAGMA user_version = 3');
-  } catch (_) {
-    /* non-fatal */
-  }
-
-  // — v4: workspaces —
-  const v4Migrations = [
-    `CREATE TABLE IF NOT EXISTS workspaces (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL UNIQUE,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      archived_at TEXT
-    )`,
-    'CREATE INDEX IF NOT EXISTS idx_ws_active ON workspaces(archived_at) WHERE archived_at IS NULL',
-  ];
-
-  for (const sql of v4Migrations) {
-    try {
-      sqlRaw(sql);
-    } catch (e) {
-      console.error('Migration v4 warning:', e.message);
-    }
-  }
-
-  // Populate workspaces from existing project values
-  try {
-    const projects = sqlJson(
-      "SELECT DISTINCT project FROM observations WHERE project IS NOT NULL AND project != '' AND deleted_at IS NULL",
-    );
-    for (const row of projects) {
-      try {
-        sqlRun('INSERT OR IGNORE INTO workspaces (name) VALUES (?)', [row.project]);
-      } catch (_) {}
-    }
-    // Also from session_log
-    const sessProjects = sqlJson(
-      "SELECT DISTINCT project FROM session_log WHERE project IS NOT NULL AND project != ''",
-    );
-    for (const row of sessProjects) {
-      try {
-        sqlRun('INSERT OR IGNORE INTO workspaces (name) VALUES (?)', [row.project]);
-      } catch (_) {}
-    }
-  } catch (_) {}
-
-  try {
-    sqlRaw('PRAGMA user_version = 4');
-  } catch (_) {
-    /* non-fatal */
-  }
-
-  // v5: code analysis + doc indexing tables (all additive, CREATE IF NOT EXISTS)
-  if (version < 5) {
-    try {
-      const schema = fs.readFileSync(SCHEMA_PATH, 'utf8');
-      // Use exec() for the whole schema — node:sqlite handles multi-statement
-      // For CLI/other backends, fall back to statement-by-statement
-      if (_engine === 'node-sqlite' || _engine === 'better-sqlite3') {
-        db.exec(schema);
-      } else {
-        // sqlite3 CLI: use .read
-        try {
-          sqlRaw(`.read "${SCHEMA_PATH}"`);
-        } catch (_) {}
-      }
-      sqlRaw('PRAGMA user_version = 5');
-    } catch (e) {
-      // If full exec fails, try individual statements (some may already exist)
-      console.error('[migration v5] Full schema exec failed, trying per-statement:', e.message);
-      const stmts = schema
-        .split(/;\s*\n/)
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-      for (const stmt of stmts) {
-        try {
-          sqlRaw(stmt);
-        } catch (_) {}
-      }
-      try {
-        sqlRaw('PRAGMA user_version = 5');
-      } catch (_) {}
-    }
-  }
-
-  return { migrated: true, fromVersion: version, toVersion: 5 };
-}
-
-function jsonOut(obj) {
-  console.log(JSON.stringify(obj, null, 2));
-}
-function jsonErr(msg) {
-  process.stderr.write(JSON.stringify({ error: msg }) + '\n');
-  process.exit(1);
-}
-
-function parseArgs(argv) {
-  const args = {};
-  let currentKey = null;
-  for (const arg of argv.slice(3)) {
-    if (arg.startsWith('--')) {
-      currentKey = arg.slice(2);
-      args[currentKey] = true;
-    } else if (currentKey) {
-      args[currentKey] = arg;
-      currentKey = null;
-    }
-  }
-  return args;
-}
 
 /* ── subcommands ───────────────────────────────────────────── */
 
@@ -1740,28 +1271,9 @@ function compact() {
 
 /* ── init ─────────────────────────────────────────────────── */
 function initDb() {
-  const dir = path.dirname(DB_PATH);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
-  if (_engine === 'cli') {
-    checkCliAvailable();
-    sqlRaw(`.read "${SCHEMA_PATH}"`);
-  } else {
-    const schema = fs.readFileSync(SCHEMA_PATH, 'utf8');
-    const statements = schema
-      .split(';')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0 && !s.startsWith('--') && !s.startsWith('PRAGMA'));
-    for (const stmt of statements) {
-      try {
-        nativeExec(stmt);
-      } catch (_) {
-        /* may already exist */
-      }
-    }
-  }
-
-  return { ok: true, db: DB_PATH, engine: _engine };
+  // ensureDb() is called from the main dispatch block, so the DB is already initialized
+  ensureDb();
+  return { ok: true, db: DB_PATH, engine: getEngine() };
 }
 
 function trustRecovery(args) {
@@ -1813,7 +1325,7 @@ async function ensureParserAvailable() {
 }
 
 const _IGNORE_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.venv', 'coverage', '.next', '.nuxt']);
-const _CODE_EXTS = new Set(['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts', '.tsx', '.sql']);
+const _CODE_EXTS = new Set(['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts', '.tsx', '.go', '.rs', '.py', '.pyw']);
 
 function isCodeFile(filePath) {
   return _CODE_EXTS.has(path.extname(filePath).toLowerCase());
@@ -1840,13 +1352,7 @@ function walkDir(dirPath) {
 }
 
 function hashContent(content) {
-  let hash = 0;
-  for (let i = 0; i < content.length; i++) {
-    const char = content.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash |= 0;
-  }
-  return String(hash);
+  return crypto.createHash('sha256').update(content).digest('hex').slice(0, 16);
 }
 
 async function indexRepoInternal(repoPath, repoName) {
@@ -1935,24 +1441,22 @@ async function indexRepoInternal(repoPath, repoName) {
     repoId,
   ]);
 
-  // Build import graph, call graph, and complexity (requires native db — skip in CLI mode)
+  // Build import graph, call graph, and complexity
   let importEdges = 0,
     callEdges = 0,
     complexityCount = 0;
-  if (_engine !== 'cli') {
-    try {
-      const ig = codeAnalysis.buildImportGraph(db, repoId);
-      if (ig.success) importEdges = ig.edges;
-    } catch (_) {}
-    try {
-      const cg = codeAnalysis.buildCallGraph(db, repoId);
-      if (cg.success) callEdges = cg.calls;
-    } catch (_) {}
-    try {
-      const cc = codeAnalysis.buildComplexity(db, repoId);
-      if (cc.success) complexityCount = cc.symbols;
-    } catch (_) {}
-  }
+  try {
+    const ig = codeAnalysis.buildImportGraph(db, repoId);
+    if (ig.success) importEdges = ig.edges;
+  } catch (_) {}
+  try {
+    const cg = codeAnalysis.buildCallGraph(db, repoId);
+    if (cg.success) callEdges = cg.calls;
+  } catch (_) {}
+  try {
+    const cc = codeAnalysis.buildComplexity(db, repoId);
+    if (cc.success) complexityCount = cc.symbols;
+  } catch (_) {}
 
   return {
     success: true,
@@ -2065,25 +1569,22 @@ async function reindexRepoInternal(repo, mode) {
     [repoId, symbolCount, repoId],
   );
 
-  // Build import graph, call graph, and complexity (requires native db — skip in CLI mode)
+  // Build import graph, call graph, and complexity
   let importEdges = 0,
     callEdges = 0,
     complexityCount = 0;
-  if (_engine !== 'cli') {
-    try {
-      const ig = codeAnalysis.buildImportGraph(db, repoId);
-      if (ig.success) importEdges = ig.edges;
-    } catch (_) {}
-    try {
-      const cg = codeAnalysis.buildCallGraph(db, repoId);
-      if (cg.success) callEdges = cg.calls;
-    } catch (_) {}
-    try {
-      const cc = codeAnalysis.buildComplexity(db, repoId);
-      if (cc.success) complexityCount = cc.symbols;
-    } catch (_) {}
-  }
-
+  try {
+    const ig = codeAnalysis.buildImportGraph(db, repoId);
+    if (ig.success) importEdges = ig.edges;
+  } catch (_) {}
+  try {
+    const cg = codeAnalysis.buildCallGraph(db, repoId);
+    if (cg.success) callEdges = cg.calls;
+  } catch (_) {}
+  try {
+    const cc = codeAnalysis.buildComplexity(db, repoId);
+    if (cc.success) complexityCount = cc.symbols;
+  } catch (_) {}
   return {
     success: true,
     repo,
@@ -2244,7 +1745,7 @@ const commands = {
   'suggest-topic-key': suggestTopicKey,
   'save-prompt': savePrompt,
   'capture-passive': capturePassive,
-  getStats,
+  stats: getStats,
   'session-summary': sessionSummary,
   'link-symbol': linkSymbol,
   'auto-link': autoLink,
@@ -2612,50 +2113,12 @@ const commands = {
   },
 };
 
-/* ── commands requiring native SQLite (db.prepare) ─────── */
-const _NATIVE_DB_COMMANDS = new Set([
-  'import-graph',
-  'call-hierarchy',
-  'blast-radius',
-  'dead-code',
-  'complexity',
-  'outline',
-  'churn',
-  'hotspots',
-  'cycles',
-  'importance',
-  'coupling',
-  'extractable',
-  'hierarchy',
-  'signal-chains',
-  'layer-violations',
-  'index-docs',
-  'reindex-docs',
-  'doc-search',
-  'doc-outline',
-  'backlinks',
-  'broken-links',
-  'glossary',
-  'tutorial-path',
-  'code-examples',
-  'doc-orphans',
-  'doc-coverage',
-  'stale-pages',
-  'doc-duplicates',
-]);
-
 const args = parseArgs(process.argv);
 const cmd = process.argv[2];
 
 (async () => {
   ensureDb();
-
-  if (_NATIVE_DB_COMMANDS.has(cmd) && _engine === 'cli') {
-    jsonErr(
-      'This command requires a native SQLite backend (Node.js ≥ 22.5 or better-sqlite3). The CLI fallback is not supported.',
-    );
-  }
-
+  db = getDb(); // make db handle available for direct access by code-analysis/doc-indexer
   if (cmd && commands[cmd]) {
     const result = await commands[cmd](args);
     jsonOut(result);

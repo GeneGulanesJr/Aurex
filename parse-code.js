@@ -31,7 +31,7 @@ const LANGUAGE_MAP = {
   '.pyw': { grammarFile: 'tree-sitter-python.wasm', languageName: 'python', parserKey: 'python' },
   '.go': { grammarFile: 'tree-sitter-go.wasm', languageName: 'go', parserKey: 'go' },
   '.rs': { grammarFile: 'tree-sitter-rust.wasm', languageName: 'rust', parserKey: 'rust' },
-  '.sql': { grammarFile: 'sql.wasm', languageName: 'sql', parserKey: 'sql' },
+  // SQL grammar not bundled — .sql files use regex parsing when sql.wasm is available
 };
 
 // ── Module state ──

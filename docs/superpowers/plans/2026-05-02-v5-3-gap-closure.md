@@ -49,7 +49,7 @@
 
 **Root cause analysis:** `_JS_TS_SYMBOL_NODES` already maps `method_definition → 'method'`, `class_declaration → 'class'`, etc., but the walk in `_extractJsTsSymbols` has a `statement_block` skip that may prevent reaching method nodes inside class bodies. Also, `variable_declarator` handling may be swallowing some cases that should be methods.
 
-- [ ] **Step 1: Audit the current walk logic**
+- [x] **Step 1: Audit the current walk logic**
 
 Read `parse-code.js` lines 156–310 and identify why `method_definition` and other mapped node types aren't being extracted.
 
@@ -72,7 +72,7 @@ const p = require('./parse-code');
 "
 ```
 
-- [ ] **Step 2: Fix the walk to capture method/class nodes properly**
+- [x] **Step 2: Fix the walk to capture method/class nodes properly**
 
 Based on audit, the fix is likely in `_extractJsTsSymbols`. The walk currently:
 
@@ -105,7 +105,7 @@ db.close();
 "
 ```
 
-- [ ] **Step 3: Add `extends`/`implements` info to class symbols**
+- [x] **Step 3: Add `extends`/`implements` info to class symbols**
 
 When a `class_declaration` node has a `heritage_clause` child (for `extends` or `implements`), extract the parent class/interface name and store it in `parent_name`. This enables the `getClassHierarchy` feature to work with `extends` chains, not just the `parent_name` field (which currently only holds the enclosing class for methods).
 
@@ -160,7 +160,7 @@ if (kind === 'class') {
 }
 ```
 
-- [ ] **Step 4: Re-index and verify symbol count increase**
+- [x] **Step 4: Re-index and verify symbol count increase**
 
 ```bash
 cd ~/.pi/agent/skills/memory-layer
@@ -182,7 +182,7 @@ db.close();
 # Expected: Total > 170, with method, class, interface, enum kinds present
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add parse-code.js
@@ -200,7 +200,7 @@ git commit -m "fix: extract method/class/interface/enum symbols — P0 gap closu
 
 **Analysis:** v5.2 cyclomatic for `reindexRepoInternal` is 51 vs jCodeMunch's 61. The gap comes from missing: `catch` blocks (+1 each), logical `&&`/`||` (+1 each), `??` nullish coalescing (+1 each). We intentionally exclude `?.` per design decision.
 
-- [ ] **Step 1: Add missing decision point patterns**
+- [x] **Step 1: Add missing decision point patterns**
 
 In `code-analysis.js`, find the `buildComplexity` function's `_DECISION_PATTERNS` array (or equivalent). Currently it should have: `if`, `else if`, `for`, `while`, `do`, `switch`, `case`, `?` (ternary), `&&`, `||`, `??`, `catch`, `finally`.
 
@@ -222,7 +222,7 @@ The likely fix is adding these JS decision point patterns that jCodeMunch counts
 // ?? nullish coalescing counts as +1
 ```
 
-- [ ] **Step 2: Re-compute complexity and verify counts match more closely**
+- [x] **Step 2: Re-compute complexity and verify counts match more closely**
 
 ```bash
 cd ~/.pi/agent/skills/memory-layer
@@ -230,7 +230,7 @@ node memory-store.js complexity --repo v5-dev --file memory-store.js 2>&1 | head
 # Compare against jCodeMunch cyclomatic for reindexRepoInternal (currently 61 vs our 51)
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add code-analysis.js
@@ -250,7 +250,7 @@ git commit -m "fix: cyclomatic accuracy — add catch/logical/nullish patterns"
 
 **Design:** Compare `doc_files.mtime` (indexed mtime) against the file's current `mtime` on disk. If the file has changed since indexing, mark it as stale. Also check for files that are missing on disk (deleted since indexing).
 
-- [ ] **Step 1: Write `getStalePages` in `doc-indexer.js`**
+- [x] **Step 1: Write `getStalePages` in `doc-indexer.js`**
 
 Add before the `module.exports` block:
 
@@ -298,7 +298,7 @@ function getStalePages(db, repoId) {
 module.exports.getStalePages = getStalePages;
 ```
 
-- [ ] **Step 2: Add `stale-pages` CLI subcommand in `memory-store.js`**
+- [x] **Step 2: Add `stale-pages` CLI subcommand in `memory-store.js`**
 
 ```javascript
   'stale-pages': (args) => {
@@ -310,7 +310,7 @@ module.exports.getStalePages = getStalePages;
   },
 ```
 
-- [ ] **Step 3: Add `stale-pages` mode to `memory-doc` in `index.ts`**
+- [x] **Step 3: Add `stale-pages` mode to `memory-doc` in `index.ts`**
 
 Update the mode enum:
 
@@ -346,7 +346,7 @@ case "stale-pages":
   return out;
 ```
 
-- [ ] **Step 4: Test**
+- [x] **Step 4: Test**
 
 ```bash
 cd ~/.pi/agent/skills/memory-layer
@@ -356,7 +356,7 @@ node memory-store.js stale-pages --repo pi-mem-docs
 # Expected: 1 stale page (the touched file)
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add doc-indexer.js memory-store.js
@@ -374,7 +374,7 @@ git commit -m "feat: stale page detection — find docs modified since index (v5
 - Modify: `memory-store.js` — add `doc-duplicates` subcommand
 - Modify: `index.ts` — add `duplicates` mode to `memory-doc`
 
-- [ ] **Step 1: Write `getDuplicateSections` in `doc-indexer.js`**
+- [x] **Step 1: Write `getDuplicateSections` in `doc-indexer.js`**
 
 Add before `module.exports`:
 
@@ -430,7 +430,7 @@ function getDuplicateSections(db, repoId) {
 module.exports.getDuplicateSections = getDuplicateSections;
 ```
 
-- [ ] **Step 2: Add `doc-duplicates` CLI subcommand in `memory-store.js`**
+- [x] **Step 2: Add `doc-duplicates` CLI subcommand in `memory-store.js`**
 
 ```javascript
   'doc-duplicates': (args) => {
@@ -442,7 +442,7 @@ module.exports.getDuplicateSections = getDuplicateSections;
   },
 ```
 
-- [ ] **Step 3: Add `duplicates` mode to `memory-doc` in `index.ts`**
+- [x] **Step 3: Add `duplicates` mode to `memory-doc` in `index.ts`**
 
 Update mode enum to include `"duplicates"`. Add to cmdMap: `duplicates: "doc-duplicates"`. Add format:
 
@@ -455,7 +455,7 @@ case "duplicates":
   ).join("\n\n");
 ```
 
-- [ ] **Step 4: Test**
+- [x] **Step 4: Test**
 
 ```bash
 cd ~/.pi/agent/skills/memory-layer
@@ -463,7 +463,7 @@ node memory-store.js doc-duplicates --repo pi-mem-docs
 # Expected: JSON with duplicates array (likely empty for our small doc set, but function works)
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add doc-indexer.js memory-store.js
@@ -488,7 +488,7 @@ git commit -m "feat: duplicate section detection — content-hash matching (v5.3
 
 Then update `buildCallGraph()` in `code-analysis.js` to call this instead of the body-regex approach for JS/TS files.
 
-- [ ] **Step 1: Add `extractCallees()` to `parse-code.js`**
+- [x] **Step 1: Add `extractCallees()` to `parse-code.js`**
 
 Add before the `module.exports` at the bottom:
 
@@ -584,7 +584,7 @@ And update the module exports:
 module.exports = { init, isReady, parseFile, extractCallees, info };
 ```
 
-- [ ] **Step 2: Update `buildCallGraph()` in `code-analysis.js` to use AST callees**
+- [x] **Step 2: Update `buildCallGraph()` in `code-analysis.js` to use AST callees**
 
 In `buildCallGraph()` (currently around line 200-350), replace the regex-based body call extraction with a call to `codeParser.extractCallees()` for each symbol's file:
 
@@ -612,7 +612,7 @@ for (const sym of symbols) {
 }
 ```
 
-- [ ] **Step 3: Re-index and verify call accuracy**
+- [x] **Step 3: Re-index and verify call accuracy**
 
 ```bash
 cd ~/.pi/agent/skills/memory-layer
@@ -621,7 +621,7 @@ node memory-store.js call-hierarchy --symbol ensureDb --repo v5-dev --direction 
 # Expected: ~8-12 callers (more precise than before, fewer false positives)
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add parse-code.js code-analysis.js
@@ -641,7 +641,7 @@ git commit -m "feat: AST-level call resolution — reduce false positives (v5.3 
 
 **Approach:** Regex-based route detection on symbol signatures (no new indexing needed). For JS/TS, detect patterns like `app.get('/path', handler)`, `router.post('/path', handler)`, `app.use('/path', handler)`, `@click.command()`, `@app.route('/path')`. Then trace through the call graph using existing `code_calls` data.
 
-- [ ] **Step 1: Write `getSignalChains()` in `code-analysis.js`**
+- [x] **Step 1: Write `getSignalChains()` in `code-analysis.js`**
 
 Add after `getClassHierarchy`:
 
@@ -812,7 +812,7 @@ function getSignalChains(db, repoId, opts = {}) {
 module.exports.getSignalChains = getSignalChains;
 ```
 
-- [ ] **Step 2: Add `signal-chains` CLI subcommand in `memory-store.js`**
+- [x] **Step 2: Add `signal-chains` CLI subcommand in `memory-store.js`**
 
 ```javascript
   'signal-chains': (args) => {
@@ -828,7 +828,7 @@ module.exports.getSignalChains = getSignalChains;
   },
 ```
 
-- [ ] **Step 3: Add `signal-chains` mode to `memory-code` in `index.ts`**
+- [x] **Step 3: Add `signal-chains` mode to `memory-code` in `index.ts`**
 
 Update the mode enum to include `"signal-chains"`. Add to cmdMap: `"signal-chains": "signal-chains"`. Add `kind` and `symbol` parameters:
 
@@ -858,7 +858,7 @@ case "signal-chains":
   }).join('\n\n');
 ```
 
-- [ ] **Step 4: Test**
+- [x] **Step 4: Test**
 
 ```bash
 cd ~/.pi/agent/skills/memory-layer
@@ -867,7 +867,7 @@ node memory-store.js signal-chains --repo v5-dev
 # (the dispatch route patterns like 'hotspots', 'cycles', etc. are CLI-like)
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add code-analysis.js memory-store.js
@@ -897,7 +897,7 @@ git commit -m "feat: signal chains — HTTP/CLI route detection + call graph tra
 }
 ```
 
-- [ ] **Step 1: Write `getLayerViolations()` in `code-analysis.js`**
+- [x] **Step 1: Write `getLayerViolations()` in `code-analysis.js`**
 
 Add after `getSignalChains`:
 
@@ -985,7 +985,7 @@ function getLayerViolations(db, repoId, opts = {}) {
 module.exports.getLayerViolations = getLayerViolations;
 ```
 
-- [ ] **Step 2: Add `layer-violations` CLI subcommand in `memory-store.js`**
+- [x] **Step 2: Add `layer-violations` CLI subcommand in `memory-store.js`**
 
 ```javascript
   'layer-violations': (args) => {
@@ -1001,7 +1001,7 @@ module.exports.getLayerViolations = getLayerViolations;
   },
 ```
 
-- [ ] **Step 3: Add `layer-violations` mode to `memory-code` in `index.ts`**
+- [x] **Step 3: Add `layer-violations` mode to `memory-code` in `index.ts`**
 
 Update mode enum to include `"layer-violations"`. Add to cmdMap: `"layer-violations": "layer-violations"`. Add `rules` parameter:
 
@@ -1027,7 +1027,7 @@ case "layer-violations":
   ).join("\n\n");
 ```
 
-- [ ] **Step 4: Test with rules**
+- [x] **Step 4: Test with rules**
 
 ```bash
 cd ~/.pi/agent/skills/memory-layer
@@ -1035,7 +1035,7 @@ node memory-store.js layer-violations --repo v5-dev --rules '{"layers":[{"name":
 # Expected: violations if any ui imports from core, or none if config doesn't match the project structure
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add code-analysis.js memory-store.js
@@ -1050,7 +1050,7 @@ git commit -m "feat: layer violations — architectural boundary checks (v5.3 ta
 - Modify: `SKILL.md` — update tool reference with new modes
 - Deploy: Copy all modified files
 
-- [ ] **Step 1: Update SKILL.md**
+- [x] **Step 1: Update SKILL.md**
 
 Add these `memory-code` modes:
 
@@ -1072,7 +1072,7 @@ Note the improved call resolution:
 Call hierarchy now uses AST-level callee extraction (fewer false positives)
 ```
 
-- [ ] **Step 2: Re-index and run all v5.2 + v5.3 features**
+- [x] **Step 2: Re-index and run all v5.2 + v5.3 features**
 
 ```bash
 cd ~/.pi/agent/skills/memory-layer
@@ -1097,7 +1097,7 @@ node memory-store.js doc-orphans --repo pi-mem-docs
 node memory-store.js doc-coverage --repo v5-dev --doc-repo pi-mem-docs
 ```
 
-- [ ] **Step 3: Verify symbol count increase**
+- [x] **Step 3: Verify symbol count increase**
 
 ```bash
 node -e "
@@ -1113,14 +1113,14 @@ db.close();
 # Target: Total > 250 (up from 170), with method, class, interface kinds present
 ```
 
-- [ ] **Step 4: Deploy to Pi**
+- [x] **Step 4: Deploy to Pi**
 
 ```bash
 DEPLOYED=~/.pi/agent/skills/memory-layer
 cp code-analysis.js doc-indexer.js parse-code.js memory-store.js "$DEPLOYED/"
 ```
 
-- [ ] **Step 5: Final commit**
+- [x] **Step 5: Final commit**
 
 ```bash
 git add SKILL.md

@@ -816,7 +816,7 @@ function getHotspots(db, repoId, opts = {}) {
       END as risk
     FROM symbol_complexity sc
     JOIN code_symbols cs ON cs.id = sc.symbol_id
-    JOIN churn_metrics cm ON cm.repo_id = cs.repo_id AND cm.file_path = cs.file_path
+    JOIN churn_metrics cm ON cm.repo_id = cs.repo_id AND (cs.file_path = cm.file_path OR cs.file_path LIKE '%/' || cm.file_path)
     WHERE cs.repo_id = ? AND cm.window_days = ?
     ORDER BY hotspot_score DESC
     LIMIT ?
