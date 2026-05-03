@@ -1,6 +1,4 @@
 // test/index-repo.test.js
-const { describe, it } = require('node:test');
-const assert = require('node:assert/strict');
 const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
@@ -9,7 +7,6 @@ const STORE = path.resolve(__dirname, '..', 'memory-store.js');
 
 describe('index-repo (WASM)', () => {
   it('should index a small repo without Python', () => {
-    // Create a temp repo with a JS file
     const tmpRepo = path.join('/tmp', 'test-wasm-integ');
     fs.mkdirSync(tmpRepo, { recursive: true });
     fs.writeFileSync(path.join(tmpRepo, 'app.js'),
@@ -21,11 +18,10 @@ describe('index-repo (WASM)', () => {
     });
     const result = JSON.parse(out);
 
-    assert.ok(result.success, `index-repo failed: ${out}`);
-    assert.ok(result.files_indexed >= 1, `Expected >= 1 file, got ${result.files_indexed}`);
-    assert.ok(result.symbols_extracted >= 3, `Expected >= 3 symbols (main, Server, start), got ${result.symbols_extracted}`);
+    expect(result.success).toBe(true);
+    expect(result.files_indexed).toBeGreaterThanOrEqual(1);
+    expect(result.symbols_extracted).toBeGreaterThanOrEqual(3);
 
-    // Clean up
     fs.rmSync(tmpRepo, { recursive: true });
   });
 
@@ -35,8 +31,8 @@ describe('index-repo (WASM)', () => {
       timeout: 10000,
     });
     const result = JSON.parse(out);
-    assert.ok(result.results.length >= 1, 'Expected at least 1 search result');
-    assert.equal(result.results[0].symbol, 'main');
+    expect(result.results.length).toBeGreaterThanOrEqual(1);
+    expect(result.results[0].symbol).toBe('main');
   });
 
   it('should get code source', () => {
@@ -45,9 +41,9 @@ describe('index-repo (WASM)', () => {
       timeout: 10000,
     });
     const result = JSON.parse(out);
-    assert.ok(result.success, 'get-code-source should succeed');
-    assert.equal(result.symbol, 'main');
-    assert.ok(result.source.includes('main'), 'Source should contain function name');
+    expect(result.success).toBe(true);
+    expect(result.symbol).toBe('main');
+    expect(result.source).toContain('main');
   });
 
   it('should list code repos', () => {
@@ -56,7 +52,7 @@ describe('index-repo (WASM)', () => {
       timeout: 10000,
     });
     const result = JSON.parse(out);
-    assert.ok(result.total >= 1, 'Should have at least 1 repo');
+    expect(result.total).toBeGreaterThanOrEqual(1);
   });
 
   it('should not reference Python in any error messages', () => {
@@ -64,9 +60,96 @@ describe('index-repo (WASM)', () => {
       encoding: 'utf8',
       timeout: 10000,
     });
-    // Should not mention Python in error messages
-    assert.ok(!out.includes('Python'), `Found Python reference: ${out}`);
-    assert.ok(!out.includes('pip'), `Found pip reference: ${out}`);
-    assert.ok(!out.includes('venv'), `Found venv reference: ${out}`);
+    expect(out).not.toContain('Python');
+    expect(out).not.toContain('pip');
+    expect(out).not.toContain('venv');
+  });
+
+  // ── New integration tests ──
+
+  it('should index a mixed-language repo (JS + TS + TSX)', () => {
+    const tmpRepo = path.join('/tmp', 'test-mixed-repo');
+    fs.mkdirSync(tmpRepo, { recursive: true });
+    fs.writeFileSync(path.join(tmpRepo, 'utils.js'),
+      'function helper(x) {\n  return x * 2;\n}');
+    fs.writeFileSync(path.join(tmpRepo, 'types.ts'),
+      'interface Config {\n  port: number;\n}\n\nfunction parseConfig(): Config {\n  return { port: 3000 };\n}');
+    fs.writeFileSync(path.join(tmpRepo, 'Component.tsx'),
+      'export function Button({ label }: { label: string }) {\n  return <button>{label}</button>;\n}');
+
+    const out = execSync(`node "${STORE}" index-repo --path "${tmpRepo}" --name test-mixed-repo`, {
+      encoding: 'utf8',
+      timeout: 30000,
+    });
+    const result = JSON.parse(out);
+
+    expect(result.success).toBe(true);
+    expect(result.files_indexed).toBeGreaterThanOrEqual(3);
+    expect(result.symbols_extracted).toBeGreaterThanOrEqual(4);
+
+    fs.rmSync(tmpRepo, { recursive: true });
+  });
+
+  it('should handle repos with only unsupported file types gracefully', () => {
+    const tmpRepo = path.join('/tmp', 'test-bad-repo');
+    fs.mkdirSync(tmpRepo, { recursive: true });
+    fs.writeFileSync(path.join(tmpRepo, 'README.txt'), 'Hello');
+
+    const out = execSync(`node "${STORE}" index-repo --path "${tmpRepo}" --name test-bad-repo-2`, {
+      encoding: 'utf8',
+      timeout: 10000,
+    });
+    const result = JSON.parse(out);
+    expect(result.files_indexed).toBeGreaterThanOrEqual(0);
+
+    fs.rmSync(tmpRepo, { recursive: true });
+  });
+
+  it('should reindex an existing repo', () => {
+    const out = execSync(`node "${STORE}" reindex-repo --repo test-wasm-integ`, {
+      encoding: 'utf8',
+      timeout: 30000,
+    });
+    const result = JSON.parse(out);
+    expect(result.success).toBe(true);
+    expect(result.files_reindexed).toBeGreaterThanOrEqual(0);
+  });
+
+  it('should list repos with file/symbol counts', () => {
+    const out = execSync(`node "${STORE}" list-code-repos`, {
+      encoding: 'utf8',
+      timeout: 10000,
+    });
+    const result = JSON.parse(out);
+    expect(result.total).toBeGreaterThanOrEqual(1);
+    expect(result.repos.length).toBeGreaterThanOrEqual(1);
+    const first = result.repos[0];
+    expect(first.name).toBeTruthy();
+    expect(typeof first.file_count).toBe('number');
+  });
+
+  it('should delete a code repo', () => {
+    const out = execSync(`node "${STORE}" remove-code-repo --repo test-mixed-repo`, {
+      encoding: 'utf8',
+      timeout: 10000,
+    });
+    const result = JSON.parse(out);
+    expect(result.success).toBe(true);
+
+    // Also clean up test-bad-repo-2
+    execSync(`node "${STORE}" remove-code-repo --repo test-bad-repo-2`, {
+      encoding: 'utf8',
+      timeout: 10000,
+    });
+  });
+
+  it('should report churn metrics with git data', () => {
+    // This may fail if no git history, but should not crash
+    const out = execSync(`node "${STORE}" churn --repo PiMemoryExtension`, {
+      encoding: 'utf8',
+      timeout: 30000,
+    });
+    // Even if it reports "no git history", it should return valid JSON
+    expect(() => JSON.parse(out.trim())).not.toThrow();
   });
 });

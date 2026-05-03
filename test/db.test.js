@@ -1,0 +1,138 @@
+// test/db.test.js
+const path = require('path');
+const fs = require('fs');
+
+const dbModule = require('../db');
+
+describe('db.js (database layer)', () => {
+  beforeAll(() => {
+    dbModule.ensureDb();
+  });
+
+  it('should have DB_PATH accessible', () => {
+    expect(dbModule.DB_PATH).toBeTruthy();
+    expect(dbModule.DB_PATH).toContain('.pi');
+    expect(dbModule.DB_PATH).toContain('memory.db');
+  });
+
+  it('should have SCHEMA_PATH pointing to a real file', () => {
+    expect(fs.existsSync(dbModule.SCHEMA_PATH)).toBe(true);
+  });
+
+  it('ensureDb() should return ok: true', () => {
+    const result = dbModule.ensureDb();
+    expect(result.ok).toBe(true);
+    expect(result.db).toBeTruthy();
+    expect(['node-sqlite', 'better-sqlite3']).toContain(result.engine);
+  });
+
+  it('ensureDb() should be idempotent', () => {
+    const r1 = dbModule.ensureDb();
+    const r2 = dbModule.ensureDb();
+    expect(r1.ok).toBe(true);
+    expect(r2.ok).toBe(true);
+    expect(r1.db).toBe(r2.db);
+  });
+
+  it('getDb() should return a non-null handle after ensureDb', () => {
+    const db = dbModule.getDb();
+    expect(db).toBeTruthy();
+  });
+
+  it('getEngine() should return a known engine', () => {
+    const engine = dbModule.getEngine();
+    expect(['node-sqlite', 'better-sqlite3']).toContain(engine);
+  });
+
+  it('sqlJson() should query and return results', () => {
+    const rows = dbModule.sqlJson('SELECT 1 as val');
+    expect(rows.length).toBe(1);
+    expect(rows[0].val).toBe(1);
+  });
+
+  it('sqlRun() should execute DML without error', () => {
+    dbModule.sqlRun('CREATE TABLE IF NOT EXISTS _db_test (id INTEGER PRIMARY KEY, val TEXT)');
+    dbModule.sqlRun('INSERT OR REPLACE INTO _db_test (id, val) VALUES (?, ?)', [1, 'hello']);
+    const rows = dbModule.sqlJson('SELECT val FROM _db_test WHERE id = 1');
+    expect(rows[0].val).toBe('hello');
+    dbModule.sqlRun('DELETE FROM _db_test WHERE id = 1');
+  });
+
+  it('sqlRaw() should execute raw SQL', () => {
+    dbModule.sqlRaw('DROP TABLE IF EXISTS _db_test');
+    expect(() => dbModule.sqlJson('SELECT 1 FROM _db_test')).toThrow();
+  });
+
+  it('sqlJson() with parameters should use placeholders', () => {
+    const rows = dbModule.sqlJson('SELECT ? as a, ? as b', [42, 'test']);
+    expect(rows[0].a).toBe(42);
+    expect(rows[0].b).toBe('test');
+  });
+
+  it('sqlJson() should throw on invalid SQL', () => {
+    expect(() => dbModule.sqlJson('SELECT * FROM nonexistent_table_xyz_123')).toThrow();
+  });
+
+  it('sqlRun() should throw on invalid SQL', () => {
+    expect(() => dbModule.sqlRun('INSERT INTO nonexistent_table VALUES (1)')).toThrow();
+  });
+
+  it('withTransaction() should commit on success', () => {
+    dbModule.ensureDb();
+    const result = dbModule.withTransaction(() => {
+      dbModule.sqlRun('CREATE TABLE IF NOT EXISTS _txn_test (id INTEGER PRIMARY KEY, val REAL)');
+      return { done: true };
+    });
+    expect(result.done).toBe(true);
+    dbModule.sqlRun('DROP TABLE IF EXISTS _txn_test');
+  });
+
+  it('withTransaction() should rollback on error', () => {
+    dbModule.ensureDb();
+    expect(() => {
+      dbModule.withTransaction(() => {
+        dbModule.sqlRun('CREATE TABLE IF NOT EXISTS _txn_test2 (id INTEGER PRIMARY KEY)');
+        throw new Error('forced error');
+      });
+    }).toThrow('forced error');
+    // Table should not exist after rollback
+    expect(() => dbModule.sqlJson('SELECT 1 FROM _txn_test2')).toThrow();
+  });
+
+  it('HOME should be a real directory', () => {
+    expect(fs.existsSync(dbModule.HOME)).toBe(true);
+  });
+
+  it('jsonOut() should not throw on valid object', () => {
+    // jsonOut writes to stdout — just verify it doesn't throw
+    expect(() => dbModule.jsonOut({ test: 1 })).not.toThrow();
+  });
+
+  it('parseArgs() should parse CLI arguments', () => {
+    // Simulate: node memory-store.js subcommand --repo X --path Y
+    const args = dbModule.parseArgs(['node', 'memory-store.js', 'index-repo', '--repo', 'test', '--path', '/tmp', '--force']);
+    expect(args.repo).toBe('test');
+    expect(args.path).toBe('/tmp');
+    expect(args.force).toBe(true);
+  });
+
+  it('parseArgs() should handle --flag style args', () => {
+    const args = dbModule.parseArgs(['node', 'memory-store.js', 'search', '--dry-run']);
+    expect(args['dry-run']).toBe(true);
+  });
+
+  it('runMigrations should not throw on version 5 schema', () => {
+    const db = dbModule.getDb();
+    // Force version to 5
+    db.exec('PRAGMA user_version = 5');
+    const result = dbModule.ensureDb();
+    expect(result.ok).toBe(true);
+  });
+
+  it('should create memory.db in the correct path', () => {
+    const dbPath = dbModule.DB_PATH;
+    expect(fs.existsSync(dbPath)).toBe(true);
+    const stat = fs.statSync(dbPath);
+    expect(stat.size).toBeGreaterThan(0);
+  });
+});

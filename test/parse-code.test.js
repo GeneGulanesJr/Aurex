@@ -1,23 +1,21 @@
 // test/parse-code.test.js
-const { describe, it, before } = require('node:test');
-const assert = require('node:assert/strict');
 const path = require('path');
 const fs = require('fs');
 const codeParser = require('../parse-code');
 
-describe('parse-code', () => {
-  before(async () => {
+describe.concurrent('parse-code', () => {
+  beforeAll(async () => {
     await codeParser.init();
   });
 
   it('should initialize successfully', () => {
-    assert.equal(codeParser.isReady(), true);
+    expect(codeParser.isReady()).toBe(true);
   });
 
   it('should report loaded grammars via info()', () => {
     const info = codeParser.info();
-    assert.equal(info.ready, true);
-    assert.ok(info.grammars.length >= 2, `Expected >= 2 grammars, got ${info.grammars.length}`);
+    expect(info.ready).toBe(true);
+    expect(info.grammars.length).toBeGreaterThanOrEqual(2);
   });
 
   it('should extract JS function declarations', () => {
@@ -26,13 +24,13 @@ describe('parse-code', () => {
     const symbols = codeParser.parseFile(tmpFile);
     fs.unlinkSync(tmpFile);
 
-    assert.ok(symbols.length >= 1, `Expected >= 1 symbol, got ${symbols.length}`);
+    expect(symbols.length).toBeGreaterThanOrEqual(1);
     const fn = symbols.find(s => s.name === 'hello');
-    assert.ok(fn, 'hello function not found');
-    assert.equal(fn.kind, 'function');
-    assert.equal(fn.start_line, 1);
-    assert.ok(fn.signature.includes('hello'));
-    assert.equal(fn.language, 'javascript');
+    expect(fn).toBeDefined();
+    expect(fn.kind).toBe('function');
+    expect(fn.start_line).toBe(1);
+    expect(fn.signature).toContain('hello');
+    expect(fn.language).toBe('javascript');
   });
 
   it('should extract JS class declarations and methods', () => {
@@ -42,12 +40,12 @@ describe('parse-code', () => {
     fs.unlinkSync(tmpFile);
 
     const cls = symbols.find(s => s.name === 'MyClass' && s.kind === 'class');
-    assert.ok(cls, 'MyClass class not found');
+    expect(cls).toBeDefined();
 
     const method = symbols.find(s => s.name === 'greet' && s.kind === 'method');
-    assert.ok(method, 'greet method not found');
-    assert.equal(method.parent_name, 'MyClass');
-    assert.equal(method.qualified_name, 'MyClass.greet');
+    expect(method).toBeDefined();
+    expect(method.parent_name).toBe('MyClass');
+    expect(method.qualified_name).toBe('MyClass.greet');
   });
 
   it('should extract arrow function variables', () => {
@@ -57,7 +55,7 @@ describe('parse-code', () => {
     fs.unlinkSync(tmpFile);
 
     const fn = symbols.find(s => s.name === 'add' && s.kind === 'function');
-    assert.ok(fn, 'add arrow function not found');
+    expect(fn).toBeDefined();
   });
 
   it('should extract TS interface and type alias', () => {
@@ -67,11 +65,11 @@ describe('parse-code', () => {
     fs.unlinkSync(tmpFile);
 
     const iface = symbols.find(s => s.name === 'User' && s.kind === 'interface');
-    assert.ok(iface, 'User interface not found');
-    assert.equal(iface.language, 'typescript');
+    expect(iface).toBeDefined();
+    expect(iface.language).toBe('typescript');
 
     const typeAlias = symbols.find(s => s.name === 'ID' && s.kind === 'type');
-    assert.ok(typeAlias, 'ID type alias not found');
+    expect(typeAlias).toBeDefined();
   });
 
   it('should extract TSX component', () => {
@@ -81,8 +79,8 @@ describe('parse-code', () => {
     fs.unlinkSync(tmpFile);
 
     const fn = symbols.find(s => s.name === 'Header');
-    assert.ok(fn, 'Header component not found');
-    assert.equal(fn.language, 'typescript');
+    expect(fn).toBeDefined();
+    expect(fn.language).toBe('typescript');
   });
 
   it('should extract docstrings from JSDoc comments', () => {
@@ -92,8 +90,8 @@ describe('parse-code', () => {
     fs.unlinkSync(tmpFile);
 
     const fn = symbols.find(s => s.name === 'greet');
-    assert.ok(fn, 'greet function not found');
-    assert.ok(fn.docstring.includes('greeter'), `Expected docstring to contain 'greeter', got: "${fn.docstring}"`);
+    expect(fn).toBeDefined();
+    expect(fn.docstring).toContain('greeter');
   });
 
   it('should return output with all required fields', () => {
@@ -103,30 +101,118 @@ describe('parse-code', () => {
     fs.unlinkSync(tmpFile);
 
     const fn = symbols.find(s => s.name === 'myFunc');
-    assert.ok(fn, 'myFunc not found');
+    expect(fn).toBeDefined();
 
     const requiredFields = ['name', 'kind', 'language', 'file', 'signature', 'qualified_name',
                             'start_line', 'end_line', 'start_byte', 'end_byte',
                             'docstring', 'body_preview', 'parent_name'];
     for (const field of requiredFields) {
-      assert.ok(field in fn, `Missing field: ${field}`);
+      expect(field in fn).toBe(true);
     }
   });
 
   it('should return empty array for unsupported file types', () => {
     const symbols = codeParser.parseFile('/tmp/test.rb');
-    assert.deepEqual(symbols, []);
+    expect(symbols).toEqual([]);
   });
 
   it('should return empty array for nonexistent files', () => {
     const symbols = codeParser.parseFile('/tmp/does_not_exist_abc123.js');
-    assert.deepEqual(symbols, []);
+    expect(symbols).toEqual([]);
   });
 
   it('should return empty array when not initialized', () => {
-    // This test verifies the guard — since we already initialized,
-    // we test the ext-based guard instead
     const symbols = codeParser.parseFile('/tmp/test.py');
-    assert.deepEqual(symbols, []);  // .py is not in LANGUAGE_MAP
+    expect(symbols).toEqual([]);
+  });
+
+  // ── New tests: Multi-language support ──
+
+  it('should parse Python files (.py) and extract functions', () => {
+    const tmpFile = path.join('/tmp', 'test_py.py');
+    fs.writeFileSync(tmpFile, 'def greet(name):\n    """Say hello."""\n    return f"Hello {name}"\n\nclass Animal:\n    def speak(self):\n        return "roar"');
+    try {
+      const symbols = codeParser.parseFile(tmpFile);
+      expect(symbols.length).toBeGreaterThanOrEqual(2);
+      const greet = symbols.find(s => s.name === 'greet' && s.kind === 'function');
+      expect(greet).toBeDefined();
+      expect(greet.language).toBe('python');
+      if (greet.docstring) expect(greet.docstring).toContain('Say hello');
+    } finally {
+      fs.unlinkSync(tmpFile);
+    }
+  });
+
+  it('should parse Go files (.go) and extract functions', () => {
+    const tmpFile = path.join('/tmp', 'test_go.go');
+    fs.writeFileSync(tmpFile, 'package main\n\n// Greet says hello\nfunc Greet(name string) string {\n\treturn "Hello " + name\n}\n\nfunc add(a, b int) int {\n\treturn a + b\n}');
+    try {
+      const symbols = codeParser.parseFile(tmpFile);
+      expect(symbols.length).toBeGreaterThanOrEqual(2);
+      const greet = symbols.find(s => s.name === 'Greet' && s.kind === 'function');
+      expect(greet).toBeDefined();
+      expect(greet.language).toBe('go');
+    } finally {
+      fs.unlinkSync(tmpFile);
+    }
+  });
+
+  it('should parse Rust files (.rs) and extract functions', () => {
+    const tmpFile = path.join('/tmp', 'test_rs.rs');
+    fs.writeFileSync(tmpFile, '/// Adds two numbers\nfn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n\npub fn greet(name: &str) -> String {\n    format!("Hello, {}", name)\n}');
+    try {
+      const symbols = codeParser.parseFile(tmpFile);
+      expect(symbols.length).toBeGreaterThanOrEqual(2);
+      const add = symbols.find(s => s.name === 'add' && s.kind === 'function');
+      expect(add).toBeDefined();
+      expect(add.language).toBe('rust');
+    } finally {
+      fs.unlinkSync(tmpFile);
+    }
+  });
+
+  // ── New tests: AST callee extraction (v5.3) ──
+
+  it('should extract callees from call expressions via AST', () => {
+    const tmpFile = path.join('/tmp', 'test-callees.js');
+    fs.writeFileSync(tmpFile, 'function foo() {\n  bar();\n  baz(x, y);\n  obj.method();\n  new ClassName();\n}');
+    try {
+      const callees = codeParser.extractCallees(tmpFile);
+      const names = callees.map(c => c.callee);
+      expect(names).toContain('bar');
+      expect(names).toContain('baz');
+      expect(names).toContain('method');
+      expect(names).toContain('ClassName');
+    } finally {
+      fs.unlinkSync(tmpFile);
+    }
+  });
+
+  it('should not extract keyword-like callees', () => {
+    const tmpFile = path.join('/tmp', 'test-kw-callees.js');
+    fs.writeFileSync(tmpFile, 'function foo() {\n  if (x) return;\n  for (let i = 0; i < 10; i++) {}\n  while (true) {}\n  switch (v) { case 1: break; }\n  try {} catch (e) {}\n)');
+    try {
+      const callees = codeParser.extractCallees(tmpFile);
+      const names = callees.map(c => c.callee);
+      expect(names).not.toContain('if');
+      expect(names).not.toContain('for');
+      expect(names).not.toContain('while');
+      expect(names).not.toContain('switch');
+    } finally {
+      fs.unlinkSync(tmpFile);
+    }
+  });
+
+  it('should deduplicate callee names by line', () => {
+    const tmpFile = path.join('/tmp', 'test-dup-callees.js');
+    fs.writeFileSync(tmpFile, 'function foo() {\n  bar();\n}');
+    try {
+      const callees = codeParser.extractCallees(tmpFile);
+      const bars = callees.filter(c => c.callee === 'bar');
+      // Only one call to bar() on one line
+      expect(bars.length).toBe(1);
+    } finally {
+      fs.unlinkSync(tmpFile);
+    }
   });
 });
