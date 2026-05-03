@@ -18,32 +18,104 @@ Restart Pi and memory auto-wires on session start.
 
 - **Remembers across sessions** — decisions, bugfixes, patterns, discoveries persist
 - **Auto-injects context** — next session starts with relevant memories loaded
-- **Code indexing** — tree-sitter AST parses JS/TS/SQL files, searchable by issue description
+- **Code indexing** — web-tree-sitter (WASM) AST parses JS/TS/Go/Python/Rust/SQL files, searchable by issue description
 - **Trust scoring** — memories linked to changed code lose trust; stable code boosts it
-- **Deduplication** — trigram overlap prevents duplicate saves
+- **Deduplication** — trigram overlap prevents duplicate saves (≥85% auto-merges, 60–84% warns)
 - **Workspaces** — formal project isolation with create/list/archive
-- **Procedural memory** — multi-step workflow tracking
-- **Zero servers** — single Node.js CLI + SQLite, called on demand by Pi
+- **Session lifecycle** — auto-recovery of incomplete sessions, trust recovery on close
+- **Zero servers** — single Node.js CLI + SQLite, called on demand by Pi. Zero Python dependency.
 
 ## Commands (called by Pi automatically)
+
+### Observations & Search
 
 | Command                                | Purpose                                               |
 | -------------------------------------- | ----------------------------------------------------- |
 | `save`                                 | Save an observation (decision, bugfix, pattern, etc.) |
 | `search`                               | FTS5 full-text search with hybrid ranking             |
 | `search --include-code`                | Search both memories AND indexed code symbols         |
-| `context`                              | Load session context by project                       |
-| `index-repo --path`                    | Index JS/TS/SQL files with tree-sitter                |
-| `search-code --query`                  | Search code symbols by issue description              |
-| `get-code-source --repo --file --name` | Get full source of a code symbol                      |
+| `context`                               | Load session context by project                       |
+| `get`                                  | Retrieve a single observation by ID                   |
+
+### Code Indexing (v3 — WASM tree-sitter)
+
+| Command                                | Purpose                                               |
+| -------------------------------------- | ----------------------------------------------------- |
+| `index-repo --path`                    | Index a local folder with tree-sitter                 |
+| `reindex-repo --repo`                  | Incremental reindex via mtime                         |
+| `search-code --query`                  | FTS5 BM25 search over code symbols                   |
+| `get-code-source --repo --file --name` | Byte-accurate source retrieval                       |
+| `list-code-repos`                      | List indexed code repos                               |
+| `remove-code-repo --repo`              | Remove an indexed code repo                           |
+
+### Code Analysis (v5 — import graph, call graph, complexity, dead code)
+
+| Command                                | Purpose                                               |
+| -------------------------------------- | ----------------------------------------------------- |
+| `import-graph --repo`                  | Import dependency graph with recursive traversal      |
+| `call-hierarchy --symbol --repo`       | Call graph hierarchy (callers/callees)                |
+| `blast-radius --symbol --repo`         | What breaks if a symbol changes                       |
+| `dead-code --repo`                     | Find unused code                                      |
+| `complexity --repo`                    | Cyclomatic complexity per function                    |
+| `outline --repo --file`                | File symbol outline (classes, methods, standalone)    |
+| `churn --repo`                         | Git commit frequency metrics                          |
+
+### Code Analytics (v5.2–v5.3 — hotspots, cycles, importance, coupling, signal chains)
+
+| Command                                | Purpose                                               |
+| -------------------------------------- | ----------------------------------------------------- |
+| `hotspots --repo`                      | Top symbols by complexity × churn (bug risk)          |
+| `cycles --repo`                        | Dependency cycles via Tarjan SCC                      |
+| `importance --repo`                    | Symbol PageRank on call graph                         |
+| `coupling --repo`                      | Afferent/efferent/instability per file                 |
+| `extractable --repo`                   | Refactoring candidates                                 |
+| `hierarchy --symbol --repo`            | Class hierarchy from parent_name                       |
+| `signal-chains --repo`                 | Detect HTTP/CLI gateways and trace call chains         |
+| `layer-violations --repo`              | Check import rules against declared architecture layers |
+
+### Doc Indexing (v5 — markdown sections, links, glossary, code examples)
+
+| Command                                | Purpose                                               |
+| -------------------------------------- | ----------------------------------------------------- |
+| `index-docs --path --name`             | Index a markdown doc tree                              |
+| `reindex-docs --repo`                 | Re-index a doc repo                                    |
+| `doc-search --query --repo`            | Full-text search across doc sections                   |
+| `doc-outline --repo --file`            | Section hierarchy outline                              |
+| `backlinks --repo --path`              | Find all docs that link TO a given doc                 |
+| `broken-links --repo`                  | Find broken internal doc links                         |
+| `glossary --repo --term`               | Look up glossary terms                                 |
+| `tutorial-path --section --repo`       | Reconstruct ordered tutorial chain                    |
+| `code-examples --query --repo`         | Search fenced code blocks by content                   |
+| `doc-orphans --repo`                   | Find sections with zero inbound links                  |
+| `doc-coverage --repo`                  | Which code symbols have documentation coverage         |
+| `stale-pages --repo`                  | Find docs modified since last index                     |
+| `doc-duplicates --repo`                | Find duplicate sections by content hash                |
+
+### Workspace Management
+
+| Command                                | Purpose                                               |
+| -------------------------------------- | ----------------------------------------------------- |
 | `list-workspaces`                      | List all workspaces                                   |
 | `create-workspace --name`              | Create a workspace                                    |
-| `archive-workspace --name`             | Archive a workspace                                   |
+| `archive-workspace --name`             | Archive a workspace (soft, data preserved)            |
+
+### Maintenance
+
+| Command                                | Purpose                                               |
+| -------------------------------------- | ----------------------------------------------------- |
+| `compact`                              | Prune dead links, decay trust, VACUUM, optimize FTS5  |
+| `stats`                                | Database statistics                                    |
+| `list-projects`                        | List all known project names                           |
 
 ## Requirements
 
-- Node.js ≥ 22.5 (built-in `node:sqlite`) or `sqlite3` CLI with FTS5
-- Python 3.10+ (for tree-sitter code indexing — optional, FTS5 search works without it)
+- **Node.js ≥ 22.5** (built-in `node:sqlite`) or Node.js with `better-sqlite3`
+- No Python dependency — code parsing uses web-tree-sitter (WASM) in-process
+- No API keys or cloud services needed
+
+## Supported Languages for Code Indexing
+
+JavaScript, TypeScript, TSX, Go, Python, Rust, SQL
 
 ## License
 
