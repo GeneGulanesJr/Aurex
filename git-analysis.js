@@ -22,44 +22,88 @@ function isGitAvailable() {
   try {
     execSync('git --version', { encoding: 'utf8', timeout: 3000, stdio: 'pipe' });
     return true;
-  } catch (_) {
+  } catch {
     return false;
   }
 }
 
+function lookupRepo(db, repoId) {
+  return db.prepare('SELECT id, path, name FROM code_repos WHERE id = ?').get(repoId);
+}
+
+function getCachedChurn(db, repoId, filePath, days) {
+  return db
+    .prepare('SELECT * FROM churn_metrics WHERE repo_id = ? AND file_path = ? AND window_days = ?')
+    .get(repoId, filePath || '__all__', days);
+}
+
+function computeSince(days) {
+  return new Date(Date.now() - days * 86400000).toISOString().split('T')[0];
+}
+
+function resolveTarget(repoId, target, db) {
+  const repo = lookupRepo(db, repoId);
+  if (!repo) { return { error: `Repo ID ${repoId} not found` }; }
+  const filePath = target && target !== '__all__' ? target : null;
+  return { repo, filePath };
+}
+
+// eslint-disable-next-line max-statements -- churn computation inherently requires many steps
 function getChurn(db, repoId, target, days, refresh) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) { return guard; }
+
+  const resolved = resolveTarget(repoId, target, db);
+  if (resolved.error) { return resolved; }
+
   days = days || 90;
   refresh = refresh || false;
 
-  if (!isGitAvailable()) {
-    return { error: 'git not available. Install git for churn metrics.' };
-  }
-
-  const repo = db.prepare('SELECT id, path, name FROM code_repos WHERE id = ?').get(repoId);
-  if (!repo) return { error: `Repo ID ${repoId} not found` };
-
-  const filePath = target && target !== '__all__' ? target : null;
-
-  // Check cache
   if (!refresh) {
-    const cached = db
-      .prepare('SELECT * FROM churn_metrics WHERE repo_id = ? AND file_path = ? AND window_days = ?')
-      .get(repoId, filePath || '__all__', days);
-    if (cached) return cached;
+    const cached = getCachedChurn(db, repoId, resolved.filePath, days);
+    if (cached) { return cached; }
   }
 
-  const since = new Date(Date.now() - days * 86400000).toISOString().split('T')[0];
-
-  if (filePath) {
-    return computeFileChurn(db, repo, filePath, days, since);
+  const since = computeSince(days);
+  if (resolved.filePath) {
+    return computeFileChurn(db, resolved.repo, resolved.filePath, days, since);
   }
-  return computeRepoChurn(db, repo, days, since);
+  return computeRepoChurn(db, resolved.repo, days, since);
 }
 
+function getFirstSeen(repoPath, filePath) {
+  try {
+    const fullLog = execSync(`git -C "${repoPath}" log --follow --format="%aI" -- "${filePath}"`, {
+      encoding: 'utf8',
+      timeout: 10000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+    const allDates = fullLog.split('\n').filter(Boolean).sort();
+    return allDates.length ? allDates[0] : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseCommitLog(log) {
+  const lines = log.split('\n');
+  const authors = new Set(lines.map((l) => l.split('|')[1]).filter(Boolean));
+  const dates = lines.map((l) => l.split('|')[2]).filter(Boolean).sort();
+  return { lines, authors, dates };
+}
+
+function buildFileChurnResult(lines, authors, dates, firstSeen, days) {
+  return {
+    commits: lines.length,
+    unique_authors: authors.size,
+    first_seen: firstSeen,
+    last_modified: dates[dates.length - 1] || null,
+    churn_per_week: Math.round((lines.length / (days / 7)) * 100) / 100,
+  };
+}
+
+// eslint-disable-next-line max-statements -- file churn computation requires many steps
 function computeFileChurn(db, repo, filePath, days, since) {
-  // Normalize to absolute path so JOINs with code_symbols.file_path work
   const absPath = path.isAbsolute(filePath) ? filePath : path.resolve(repo.path, filePath);
   try {
     const log = execSync(
@@ -73,32 +117,9 @@ function computeFileChurn(db, repo, filePath, days, since) {
       return result;
     }
 
-    const lines = log.split('\n');
-    const authors = new Set(lines.map((l) => l.split('|')[1]).filter(Boolean));
-    const dates = lines
-      .map((l) => l.split('|')[2])
-      .filter(Boolean)
-      .sort();
-
-    let firstSeen = dates[0];
-    try {
-      const fullLog = execSync(`git -C "${repo.path}" log --follow --format="%aI" -- "${filePath}"`, {
-        encoding: 'utf8',
-        timeout: 10000,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      }).trim();
-      const allDates = fullLog.split('\n').filter(Boolean).sort();
-      if (allDates.length) firstSeen = allDates[0];
-    } catch (_) {}
-
-    const result = {
-      commits: lines.length,
-      unique_authors: authors.size,
-      first_seen: firstSeen,
-      last_modified: dates[dates.length - 1] || null,
-      churn_per_week: Math.round((lines.length / (days / 7)) * 100) / 100,
-    };
-
+    const { lines, authors, dates } = parseCommitLog(log);
+    const firstSeen = getFirstSeen(repo.path, filePath) || dates[0];
+    const result = buildFileChurnResult(lines, authors, dates, firstSeen, days);
     upsertChurn(db, repo.id, absPath, days, result);
     return result;
   } catch (e) {
@@ -117,7 +138,7 @@ function computeRepoChurn(db, repo, days, since) {
     const fileCounts = new Map();
     for (const line of log.split('\n')) {
       const f = line.trim();
-      if (f) fileCounts.set(f, (fileCounts.get(f) || 0) + 1);
+      if (f) { fileCounts.set(f, (fileCounts.get(f) || 0) + 1); }
     }
 
     const topFiles = [...fileCounts.entries()]

@@ -1,9 +1,19 @@
-// test/parse-code.test.js
+// Unit tests for parse-code (WASM tree-sitter)
 const path = require('path');
 const fs = require('fs');
 const codeParser = require('../parse-code');
 
-describe.concurrent('parse-code', () => {
+function writeTmpTest(filePath, content) {
+  fs.writeFileSync(filePath, content);
+  return codeParser.parseFile(filePath);
+}
+
+describe('parse-code (WASM tree-sitter)', () => {
+  beforeAll(async () => {
+    await codeParser.init();
+  });
+
+  describe('initialization', () => {
   beforeAll(async () => {
     await codeParser.init();
   });
@@ -17,16 +27,15 @@ describe.concurrent('parse-code', () => {
     expect(info.ready).toBe(true);
     expect(info.grammars.length).toBeGreaterThanOrEqual(2);
   });
+});
 
+describe('parse-code: JavaScript', () => {
   it('should extract JS function declarations', () => {
     const tmpFile = path.join('/tmp', 'test-parse-fn.js');
-    fs.writeFileSync(tmpFile, 'function hello(name) {\n  return name;\n}');
-    const symbols = codeParser.parseFile(tmpFile);
+    const symbols = writeTmpTest(tmpFile, 'function hello(name) {\n  return name;\n}');
     fs.unlinkSync(tmpFile);
 
-    expect(symbols.length).toBeGreaterThanOrEqual(1);
     const fn = symbols.find(s => s.name === 'hello');
-    expect(fn).toBeDefined();
     expect(fn.kind).toBe('function');
     expect(fn.start_line).toBe(1);
     expect(fn.signature).toContain('hello');
@@ -58,31 +67,6 @@ describe.concurrent('parse-code', () => {
     expect(fn).toBeDefined();
   });
 
-  it('should extract TS interface and type alias', () => {
-    const tmpFile = path.join('/tmp', 'test-types.ts');
-    fs.writeFileSync(tmpFile, 'interface User {\n  name: string;\n  age: number;\n}\n\ntype ID = string;');
-    const symbols = codeParser.parseFile(tmpFile);
-    fs.unlinkSync(tmpFile);
-
-    const iface = symbols.find(s => s.name === 'User' && s.kind === 'interface');
-    expect(iface).toBeDefined();
-    expect(iface.language).toBe('typescript');
-
-    const typeAlias = symbols.find(s => s.name === 'ID' && s.kind === 'type');
-    expect(typeAlias).toBeDefined();
-  });
-
-  it('should extract TSX component', () => {
-    const tmpFile = path.join('/tmp', 'test-comp.tsx');
-    fs.writeFileSync(tmpFile, 'export function Header({ title }: { title: string }) {\n  return <h1>{title}</h1>;\n}');
-    const symbols = codeParser.parseFile(tmpFile);
-    fs.unlinkSync(tmpFile);
-
-    const fn = symbols.find(s => s.name === 'Header');
-    expect(fn).toBeDefined();
-    expect(fn.language).toBe('typescript');
-  });
-
   it('should extract docstrings from JSDoc comments', () => {
     const tmpFile = path.join('/tmp', 'test-docstring.js');
     fs.writeFileSync(tmpFile, '/** A greeter function */\nfunction greet(who) {\n  return "Hello " + who;\n}');
@@ -110,7 +94,36 @@ describe.concurrent('parse-code', () => {
       expect(field in fn).toBe(true);
     }
   });
+});
 
+describe('parse-code: TypeScript', () => {
+  it('should extract TS interface and type alias', () => {
+    const tmpFile = path.join('/tmp', 'test-types.ts');
+    fs.writeFileSync(tmpFile, 'interface User {\n  name: string;\n  age: number;\n}\n\ntype ID = string;');
+    const symbols = codeParser.parseFile(tmpFile);
+    fs.unlinkSync(tmpFile);
+
+    const iface = symbols.find(s => s.name === 'User' && s.kind === 'interface');
+    expect(iface).toBeDefined();
+    expect(iface.language).toBe('typescript');
+
+    const typeAlias = symbols.find(s => s.name === 'ID' && s.kind === 'type');
+    expect(typeAlias).toBeDefined();
+  });
+
+  it('should extract TSX component', () => {
+    const tmpFile = path.join('/tmp', 'test-comp.tsx');
+    fs.writeFileSync(tmpFile, 'export function Header({ title }: { title: string }) {\n  return <h1>{title}</h1>;\n}');
+    const symbols = codeParser.parseFile(tmpFile);
+    fs.unlinkSync(tmpFile);
+
+    const fn = symbols.find(s => s.name === 'Header');
+    expect(fn).toBeDefined();
+    expect(fn.language).toBe('typescript');
+  });
+});
+
+describe('parse-code: edge cases', () => {
   it('should return empty array for unsupported file types', () => {
     const symbols = codeParser.parseFile('/tmp/test.rb');
     expect(symbols).toEqual([]);
@@ -125,22 +138,17 @@ describe.concurrent('parse-code', () => {
     const symbols = codeParser.parseFile('/tmp/test.py');
     expect(symbols).toEqual([]);
   });
+});
 
-  // ── New tests: Multi-language support ──
-
+describe('parse-code: multi-language support', () => {
   it('should parse Python files (.py) and extract functions', () => {
     const tmpFile = path.join('/tmp', 'test_py.py');
-    fs.writeFileSync(tmpFile, 'def greet(name):\n    """Say hello."""\n    return f"Hello {name}"\n\nclass Animal:\n    def speak(self):\n        return "roar"');
-    try {
-      const symbols = codeParser.parseFile(tmpFile);
-      expect(symbols.length).toBeGreaterThanOrEqual(2);
-      const greet = symbols.find(s => s.name === 'greet' && s.kind === 'function');
-      expect(greet).toBeDefined();
-      expect(greet.language).toBe('python');
-      if (greet.docstring) expect(greet.docstring).toContain('Say hello');
-    } finally {
-      fs.unlinkSync(tmpFile);
-    }
+    const symbols = writeTmpTest(tmpFile, 'def greet(name):\n    """Say hello."""\n    return f"Hello {name}"\n\nclass Animal:\n    def speak(self):\n        return "roar"');
+    fs.unlinkSync(tmpFile);
+    expect(symbols.length).toBeGreaterThanOrEqual(2);
+    const greet = symbols.find(s => s.name === 'greet' && s.kind === 'function');
+    expect(greet.language).toBe('python');
+    if (greet.docstring) { expect(greet.docstring).toContain('Say hello'); }
   });
 
   it('should parse Go files (.go) and extract functions', () => {
@@ -170,9 +178,9 @@ describe.concurrent('parse-code', () => {
       fs.unlinkSync(tmpFile);
     }
   });
+});
 
-  // ── New tests: AST callee extraction (v5.3) ──
-
+describe('parse-code: AST callee extraction', () => {
   it('should extract callees from call expressions via AST', () => {
     const tmpFile = path.join('/tmp', 'test-callees.js');
     fs.writeFileSync(tmpFile, 'function foo() {\n  bar();\n  baz(x, y);\n  obj.method();\n  new ClassName();\n}');
@@ -190,7 +198,7 @@ describe.concurrent('parse-code', () => {
 
   it('should not extract keyword-like callees', () => {
     const tmpFile = path.join('/tmp', 'test-kw-callees.js');
-    fs.writeFileSync(tmpFile, 'function foo() {\n  if (x) return;\n  for (let i = 0; i < 10; i++) {}\n  while (true) {}\n  switch (v) { case 1: break; }\n  try {} catch (e) {}\n)');
+    fs.writeFileSync(tmpFile, 'function foo() {\n  if (x) return;\n  for (let i = 0; i < 10; i++) {}\n  while (true) {}\n  switch (v) { case 1: break; }\n  try {} catch (e) {}\n}');
     try {
       const callees = codeParser.extractCallees(tmpFile);
       const names = callees.map(c => c.callee);
@@ -209,10 +217,10 @@ describe.concurrent('parse-code', () => {
     try {
       const callees = codeParser.extractCallees(tmpFile);
       const bars = callees.filter(c => c.callee === 'bar');
-      // Only one call to bar() on one line
       expect(bars.length).toBe(1);
     } finally {
       fs.unlinkSync(tmpFile);
     }
   });
 });
+}); // End parse-code
