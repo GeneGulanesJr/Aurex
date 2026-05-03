@@ -4,7 +4,7 @@ Persistent memory for the [Pi coding agent](https://github.com/mariozechner/pi-c
 
 ## Architecture
 
-<img alt="PiMemory Architecture" src="memory-layer-architecture.svg" width="100%">
+![PiMemory Architecture](memory-layer-architecture.png)
 
 ## One-command install
 
