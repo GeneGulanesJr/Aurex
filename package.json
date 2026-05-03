@@ -27,6 +27,7 @@
     "check": "oxlint && oxfmt --check"
   },
   "dependencies": {
+    "better-sqlite3": "^12.9.0",
     "web-tree-sitter": "^0.26.8"
   },
   "devDependencies": {

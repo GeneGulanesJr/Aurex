@@ -9,19 +9,22 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: ['25']
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js ${{ matrix.node-version }}
+      - name: Setup Node.js 25
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: '25'
 
       - name: Install dependencies
         run: npm install
+
+      - name: Index repo
+        run: node memory-store.js index-repo --path . --name PiMemoryExtension
+
+      - name: Index docs
+        run: node memory-store.js index-docs --path docs --name pi-docs
 
       - name: Lint
         run: npm run lint
