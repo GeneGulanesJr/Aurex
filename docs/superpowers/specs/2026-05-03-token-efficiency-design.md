@@ -340,6 +340,10 @@ pr-risk --repo NAME [--branch BRANCH] [--base main]
 | `bench/bench-tokens.js` | 1 | Token efficiency benchmark harness |
 | `bench/bench-helper.js` | 1 | Shared benchmark utilities |
 | `ast-patterns.js` | 3 | Anti-pattern detection |
+| `test/response-meta.test.js` | 1 | Tests for _meta envelope |
+| `test/wire-format.test.js` | 1 | Tests for compact encoding round-trip |
+| `test/ast-patterns.test.js` | 3 | Tests for pattern detection |
+| `test/git-analysis.test.js` | 3 | Tests for provenance |
 
 ### Modified files
 
@@ -352,10 +356,7 @@ pr-risk --repo NAME [--branch BRANCH] [--base main]
 | `~/.pi/agent/skills/memory-layer/SKILL.md` | 1, 2, 3 | Document new commands, compact format, tier system. **Must update all response shape examples** to reflect `{ _meta, data }` envelope — every analysis command's response example changes from `{ edges: [...] }` to `{ _meta: {...}, data: { edges: [...] } }` |
 | `schema.sql` | 1 | Add `head_commit TEXT` column to `code_repos` CREATE TABLE (for fresh install parity with migration) |
 | `test/code-analysis.test.js` | 2, 3 | Tests for winnow, untested, pr-risk |
-| `test/response-meta.test.js` | 1 | Tests for _meta envelope |
-| `test/wire-format.test.js` | 1 | Tests for compact encoding round-trip |
-| `test/ast-patterns.test.js` | 3 | Tests for pattern detection |
-| `test/git-analysis.test.js` | 3 | Tests for provenance |
+| `test/db.test.js` | 2 | Tests for tier config reading in session-start |
 
 ### Schema change (one)
 
