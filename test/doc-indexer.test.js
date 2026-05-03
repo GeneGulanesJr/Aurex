@@ -77,8 +77,9 @@ describe('doc-indexer: backlinks and broken-links', () => {
 
   it('broken-links — should return formatted results', () => {
     const r = run(`broken-links --repo ${DOC_REPO}`);
-    if (Array.isArray(r)) {
-      expect(r.length).toBeGreaterThanOrEqual(0);
+    expect(Array.isArray(r.broken_links) || r.error).toBeTruthy();
+    if (Array.isArray(r.broken_links)) {
+      expect(r.broken_links.length).toBeGreaterThanOrEqual(0);
     }
   });
 });
