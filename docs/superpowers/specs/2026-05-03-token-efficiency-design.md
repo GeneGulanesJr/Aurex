@@ -211,7 +211,7 @@ New `ast-patterns` command scanning all indexed symbol bodies against preset ant
 | Category | Detector | Pattern |
 |---|---|---|
 | Error handling | `empty_catch` | `catch {}` or `catch (e) {}` with empty body |
-| Debugging | `console_log` | `console.log()` calls left in production code |
+| Quality | `empty_function` | Functions with empty bodies (`function foo() {}`, `() => {}`) — forgotten implementations or stubs |
 | Complexity | `deeply_nested` | Nesting depth ≥ 5 |
 | Performance | `nested_loops` | ≥ 3 nested loops |
 | Complexity | `god_function` | Body ≥ 100 lines |
@@ -330,7 +330,7 @@ pr-risk --repo NAME [--branch BRANCH] [--base main]
 | `code-analysis.js` | 2, 3 | Add `winnow`, `getUntestedSymbols`, `getPrRiskProfile` functions |
 | `git-analysis.js` | 3 | Add `getProvenance` function |
 | `db.js` | 1 | Minor: expose helper for git state queries (if needed) |
-| `~/.pi/agent/skills/memory-layer/SKILL.md` | 1, 2, 3 | Document new commands, compact format, tier system |
+| `~/.pi/agent/skills/memory-layer/SKILL.md` | 1, 2, 3 | Document new commands, compact format, tier system. **Must update all response shape examples** to reflect `{ _meta, data }` envelope — every analysis command's response example changes from `{ edges: [...] }` to `{ _meta: {...}, data: { edges: [...] } }` |
 | `test/code-analysis.test.js` | 2, 3 | Tests for winnow, untested, pr-risk |
 | `test/response-meta.test.js` | 1 | Tests for _meta envelope |
 | `test/wire-format.test.js` | 1 | Tests for compact encoding round-trip |
