@@ -55,9 +55,11 @@ Close the feature gap between PiMemoryExtension and JCodeMunch, prioritized by t
 | `getSignalChains` | Ratio of resolved vs unresolved callees | Coverage |
 
 **Freshness from git state first, filesystem second:**
-- `fresh`: `git status --porcelain` empty + index build commit matches `git rev-parse HEAD`
+- `fresh`: `git status --porcelain` empty + stored `head_commit` matches current `git rev-parse HEAD`
 - `edited_uncommitted`: `git status --porcelain` has tracked changes for relevant files
-- `stale_index`: index `updated_at` older than 7 days
+- `stale_index`: stored `head_commit` differs from current HEAD (reindex needed)
+
+**Schema change:** The `code_repos` table currently has no commit hash column. Add `head_commit TEXT` to `code_repos` via migration in `db.js`. At index time, capture `git rev-parse HEAD` and store it. The PageRank cache in Section 2A also uses this — cache key includes `head_commit` so it auto-invalidates only on real code changes, not on redundant reindexes. This is the **only schema change** in the entire spec.
 
 **Freshness caching:** Git status is a subprocess spawn. To avoid spawning git on every analysis query, `response-meta.js` caches freshness per repo in a module-level map keyed by `repoId`. Cache TTL is 60 seconds. Subsequent calls within the same minute reuse the cached result. Cache invalidates automatically on TTL expiry.
 
@@ -96,6 +98,8 @@ Every CLI subcommand gains an optional `--format` parameter:
 - `expandResponse(compact)` → original object shape (for testing round-trip)
 
 Neither touches `code-analysis.js` — the analysis layer always returns native objects. Wrapping happens at the output boundary in `memory-store.js`.
+
+**jsonOut format awareness:** The existing `jsonOut` in `db.js` calls `JSON.stringify(obj, null, 2)` (pretty-printed). When format is `compact`, the wrapping layer in `memory-store.js` produces the compact shape and calls `jsonOut` with single-line JSON (`JSON.stringify(obj)` without `null, 2`). When format is `json` (default), current behavior is unchanged. The compact savings come from both the CSV encoding and the elimination of pretty-printing whitespace.
 
 **Dispatch helper in `memory-store.js`:** The existing dispatch table has 30+ entries, each repeating the same repo lookup + error pattern (parse args → lookup repo → call analysis → return). Before adding new subcommands, extract a `_dispatch(repoName, fn)` helper that handles the repo lookup and error case. New subcommands become ~5 lines each. This keeps `memory-store.js` manageable as it grows past 2196 lines.
 
@@ -236,6 +240,8 @@ New `ast-patterns` command scanning all indexed symbol bodies against preset ant
 
 **Confidence:** Ratio of symbols with body data available vs total scanned.
 
+**Detector scope clarification:** `empty_function` operates at the symbol level — it checks `symbol_complexity.lines_of_code === 0` or whether the full symbol body is whitespace-only. `empty_catch` operates within function bodies as a regex pattern (`catch\s*\([^)]*\)\s*\{\s*\}`). They work at different levels: one is a symbol-level check from pre-computed complexity data, the other is a pattern scan inside the body text.
+
 ### 3B. Symbol Provenance (Git Archaeology)
 
 New `provenance` command tracing a symbol's full git history:
@@ -337,6 +343,6 @@ pr-risk --repo NAME [--branch BRANCH] [--base main]
 | `test/ast-patterns.test.js` | 3 | Tests for pattern detection |
 | `test/git-analysis.test.js` | 3 | Tests for provenance |
 
-### No schema changes
+### Schema change (one)
 
-All features reuse existing tables. No migrations required.
+Add `head_commit TEXT` column to `code_repos` table. Migration handled in `db.js` `runMigrations()`. At index time, `git rev-parse HEAD` is captured and stored. Used by freshness checks (Section 1A) and PageRank cache invalidation (Section 2A). All other features reuse existing tables with no changes.
