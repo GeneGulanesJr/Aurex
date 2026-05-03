@@ -128,7 +128,7 @@ describe('wire-format.js', () => {
       };
       const result = wireFormat._findEncodableList(data);
       expect(result).not.toBeNull();
-      expect(result.key).toBe('other'); // larger list
+      expect(result.key).toBe('other'); // Larger list
       expect(result.len).toBe(3);
     });
 

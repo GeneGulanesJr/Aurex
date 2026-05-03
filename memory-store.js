@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * memory-store.js — Pi Memory Layer CLI entry point
+ * Memory-store.js — Pi Memory Layer CLI entry point
  *
  * Database operations via db.js. Code parsing via parse-code.js (WASM).
  * Code analysis via code-analysis.js. Doc indexing via doc-indexer.js.
@@ -38,13 +38,10 @@ const TOOL_TIERS = {
     'complexity', 'dead-code', 'hotspots', 'blast-radius',
     'call-hierarchy', 'cycles', 'coupling', 'churn', 'signal-chains',
   ]),
-  full: null, // null = all commands
+  full: null, // Null = all commands
 };
 
 function _readTierConfig() {
-  const fs = require('fs');
-  const path = require('path');
-  const HOME = process.env.HOME || process.env.USERPROFILE || require('os').homedir();
   const configPath = path.join(HOME, '.pi', 'memory', 'tier.jsonc');
   try {
     const raw = fs.readFileSync(configPath, 'utf-8');
@@ -60,7 +57,7 @@ function _readTierConfig() {
 
 function sessionStart(args) {
   const project = args.project;
-  if (!project) return jsonErr('Missing --project');
+  if (!project) {return jsonErr('Missing --project');}
 
   const sessionRows = sqlJson('INSERT INTO session_log (project) VALUES (?) RETURNING id, started_at', [project]);
   const sessionId = sessionRows[0].id;
@@ -128,17 +125,17 @@ function sessionEnd(args) {
   const id = args.id;
   const memories = parseInt(args.memories || '0', 10);
   const auto = args.auto === 'true' || args.auto === true;
-  if (!id) return jsonErr('Missing --id');
+  if (!id) {return jsonErr('Missing --id');}
 
   let trustRecoveryResult = null;
-  if (auto) trustRecoveryResult = trustRecovery({ session: id });
+  if (auto) {trustRecoveryResult = trustRecovery({ session: id });}
 
   sqlRun("UPDATE session_log SET ended_at = datetime('now'), memories_saved = ? WHERE id = ?", [
     memories,
     parseInt(id, 10),
   ]);
   const result = { ok: true, sessionId: parseInt(id, 10) };
-  if (trustRecoveryResult) result.trustRecovery = trustRecoveryResult;
+  if (trustRecoveryResult) {result.trustRecovery = trustRecoveryResult;}
   return result;
 }
 
@@ -154,7 +151,7 @@ function save(args) {
   const sessionId = args['session-id'] || findLatestSession(project);
   const force = args.force === 'true' || args.force === true;
 
-  if (!title || !content) return jsonErr('Missing --title and --content');
+  if (!title || !content) {return jsonErr('Missing --title and --content');}
 
   // Dedup check (skip if forced)
   if (!force) {
@@ -233,7 +230,7 @@ function rankObservations(rows, query = '') {
         const hits = queryWords.filter((w) => title.includes(w)).length;
         ftsScore = queryWords.length > 0 ? (hits / queryWords.length) * 2 : 0;
       }
-      const ageMs = now - new Date(row.created_at + 'Z').getTime();
+      const ageMs = now - new Date(`${row.created_at  }Z`).getTime();
       const recencyScore = Math.exp(-ageMs / (7 * 24 * 60 * 60 * 1000));
       const trustScore = row.trust_score !== undefined && row.trust_score !== null ? row.trust_score : 0.7;
       const recallScore = Math.log(1 + (row.recall_count || 0)) * 0.2;
@@ -264,7 +261,7 @@ function search(args) {
   const limit = parseInt(args.limit || '10', 10);
   const sessionId = args['session-id'] ? parseInt(args['session-id'], 10) : null;
   const includeCode = args['include-code'] === 'true' || args['include-code'] === true;
-  if (!query) return jsonErr('Missing --query');
+  if (!query) {return jsonErr('Missing --query');}
 
   const isFtsSpecial = /[*"\-]|\b(AND|OR|NOT)\b/i.test(query);
   const needsFallback = query === '*' || query === '' || isFtsSpecial;
@@ -379,7 +376,7 @@ function context(args) {
   const topicQuery = args.query || null;
   const deep = args.deep === 'true' || args.deep === true;
   const crossProject = !project || args['all-projects'] === 'true' || args['all-projects'] === true;
-  if (!project && !crossProject) return jsonErr('Missing --project');
+  if (!project && !crossProject) {return jsonErr('Missing --project');}
 
   // Active sessions
   const sessions = project
@@ -581,7 +578,7 @@ function context(args) {
 
 function get(args) {
   const id = args.id;
-  if (!id) return jsonErr('Missing --id');
+  if (!id) {return jsonErr('Missing --id');}
   const rows = sqlJson(
     `
     SELECT id, title, content, type, project, scope, topic_key,
@@ -591,13 +588,13 @@ function get(args) {
   `,
     [parseInt(id, 10)],
   );
-  if (rows.length === 0) return { error: 'Observation not found' };
+  if (rows.length === 0) {return { error: 'Observation not found' };}
 
   const obs = rows[0];
 
   // Attach symbol links
   const links = sqlJson('SELECT symbol_id, repo, trust_score FROM symbol_links WHERE memory_id = ?', [String(id)]);
-  if (links.length > 0) obs.symbols = links;
+  if (links.length > 0) {obs.symbols = links;}
 
   // Attach recall count
   const recallCount = sqlJson('SELECT COUNT(*) as cnt FROM recall_log WHERE memory_id = ?', [parseInt(id, 10)]);
@@ -608,7 +605,7 @@ function get(args) {
 
 function update(args) {
   const id = args.id;
-  if (!id) return jsonErr('Missing --id');
+  if (!id) {return jsonErr('Missing --id');}
   const sets = [];
   const params = [];
   if (args.title) {
@@ -635,7 +632,7 @@ function update(args) {
     sets.push('topic_key = ?');
     params.push(args['topic-key']);
   }
-  if (sets.length === 0) return jsonErr('Nothing to update');
+  if (sets.length === 0) {return jsonErr('Nothing to update');}
 
   params.push(parseInt(id, 10));
   sqlRun(`UPDATE observations SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = ?`, params);
@@ -654,7 +651,7 @@ function update(args) {
 function del(args) {
   const id = args.id;
   const hard = args.hard === 'true' || args.hard === true;
-  if (!id) return jsonErr('Missing --id');
+  if (!id) {return jsonErr('Missing --id');}
 
   if (hard) {
     sqlRun('DELETE FROM observations WHERE id = ?', [parseInt(id, 10)]);
@@ -668,7 +665,7 @@ function timeline(args) {
   const id = parseInt(args.id);
   const before = parseInt(args.before || '5', 10);
   const after = parseInt(args.after || '5', 10);
-  if (isNaN(id)) return jsonErr('Missing --id');
+  if (isNaN(id)) {return jsonErr('Missing --id');}
 
   return sqlJson(
     `
@@ -698,7 +695,7 @@ function savePrompt(args) {
   const content = args.content;
   const project = args.project || null;
   const sessionId = args['session-id'] || findLatestSession(project);
-  if (!content) return jsonErr('Missing --content');
+  if (!content) {return jsonErr('Missing --content');}
 
   const rows = sqlJson(
     `
@@ -713,10 +710,10 @@ function savePrompt(args) {
 
 function capturePassive(args) {
   const content = args.content;
-  if (!content) return jsonErr('Missing --content');
+  if (!content) {return jsonErr('Missing --content');}
 
   const match = content.match(/##\s*Key\s*Learnings?:\s*([\s\S]*)/i);
-  if (!match) return { extracted: 0, items: [] };
+  if (!match) {return { extracted: 0, items: [] };}
 
   const section = match[1];
   const itemRe = /(?:^|\n)\s*(?:[-*]|\d+[.)])\s*([^\n]*(?:\n(?!\s*(?:[-*]|\d+[.)])\s*)[^\n]*)*)/g;
@@ -724,13 +721,13 @@ function capturePassive(args) {
   let m;
   while ((m = itemRe.exec(section)) !== null) {
     const cleaned = m[1].replace(/\n\s+/g, ' ').trim();
-    if (cleaned) items.push(cleaned);
+    if (cleaned) {items.push(cleaned);}
   }
 
   let inserted = 0;
   const sessionId = findLatestSession(null);
   for (const item of items) {
-    const summary = item.length > 80 ? item.slice(0, 77) + '…' : item;
+    const summary = item.length > 80 ? `${item.slice(0, 77)  }…` : item;
     sqlJson('INSERT INTO observations (session_id, type, title, content, scope) VALUES (?, ?, ?, ?, ?)', [
       String(sessionId),
       'learning',
@@ -762,7 +759,7 @@ function sessionSummary(args) {
   const content = args.content;
   const project = args.project || null;
   const sessionId = args['session-id'] || findLatestSession(project);
-  if (!content) return jsonErr('Missing --content');
+  if (!content) {return jsonErr('Missing --content');}
 
   const rows = sqlJson(
     `
@@ -783,7 +780,7 @@ function linkSymbol(args) {
   const repo = args.repo;
   const trust = parseFloat(args.trust || (symbolId ? '1.0' : '0.7'));
 
-  if (!memoryId || !repo) return jsonErr('Missing --memory and --repo');
+  if (!memoryId || !repo) {return jsonErr('Missing --memory and --repo');}
   const symVal = symbolId || '__unlinked__';
 
   sqlRun('INSERT OR REPLACE INTO symbol_links (memory_id, symbol_id, repo, trust_score) VALUES (?, ?, ?, ?)', [
@@ -797,7 +794,7 @@ function linkSymbol(args) {
 
 function autoLink(args) {
   const project = args.project;
-  if (!project) return jsonErr('Missing --project');
+  if (!project) {return jsonErr('Missing --project');}
 
   const unlinked = sqlJson(
     `
@@ -825,7 +822,7 @@ function adjustTrust(args) {
   const memoryId = args.memory;
   const reason = args.reason;
   const delta = parseFloat(args.delta);
-  if (!memoryId || !reason || isNaN(delta)) return jsonErr('Missing --memory, --reason, --delta');
+  if (!memoryId || !reason || isNaN(delta)) {return jsonErr('Missing --memory, --reason, --delta');}
 
   sqlRun('UPDATE symbol_links SET trust_score = MAX(0.0, trust_score + ?) WHERE memory_id = ?', [delta, memoryId]);
   sqlRun('INSERT INTO trust_adjustments (memory_id, reason, delta) VALUES (?, ?, ?)', [memoryId, reason, delta]);
@@ -837,14 +834,14 @@ function adjustTrust(args) {
 function recordRecall(args) {
   const sessionId = parseInt(args.session);
   const memoryId = args.memory;
-  if (!sessionId || !memoryId) return jsonErr('Missing --session and --memory');
+  if (!sessionId || !memoryId) {return jsonErr('Missing --session and --memory');}
   sqlRun('INSERT OR IGNORE INTO session_recalls (session_id, memory_id) VALUES (?, ?)', [sessionId, memoryId]);
   return { ok: true };
 }
 
 function staleLinks(args) {
   const project = args.project;
-  if (!project) return jsonErr('Missing --project');
+  if (!project) {return jsonErr('Missing --project');}
   return sqlJson(
     `SELECT memory_id, symbol_id, repo, trust_score, last_verified
      FROM symbol_links
@@ -880,7 +877,7 @@ function listProjects() {
 function syncCodeTrust(args) {
   const repo = args.repo;
   const changedJson = args['changed-symbols-json'] || args['changed-symbols'];
-  if (!repo || !changedJson) return jsonErr('Missing --repo and --changed-symbols-json');
+  if (!repo || !changedJson) {return jsonErr('Missing --repo and --changed-symbols-json');}
 
   let changedData;
   try {
@@ -893,22 +890,22 @@ function syncCodeTrust(args) {
   const changedSet = new Set();
   if (Array.isArray(changedData)) {
     for (const s of changedData) {
-      if (typeof s === 'string') changedSet.add(s);
-      else if (s && s.symbol_id) changedSet.add(s.symbol_id);
-      else if (s && s.name) changedSet.add(s.name);
+      if (typeof s === 'string') {changedSet.add(s);}
+      else if (s && s.symbol_id) {changedSet.add(s.symbol_id);}
+      else if (s && s.name) {changedSet.add(s.name);}
     }
   } else if (changedData && typeof changedData === 'object') {
     for (const key of ['added', 'modified', 'removed', 'changed']) {
       const arr = changedData[key];
-      if (!Array.isArray(arr)) continue;
+      if (!Array.isArray(arr)) {continue;}
       for (const s of arr) {
-        if (typeof s === 'string') changedSet.add(s);
-        else if (s && s.symbol_id) changedSet.add(s.symbol_id);
-        else if (s && s.name) changedSet.add(s.name);
+        if (typeof s === 'string') {changedSet.add(s);}
+        else if (s && s.symbol_id) {changedSet.add(s.symbol_id);}
+        else if (s && s.name) {changedSet.add(s.name);}
       }
     }
   }
-  if (changedSet.size === 0) return jsonErr('No changed symbols found in input');
+  if (changedSet.size === 0) {return jsonErr('No changed symbols found in input');}
 
   // Get all anchored links for this repo
   const allLinks = sqlJson(
@@ -921,7 +918,7 @@ function syncCodeTrust(args) {
 
   for (const link of allLinks) {
     const isChanged = [...changedSet].some(
-      (cs) => link.symbol_id === cs || link.symbol_id.endsWith('::' + cs) || link.symbol_id.includes(cs),
+      (cs) => link.symbol_id === cs || link.symbol_id.endsWith(`::${  cs}`) || link.symbol_id.includes(cs),
     );
 
     if (isChanged) {
@@ -973,7 +970,7 @@ function syncCodeTrust(args) {
 function symbolCluster(args) {
   const symbolId = args.symbol;
   const repo = args.repo || null;
-  if (!symbolId) return jsonErr('Missing --symbol');
+  if (!symbolId) {return jsonErr('Missing --symbol');}
 
   let q = `
     SELECT o.id, o.title, o.type, o.project, o.scope, o.topic_key, o.created_at,
@@ -995,13 +992,13 @@ function symbolCluster(args) {
 
 function related(args) {
   const id = parseInt(args.id);
-  if (isNaN(id)) return jsonErr('Missing --id');
+  if (isNaN(id)) {return jsonErr('Missing --id');}
 
   const symbols = sqlJson('SELECT symbol_id, repo FROM symbol_links WHERE memory_id = ? AND symbol_id != ?', [
     String(id),
     '__unlinked__',
   ]);
-  if (symbols.length === 0) return { memory_id: id, related: [] };
+  if (symbols.length === 0) {return { memory_id: id, related: [] };}
 
   const result = [];
   for (const sym of symbols) {
@@ -1031,16 +1028,16 @@ function trigramOverlap(a, b) {
   const trigrams = (s) => {
     const t = new Set();
     const lower = s.toLowerCase().replace(/[^a-z0-9]/g, '');
-    for (let i = 0; i <= lower.length - 3; i++) t.add(lower.slice(i, i + 3));
+    for (let i = 0; i <= lower.length - 3; i++) {t.add(lower.slice(i, i + 3));}
     return t;
   };
   const ta = trigrams(a);
   const tb = trigrams(b);
-  if (ta.size === 0 && tb.size === 0) return 1.0;
-  if (ta.size === 0 || tb.size === 0) return 0.0;
+  if (ta.size === 0 && tb.size === 0) {return 1.0;}
+  if (ta.size === 0 || tb.size === 0) {return 0.0;}
   let shared = 0;
   for (const t of ta) {
-    if (tb.has(t)) shared++;
+    if (tb.has(t)) {shared++;}
   }
   return shared / Math.max(ta.size, tb.size);
 }
@@ -1084,7 +1081,7 @@ function markDuplicate(args) {
   const source = parseInt(args.source);
   const target = parseInt(args.target);
   const confidence = parseFloat(args.confidence || '0.9');
-  if (!source || !target) return jsonErr('Missing --source and --target');
+  if (!source || !target) {return jsonErr('Missing --source and --target');}
 
   sqlRun(
     'INSERT OR REPLACE INTO observation_relations (source_id, target_id, relation, confidence) VALUES (?, ?, ?, ?)',
@@ -1098,7 +1095,7 @@ function markDuplicate(args) {
 
 function autoRecoverInternal(sessionId) {
   const session = sqlJson('SELECT * FROM session_log WHERE id = ?', [parseInt(sessionId)]);
-  if (session.length === 0) return null;
+  if (session.length === 0) {return null;}
 
   const obs = sqlJson(
     `
@@ -1110,22 +1107,22 @@ function autoRecoverInternal(sessionId) {
     [sessionId],
   );
 
-  if (obs.length === 0) return null;
+  if (obs.length === 0) {return null;}
 
   const types = {};
   for (const o of obs) {
-    if (!types[o.type]) types[o.type] = [];
+    if (!types[o.type]) {types[o.type] = [];}
     types[o.type].push(o.title);
   }
 
   const lines = ['## Auto-Recovered Session Summary', ''];
-  lines.push('**Session:** ' + sessionId);
-  lines.push('**Started:** ' + session[0].started_at);
-  lines.push('**Observations:** ' + obs.length);
+  lines.push(`**Session:** ${  sessionId}`);
+  lines.push(`**Started:** ${  session[0].started_at}`);
+  lines.push(`**Observations:** ${  obs.length}`);
   lines.push('');
   for (const [type, titles] of Object.entries(types)) {
-    lines.push('### ' + type);
-    for (const t of titles) lines.push('- ' + t);
+    lines.push(`### ${  type}`);
+    for (const t of titles) {lines.push('- ' + t);}
     lines.push('');
   }
   const summary = lines.join('\n');
@@ -1150,20 +1147,20 @@ function autoRecoverInternal(sessionId) {
 
 function autoRecover(args) {
   const sessionId = args.session;
-  if (!sessionId) return jsonErr('Missing --session');
+  if (!sessionId) {return jsonErr('Missing --session');}
   const result = autoRecoverInternal(sessionId);
-  if (!result) return { status: 'nothing_to_recover' };
+  if (!result) {return { status: 'nothing_to_recover' };}
   return result;
 }
 
 function recoverOrphans() {
   const orphans = sqlJson('SELECT id, project FROM session_log WHERE ended_at IS NULL ORDER BY started_at DESC');
-  if (orphans.length === 0) return { recovered: [], total: 0 };
+  if (orphans.length === 0) {return { recovered: [], total: 0 };}
 
   const recovered = [];
   for (const o of orphans) {
     const r = autoRecoverInternal(String(o.id));
-    if (r) recovered.push(o.project);
+    if (r) {recovered.push(o.project);}
   }
   return { recovered, total: orphans.length };
 }
@@ -1175,7 +1172,7 @@ function saveWorkflow(args) {
   const name = args.name;
   const project = args.project || null;
   const stepsRaw = args.steps || null;
-  if (!id || !name) return jsonErr('Missing --id and --name');
+  if (!id || !name) {return jsonErr('Missing --id and --name');}
 
   sqlRun('INSERT OR IGNORE INTO procedural_memory (id, name, project) VALUES (?, ?, ?)', [id, name, project]);
 
@@ -1200,7 +1197,7 @@ function recordStep(args) {
   const workflow = args.workflow;
   const step = parseInt(args.step);
   const command = args.command;
-  if (!workflow || isNaN(step) || !command) return jsonErr('Missing --workflow, --step, --command');
+  if (!workflow || isNaN(step) || !command) {return jsonErr('Missing --workflow, --step, --command');}
   sqlRun(
     'INSERT OR REPLACE INTO procedural_steps (workflow, step_num, command, success, attempts) VALUES (?, ?, ?, 1.0, 1)',
     [workflow, step, command],
@@ -1213,7 +1210,7 @@ function stepOutcome(args) {
   const step = parseInt(args.step);
   const success = args.success === 'true';
   const workaround = args.workaround || null;
-  if (!workflow || isNaN(step)) return jsonErr('Missing --workflow and --step');
+  if (!workflow || isNaN(step)) {return jsonErr('Missing --workflow and --step');}
 
   if (success) {
     sqlRun(
@@ -1235,9 +1232,9 @@ function stepOutcome(args) {
 
 function getWorkflow(args) {
   const id = args.id;
-  if (!id) return jsonErr('Missing --id');
+  if (!id) {return jsonErr('Missing --id');}
   const meta = sqlJson('SELECT * FROM procedural_memory WHERE id = ? LIMIT 1', [id]);
-  if (meta.length === 0) return { error: 'Workflow not found' };
+  if (meta.length === 0) {return { error: 'Workflow not found' };}
   const steps = sqlJson('SELECT * FROM procedural_steps WHERE workflow = ? ORDER BY step_num', [id]);
   return { ...meta[0], steps };
 }
@@ -1318,14 +1315,14 @@ function compact() {
 
 /* ── init ─────────────────────────────────────────────────── */
 function initDb() {
-  // ensureDb() is called from the main dispatch block, so the DB is already initialized
+  // EnsureDb() is called from the main dispatch block, so the DB is already initialized
   ensureDb();
   return { ok: true, db: DB_PATH, engine: getEngine() };
 }
 
 function trustRecovery(args) {
   const sessionId = parseInt(args.session);
-  if (!sessionId) return jsonErr('Missing --session');
+  if (!sessionId) {return jsonErr('Missing --session');}
 
   const recalled = sqlJson('SELECT memory_id FROM session_recalls WHERE session_id = ?', [sessionId]);
   let recovered = 0;
@@ -1369,7 +1366,7 @@ function parseCodeFile(filePath) {
 }
 
 async function ensureParserAvailable() {
-  if (codeParser.isReady()) return true;
+  if (codeParser.isReady()) {return true;}
   await codeParser.init();
   return codeParser.isReady();
 }
@@ -1387,10 +1384,10 @@ function walkDir(dirPath) {
     try {
       const entries = fs.readdirSync(dir, { withFileTypes: true });
       for (const entry of entries) {
-        if (entry.name.startsWith('.')) continue;
+        if (entry.name.startsWith('.')) {continue;}
         const fullPath = path.join(dir, entry.name);
         if (entry.isDirectory()) {
-          if (!_IGNORE_DIRS.has(entry.name)) walk(fullPath);
+          if (!_IGNORE_DIRS.has(entry.name)) {walk(fullPath);}
         } else if (entry.isFile() && isCodeFile(entry.name)) {
           results.push(fullPath);
         }
@@ -1407,11 +1404,11 @@ function hashContent(content) {
 
 async function indexRepoInternal(repoPath, repoName) {
   if (!(await ensureParserAvailable())) {
-    return { error: 'WASM tree-sitter parser not available. Run: cd ' + __dirname + ' && npm install web-tree-sitter' };
+    return { error: `WASM tree-sitter parser not available. Run: cd ${  __dirname  } && npm install web-tree-sitter` };
   }
 
   const absPath = path.resolve(repoPath);
-  if (!fs.existsSync(absPath)) return { error: `Path not found: ${absPath}` };
+  if (!fs.existsSync(absPath)) {return { error: `Path not found: ${absPath}` };}
 
   const files = walkDir(absPath);
   let symbolCount = 0;
@@ -1438,7 +1435,7 @@ async function indexRepoInternal(repoPath, repoName) {
       encoding: 'utf-8',
       timeout: 5000,
     }).trim();
-  } catch (_) { /* non-git repo or git error */ }
+  } catch (_) { /* Non-git repo or git error */ }
 
   for (const filePath of files) {
     try {
@@ -1508,15 +1505,15 @@ async function indexRepoInternal(repoPath, repoName) {
     complexityCount = 0;
   try {
     const ig = codeAnalysis.buildImportGraph(db, repoId);
-    if (ig.success) importEdges = ig.edges;
+    if (ig.success) {importEdges = ig.edges;}
   } catch (_) {}
   try {
     const cg = codeAnalysis.buildCallGraph(db, repoId);
-    if (cg.success) callEdges = cg.calls;
+    if (cg.success) {callEdges = cg.calls;}
   } catch (_) {}
   try {
     const cc = codeAnalysis.buildComplexity(db, repoId);
-    if (cc.success) complexityCount = cc.symbols;
+    if (cc.success) {complexityCount = cc.symbols;}
   } catch (_) {}
 
   return {
@@ -1535,7 +1532,7 @@ async function indexRepoInternal(repoPath, repoName) {
 
 async function reindexRepoInternal(repo, mode) {
   const existing = sqlJson('SELECT id, path FROM code_repos WHERE name = ?', [repo]);
-  if (existing.length === 0) return { error: `Repo not found: ${repo}` };
+  if (existing.length === 0) {return { error: `Repo not found: ${repo}` };}
   const { id: repoId, path: repoPath } = existing[0];
 
   if (mode === 'full') {
@@ -1545,7 +1542,7 @@ async function reindexRepoInternal(repo, mode) {
   }
 
   // Incremental: only re-index files whose mtime changed
-  if (!(await ensureParserAvailable())) return { error: 'WASM tree-sitter parser not available' };
+  if (!(await ensureParserAvailable())) {return { error: 'WASM tree-sitter parser not available' };}
 
   const files = walkDir(repoPath);
   let reindexed = 0;
@@ -1554,7 +1551,7 @@ async function reindexRepoInternal(repo, mode) {
 
   const existingFiles = {};
   const efRows = sqlJson('SELECT path, mtime, id FROM code_files WHERE repo_id = ?', [repoId]);
-  for (const row of efRows) existingFiles[row.path] = { mtime: row.mtime, id: row.id };
+  for (const row of efRows) {existingFiles[row.path] = { mtime: row.mtime, id: row.id };}
 
   for (const filePath of files) {
     try {
@@ -1636,15 +1633,15 @@ async function reindexRepoInternal(repo, mode) {
     complexityCount = 0;
   try {
     const ig = codeAnalysis.buildImportGraph(db, repoId);
-    if (ig.success) importEdges = ig.edges;
+    if (ig.success) {importEdges = ig.edges;}
   } catch (_) {}
   try {
     const cg = codeAnalysis.buildCallGraph(db, repoId);
-    if (cg.success) callEdges = cg.calls;
+    if (cg.success) {callEdges = cg.calls;}
   } catch (_) {}
   try {
     const cc = codeAnalysis.buildComplexity(db, repoId);
-    if (cc.success) complexityCount = cc.symbols;
+    if (cc.success) {complexityCount = cc.symbols;}
   } catch (_) {}
   return {
     success: true,
@@ -1661,7 +1658,7 @@ async function reindexRepoInternal(repo, mode) {
 
 /** Fallback search using LIKE when FTS5 is unavailable */
 function searchCodeLike(query, repoName, kind, maxResults) {
-  const likeQuery = '%' + query.replace(/%/g, '\\%').replace(/_/g, '\\_') + '%';
+  const likeQuery = `%${  query.replace(/%/g, '\\%').replace(/_/g, '\\_')  }%`;
   let sql = `
     SELECT
       s.id, r.name AS repo, s.file_path AS file,
@@ -1782,12 +1779,12 @@ function getCodeSource(repoName, filePath, symbolName) {
      WHERE r.name = ? AND s.file_path = ? AND s.name = ?`,
     [repoName, filePath, symbolName],
   );
-  if (rows.length === 0) return { success: false, error: 'Symbol not found' };
+  if (rows.length === 0) {return { success: false, error: 'Symbol not found' };}
 
   const row = rows[0];
   // Use Buffer for byte-accurate slicing (Python reports byte offsets,
-  // but JS string operations use UTF-16 code units which differ for
-  // multi-byte Unicode characters like box-drawing ──)
+  // But JS string operations use UTF-16 code units which differ for
+  // Multi-byte Unicode characters like box-drawing ──)
   const buf = Buffer.from(row.content, 'utf-8');
   const source = buf.toString('utf-8', row.start_byte, row.end_byte);
   return {
@@ -1813,7 +1810,7 @@ function listCodeReposInternal() {
 function removeCodeRepoInternal(repo) {
   ensureDb();
   const existing = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
-  if (existing.length === 0) return { error: `Repo not found: ${repo}` };
+  if (existing.length === 0) {return { error: `Repo not found: ${repo}` };}
   sqlRun('DELETE FROM code_repos WHERE id = ?', [existing[0].id]);
   return { success: true, repo, removed: true };
 }
@@ -1835,7 +1832,7 @@ function listWorkspaces() {
 }
 
 function createWorkspace(name) {
-  if (!name) return { error: 'Missing --name' };
+  if (!name) {return { error: 'Missing --name' };}
   ensureDb();
   try {
     sqlRun('INSERT INTO workspaces (name) VALUES (?)', [name]);
@@ -1847,10 +1844,10 @@ function createWorkspace(name) {
 }
 
 function archiveWorkspace(name) {
-  if (!name) return { error: 'Missing --name' };
+  if (!name) {return { error: 'Missing --name' };}
   ensureDb();
   const existing = sqlJson('SELECT id FROM workspaces WHERE name = ? AND archived_at IS NULL', [name]);
-  if (existing.length === 0) return { error: `Workspace not found or already archived: ${name}` };
+  if (existing.length === 0) {return { error: `Workspace not found or already archived: ${name}` };}
   sqlRun("UPDATE workspaces SET archived_at = datetime('now') WHERE id = ?", [existing[0].id]);
   return { success: true, workspace: name, archived: true };
 }
@@ -1863,9 +1860,9 @@ function archiveWorkspace(name) {
  * Returns fn's result or throws via jsonErr if repo not found.
  */
 function _dispatch(repoName, fn) {
-  if (!repoName) jsonErr('Missing --repo');
+  if (!repoName) {jsonErr('Missing --repo');}
   const repoRow = sqlJson('SELECT id, path, head_commit FROM code_repos WHERE name = ?', [repoName]);
-  if (!repoRow.length) jsonErr(`Repo "${repoName}" not found. Run index-repo first.`);
+  if (!repoRow.length) {jsonErr(`Repo "${repoName}" not found. Run index-repo first.`);}
   return fn(repoRow[0]);
 }
 
@@ -1917,13 +1914,13 @@ function _wrapAnalysis(toolName, data, repoRow, startTime, format) {
       wrapped.data = wireFormat.compactResponse(wrapped.data);
     }
   }
-  // format === 'json' (default) — no transformation
+  // Format === 'json' (default) — no transformation
 
   return wrapped;
 }
 
 // Track the global --format flag for all analysis subcommands
-let _globalFormat = 'json'; // set by parseArgs at dispatch time
+let _globalFormat = 'json'; // Set by parseArgs at dispatch time
 
 /* ── dispatch ─────────────────────────────────────────────── */
 const commands = {
@@ -1968,19 +1965,19 @@ const commands = {
   // ── v3 code indexing commands ──
   'index-repo': (args) => {
     const repoPath = args.path;
-    if (!repoPath) jsonErr('Usage: node memory-store.js index-repo --path <path> [--name NAME]');
+    if (!repoPath) {jsonErr('Usage: node memory-store.js index-repo --path <path> [--name NAME]');}
     const repoName = args.name || path.basename(repoPath);
     return indexRepoInternal(repoPath, repoName);
   },
   'reindex-repo': (args) => {
     const repo = args.repo;
-    if (!repo) jsonErr('Usage: node memory-store.js reindex-repo --repo <repo-name> [--mode full|incremental]');
+    if (!repo) {jsonErr('Usage: node memory-store.js reindex-repo --repo <repo-name> [--mode full|incremental]');}
     return reindexRepoInternal(repo, args.mode || 'incremental');
   },
   'search-code': (args) => {
     const query = args.query;
     if (!query)
-      jsonErr('Usage: node memory-store.js search-code --query <text> [--repo NAME] [--kind TYPE] [--max-results N]');
+      {jsonErr('Usage: node memory-store.js search-code --query <text> [--repo NAME] [--kind TYPE] [--max-results N]');}
     return searchCode(query, args.repo || null, args.kind || null, parseInt(args['max-results'] || '20', 10));
   },
   'get-code-source': (args) => {
@@ -1988,13 +1985,13 @@ const commands = {
     const file = args.file;
     const name = args.name;
     if (!repo || !file || !name)
-      jsonErr('Usage: node memory-store.js get-code-source --repo NAME --file PATH --name SYMBOL');
+      {jsonErr('Usage: node memory-store.js get-code-source --repo NAME --file PATH --name SYMBOL');}
     return getCodeSource(repo, file, name);
   },
   'list-code-repos': () => listCodeReposInternal(),
   'remove-code-repo': (args) => {
     const repo = args.repo;
-    if (!repo) jsonErr('Usage: node memory-store.js remove-code-repo --repo <repo-name>');
+    if (!repo) {jsonErr('Usage: node memory-store.js remove-code-repo --repo <repo-name>');}
     return removeCodeRepoInternal(repo);
   },
 
@@ -2003,11 +2000,11 @@ const commands = {
   'import-graph': (args) => {
     const repo = args.repo;
     if (!repo)
-      jsonErr(
+      {jsonErr(
         'Usage: node memory-store.js import-graph --repo X [--file F] [--direction imports|importers|both] [--depth N]',
-      );
+      );}
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Repo "${repo}" not found. Run index-repo first.`);
+    if (!repoRow.length) {jsonErr(`Repo "${repo}" not found. Run index-repo first.`);}
     return codeAnalysis.getImportGraph(db, repoRow[0].id, {
       file: args.file || null,
       direction: args.direction || 'both',
@@ -2019,11 +2016,11 @@ const commands = {
     const repo = args.repo;
     const symbol = args.symbol;
     if (!repo || !symbol)
-      jsonErr(
+      {jsonErr(
         'Usage: node memory-store.js call-hierarchy --symbol S --repo X [--direction callers|callees] [--depth N]',
-      );
+      );}
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Repo "${repo}" not found`);
+    if (!repoRow.length) {jsonErr(`Repo "${repo}" not found`);}
     return codeAnalysis.getCallHierarchy(db, repoRow[0].id, {
       symbol,
       direction: args.direction || 'callers',
@@ -2034,9 +2031,9 @@ const commands = {
   'blast-radius': (args) => {
     const repo = args.repo;
     const symbol = args.symbol;
-    if (!repo || !symbol) jsonErr('Usage: node memory-store.js blast-radius --symbol S --repo X [--depth N]');
+    if (!repo || !symbol) {jsonErr('Usage: node memory-store.js blast-radius --symbol S --repo X [--depth N]');}
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Repo "${repo}" not found`);
+    if (!repoRow.length) {jsonErr(`Repo "${repo}" not found`);}
     return codeAnalysis.getBlastRadius(db, repoRow[0].id, {
       symbol,
       depth: parseInt(args.depth || '3'),
@@ -2045,9 +2042,9 @@ const commands = {
 
   'dead-code': (args) => {
     const repo = args.repo;
-    if (!repo) jsonErr('Usage: node memory-store.js dead-code --repo X [--min-confidence 0.5]');
+    if (!repo) {jsonErr('Usage: node memory-store.js dead-code --repo X [--min-confidence 0.5]');}
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Repo "${repo}" not found`);
+    if (!repoRow.length) {jsonErr(`Repo "${repo}" not found`);}
     return codeAnalysis.getDeadCode(db, repoRow[0].id, {
       minConfidence: parseFloat(args['min-confidence'] || '0.5'),
       includeTests: args['include-tests'] === 'true',
@@ -2056,9 +2053,9 @@ const commands = {
 
   complexity: (args) => {
     const repo = args.repo;
-    if (!repo) jsonErr('Usage: node memory-store.js complexity --repo X [--symbol S | --file F]');
+    if (!repo) {jsonErr('Usage: node memory-store.js complexity --repo X [--symbol S | --file F]');}
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Repo "${repo}" not found`);
+    if (!repoRow.length) {jsonErr(`Repo "${repo}" not found`);}
     const symbolId = args.symbol
       ? db.prepare('SELECT id FROM code_symbols WHERE repo_id = ? AND name = ?').get(repoRow[0].id, args.symbol)?.id
       : null;
@@ -2068,17 +2065,17 @@ const commands = {
   outline: (args) => {
     const repo = args.repo;
     const file = args.file;
-    if (!repo || !file) jsonErr('Usage: node memory-store.js outline --file F --repo X');
+    if (!repo || !file) {jsonErr('Usage: node memory-store.js outline --file F --repo X');}
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Repo "${repo}" not found`);
+    if (!repoRow.length) {jsonErr(`Repo "${repo}" not found`);}
     return codeAnalysis.getFileOutline(db, repoRow[0].id, file);
   },
 
   churn: (args) => {
     const repo = args.repo;
-    if (!repo) jsonErr('Usage: node memory-store.js churn --repo X [--file F] [--days 90] [--refresh]');
+    if (!repo) {jsonErr('Usage: node memory-store.js churn --repo X [--file F] [--days 90] [--refresh]');}
     const repoRow = sqlJson('SELECT id, path FROM code_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Repo "${repo}" not found`);
+    if (!repoRow.length) {jsonErr(`Repo "${repo}" not found`);}
     return gitAnalysis.getChurn(
       db,
       repoRow[0].id,
@@ -2090,9 +2087,9 @@ const commands = {
 
   hotspots: (args) => {
     const repo = args.repo;
-    if (!repo) jsonErr('Usage: node memory-store.js hotspots --repo X [--top N] [--days N]');
+    if (!repo) {jsonErr('Usage: node memory-store.js hotspots --repo X [--top N] [--days N]');}
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Repo "${repo}" not found. Run index-repo first.`);
+    if (!repoRow.length) {jsonErr(`Repo "${repo}" not found. Run index-repo first.`);}
     return codeAnalysis.getHotspots(db, repoRow[0].id, {
       top: args.top ? parseInt(args.top) : 20,
       days: args.days ? parseInt(args.days) : 90,
@@ -2101,17 +2098,17 @@ const commands = {
 
   cycles: (args) => {
     const repo = args.repo;
-    if (!repo) jsonErr('Usage: node memory-store.js cycles --repo X');
+    if (!repo) {jsonErr('Usage: node memory-store.js cycles --repo X');}
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Repo "${repo}" not found. Run index-repo first.`);
+    if (!repoRow.length) {jsonErr(`Repo "${repo}" not found. Run index-repo first.`);}
     return codeAnalysis.getDependencyCycles(db, repoRow[0].id);
   },
 
   importance: (args) => {
     const repo = args.repo;
-    if (!repo) jsonErr('Usage: node memory-store.js importance --repo X [--top N] [--scope dir/]');
+    if (!repo) {jsonErr('Usage: node memory-store.js importance --repo X [--top N] [--scope dir/]');}
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Repo "${repo}" not found. Run index-repo first.`);
+    if (!repoRow.length) {jsonErr(`Repo "${repo}" not found. Run index-repo first.`);}
     return codeAnalysis.getSymbolImportance(db, repoRow[0].id, {
       top: args.top ? parseInt(args.top) : 20,
       scope: args.scope || null,
@@ -2121,9 +2118,9 @@ const commands = {
   coupling: (args) => {
     const repo = args.repo;
     if (!repo)
-      jsonErr('Usage: node memory-store.js coupling --repo X [--file F] [--sort-by instability|afferent|efferent]');
+      {jsonErr('Usage: node memory-store.js coupling --repo X [--file F] [--sort-by instability|afferent|efferent]');}
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Repo "${repo}" not found. Run index-repo first.`);
+    if (!repoRow.length) {jsonErr(`Repo "${repo}" not found. Run index-repo first.`);}
     return codeAnalysis.getCouplingMetrics(db, repoRow[0].id, {
       file: args.file || null,
       minCa: args['min-ca'] ? parseInt(args['min-ca']) : 0,
@@ -2134,9 +2131,9 @@ const commands = {
   extractable: (args) => {
     const repo = args.repo;
     if (!repo)
-      jsonErr('Usage: node memory-store.js extractable --repo X [--min-complexity N] [--min-callers N] [--top N]');
+      {jsonErr('Usage: node memory-store.js extractable --repo X [--min-complexity N] [--min-callers N] [--top N]');}
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Repo "${repo}" not found. Run index-repo first.`);
+    if (!repoRow.length) {jsonErr(`Repo "${repo}" not found. Run index-repo first.`);}
     return codeAnalysis.getExtractionCandidates(db, repoRow[0].id, {
       minComplexity: args['min-complexity'] ? parseInt(args['min-complexity']) : 5,
       minCallers: args['min-callers'] ? parseInt(args['min-callers']) : 2,
@@ -2148,9 +2145,9 @@ const commands = {
     const repo = args.repo;
     const symbol = args.symbol || args.class;
     if (!repo)
-      jsonErr('Usage: node memory-store.js hierarchy --repo X --symbol S [--direction both|ancestors|descendants]');
+      {jsonErr('Usage: node memory-store.js hierarchy --repo X --symbol S [--direction both|ancestors|descendants]');}
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Repo "${repo}" not found. Run index-repo first.`);
+    if (!repoRow.length) {jsonErr(`Repo "${repo}" not found. Run index-repo first.`);}
     return codeAnalysis.getClassHierarchy(db, repoRow[0].id, {
       class: args.class,
       symbol: args.symbol,
@@ -2161,9 +2158,9 @@ const commands = {
   'signal-chains': (args) => {
     const repo = args.repo;
     if (!repo)
-      jsonErr('Usage: node memory-store.js signal-chains --repo X [--kind http|cli] [--symbol S] [--max-depth N]');
+      {jsonErr('Usage: node memory-store.js signal-chains --repo X [--kind http|cli] [--symbol S] [--max-depth N]');}
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Repo "${repo}" not found. Run index-repo first.`);
+    if (!repoRow.length) {jsonErr(`Repo "${repo}" not found. Run index-repo first.`);}
     return codeAnalysis.getSignalChains(db, repoRow[0].id, {
       kind: args.kind || null,
       symbol: args.symbol || null,
@@ -2173,9 +2170,9 @@ const commands = {
 
   'layer-violations': (args) => {
     const repo = args.repo;
-    if (!repo) jsonErr('Usage: node memory-store.js layer-violations --repo X [--rules JSON]');
+    if (!repo) {jsonErr('Usage: node memory-store.js layer-violations --repo X [--rules JSON]');}
     const repoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Repo "${repo}" not found. Run index-repo first.`);
+    if (!repoRow.length) {jsonErr(`Repo "${repo}" not found. Run index-repo first.`);}
     let rules = null;
     if (args.rules) {
       try {
@@ -2189,8 +2186,7 @@ const commands = {
 
   // ── v6: Winnow multi-axis query ──
 
-  winnow: (args) => {
-    return _dispatch(args.repo, (repoRow) =>
+  winnow: (args) => _dispatch(args.repo, (repoRow) =>
       codeAnalysis.winnow(db, repoRow.id, {
         kind: args.kind || null,
         minComplexity: args['min-complexity'] ? parseInt(args['min-complexity']) : null,
@@ -2202,56 +2198,47 @@ const commands = {
         sortBy: args['sort-by'] || 'pagerank',
         top: args.top ? parseInt(args.top) : 20,
       })
-    );
-  },
+    ),
 
   // ── v6: AST pattern matching ──
 
-  'ast-patterns': (args) => {
-    return _dispatch(args.repo, (repoRow) =>
+  'ast-patterns': (args) => _dispatch(args.repo, (repoRow) =>
       astPatterns.scanAstPatterns(db, repoRow.id, {
         category: args.category || 'all',
         patterns: args.pattern ? args.pattern.split(',').map(s => s.trim()) : [],
         limit: args.limit ? parseInt(args.limit) : 200,
       })
-    );
-  },
+    ),
 
   // ── v6: Symbol provenance ──
 
-  provenance: (args) => {
-    return _dispatch(args.repo, (repoRow) =>
+  provenance: (args) => _dispatch(args.repo, (repoRow) =>
       gitAnalysis.getProvenance(db, repoRow.id, args.symbol)
-    );
-  },
+    ),
 
   // ── v6: Untested symbols + PR risk ──
 
-  untested: (args) => {
-    return _dispatch(args.repo, (repoRow) =>
+  untested: (args) => _dispatch(args.repo, (repoRow) =>
       codeAnalysis.getUntestedSymbols(db, repoRow.id, {
         minConfidence: args['min-confidence'] ? parseFloat(args['min-confidence']) : 0.5,
         includePrivate: args['include-private'] === 'true',
       })
-    );
-  },
+    ),
 
-  'pr-risk': (args) => {
-    return _dispatch(args.repo, (repoRow) =>
+  'pr-risk': (args) => _dispatch(args.repo, (repoRow) =>
       codeAnalysis.getPrRiskProfile(db, repoRow.id, {
         branch: args.branch || 'HEAD',
         base: args.base || 'main',
       })
-    );
-  },
+    ),
 
   // ── v5.2: Doc analytics subcommands ──
 
   'doc-orphans': (args) => {
     const repo = args.repo;
-    if (!repo) jsonErr('Usage: node memory-store.js doc-orphans --repo X [--include-same-doc]');
+    if (!repo) {jsonErr('Usage: node memory-store.js doc-orphans --repo X [--include-same-doc]');}
     const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found`);
+    if (!repoRow.length) {jsonErr(`Doc repo "${repo}" not found`);}
     return docIndexer.getOrphanSections(db, repoRow[0].id, {
       includeSameDoc: args['include-same-doc'] === 'true',
     });
@@ -2260,27 +2247,27 @@ const commands = {
   'doc-coverage': (args) => {
     const codeRepo = args.repo;
     const docRepo = args['doc-repo'] || codeRepo;
-    if (!codeRepo) jsonErr('Usage: node memory-store.js doc-coverage --repo X [--doc-repo Y]');
+    if (!codeRepo) {jsonErr('Usage: node memory-store.js doc-coverage --repo X [--doc-repo Y]');}
     const codeRepoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [codeRepo]);
-    if (!codeRepoRow.length) jsonErr(`Code repo "${codeRepo}" not found. Run index-repo first.`);
+    if (!codeRepoRow.length) {jsonErr(`Code repo "${codeRepo}" not found. Run index-repo first.`);}
     const docRepoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [docRepo]);
-    if (!docRepoRow.length) jsonErr(`Doc repo "${docRepo}" not found. Run index-docs first.`);
+    if (!docRepoRow.length) {jsonErr(`Doc repo "${docRepo}" not found. Run index-docs first.`);}
     return docIndexer.getDocCoverage(db, codeRepoRow[0].id, docRepoRow[0].id);
   },
 
   'stale-pages': (args) => {
     const repo = args.repo;
-    if (!repo) jsonErr('Usage: node memory-store.js stale-pages --repo X');
+    if (!repo) {jsonErr('Usage: node memory-store.js stale-pages --repo X');}
     const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found. Run index-docs first.`);
+    if (!repoRow.length) {jsonErr(`Doc repo "${repo}" not found. Run index-docs first.`);}
     return docIndexer.getStalePages(db, repoRow[0].id);
   },
 
   'doc-duplicates': (args) => {
     const repo = args.repo;
-    if (!repo) jsonErr('Usage: node memory-store.js doc-duplicates --repo X');
+    if (!repo) {jsonErr('Usage: node memory-store.js doc-duplicates --repo X');}
     const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found. Run index-docs first.`);
+    if (!repoRow.length) {jsonErr(`Doc repo "${repo}" not found. Run index-docs first.`);}
     return docIndexer.getDuplicateSections(db, repoRow[0].id);
   },
 
@@ -2289,24 +2276,24 @@ const commands = {
   'index-docs': (args) => {
     const docPath = args.path;
     const name = args.name;
-    if (!docPath || !name) jsonErr('Usage: node memory-store.js index-docs --path P --name X [--ignore GLOB]');
+    if (!docPath || !name) {jsonErr('Usage: node memory-store.js index-docs --path P --name X [--ignore GLOB]');}
     return docIndexer.indexDocs(db, path.resolve(docPath), name, args.ignore || null);
   },
 
   'reindex-docs': (args) => {
     const repo = args.repo;
-    if (!repo) jsonErr('Usage: node memory-store.js reindex-docs --repo X [--mode full|incremental] [--ignore GLOB]');
+    if (!repo) {jsonErr('Usage: node memory-store.js reindex-docs --repo X [--mode full|incremental] [--ignore GLOB]');}
     const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found`);
+    if (!repoRow.length) {jsonErr(`Doc repo "${repo}" not found`);}
     return docIndexer.reindexDocs(db, repoRow[0].id, args.mode || 'full', args.ignore || null);
   },
 
   'doc-search': (args) => {
     const repo = args.repo;
     const query = args.query;
-    if (!repo || !query) jsonErr('Usage: node memory-store.js doc-search --query Q --repo X [--level N] [--role TYPE]');
+    if (!repo || !query) {jsonErr('Usage: node memory-store.js doc-search --query Q --repo X [--level N] [--role TYPE]');}
     const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found`);
+    if (!repoRow.length) {jsonErr(`Doc repo "${repo}" not found`);}
     return docIndexer.searchDocs(db, repoRow[0].id, query, {
       level: args.level ? parseInt(args.level) : null,
       role: args.role || null,
@@ -2315,52 +2302,52 @@ const commands = {
 
   'doc-outline': (args) => {
     const repo = args.repo;
-    if (!repo) jsonErr('Usage: node memory-store.js doc-outline --repo X [--file F]');
+    if (!repo) {jsonErr('Usage: node memory-store.js doc-outline --repo X [--file F]');}
     const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found`);
+    if (!repoRow.length) {jsonErr(`Doc repo "${repo}" not found`);}
     return docIndexer.getDocOutline(db, repoRow[0].id, args.file || null);
   },
 
   backlinks: (args) => {
     const repo = args.repo;
     const filePath = args.path;
-    if (!repo || !filePath) jsonErr('Usage: node memory-store.js backlinks --repo X --path F');
+    if (!repo || !filePath) {jsonErr('Usage: node memory-store.js backlinks --repo X --path F');}
     const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found`);
+    if (!repoRow.length) {jsonErr(`Doc repo "${repo}" not found`);}
     return docIndexer.getBacklinks(db, repoRow[0].id, filePath);
   },
 
   'broken-links': (args) => {
     const repo = args.repo;
-    if (!repo) jsonErr('Usage: node memory-store.js broken-links --repo X');
+    if (!repo) {jsonErr('Usage: node memory-store.js broken-links --repo X');}
     const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found`);
+    if (!repoRow.length) {jsonErr(`Doc repo "${repo}" not found`);}
     return { broken_links: docIndexer.getBrokenLinks(db, repoRow[0].id) };
   },
 
   glossary: (args) => {
     const repo = args.repo;
-    if (!repo) jsonErr('Usage: node memory-store.js glossary --repo X [--term T]');
+    if (!repo) {jsonErr('Usage: node memory-store.js glossary --repo X [--term T]');}
     const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found`);
+    if (!repoRow.length) {jsonErr(`Doc repo "${repo}" not found`);}
     return docIndexer.lookupTerm(db, repoRow[0].id, args.term || null);
   },
 
   'tutorial-path': (args) => {
     const repo = args.repo;
     const section = args.section;
-    if (!repo || !section) jsonErr('Usage: node memory-store.js tutorial-path --section S --repo X');
+    if (!repo || !section) {jsonErr('Usage: node memory-store.js tutorial-path --section S --repo X');}
     const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found`);
+    if (!repoRow.length) {jsonErr(`Doc repo "${repo}" not found`);}
     return docIndexer.getTutorialPath(db, repoRow[0].id, parseInt(section));
   },
 
   'code-examples': (args) => {
     const repo = args.repo;
     const query = args.query;
-    if (!repo || !query) jsonErr('Usage: node memory-store.js code-examples --query Q --repo X [--lang X]');
+    if (!repo || !query) {jsonErr('Usage: node memory-store.js code-examples --query Q --repo X [--lang X]');}
     const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repo]);
-    if (!repoRow.length) jsonErr(`Doc repo "${repo}" not found`);
+    if (!repoRow.length) {jsonErr(`Doc repo "${repo}" not found`);}
     return docIndexer.findCodeExamples(db, repoRow[0].id, query, args.lang || null);
   },
 };
@@ -2394,16 +2381,16 @@ const _ANALYSIS_TOOLS = new Set([
           return;
         }
         // For tools querying churn (which has a different repo resolution),
-        // still try to wrap but fall through gracefully
+        // Still try to wrap but fall through gracefully
       }
     }
 
     jsonOut(result);
   } else {
     console.error(
-      'Usage: node memory-store.js <subcommand> [--option value ...]\n' +
-        'Subcommands: ' +
-        Object.keys(commands).join(', '),
+      `Usage: node memory-store.js <subcommand> [--option value ...]\n` +
+        `Subcommands: ${ 
+        Object.keys(commands).join(', ')}`,
     );
     process.exit(1);
   }

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * parse-code.js — web-tree-sitter (WASM) AST parser
+ * Parse-code.js — web-tree-sitter (WASM) AST parser
  *
  * Replaces parse_code.py. Zero Python dependency.
  * In-process parsing via web-tree-sitter WASM runtime + pre-compiled grammar .wasm files.
@@ -39,8 +39,8 @@ let _ready = false;
 let _initPromise = null;
 let _ParserClass = null;
 let _LanguageClass = null;
-let _parsers = {}; // parserKey → Parser instance
-let _languages = {}; // parserKey → Language object
+const _parsers = {}; // ParserKey → Parser instance
+const _languages = {}; // ParserKey → Language object
 
 /**
  * Initialize web-tree-sitter and load all available grammar .wasm files.
@@ -48,8 +48,8 @@ let _languages = {}; // parserKey → Language object
  * Safe to call multiple times — returns same promise.
  */
 async function init() {
-  if (_ready) return;
-  if (_initPromise) return _initPromise;
+  if (_ready) {return;}
+  if (_initPromise) {return _initPromise;}
 
   _initPromise = (async () => {
     try {
@@ -115,14 +115,14 @@ function info() {
  * Synchronous — must call init() first.
  */
 function parseFile(filePath) {
-  if (!_ready) return [];
+  if (!_ready) {return [];}
 
   const ext = path.extname(filePath).toLowerCase();
   const langConfig = LANGUAGE_MAP[ext];
-  if (!langConfig) return [];
+  if (!langConfig) {return [];}
 
   const parser = _parsers[langConfig.parserKey];
-  if (!parser) return [];
+  if (!parser) {return [];}
 
   let source;
   try {
@@ -158,14 +158,14 @@ const _JS_TS_SYMBOL_NODES = {
   interface_declaration: 'interface',
   type_alias_declaration: 'type',
   enum_declaration: 'enum',
-  // v5.1: additional symbol types
+  // V5.1: additional symbol types
   public_field_definition: 'property',
-  // v5.3: removed 'assignment_expression' — reassignments like `match = ...` are not top-level symbols
+  // V5.3: removed 'assignment_expression' — reassignments like `match = ...` are not top-level symbols
 };
 
 const _VARIABLE_FUNCTION_NODES = new Set(['arrow_function', 'function_expression']);
 
-// v5.1: const/let/var declarations that should be extracted as symbols
+// V5.1: const/let/var declarations that should be extracted as symbols
 const _CONST_PATTERN = /^const\s+([A-Z_][A-Z0-9_]*)\s*=/;
 const _NAMED_EXPORT_PATTERN = /^export\s+(?:default\s+)?/;
 
@@ -196,12 +196,12 @@ function _getParentClassName(node) {
 function _getSignature(node, sourceStr) {
   const text = sourceStr.substring(node.startIndex, node.endIndex);
   const firstLine = text.split('\n')[0].trim();
-  return firstLine.length > 200 ? firstLine.slice(0, 197) + '...' : firstLine;
+  return firstLine.length > 200 ? `${firstLine.slice(0, 197)  }...` : firstLine;
 }
 
 function _getDocstring(node) {
-  if (!node.parent) return '';
-  // find index manually — WASM node objects don't support indexOf reference equality
+  if (!node.parent) {return '';}
+  // Find index manually — WASM node objects don't support indexOf reference equality
   const parent = node.parent;
   let idx = -1;
   for (let i = 0; i < parent.childCount; i++) {
@@ -210,19 +210,19 @@ function _getDocstring(node) {
       break;
     }
   }
-  if (idx <= 0) return '';
+  if (idx <= 0) {return '';}
   const prev = parent.child(idx - 1);
   if (prev.type === 'comment') {
     let text = prev.text;
-    if (text.startsWith('/**')) text = text.slice(3);
-    else if (text.startsWith('/*')) text = text.slice(2);
-    if (text.endsWith('*/')) text = text.slice(0, -2);
+    if (text.startsWith('/**')) {text = text.slice(3);}
+    else if (text.startsWith('/*')) {text = text.slice(2);}
+    if (text.endsWith('*/')) {text = text.slice(0, -2);}
     const lines = text.split('\n');
     const cleaned = [];
     for (let line of lines) {
       line = line.trim();
-      if (line.startsWith('* ')) line = line.slice(2);
-      else if (line === '*') line = '';
+      if (line.startsWith('* ')) {line = line.slice(2);}
+      else if (line === '*') {line = '';}
       cleaned.push(line.trim());
     }
     return cleaned.join('\n').trim();
@@ -238,17 +238,17 @@ function _getBodyPreview(node, sourceStr, maxLines = 5) {
     const stripped = lines[i].trim();
     if (stripped) {
       bodyLines.push(stripped);
-      if (bodyLines.length >= maxLines) break;
+      if (bodyLines.length >= maxLines) {break;}
     }
   }
   return bodyLines.join('\n');
 }
 
 function _getLineNumber(node) {
-  let count = 1;
-  let n = node;
+  const count = 1;
+  const n = node;
   // Walk back to count rows
-  // web-tree-sitter provides startPosition.row (0-indexed)
+  // Web-tree-sitter provides startPosition.row (0-indexed)
   return node.startPosition.row + 1;
 }
 
@@ -256,45 +256,45 @@ function _getEndLineNumber(node) {
   return node.endPosition.row + 1;
 }
 
-// v5.3: Find containing context name for inner functions/methods
+// V5.3: Find containing context name for inner functions/methods
 function _getContextName(node) {
   let current = node.parent;
   while (current) {
     if (current.type === 'class_declaration') {
       for (const child of current.children) {
-        if (child.type === 'identifier' || child.type === 'type_identifier') return child.text;
+        if (child.type === 'identifier' || child.type === 'type_identifier') {return child.text;}
       }
     }
     if (current.type === 'object') {
       const varDecl = current.parent;
       if (varDecl && varDecl.type === 'variable_declarator') {
         for (const child of varDecl.children) {
-          if (child.type === 'identifier') return child.text;
+          if (child.type === 'identifier') {return child.text;}
         }
       }
     }
     if (current.type === 'assignment_expression') {
       const left = current.child(0);
-      if (left && (left.type === 'identifier' || left.type === 'member_expression')) return left.text;
+      if (left && (left.type === 'identifier' || left.type === 'member_expression')) {return left.text;}
     }
     current = current.parent;
   }
   return '';
 }
 
-// v5.3: Extract class extends heritage
+// V5.3: Extract class extends heritage
 function _getExtendsClass(node) {
   for (const child of node.children) {
     if (child.type === 'heritage_clause') {
       for (const hc of child.children) {
-        if (hc.type === 'type_identifier' || hc.type === 'identifier') return hc.text;
+        if (hc.type === 'type_identifier' || hc.type === 'identifier') {return hc.text;}
       }
     }
   }
   return '';
 }
 
-// v5.3: Scope-creating node types
+// V5.3: Scope-creating node types
 const _SCOPE_NODES = new Set([
   'function_declaration',
   'generator_function_declaration',
@@ -320,10 +320,10 @@ function _extractJsTsSymbols(filePath, sourceStr, parser, languageName) {
           let parentName = '';
           if (kind === 'method' || kind === 'property') {
             parentName = _getParentClassName(node);
-            if (!parentName) parentName = _getContextName(node);
+            if (!parentName) {parentName = _getContextName(node);}
           } else if (kind === 'class') {
             const extendsClass = _getExtendsClass(node);
-            if (extendsClass) parentName = extendsClass;
+            if (extendsClass) {parentName = extendsClass;}
           }
           const qualified = parentName ? `${parentName}.${name}` : name;
           symbols.push({
@@ -417,7 +417,7 @@ function _extractJsTsSymbols(filePath, sourceStr, parser, languageName) {
             kind,
             language: languageName,
             file: filePath,
-            signature: sig.length > 200 ? sig.slice(0, 197) + '...' : sig,
+            signature: sig.length > 200 ? `${sig.slice(0, 197)  }...` : sig,
             qualified_name: parentName ? `${parentName}.${name}` : name,
             start_line: _getLineNumber(node),
             end_line: _getEndLineNumber(node),
@@ -572,7 +572,7 @@ function _extractGoSymbols(filePath, sourceStr, parser) {
   const seen = new Set();
 
   function walk(node, depth) {
-    // function_declaration: func name(...)
+    // Function_declaration: func name(...)
     if (node.type === 'function_declaration') {
       let name = '';
       for (const child of node.children) {
@@ -605,13 +605,13 @@ function _extractGoSymbols(filePath, sourceStr, parser) {
         }
       }
     }
-    // method_declaration: func (r Receiver) name(...)
+    // Method_declaration: func (r Receiver) name(...)
     else if (node.type === 'method_declaration') {
       let name = '';
       let receiver = '';
       for (const child of node.children) {
         // Name comes after receiver, as field_identifier
-        if (child.type === 'field_identifier') name = child.text;
+        if (child.type === 'field_identifier') {name = child.text;}
         // Receiver is in the first parameter_list
         if (child.type === 'parameter_list' && child.text.startsWith('(') && !receiver) {
           // Walk into parameter_declaration to find the type
@@ -621,7 +621,7 @@ function _extractGoSymbols(filePath, sourceStr, parser) {
                 if (pcc.type === 'pointer_type') {
                   // Extract type from inside *Type
                   for (const pccc of pcc.children) {
-                    if (pccc.type === 'type_identifier') receiver = pccc.text;
+                    if (pccc.type === 'type_identifier') {receiver = pccc.text;}
                   }
                 } else if (pcc.type === 'type_identifier' && !receiver) {
                   receiver = pcc.text;
@@ -632,7 +632,7 @@ function _extractGoSymbols(filePath, sourceStr, parser) {
         }
       }
       if (name) {
-        const key = `${receiver ? receiver + '.' : ''}${name}:function:${node.startIndex}`;
+        const key = `${receiver ? `${receiver  }.` : ''}${name}:function:${node.startIndex}`;
         if (!seen.has(key)) {
           seen.add(key);
           symbols.push({
@@ -655,7 +655,7 @@ function _extractGoSymbols(filePath, sourceStr, parser) {
         }
       }
     }
-    // type_declaration: type Name struct/interface
+    // Type_declaration: type Name struct/interface
     else if (node.type === 'type_declaration') {
       for (const child of node.children) {
         if (child.type === 'type_identifier') {
@@ -729,14 +729,14 @@ function _extractRustSymbols(filePath, sourceStr, parser) {
           break;
         }
       }
-      // impl blocks have a trait name as type_identifier
+      // Impl blocks have a trait name as type_identifier
       if (node.type === 'impl_item') {
         // Find the trait or type being implemented
         let implName = '';
         let implTarget = '';
         for (const child of node.children) {
-          if (child.type === 'type_identifier' && !implName) implName = child.text;
-          else if (child.type === 'type_identifier' && implName && !implTarget) implTarget = child.text;
+          if (child.type === 'type_identifier' && !implName) {implName = child.text;}
+          else if (child.type === 'type_identifier' && implName && !implTarget) {implTarget = child.text;}
         }
         if (implName) {
           name = implTarget ? `${implName} for ${implTarget}` : implName;
@@ -809,7 +809,7 @@ function _extractRustSymbols(filePath, sourceStr, parser) {
           let parentName = '';
           if (node.type === 'struct_item') {
             for (const child of node.children) {
-              if (child.type === 'type_identifier' && child.text !== name) parentName = child.text;
+              if (child.type === 'type_identifier' && child.text !== name) {parentName = child.text;}
             }
           }
           symbols.push({
@@ -891,7 +891,7 @@ function _extractSqlSymbols(filePath, sourceStr, parser) {
 
       const fullText = node.text;
       let sig = fullText.split('\n')[0].trim();
-      if (sig.length > 200) sig = sig.slice(0, 197) + '...';
+      if (sig.length > 200) {sig = sig.slice(0, 197) + '...';}
 
       const bodyLines = fullText
         .split('\n')
@@ -933,10 +933,10 @@ function _extractSqlSymbols(filePath, sourceStr, parser) {
  * More precise than the body-regex approach used in buildCallGraph.
  */
 function extractCallees(filePath) {
-  if (!_ready) return [];
+  if (!_ready) {return [];}
   const ext = path.extname(filePath).toLowerCase();
   const langConfig = LANGUAGE_MAP[ext];
-  if (!langConfig || langConfig.languageName === 'sql') return [];
+  if (!langConfig || langConfig.languageName === 'sql') {return [];}
 
   // Skip JS/TS keywords that look like function calls
   const _SKIP = new Set([
@@ -984,7 +984,7 @@ function extractCallees(filePath) {
   ]);
 
   const parser = _parsers[langConfig.parserKey];
-  if (!parser) return [];
+  if (!parser) {return [];}
 
   let source;
   try {
@@ -999,7 +999,7 @@ function extractCallees(filePath) {
   const seen = new Set();
 
   function walk(node) {
-    // call_expression: callee is the first child
+    // Call_expression: callee is the first child
     if (node.type === 'call_expression') {
       const calleeNode = node.child(0);
       if (calleeNode) {
@@ -1031,7 +1031,7 @@ function extractCallees(filePath) {
       }
     }
 
-    // new_expression: new ClassName()
+    // New_expression: new ClassName()
     if (node.type === 'new_expression') {
       for (const child of node.children) {
         if (child.type === 'identifier' || child.type === 'type_identifier') {

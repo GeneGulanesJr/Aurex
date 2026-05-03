@@ -273,7 +273,7 @@ describe('ast-patterns.js', () => {
 
     it('should parse nesting patterns (with + suffix)', () => {
       const parsed = astPatterns.parseCustomPattern('nesting:5+');
-      // parseInt('5+') = 5, which is valid — no error
+      // ParseInt('5+') = 5, which is valid — no error
       expect(parsed.detect).toBeDefined();
     });
 
@@ -307,7 +307,7 @@ describe('ast-patterns.js', () => {
   });
 
   describe('scanAstPatterns', () => {
-    // scanAstPatterns requires a real DB handle — verify it handles missing DB gracefully
+    // ScanAstPatterns requires a real DB handle — verify it handles missing DB gracefully
     it('should handle null db gracefully', () => {
       const result = astPatterns.scanAstPatterns(null, 1, { category: 'all' });
       // Should return empty or error

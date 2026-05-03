@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * bench-tokens.js — Token efficiency benchmark
+ * Bench-tokens.js — Token efficiency benchmark
  *
  * Measures byte/token savings of _meta envelope + compact format
  * across all analysis tools. Runs against an indexed PiMemoryExtension repo.
@@ -116,7 +116,7 @@ async function main() {
   let totalRows = 0;
 
   for (const r of results) {
-    if (r.error) continue;
+    if (r.error) {continue;}
     console.log(
       pad(r.tool, 18) +
       pad(r.rows, 8) +
@@ -155,7 +155,7 @@ async function main() {
 
   let totalSavingBytes = 0;
   for (const r of results) {
-    if (r.error) continue;
+    if (r.error) {continue;}
     const saving = savingsEstimates[r.tool] || 0;
     const savedBytes = Math.round(r.rawBytes * saving);
     totalSavingBytes += savedBytes;
@@ -167,8 +167,8 @@ async function main() {
   console.log(pad('OVERALL', 18) + pad(pct(overallSaving), 16));
 
   console.log('\n✓ Benchmark complete.');
-  console.log('  Total raw: ' + formatBytes(totalRawBytes) + ' (' + totalRawTokens + ' tokens)');
-  console.log('  Est. saved: ' + formatBytes(totalSavingBytes));
+  console.log(`  Total raw: ${  formatBytes(totalRawBytes)  } (${  totalRawTokens  } tokens)`);
+  console.log(`  Est. saved: ${  formatBytes(totalSavingBytes)}`);
 }
 
 // ══════════════════════════════════════════════════════════

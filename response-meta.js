@@ -1,5 +1,5 @@
 /**
- * response-meta.js — Metadata envelope for every analysis response
+ * Response-meta.js — Metadata envelope for every analysis response
  *
  * Produces { _meta, data } shape for Pi's context-window token efficiency.
  * Pure functions for confidence/freshness computation.
@@ -14,11 +14,11 @@ const fs = require('fs');
 // FRESHNESS CACHE  (module-level, 60s TTL)
 // ══════════════════════════════════════════════════════════
 
-const _freshnessCache = new Map(); // repoId → { value, ts }
+const _freshnessCache = new Map(); // RepoId → { value, ts }
 
 function _cacheGet(key) {
   const entry = _freshnessCache.get(key);
-  if (!entry) return null;
+  if (!entry) {return null;}
   if (Date.now() - entry.ts > 60_000) {
     _freshnessCache.delete(key);
     return null;
@@ -59,10 +59,10 @@ function checkFreshness(repoPath, storedHeadCommit) {
       timeout: 5000,
     }).trim();
 
-    if (!currentHead) return 'stale_index';
+    if (!currentHead) {return 'stale_index';}
 
     // If no stored head_commit, assume stale until reindex
-    if (!storedHeadCommit) return 'stale_index';
+    if (!storedHeadCommit) {return 'stale_index';}
 
     // Commit matches — check for uncommitted changes
     if (currentHead === storedHeadCommit) {
@@ -99,7 +99,7 @@ function _filesystemFreshness(repoPath) {
 function getFreshness(db, repoId, repoPath, storedHeadCommit) {
   const key = `freshness:${repoId}`;
   const cached = _cacheGet(key);
-  if (cached) return cached;
+  if (cached) {return cached;}
 
   const freshness = checkFreshness(repoPath, storedHeadCommit);
   _cacheSet(key, freshness);
@@ -137,7 +137,7 @@ function computeConfidence(toolName, data, db) {
     // Symbol Importance — gap between top-1 and top-2 PageRank
     case 'getSymbolImportance': {
       const nodes = data?.nodes || [];
-      if (nodes.length < 2) return nodes.length === 1 ? 1.0 : 0.0;
+      if (nodes.length < 2) {return nodes.length === 1 ? 1.0 : 0.0;}
       const gap = nodes[0].pagerank - nodes[1].pagerank;
       // Normalize: 0 → 0.5, large gap → close to 1.0
       return Math.min(1.0, 0.5 + gap * 20);
@@ -146,7 +146,7 @@ function computeConfidence(toolName, data, db) {
     // Dead Code — average confidence of returned symbols
     case 'getDeadCode': {
       const symbols = data?.symbols || data?.results || [];
-      if (symbols.length === 0) return 1.0;
+      if (symbols.length === 0) {return 1.0;}
       const sum = symbols.reduce((s, sym) => s + (sym.confidence || 0.5), 0);
       return parseFloat((sum / symbols.length).toFixed(2));
     }
@@ -154,7 +154,7 @@ function computeConfidence(toolName, data, db) {
     // Hotspots — ratio of symbols with churn data vs total
     case 'getHotspots': {
       const files = data?.files || [];
-      if (files.length === 0) return 1.0;
+      if (files.length === 0) {return 1.0;}
       const withChurn = files.filter(f => (f.commits || 0) > 0).length;
       return parseFloat((withChurn / files.length).toFixed(2));
     }
@@ -162,7 +162,7 @@ function computeConfidence(toolName, data, db) {
     // Blast Radius — ratio of resolved vs unresolved callers
     case 'getBlastRadius': {
       const edges = data?.edges || [];
-      if (edges.length === 0) return 1.0;
+      if (edges.length === 0) {return 1.0;}
       const resolved = edges.filter(e => e.resolved !== false).length;
       return parseFloat((resolved / edges.length).toFixed(2));
     }
@@ -170,7 +170,7 @@ function computeConfidence(toolName, data, db) {
     // Call Hierarchy (depth walk) — average confidence across chain
     case 'callHierarchy': {
       const edges = data?.edges || [];
-      if (edges.length === 0) return 1.0;
+      if (edges.length === 0) {return 1.0;}
       const sum = edges.reduce((s, e) => s + (e.confidence || 1.0), 0);
       return parseFloat((sum / edges.length).toFixed(2));
     }
@@ -178,7 +178,7 @@ function computeConfidence(toolName, data, db) {
     // Extraction Candidates — extraction_score normalized
     case 'getExtractionCandidates': {
       const candidates = data?.candidates || [];
-      if (candidates.length === 0) return 1.0;
+      if (candidates.length === 0) {return 1.0;}
       const maxScore = Math.max(...candidates.map(c => c.extraction_score || 0));
       return maxScore <= 0 ? 0.0 : parseFloat(maxScore.toFixed(2));
     }
@@ -186,7 +186,7 @@ function computeConfidence(toolName, data, db) {
     // Signal Chains — ratio of resolved vs unresolved callees
     case 'getSignalChains': {
       const chains = data?.chains || [];
-      if (chains.length === 0) return 1.0;
+      if (chains.length === 0) {return 1.0;}
       let total = 0, resolved = 0;
       for (const chain of chains) {
         const steps = chain?.steps || [];
@@ -199,7 +199,7 @@ function computeConfidence(toolName, data, db) {
     // Winnow — ratio of requested axes that had data
     case 'winnow': {
       const results = data?.results || [];
-      if (results.length === 0) return 1.0;
+      if (results.length === 0) {return 1.0;}
       // Each result has per-axis flags; count how many axes had hits
       let totalAxes = 0, axesWithData = 0;
       for (const r of results) {
@@ -215,7 +215,7 @@ function computeConfidence(toolName, data, db) {
     case 'astPatterns': {
       const matches = data?.matches || [];
       const allSymbols = data?.symbols_scanned || 0;
-      if (allSymbols === 0) return 1.0;
+      if (allSymbols === 0) {return 1.0;}
       const withBody = matches.reduce((s, m) => s + (m.has_body ? 1 : 0), 0);
       return parseFloat((withBody / allSymbols).toFixed(2));
     }
@@ -223,7 +223,7 @@ function computeConfidence(toolName, data, db) {
     // Provenance — ratio of classified vs total commits
     case 'getProvenance': {
       const commits = data?.commits || [];
-      if (commits.length === 0) return 1.0;
+      if (commits.length === 0) {return 1.0;}
       const classified = commits.filter(c => c.classification !== 'unknown').length;
       return parseFloat((classified / commits.length).toFixed(2));
     }
@@ -240,7 +240,7 @@ function computeConfidence(toolName, data, db) {
     case 'getPrRiskProfile': {
       const signals = data?.signals || {};
       const signalKeys = Object.keys(signals).filter(k => k !== 'composite');
-      if (signalKeys.length === 0) return 0.0;
+      if (signalKeys.length === 0) {return 0.0;}
       const hasData = signalKeys.filter(k => signals[k] != null).length;
       return parseFloat((hasData / signalKeys.length).toFixed(2));
     }
@@ -256,7 +256,7 @@ function computeConfidence(toolName, data, db) {
 // ══════════════════════════════════════════════════════════
 
 function extractResultCount(toolName, data) {
-  if (!data) return 0;
+  if (!data) {return 0;}
 
   switch (toolName) {
     case 'getSymbolImportance':

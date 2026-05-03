@@ -251,8 +251,8 @@ describe('code-analysis: layer-violations', () => {
     expect(r.error).toBeUndefined();
     // Without a .pimemory-layers.jsonc file, returns a note
     expect(r.violations !== undefined || r.note !== undefined).toBe(true);
-    if (r.violations) expect(Array.isArray(r.violations)).toBe(true);
-    if (r.note) expect(typeof r.note).toBe('string');
+    if (r.violations) {expect(Array.isArray(r.violations)).toBe(true);}
+    if (r.note) {expect(typeof r.note).toBe('string');}
   });
 });
 

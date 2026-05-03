@@ -18,7 +18,7 @@ function cleanupRepo(name) {
     execSync(`node "${STORE}" remove-code-repo --repo ${name}`, {
       encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'],
     });
-  } catch (_) { /* not found — fine */ }
+  } catch (_) { /* Not found — fine */ }
 }
 
 beforeAll(() => {

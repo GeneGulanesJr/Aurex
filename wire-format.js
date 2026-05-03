@@ -1,5 +1,5 @@
 /**
- * wire-format.js — Compact wire format (MUNCH encoding)
+ * Wire-format.js — Compact wire format (MUNCH encoding)
  *
  * Reduces token footprint of homogeneous list responses for Pi's context window.
  * Three modes: json (verbose, default), compact (CSV-packed), auto (use compact if ≥20% savings).
@@ -19,21 +19,21 @@
 /**
  * Escape a value for pipe-delimited CSV.
  * Strategy: escape backslash first, then pipe.
- * Uses distinct markers to avoid ambiguity: \\ -> \x01 (backslash), | -> \x02 (pipe).
+ * Uses Unicode private-use area to avoid ambiguity: \\ -> \uE000, | -> \uE001.
  * This ensures round-trip is always lossless.
  */
 function _escapePipe(val) {
-  if (val == null) return '';
+  if (val == null) {return '';}
   const str = String(val);
-  return str.replace(/\\/g, '\x01').replace(/\|/g, '\x02');
+  return str.replace(/\\/g, '\uE000').replace(/\|/g, '\uE001');
 }
 
 /**
  * Unescape a pipe-escaped value.
- * Reverse: \x02 -> |, \x01 -> \
+ * Reverse: \uE001 -> |, \uE000 -> \
  */
 function _unescapePipe(val) {
-  return val.replace(/\x02/g, '|').replace(/\x01/g, '\\');
+  return val.replace(/\uE001/g, '|').replace(/\uE000/g, '\\');
 }
 
 // ══════════════════════════════════════════════════════════
@@ -49,7 +49,7 @@ function _unescapePipe(val) {
  * @returns {{ _header: string[], _rows: string[] }} compact shape (no _meta)
  */
 function _encodeList(rows, opts = {}) {
-  if (!rows || rows.length === 0) return { _header: [], _rows: [] };
+  if (!rows || rows.length === 0) {return { _header: [], _rows: [] };}
 
   // Determine header from keys of first row (stable order)
   const header = Object.keys(rows[0]);
@@ -71,8 +71,8 @@ function _encodeList(rows, opts = {}) {
       // Apply prefix interning
       if (prefixes[key] && typeof val === 'string') {
         for (const [idx, prefix] of Object.entries(prefixes[key])) {
-          if (val.startsWith(prefix + '/')) {
-            val = '@' + idx + val.slice(prefix.length);
+          if (val.startsWith(`${prefix  }/`)) {
+            val = `@${  idx  }${val.slice(prefix.length)}`;
             break;
           }
         }
@@ -88,9 +88,9 @@ function _encodeList(rows, opts = {}) {
   // Attach prefix map if we interned anything
   const prefixMap = {};
   for (const col of Object.keys(prefixes)) {
-    if (prefixes[col].length > 0) prefixMap[col] = prefixes[col];
+    if (prefixes[col].length > 0) {prefixMap[col] = prefixes[col];}
   }
-  if (Object.keys(prefixMap).length > 0) result._prefixes = prefixMap;
+  if (Object.keys(prefixMap).length > 0) {result._prefixes = prefixMap;}
 
   return result;
 }
@@ -103,15 +103,15 @@ function _findPathColumns(rows, header) {
   const pathCols = {};
   for (const key of header) {
     const values = rows.map(r => r[key]).filter(v => typeof v === 'string');
-    if (values.length < 3) continue;
+    if (values.length < 3) {continue;}
 
     // Check if values look like paths (contain '/' or are file paths)
     const pathLike = values.filter(v => v.includes('/'));
-    if (pathLike.length < 3) continue;
+    if (pathLike.length < 3) {continue;}
 
     // Check if ≥3 share a common prefix of at least 2 segments
     const prefixes = _computePrefixes(values);
-    if (Object.keys(prefixes).length > 0) pathCols[key] = true;
+    if (Object.keys(prefixes).length > 0) {pathCols[key] = true;}
   }
   return pathCols;
 }
@@ -142,13 +142,13 @@ function _computePrefixes(values) {
   const selected = [];
   const covered = new Set();
   for (const [prefix] of qualifying) {
-    if (covered.has(prefix)) continue;
+    if (covered.has(prefix)) {continue;}
     selected.push(prefix);
     // Mark all shorter prefixes that are substrings as covered
     for (const [other] of qualifying) {
-      if (other !== prefix && prefix.startsWith(other + '/')) covered.add(other);
+      if (other !== prefix && prefix.startsWith(`${other  }/`)) {covered.add(other);}
     }
-    if (selected.length >= 5) break;
+    if (selected.length >= 5) {break;}
   }
 
   return selected;
@@ -165,7 +165,7 @@ function _computePrefixes(values) {
  * @returns {Array<object>} original rows
  */
 function _decodeList(compact) {
-  if (!compact || !compact._rows || compact._rows.length === 0) return [];
+  if (!compact || !compact._rows || compact._rows.length === 0) {return [];}
 
   const header = compact._header || [];
   const prefixes = compact._prefixes || {};
@@ -179,7 +179,7 @@ function _decodeList(compact) {
       // Expand prefix references
       if (val.startsWith('@') && prefixes[key]) {
         for (let idx = 0; idx < prefixes[key].length; idx++) {
-          const marker = '@' + idx;
+          const marker = `@${  idx}`;
           if (val.startsWith(marker)) {
             val = prefixes[key][idx] + val.slice(marker.length);
             break;
@@ -208,13 +208,13 @@ function _decodeList(compact) {
  * Check if a list is homogeneous (all objects have the same keys).
  */
 function _isHomogeneous(arr) {
-  if (!Array.isArray(arr) || arr.length < 2) return false;
-  if (typeof arr[0] !== 'object' || arr[0] === null) return false;
+  if (!Array.isArray(arr) || arr.length < 2) {return false;}
+  if (typeof arr[0] !== 'object' || arr[0] === null) {return false;}
 
   const keys = Object.keys(arr[0]).sort().join(',');
   for (let i = 1; i < arr.length; i++) {
-    if (typeof arr[i] !== 'object' || arr[i] === null) return false;
-    if (Object.keys(arr[i]).sort().join(',') !== keys) return false;
+    if (typeof arr[i] !== 'object' || arr[i] === null) {return false;}
+    if (Object.keys(arr[i]).sort().join(',') !== keys) {return false;}
   }
   return true;
 }
@@ -224,7 +224,7 @@ function _isHomogeneous(arr) {
  * Returns { key, rows } or null.
  */
 function _findEncodableList(data) {
-  if (!data || typeof data !== 'object') return null;
+  if (!data || typeof data !== 'object') {return null;}
 
   // Try common container keys
   const candidates = [];
@@ -235,7 +235,7 @@ function _findEncodableList(data) {
   }
 
   // Return the largest homogeneous list
-  if (candidates.length === 0) return null;
+  if (candidates.length === 0) {return null;}
   candidates.sort((a, b) => b.len - a.len);
   return candidates[0];
 }
@@ -271,7 +271,7 @@ function _compactSize(compact) {
  */
 function compactResponse(data, opts = {}) {
   const encodable = _findEncodableList(data);
-  if (!encodable) return data; // Not encodable — return as-is JSON
+  if (!encodable) {return data;} // Not encodable — return as-is JSON
 
   const compact = _encodeList(encodable.rows, opts);
   return { ...data, [encodable.key]: compact };
@@ -284,7 +284,7 @@ function compactResponse(data, opts = {}) {
  * @returns {object} original expanded payload
  */
 function expandResponse(compact) {
-  if (!compact || typeof compact !== 'object') return compact;
+  if (!compact || typeof compact !== 'object') {return compact;}
 
   // Find the compact-encoded field
   for (const [key, value] of Object.entries(compact)) {
@@ -304,7 +304,7 @@ function expandResponse(compact) {
  */
 function autoFormat(data) {
   const encodable = _findEncodableList(data);
-  if (!encodable) return 'json';
+  if (!encodable) {return 'json';}
 
   const compact = _encodeList(encodable.rows);
   const jsonBytes = _jsonSize(encodable.rows);

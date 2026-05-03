@@ -1,5 +1,5 @@
 /**
- * db.js — Database layer for Pi Memory Layer
+ * Db.js — Database layer for Pi Memory Layer
  *
  * SQLite backend via node:sqlite (Node ≥ 22.5) or better-sqlite3.
  * Zero external Python deps. Zero MCP servers.
@@ -50,9 +50,9 @@ function openDb() {
   if (nodeDb) { _engine = 'node-sqlite'; _db = nodeDb; return nodeDb; }
   const betterDb = tryBetterSqlite3();
   if (betterDb) { _engine = 'better-sqlite3'; _db = betterDb; return betterDb; }
-  const msg = 'No SQLite backend found.\n' +
-    '  Option 1: Use Node.js ≥ 22.5 (built-in node:sqlite)\n' +
-    '  Option 2: cd ' + __dirname + ' && npm install better-sqlite3';
+  const msg = `No SQLite backend found.\n` +
+    `  Option 1: Use Node.js ≥ 22.5 (built-in node:sqlite)\n` +
+    `  Option 2: cd ${  __dirname  } && npm install better-sqlite3`;
   throw new Error(msg);
 }
 
@@ -92,7 +92,7 @@ const sqlRaw = _sqlExec;
 /* ── transaction helper ───────────────────────────────────── */
 
 function withTransaction(fn) {
-  if (!_db) throw new Error('Database not initialized. Call ensureDb() first.');
+  if (!_db) {throw new Error('Database not initialized. Call ensureDb() first.');}
   if (typeof _db.transaction === 'function') {
     return _db.transaction(fn)();
   }
@@ -111,9 +111,9 @@ function withTransaction(fn) {
 
 function ensureDb() {
   const dir = path.dirname(DB_PATH);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  if (!fs.existsSync(dir)) {fs.mkdirSync(dir, { recursive: true });}
 
-  if (!_db) openDb();
+  if (!_db) {openDb();}
 
   if (!fs.existsSync(DB_PATH) || fs.statSync(DB_PATH).size === 0) {
     const schema = fs.readFileSync(SCHEMA_PATH, 'utf8');
@@ -136,16 +136,16 @@ function ensureDb() {
 
 // Critical tables that must exist for code analysis + doc indexing
 const _CRITICAL_TABLES = [
-  // v3: code indexing
+  // V3: code indexing
   ['code_repos', 'CREATE TABLE IF NOT EXISTS code_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, path TEXT NOT NULL UNIQUE, file_count INTEGER DEFAULT 0, symbol_count INTEGER DEFAULT 0, indexed_at TEXT NOT NULL DEFAULT (datetime(\'now\')), updated_at TEXT NOT NULL DEFAULT (datetime(\'now\')), head_commit TEXT)'],
   ['code_files', 'CREATE TABLE IF NOT EXISTS code_files (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE, path TEXT NOT NULL, language TEXT NOT NULL, content TEXT NOT NULL, content_hash TEXT NOT NULL, mtime REAL, size_bytes INTEGER DEFAULT 0, line_count INTEGER DEFAULT 0, UNIQUE(repo_id, path))'],
   ['code_symbols', 'CREATE TABLE IF NOT EXISTS code_symbols (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE, file_id INTEGER NOT NULL REFERENCES code_files(id) ON DELETE CASCADE, name TEXT NOT NULL, kind TEXT NOT NULL, signature TEXT, file_path TEXT NOT NULL, start_line INTEGER NOT NULL, end_line INTEGER NOT NULL, start_byte INTEGER NOT NULL, end_byte INTEGER NOT NULL, docstring TEXT DEFAULT \'\', body_preview TEXT DEFAULT \'\', language TEXT NOT NULL, parent_name TEXT DEFAULT \'\', qualified_name TEXT NOT NULL, indexed_at TEXT NOT NULL DEFAULT (datetime(\'now\')))'],
-  // v5: code analysis
+  // V5: code analysis
   ['code_imports', 'CREATE TABLE IF NOT EXISTS code_imports (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE, source_file_id INTEGER NOT NULL REFERENCES code_files(id) ON DELETE CASCADE, target_module TEXT NOT NULL, target_file_id INTEGER REFERENCES code_files(id) ON DELETE SET NULL, import_type TEXT NOT NULL DEFAULT \'static\', line_number INTEGER, UNIQUE(repo_id, source_file_id, target_module))'],
   ['code_calls', 'CREATE TABLE IF NOT EXISTS code_calls (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE, caller_symbol_id INTEGER NOT NULL REFERENCES code_symbols(id) ON DELETE CASCADE, callee_name TEXT NOT NULL, callee_symbol_id INTEGER REFERENCES code_symbols(id) ON DELETE SET NULL, confidence REAL NOT NULL DEFAULT 1.0, line_number INTEGER, UNIQUE(repo_id, caller_symbol_id, callee_name))'],
   ['symbol_complexity', 'CREATE TABLE IF NOT EXISTS symbol_complexity (id INTEGER PRIMARY KEY AUTOINCREMENT, symbol_id INTEGER NOT NULL UNIQUE REFERENCES code_symbols(id) ON DELETE CASCADE, cyclomatic INTEGER NOT NULL DEFAULT 1, nesting_depth INTEGER NOT NULL DEFAULT 0, param_count INTEGER NOT NULL DEFAULT 0, lines_of_code INTEGER NOT NULL DEFAULT 0, assessment TEXT NOT NULL DEFAULT \'low\')'],
   ['churn_metrics', 'CREATE TABLE IF NOT EXISTS churn_metrics (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE, file_path TEXT NOT NULL, commits INTEGER NOT NULL DEFAULT 0, unique_authors INTEGER NOT NULL DEFAULT 0, first_seen TEXT, last_modified TEXT, churn_per_week REAL DEFAULT 0.0, window_days INTEGER NOT NULL DEFAULT 90, UNIQUE(repo_id, file_path, window_days))'],
-  // v5: doc indexing
+  // V5: doc indexing
   ['doc_repos', 'CREATE TABLE IF NOT EXISTS doc_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, path TEXT NOT NULL UNIQUE, file_count INTEGER DEFAULT 0, section_count INTEGER DEFAULT 0, indexed_at TEXT NOT NULL DEFAULT (datetime(\'now\')), updated_at TEXT NOT NULL DEFAULT (datetime(\'now\')))'],
   ['doc_files', 'CREATE TABLE IF NOT EXISTS doc_files (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES doc_repos(id) ON DELETE CASCADE, path TEXT NOT NULL, content TEXT NOT NULL, content_hash TEXT NOT NULL, mtime REAL, UNIQUE(repo_id, path))'],
   ['doc_sections', 'CREATE TABLE IF NOT EXISTS doc_sections (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES doc_repos(id) ON DELETE CASCADE, file_id INTEGER NOT NULL REFERENCES doc_files(id) ON DELETE CASCADE, title TEXT NOT NULL, level INTEGER NOT NULL, parent_id INTEGER REFERENCES doc_sections(id) ON DELETE SET NULL, content TEXT DEFAULT \'\', content_hash TEXT NOT NULL, byte_start INTEGER NOT NULL, byte_end INTEGER NOT NULL, role TEXT DEFAULT \'other\', tags TEXT DEFAULT \'\', UNIQUE(repo_id, file_id, byte_start))'],
@@ -195,9 +195,9 @@ function runMigrations() {
     version = rows.length > 0 ? (rows[0].user_version || 0) : 0;
   } catch (_) {}
 
-  if (version >= 6) return { migrated: false, version };
+  if (version >= 6) {return { migrated: false, version };}
 
-  // v2: observation_relations, recall_log
+  // V2: observation_relations, recall_log
   if (version < 2) {
     const v2 = [
       `CREATE TABLE IF NOT EXISTS observation_relations (
@@ -220,7 +220,7 @@ function runMigrations() {
     try { sqlRaw('PRAGMA user_version = 2'); } catch (_) {}
   }
 
-  // v3: code_repos, code_files, code_symbols, code_symbols_fts
+  // V3: code_repos, code_files, code_symbols, code_symbols_fts
   if (version < 3) {
     const v3 = [
       `CREATE TABLE IF NOT EXISTS code_repos (
@@ -251,7 +251,7 @@ function runMigrations() {
     try { sqlRaw('PRAGMA user_version = 3'); } catch (_) {}
   }
 
-  // v4: workspaces
+  // V4: workspaces
   if (version < 4) {
     try {
       sqlRaw(`CREATE TABLE IF NOT EXISTS workspaces (
@@ -269,7 +269,7 @@ function runMigrations() {
     try { sqlRaw('PRAGMA user_version = 4'); } catch (_) {}
   }
 
-  // v5: code analysis + doc indexing tables (CREATE IF NOT EXISTS from schema.sql)
+  // V5: code analysis + doc indexing tables (CREATE IF NOT EXISTS from schema.sql)
   if (version < 5) {
     try {
       const schema = fs.readFileSync(SCHEMA_PATH, 'utf8');
@@ -281,11 +281,11 @@ function runMigrations() {
     try { sqlRaw('PRAGMA user_version = 5'); } catch (_) {}
   }
 
-  // v6: head_commit column for freshness checks + PageRank cache invalidation
+  // V6: head_commit column for freshness checks + PageRank cache invalidation
   if (version < 6) {
     try {
       sqlRaw('ALTER TABLE code_repos ADD COLUMN head_commit TEXT');
-    } catch (_) { /* column may already exist */ }
+    } catch (_) { /* Column may already exist */ }
     try { sqlRaw('PRAGMA user_version = 6'); } catch (_) {}
   }
 
@@ -295,7 +295,7 @@ function runMigrations() {
 /* ── utilities ────────────────────────────────────────────── */
 
 function jsonOut(obj) { console.log(JSON.stringify(obj, null, 2)); }
-function jsonErr(msg) { process.stderr.write(JSON.stringify({ error: msg }) + '\n'); process.exit(1); }
+function jsonErr(msg) { process.stderr.write(`${JSON.stringify({ error: msg })  }\n`); process.exit(1); }
 
 function parseArgs(argv) {
   const args = {};

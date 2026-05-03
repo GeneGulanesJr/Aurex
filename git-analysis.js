@@ -188,23 +188,23 @@ const CLASSIFICATION_RULES = [
 
 function classifyCommit(message) {
   for (const rule of CLASSIFICATION_RULES) {
-    if (rule.pattern.test(message)) return rule.classification;
+    if (rule.pattern.test(message)) {return rule.classification;}
   }
   return 'unknown';
 }
 
 function getProvenance(db, repoId, symbolName) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
 
   const symbol = db.prepare(
     'SELECT id, name, file_path, start_line, end_line, kind FROM code_symbols WHERE repo_id = ? AND name = ?'
   ).get(repoId, symbolName);
 
-  if (!symbol) return { error: `Symbol "${symbolName}" not found in repo ${repoId}` };
+  if (!symbol) {return { error: `Symbol "${symbolName}" not found in repo ${repoId}` };}
 
   const repo = db.prepare('SELECT path FROM code_repos WHERE id = ?').get(repoId);
-  if (!repo) return { error: `Repo ${repoId} not found` };
+  if (!repo) {return { error: `Repo ${repoId} not found` };}
 
   let logEntries = [];
   try {
@@ -238,12 +238,12 @@ function getProvenance(db, repoId, symbolName) {
     const blameHashes = new Set();
     const blameRe = /^([a-f0-9]{8,})/gm;
     let match;
-    while ((match = blameRe.exec(blameOutput)) !== null) blameHashes.add(match[1]);
+    while ((match = blameRe.exec(blameOutput)) !== null) {blameHashes.add(match[1]);}
     for (const entry of logEntries) {
       if (blameHashes.has(entry.hash.substring(0, 8)) || blameHashes.has(entry.hash))
-        entry.touches_symbol = true;
+        {entry.touches_symbol = true;}
     }
-  } catch (_) { /* blame failed, keep all */ }
+  } catch (_) { /* Blame failed, keep all */ }
 
   const relevantCommits = logEntries.length > 50 && logEntries.some(e => e.touches_symbol)
     ? logEntries.filter(e => e.touches_symbol).slice(0, 50)
@@ -254,15 +254,15 @@ function getProvenance(db, repoId, symbolName) {
   const authors = new Set();
   for (const c of relevantCommits) {
     classifications[c.classification] = (classifications[c.classification] || 0) + 1;
-    if (c.classification === 'creation' && !creationDate) creationDate = c.date;
+    if (c.classification === 'creation' && !creationDate) {creationDate = c.date;}
     authors.add(c.author);
-    if (!lastModifiedDate || c.date > lastModifiedDate) lastModifiedDate = c.date;
+    if (!lastModifiedDate || c.date > lastModifiedDate) {lastModifiedDate = c.date;}
   }
 
   let summary = `${symbol.kind} "${symbolName}" in ${symbol.file_path}:${symbol.start_line}-${symbol.end_line}. `;
   summary += `${relevantCommits.length} commits by ${authors.size} author(s). `;
-  if (creationDate) summary += `First seen: ${creationDate.split('T')[0]}. `;
-  if (lastModifiedDate) summary += `Last modified: ${lastModifiedDate.split('T')[0]}. `;
+  if (creationDate) {summary += `First seen: ${creationDate.split('T')[0]}. `;}
+  if (lastModifiedDate) {summary += `Last modified: ${lastModifiedDate.split('T')[0]}. `;}
   const clsSummary = Object.entries(classifications).sort((a, b) => b[1] - a[1])
     .map(([cls, count]) => `${cls}(${count})`).join(', ');
   summary += `Activity: ${clsSummary || 'unknown'}.`;

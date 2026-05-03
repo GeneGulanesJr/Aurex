@@ -1,5 +1,5 @@
 /**
- * doc-indexer.js — Markdown section extraction, link analysis, glossary, code examples
+ * Doc-indexer.js — Markdown section extraction, link analysis, glossary, code examples
  *
  * Regex-based markdown parser. Zero dependencies beyond Node.js builtins.
  */
@@ -63,7 +63,7 @@ const _ROLE_PATTERNS = [
 function classifyRole(title, content) {
   const text = `${title} ${(content || '').slice(0, 200)}`;
   for (const { pattern, role } of _ROLE_PATTERNS) {
-    if (pattern.test(text)) return role;
+    if (pattern.test(text)) {return role;}
   }
   return 'other';
 }
@@ -91,7 +91,7 @@ function parseMarkdownSections(content, filePath) {
   // Skip YAML frontmatter
   if (lines[0] && lines[0].trim() === '---') {
     i = 1;
-    while (i < lines.length && lines[i].trim() !== '---') i++;
+    while (i < lines.length && lines[i].trim() !== '---') {i++;}
     i++;
   }
 
@@ -190,7 +190,7 @@ function buildSectionHierarchy(sections) {
   const result = [];
   for (let idx = 0; idx < sections.length; idx++) {
     const sec = sections[idx];
-    while (stack.length > 0 && stack[stack.length - 1].level >= sec.level) stack.pop();
+    while (stack.length > 0 && stack[stack.length - 1].level >= sec.level) {stack.pop();}
     result.push({ ...sec, parent_idx: stack.length > 0 ? stack[stack.length - 1].idx : null });
     stack.push({ level: sec.level, idx });
   }
@@ -207,7 +207,7 @@ function extractLinks(content) {
   while ((match = re.exec(stripped)) !== null) {
     // Skip image references ![alt](url)
     const prefix = stripped.substring(Math.max(0, match.index - 1), match.index);
-    if (prefix === '!') continue;
+    if (prefix === '!') {continue;}
     const target = match[2];
     // Skip empty, regex, or malformed targets
     if (
@@ -223,7 +223,7 @@ function extractLinks(content) {
         !target.startsWith('#') &&
         !target.startsWith('http')
       )
-        continue;
+        {continue;}
     }
     const isInternal = !target.match(/^https?:\/\//) && !target.startsWith('mailto:');
     links.push({ target_path: target, link_text: match[1], is_internal: isInternal });
@@ -232,8 +232,8 @@ function extractLinks(content) {
 }
 
 function isInternalLink(href) {
-  if (!href) return false;
-  if (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('mailto:')) return false;
+  if (!href) {return false;}
+  if (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('mailto:')) {return false;}
   return href.startsWith('/') || href.startsWith('./') || href.startsWith('../') || href.startsWith('#');
 }
 
@@ -282,7 +282,7 @@ function extractCodeBlocks(content, sectionByteStart) {
       });
       continue;
     }
-    if (inBlock) blockContent.push(line);
+    if (inBlock) {blockContent.push(line);}
   }
   return blocks;
 }
@@ -295,14 +295,14 @@ function walkDir(dirPath, ignoreGlob) {
   function walk(dir) {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
-      if (entry.name.startsWith('.')) continue;
+      if (entry.name.startsWith('.')) {continue;}
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (_IGNORE_DIRS.has(entry.name)) continue;
-        if (ignoreRe && ignoreRe.test(fullPath)) continue;
+        if (_IGNORE_DIRS.has(entry.name)) {continue;}
+        if (ignoreRe && ignoreRe.test(fullPath)) {continue;}
         walk(fullPath);
       } else if (entry.isFile() && _MD_EXTENSIONS.has(path.extname(entry.name))) {
-        if (ignoreRe && ignoreRe.test(fullPath)) continue;
+        if (ignoreRe && ignoreRe.test(fullPath)) {continue;}
         results.push(fullPath);
       }
     }
@@ -315,8 +315,8 @@ function walkDir(dirPath, ignoreGlob) {
 // ── Main indexing function ──
 function indexDocs(db, rootPath, repoName, ignoreGlob) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
-  if (!fs.existsSync(rootPath)) return { error: `Path not found: ${rootPath}` };
+  if (guard) {return guard;}
+  if (!fs.existsSync(rootPath)) {return { error: `Path not found: ${rootPath}` };}
 
   // Upsert repo
   let repoId;
@@ -486,7 +486,7 @@ function resolveLinks(db, repoId) {
       if (docs.length === 0 && !pathPart.endsWith('.md') && !pathPart.endsWith('.mdx')) {
         docs = db
           .prepare('SELECT id, path FROM doc_files WHERE repo_id = ? AND (path = ? OR path LIKE ?)')
-          .all(repoId, pathPart + '.md', `%/${pathPart}.md`);
+          .all(repoId, `${pathPart  }.md`, `%/${pathPart}.md`);
       }
 
       if (docs.length > 0) {
@@ -504,7 +504,7 @@ function resolveLinks(db, repoId) {
                 break;
               }
             }
-            if (targetSectionId) break;
+            if (targetSectionId) {break;}
           }
         } else {
           targetSectionId =
@@ -529,7 +529,7 @@ function resolveLinks(db, repoId) {
 
 function searchDocs(db, repoId, query, opts) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   opts = opts || {};
   let sql = `SELECT ds.id, ds.title, ds.level, ds.role, ds.tags, ds.content_hash, df.path as file_path,
     length(ds.content) as content_length
@@ -549,7 +549,7 @@ function searchDocs(db, repoId, query, opts) {
   sql += ' ORDER BY rank LIMIT 20';
   try {
     const results = db.prepare(sql).all(...params);
-    // v5.1: Compute answerability heuristic (shorter, code-rich sections score higher)
+    // V5.1: Compute answerability heuristic (shorter, code-rich sections score higher)
     for (const r of results) {
       const contentRow = db.prepare('SELECT content FROM doc_sections WHERE id = ?').get(r.id);
       if (contentRow) {
@@ -580,10 +580,10 @@ function searchDocs(db, repoId, query, opts) {
 
 function getDocOutline(db, repoId, filePath) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   if (filePath) {
     const file = db.prepare('SELECT id FROM doc_files WHERE repo_id = ? AND path LIKE ?').get(repoId, `%${filePath}%`);
-    if (!file) return { error: `Doc file not found: ${filePath}` };
+    if (!file) {return { error: `Doc file not found: ${filePath}` };}
     const sections = db
       .prepare('SELECT id, title, level, parent_id, role FROM doc_sections WHERE file_id = ? ORDER BY byte_start')
       .all(file.id);
@@ -600,26 +600,26 @@ function getDocOutline(db, repoId, filePath) {
 
 function buildOutlineTree(sections) {
   const byId = new Map();
-  for (const s of sections) byId.set(s.id, { ...s, children: [] });
+  for (const s of sections) {byId.set(s.id, { ...s, children: [] });}
   const roots = [];
   for (const s of sections) {
     const node = byId.get(s.id);
-    if (s.parent_id && byId.has(s.parent_id)) byId.get(s.parent_id).children.push(node);
-    else roots.push(node);
+    if (s.parent_id && byId.has(s.parent_id)) {byId.get(s.parent_id).children.push(node);}
+    else {roots.push(node);}
   }
   return roots;
 }
 
 function getBacklinks(db, repoId, docPath) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   const targetFile = db
     .prepare('SELECT id FROM doc_files WHERE repo_id = ? AND path LIKE ?')
     .get(repoId, `%${docPath}%`);
-  if (!targetFile) return { error: `Doc file not found: ${docPath}` };
+  if (!targetFile) {return { error: `Doc file not found: ${docPath}` };}
   const targetSections = db.prepare('SELECT id FROM doc_sections WHERE file_id = ?').all(targetFile.id);
   const targetIds = targetSections.map((s) => s.id);
-  if (!targetIds.length) return { backlinks: [] };
+  if (!targetIds.length) {return { backlinks: [] };}
 
   const placeholders = targetIds.map(() => '?').join(',');
   const backlinks = db
@@ -634,7 +634,7 @@ function getBacklinks(db, repoId, docPath) {
 
 function getBrokenLinks(db, repoId) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   return db
     .prepare(`
     SELECT dl.target_path, dl.link_text, ds.title as source_title, df.path as source_file
@@ -646,7 +646,7 @@ function getBrokenLinks(db, repoId) {
 
 function lookupTerm(db, repoId, term) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   if (term) {
     return (
       db.prepare('SELECT * FROM doc_terms WHERE repo_id = ? AND term = ?').get(repoId, term.toLowerCase()) || {
@@ -659,9 +659,9 @@ function lookupTerm(db, repoId, term) {
 
 function getTutorialPath(db, repoId, sectionId) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   const section = db.prepare('SELECT id, title, file_id, content FROM doc_sections WHERE id = ?').get(sectionId);
-  if (!section) return { error: `Section ${sectionId} not found` };
+  if (!section) {return { error: `Section ${sectionId} not found` };}
 
   const chain = [{ section_id: section.id, title: section.title }];
 
@@ -673,7 +673,7 @@ function getTutorialPath(db, repoId, sectionId) {
       WHERE df.repo_id = ? AND df.path LIKE ? AND ds.level = ? LIMIT 1
     `)
       .get(repoId, `%${nextMatch[2]}%`, section.level);
-    if (targetSection) chain.push({ section_id: targetSection.id, title: targetSection.title });
+    if (targetSection) {chain.push({ section_id: targetSection.id, title: targetSection.title });}
   }
 
   const file = db.prepare('SELECT path FROM doc_files WHERE id = ?').get(section.file_id);
@@ -694,7 +694,7 @@ function getTutorialPath(db, repoId, sectionId) {
             'SELECT id, title FROM doc_sections WHERE file_id = (SELECT id FROM doc_files WHERE repo_id = ? AND path = ?) AND level = ? LIMIT 1',
           )
           .get(repoId, nextFile.path, section.level);
-        if (nextSection) chain.push({ section_id: nextSection.id, title: nextSection.title });
+        if (nextSection) {chain.push({ section_id: nextSection.id, title: nextSection.title });}
       }
     }
   }
@@ -704,7 +704,7 @@ function getTutorialPath(db, repoId, sectionId) {
 
 function findCodeExamples(db, repoId, query, lang) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   let sql = `SELECT dcb.id, dcb.lang, dcb.content, ds.title as section_title, df.path as file_path
     FROM doc_code_blocks dcb JOIN doc_sections ds ON ds.id = dcb.section_id JOIN doc_files df ON df.id = ds.file_id
     WHERE ds.repo_id = ? AND dcb.content LIKE ?`;
@@ -719,9 +719,9 @@ function findCodeExamples(db, repoId, query, lang) {
 
 function reindexDocs(db, repoId, mode, ignoreGlob) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   const repo = db.prepare('SELECT id, name, path FROM doc_repos WHERE id = ?').get(repoId);
-  if (!repo) return { error: `Repo ${repoId} not found` };
+  if (!repo) {return { error: `Repo ${repoId} not found` };}
   return indexDocs(db, repo.path, repo.name, ignoreGlob);
 }
 
@@ -731,7 +731,7 @@ function reindexDocs(db, repoId, mode, ignoreGlob) {
 
 function getOrphanSections(db, repoId, opts = {}) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   const includeSameDoc = opts.includeSameDoc || false;
 
   let query, params;
@@ -773,7 +773,7 @@ function getOrphanSections(db, repoId, opts = {}) {
 
 function getDocCoverage(db, repoId, docRepoId, opts = {}) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   // Get all function/constant/method symbols from the code repo
   const symbols = db
     .prepare(`
@@ -798,7 +798,7 @@ function getDocCoverage(db, repoId, docRepoId, opts = {}) {
     const fnRefs = s.content.match(/\b([a-z_][a-z0-9_]{2,})\s*\(/gi) || [];
     for (const ref of fnRefs) {
       const name = ref.replace(/\s*\($/, '').toLowerCase();
-      if (!docNames.has(name)) docNames.set(name, s);
+      if (!docNames.has(name)) {docNames.set(name, s);}
     }
   }
 
@@ -840,7 +840,7 @@ function getDocCoverage(db, repoId, docRepoId, opts = {}) {
 
 function getDuplicateSections(db, repoId) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   // Find sections with identical content_hash
   const duplicates = db
     .prepare(`
@@ -888,10 +888,10 @@ function getDuplicateSections(db, repoId) {
 
 function getStalePages(db, repoId) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
 
   const repo = db.prepare('SELECT path FROM doc_repos WHERE id = ?').get(repoId);
-  if (!repo) return { error: 'Repo not found' };
+  if (!repo) {return { error: 'Repo not found' };}
 
   const files = db.prepare('SELECT id, path, mtime, content_hash FROM doc_files WHERE repo_id = ?').all(repoId);
   const stale = [];

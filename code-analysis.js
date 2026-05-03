@@ -1,5 +1,5 @@
 /**
- * code-analysis.js — Import graph, call graph, dead code, complexity
+ * Code-analysis.js — Import graph, call graph, dead code, complexity
  *
  * All functions receive the shared SQLite db handle.
  * Requires parse-code.js to be initialized for some features.
@@ -84,9 +84,9 @@ function extractImportsFromSource(content) {
   const esRe = /import\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+(?:\s*,\s*\{[^}]*\})?)\s+from\s+)?['"]([^'"]+)['"]/g;
   // Re-exports: export ... from 'module'
   const reExportRe = /export\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+)\s+from\s+)['"]([^'"]+)['"]/g;
-  // require()
+  // Require()
   const requireRe = /require\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
-  // dynamic import
+  // Dynamic import
   const dynamicRe = /import\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
 
   let match;
@@ -112,20 +112,20 @@ function extractImportsFromSource(content) {
 }
 
 function resolveImportTarget(db, repoId, sourceFilePath, targetModule) {
-  if (!targetModule.startsWith('.') && !targetModule.startsWith('/')) return null;
+  if (!targetModule.startsWith('.') && !targetModule.startsWith('/')) {return null;}
 
   const sourceDir = path.dirname(sourceFilePath);
-  let resolved = path.resolve(sourceDir, targetModule);
+  const resolved = path.resolve(sourceDir, targetModule);
 
   const candidates = [
     resolved,
-    resolved + '.js',
-    resolved + '.mjs',
-    resolved + '.cjs',
-    resolved + '.ts',
-    resolved + '.mts',
-    resolved + '.cts',
-    resolved + '.tsx',
+    `${resolved  }.js`,
+    `${resolved  }.mjs`,
+    `${resolved  }.cjs`,
+    `${resolved  }.ts`,
+    `${resolved  }.mts`,
+    `${resolved  }.cts`,
+    `${resolved  }.tsx`,
     path.join(resolved, 'index.js'),
     path.join(resolved, 'index.ts'),
     path.join(resolved, 'index.tsx'),
@@ -133,14 +133,14 @@ function resolveImportTarget(db, repoId, sourceFilePath, targetModule) {
 
   for (const candidate of candidates) {
     const row = db.prepare('SELECT id FROM code_files WHERE repo_id = ? AND path = ?').get(repoId, candidate);
-    if (row) return row.id;
+    if (row) {return row.id;}
   }
   return null;
 }
 
 function buildImportGraph(db, repoId) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   db.prepare('DELETE FROM code_imports WHERE repo_id = ?').run(repoId);
 
   const insertStmt = db.prepare(
@@ -151,7 +151,7 @@ function buildImportGraph(db, repoId) {
   let totalEdges = 0;
 
   for (const file of files) {
-    if (!file.content) continue;
+    if (!file.content) {continue;}
     const imports = extractImportsFromSource(file.content);
     for (const imp of imports) {
       const targetFileId = resolveImportTarget(db, repoId, file.path, imp.target_module);
@@ -165,12 +165,12 @@ function buildImportGraph(db, repoId) {
 
 function getImportGraph(db, repoId, opts) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   const { file, direction = 'both', depth = 1 } = opts;
 
   if (depth <= 1 && file) {
     const fileRow = db.prepare('SELECT id FROM code_files WHERE repo_id = ? AND path LIKE ?').get(repoId, `%${file}%`);
-    if (!fileRow) return { error: `File not found: ${file}` };
+    if (!fileRow) {return { error: `File not found: ${file}` };}
 
     const edges = db
       .prepare(`
@@ -192,7 +192,7 @@ function getImportGraph(db, repoId, opts) {
 
   if (depth > 1 && file) {
     const fileRow = db.prepare('SELECT id FROM code_files WHERE repo_id = ? AND path LIKE ?').get(repoId, `%${file}%`);
-    if (!fileRow) return { error: `File not found: ${file}` };
+    if (!fileRow) {return { error: `File not found: ${file}` };}
 
     const result = {};
     if (direction === 'imports' || direction === 'both') {
@@ -238,7 +238,7 @@ function getImportGraph(db, repoId, opts) {
 
 function buildCallGraph(db, repoId) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   db.prepare('DELETE FROM code_calls WHERE repo_id = ?').run(repoId);
 
   const insertStmt = db.prepare(
@@ -256,7 +256,7 @@ function buildCallGraph(db, repoId) {
   const allSymbols = db.prepare('SELECT id, name, file_id, file_path FROM code_symbols WHERE repo_id = ?').all(repoId);
   const symbolsByName = new Map();
   for (const sym of allSymbols) {
-    if (!symbolsByName.has(sym.name)) symbolsByName.set(sym.name, []);
+    if (!symbolsByName.has(sym.name)) {symbolsByName.set(sym.name, []);}
     symbolsByName.get(sym.name).push(sym);
   }
 
@@ -309,9 +309,9 @@ function buildCallGraph(db, repoId) {
   const fileImportsCache = {};
 
   for (const sym of symbols) {
-    if (!sym.file_content || sym.end_byte <= sym.start_byte) continue;
+    if (!sym.file_content || sym.end_byte <= sym.start_byte) {continue;}
 
-    // v5.3: Try AST-based call extraction first (more precise)
+    // V5.3: Try AST-based call extraction first (more precise)
     let astCallees = [];
     try {
       const allCallees = codeParser.extractCallees(sym.file_path);
@@ -326,9 +326,9 @@ function buildCallGraph(db, repoId) {
     if (astCallees.length > 0) {
       // AST-based extraction: use callee names directly
       for (const c of astCallees) {
-        if (_SKIP_CALLEE_NAMES.has(c.callee)) continue;
+        if (_SKIP_CALLEE_NAMES.has(c.callee)) {continue;}
         const key = `${c.callee}:${c.line}`;
-        if (seen.has(key)) continue;
+        if (seen.has(key)) {continue;}
         seen.add(key);
 
         const { calleeSymbolId, confidence } = resolveCallee(c.callee, sym, fileImportsCache);
@@ -338,7 +338,7 @@ function buildCallGraph(db, repoId) {
     } else {
       // Regex fallback for SQL or when AST isn't available
       const body = Buffer.from(sym.file_content, 'utf-8').toString('utf-8', sym.start_byte, sym.end_byte);
-      if (!body || body.length < 2) continue;
+      if (!body || body.length < 2) {continue;}
 
       const callPatterns = [
         /\b([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g,
@@ -351,8 +351,8 @@ function buildCallGraph(db, repoId) {
         pattern.lastIndex = 0;
         while ((match = pattern.exec(body)) !== null) {
           const calleeName = match[1];
-          if (_SKIP_CALLEE_NAMES.has(calleeName)) continue;
-          if (seen.has(calleeName)) continue;
+          if (_SKIP_CALLEE_NAMES.has(calleeName)) {continue;}
+          if (seen.has(calleeName)) {continue;}
           seen.add(calleeName);
 
           const { calleeSymbolId, confidence } = resolveCallee(calleeName, sym, fileImportsCache);
@@ -369,15 +369,15 @@ function buildCallGraph(db, repoId) {
 
 function getCallHierarchy(db, repoId, opts) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   const { symbol, direction = 'callers', depth = 3 } = opts;
-  if (!symbol) return { error: 'Missing --symbol' };
+  if (!symbol) {return { error: 'Missing --symbol' };}
 
   const symRow = db
     .prepare('SELECT id, name, file_path FROM code_symbols WHERE repo_id = ? AND name = ?')
     .all(repoId, symbol);
-  if (symRow.length === 0) return { error: `Symbol "${symbol}" not found` };
-  if (symRow.length > 1) return { error: `Multiple symbols named "${symbol}"`, candidates: symRow };
+  if (symRow.length === 0) {return { error: `Symbol "${symbol}" not found` };}
+  if (symRow.length > 1) {return { error: `Multiple symbols named "${symbol}"`, candidates: symRow };}
 
   const symbolId = symRow[0].id;
 
@@ -410,15 +410,15 @@ function getCallHierarchy(db, repoId, opts) {
 
 function getBlastRadius(db, repoId, opts) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   const { symbol, depth = 3 } = opts;
-  if (!symbol) return { error: 'Missing --symbol' };
+  if (!symbol) {return { error: 'Missing --symbol' };}
 
   const symRow = db
     .prepare('SELECT id, name, file_id, file_path FROM code_symbols WHERE repo_id = ? AND name = ?')
     .all(repoId, symbol);
-  if (symRow.length === 0) return { error: `Symbol "${symbol}" not found` };
-  if (symRow.length > 1) return { error: `Multiple symbols named "${symbol}"`, candidates: symRow };
+  if (symRow.length === 0) {return { error: `Symbol "${symbol}" not found` };}
+  if (symRow.length > 1) {return { error: `Multiple symbols named "${symbol}"`, candidates: symRow };}
 
   const symbolId = symRow[0].id;
   const fileId = symRow[0].file_id;
@@ -456,7 +456,7 @@ function getBlastRadius(db, repoId, opts) {
 
 function getDeadCode(db, repoId, opts) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   const minConfidence = opts.minConfidence || 0.5;
   const includeTests = opts.includeTests || false;
 
@@ -477,20 +477,20 @@ function getDeadCode(db, repoId, opts) {
   ];
   for (const pattern of entryPatterns) {
     const rows = db.prepare('SELECT id FROM code_files WHERE repo_id = ? AND path LIKE ?').all(repoId, pattern);
-    for (const r of rows) entryFiles.add(r.id);
+    for (const r of rows) {entryFiles.add(r.id);}
   }
 
   // 2. Shebang files
   const shebangFiles = db
     .prepare("SELECT id FROM code_files WHERE repo_id = ? AND content LIKE '#!/usr/bin/env%'")
     .all(repoId);
-  for (const r of shebangFiles) entryFiles.add(r.id);
+  for (const r of shebangFiles) {entryFiles.add(r.id);}
 
   // 3. export default
   const exportDefaultFiles = db
     .prepare("SELECT id FROM code_files WHERE repo_id = ? AND content LIKE '%export default%'")
     .all(repoId);
-  for (const r of exportDefaultFiles) entryFiles.add(r.id);
+  for (const r of exportDefaultFiles) {entryFiles.add(r.id);}
 
   // 4. package.json bin/main/exports fields
   const packageJsonFiles = db
@@ -503,7 +503,7 @@ function getDeadCode(db, repoId, opts) {
         const mainRow = db
           .prepare('SELECT id FROM code_files WHERE repo_id = ? AND path LIKE ?')
           .get(repoId, `%${pkgData.main}%`);
-        if (mainRow) entryFiles.add(mainRow.id);
+        if (mainRow) {entryFiles.add(mainRow.id);}
       }
       if (pkgData.bin) {
         const bins = typeof pkgData.bin === 'string' ? [pkgData.bin] : Object.values(pkgData.bin);
@@ -511,7 +511,7 @@ function getDeadCode(db, repoId, opts) {
           const binRow = db
             .prepare('SELECT id FROM code_files WHERE repo_id = ? AND path LIKE ?')
             .get(repoId, `%${bin}%`);
-          if (binRow) entryFiles.add(binRow.id);
+          if (binRow) {entryFiles.add(binRow.id);}
         }
       }
     } catch (_) {}
@@ -523,7 +523,7 @@ function getDeadCode(db, repoId, opts) {
       "SELECT source_file_id as file_id FROM code_imports WHERE import_type = 're-export' AND repo_id = ? GROUP BY source_file_id",
     )
     .all(repoId);
-  for (const b of barrelFiles) entryFiles.add(b.file_id);
+  for (const b of barrelFiles) {entryFiles.add(b.file_id);}
 
   // ── BFS from entry points through import graph ──
   const reachable = new Set(entryFiles);
@@ -562,7 +562,7 @@ function getDeadCode(db, repoId, opts) {
       "SELECT fi.path, ci.target_module FROM code_imports ci JOIN code_files fi ON fi.id = ci.source_file_id WHERE ci.import_type = 're-export' AND ci.repo_id = ?",
     )
     .all(repoId);
-  for (const re of reExports) reExportedNames.add(re.target_module);
+  for (const re of reExports) {reExportedNames.add(re.target_module);}
 
   const results = [];
   for (const sym of uncalledSymbols) {
@@ -587,7 +587,7 @@ function getDeadCode(db, repoId, opts) {
       signals.push('re_exported');
     }
 
-    if (!includeTests && /test|spec|__tests__|\.test\./.test(sym.file_path)) continue;
+    if (!includeTests && /test|spec|__tests__|\.test\./.test(sym.file_path)) {continue;}
     if (confidence >= minConfidence) {
       results.push({
         symbol_id: sym.id,
@@ -613,7 +613,7 @@ function getDeadCode(db, repoId, opts) {
 
 function buildComplexity(db, repoId) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   db.prepare('DELETE FROM symbol_complexity WHERE symbol_id IN (SELECT id FROM code_symbols WHERE repo_id = ?)').run(
     repoId,
   );
@@ -631,9 +631,9 @@ function buildComplexity(db, repoId) {
 
   let count = 0;
   for (const sym of symbols) {
-    if (!sym.file_content || sym.end_byte <= sym.start_byte) continue;
+    if (!sym.file_content || sym.end_byte <= sym.start_byte) {continue;}
     const body = Buffer.from(sym.file_content, 'utf-8').toString('utf-8', sym.start_byte, sym.end_byte);
-    if (!body) continue;
+    if (!body) {continue;}
 
     let cyclomatic = 1;
     const decisionPatterns = [
@@ -652,7 +652,7 @@ function buildComplexity(db, repoId) {
     for (const pattern of decisionPatterns) {
       pattern.lastIndex = 0;
       const m = body.match(pattern);
-      if (m) cyclomatic += m.length;
+      if (m) {cyclomatic += m.length;}
     }
     // Ternary (?:) — count only if not followed by . (to exclude ?.)
     const ternaryRe = /\?(?:\s*[^.:])/g;
@@ -661,7 +661,7 @@ function buildComplexity(db, repoId) {
       cyclomatic++;
     }
 
-    // v5.1: String-aware brace counting for nesting depth
+    // V5.1: String-aware brace counting for nesting depth
     let maxDepth = 0,
       currentDepth = 0;
     let inString = false,
@@ -702,7 +702,7 @@ function buildComplexity(db, repoId) {
             currentDepth++;
             maxDepth = Math.max(maxDepth, currentDepth);
           }
-          if (currentDepth > 0) currentDepth--;
+          if (currentDepth > 0) {currentDepth--;}
         }
       }
     }
@@ -722,14 +722,14 @@ function buildComplexity(db, repoId) {
 
 function getComplexity(db, repoId, symbolId) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   if (symbolId) {
     const row = db
       .prepare(
         'SELECT sc.*, cs.name, cs.file_path FROM symbol_complexity sc JOIN code_symbols cs ON cs.id = sc.symbol_id WHERE sc.symbol_id = ?',
       )
       .get(symbolId);
-    if (!row) return { error: 'Complexity not computed' };
+    if (!row) {return { error: 'Complexity not computed' };}
     return row;
   }
   return db
@@ -745,11 +745,11 @@ function getComplexity(db, repoId, symbolId) {
 
 function getFileOutline(db, repoId, filePath) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   const fileRow = db
     .prepare('SELECT id FROM code_files WHERE repo_id = ? AND path LIKE ?')
     .get(repoId, `%${filePath}%`);
-  if (!fileRow) return { error: `File not found: ${filePath}` };
+  if (!fileRow) {return { error: `File not found: ${filePath}` };}
 
   const symbols = db
     .prepare(`
@@ -784,7 +784,7 @@ function getFileOutline(db, repoId, filePath) {
 
 function getHotspots(db, repoId, opts = {}) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   const topN = opts.top || 20;
   const days = opts.days || 90;
 
@@ -832,7 +832,7 @@ function getHotspots(db, repoId, opts = {}) {
 
 function getDependencyCycles(db, repoId) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   // Build adjacency list from import edges (source → target)
   const edges = db
     .prepare(`
@@ -847,7 +847,7 @@ function getDependencyCycles(db, repoId) {
   const adj = new Map();
   const allNodes = new Set();
   for (const e of edges) {
-    if (!adj.has(e.source)) adj.set(e.source, []);
+    if (!adj.has(e.source)) {adj.set(e.source, []);}
     adj.get(e.source).push(e.target);
     allNodes.add(e.source);
     allNodes.add(e.target);
@@ -885,12 +885,12 @@ function getDependencyCycles(db, repoId) {
         onStack.delete(w);
         scc.push(w);
       } while (w !== v);
-      if (scc.length > 1) sccs.push(scc);
+      if (scc.length > 1) {sccs.push(scc);}
     }
   }
 
   for (const v of allNodes) {
-    if (!indices.has(v)) strongconnect(v);
+    if (!indices.has(v)) {strongconnect(v);}
   }
 
   // Find actual cycles (paths that close the loop)
@@ -915,15 +915,15 @@ function getDependencyCycles(db, repoId) {
 
 // PageRank cache — shared between getSymbolImportance and winnow
 // Key: repoId, auto-invalidates on reindex via head_commit change
-const _pageRankCache = new Map(); // repoId → { ranks: Map, symbolMap: Map, n: number }
+const _pageRankCache = new Map(); // RepoId → { ranks: Map, symbolMap: Map, n: number }
 
 function buildPageRank(db, repoId) {
   // Check cache — cache key is just repoId (invalidated by reindex/repo removal)
   const cached = _pageRankCache.get(repoId);
-  if (cached) return cached;
+  if (cached) {return cached;}
 
   const guard = _requireNativeDb(db);
-  if (guard) return { error: guard.error };
+  if (guard) {return { error: guard.error };}
 
   // Build call graph: caller → [callees]
   const calls = db
@@ -942,8 +942,8 @@ function buildPageRank(db, repoId) {
   // Build outgoing edges map
   const outEdges = new Map();
   for (const call of calls) {
-    if (!symbolSet.has(call.caller_symbol_id) || !symbolSet.has(call.callee_symbol_id)) continue;
-    if (!outEdges.has(call.caller_symbol_id)) outEdges.set(call.caller_symbol_id, []);
+    if (!symbolSet.has(call.caller_symbol_id) || !symbolSet.has(call.callee_symbol_id)) {continue;}
+    if (!outEdges.has(call.caller_symbol_id)) {outEdges.set(call.caller_symbol_id, []);}
     outEdges.get(call.caller_symbol_id).push(call.callee_symbol_id);
   }
 
@@ -951,15 +951,15 @@ function buildPageRank(db, repoId) {
   const d = 0.85;
   const n = symbolSet.size;
   let ranks = new Map();
-  for (const id of symbolSet) ranks.set(id, 1 / n);
+  for (const id of symbolSet) {ranks.set(id, 1 / n);}
 
   for (let i = 0; i < 10; i++) {
     const newRanks = new Map();
-    for (const id of symbolSet) newRanks.set(id, (1 - d) / n);
+    for (const id of symbolSet) {newRanks.set(id, (1 - d) / n);}
 
     for (const [callerId, calleeIds] of outEdges) {
       const outDegree = calleeIds.length;
-      if (outDegree === 0) continue;
+      if (outDegree === 0) {continue;}
       const rankShare = ranks.get(callerId) / outDegree;
       for (const calleeId of calleeIds) {
         newRanks.set(calleeId, newRanks.get(calleeId) + d * rankShare);
@@ -975,8 +975,8 @@ function buildPageRank(db, repoId) {
 
 // Clear PageRank cache (for testing / reindex)
 function clearPageRankCache(repoId) {
-  if (repoId) _pageRankCache.delete(repoId);
-  else _pageRankCache.clear();
+  if (repoId) {_pageRankCache.delete(repoId);}
+  else {_pageRankCache.clear();}
 }
 
 // ══════════════════════════════════════════════════════════
@@ -985,12 +985,12 @@ function clearPageRankCache(repoId) {
 
 function getSymbolImportance(db, repoId, opts = {}) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   const topN = opts.top || 20;
   const scope = opts.scope || null;
 
   const pr = buildPageRank(db, repoId);
-  if (pr.error) return pr;
+  if (pr.error) {return pr;}
 
   const { ranks, symbolMap, n: totalSymbols } = pr;
 
@@ -1018,7 +1018,7 @@ function getSymbolImportance(db, repoId, opts = {}) {
 
 function winnow(db, repoId, opts = {}) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
 
   const {
     kind = null,
@@ -1034,7 +1034,7 @@ function winnow(db, repoId, opts = {}) {
 
   // Get PageRank data
   const pr = buildPageRank(db, repoId);
-  if (pr.error) return pr;
+  if (pr.error) {return pr;}
   const { symbolMap, n: totalSymbols } = pr;
 
   // Build query dynamically based on active axes
@@ -1163,7 +1163,7 @@ function winnow(db, repoId, opts = {}) {
 
 function getCouplingMetrics(db, repoId, opts = {}) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   const filePath = opts.file || null;
   const minCa = opts.minCa || 0;
   const sortBy = opts.sortBy || 'instability'; // 'instability', 'afferent', 'efferent'
@@ -1198,14 +1198,14 @@ function getCouplingMetrics(db, repoId, opts = {}) {
   const results = [];
 
   for (const f of allFiles) {
-    if (filePath && f.path !== filePath && !f.path.endsWith(filePath)) continue;
+    if (filePath && f.path !== filePath && !f.path.endsWith(filePath)) {continue;}
     const ca = afferentMap.get(f.path) || 0;
     const ce = efferentMap.get(f.path) || 0;
     const total = ca + ce;
     const instability = total === 0 ? 0 : Math.round((ce / total) * 100) / 100;
     const category = instability <= 0.3 ? 'stable' : instability >= 0.7 ? 'unstable' : 'balanced';
 
-    if (ca < minCa) continue;
+    if (ca < minCa) {continue;}
     results.push({ file_path: f.path, afferent: ca, efferent: ce, instability, category });
   }
 
@@ -1221,7 +1221,7 @@ function getCouplingMetrics(db, repoId, opts = {}) {
 
 function getExtractionCandidates(db, repoId, opts = {}) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   const minComplexity = opts.minComplexity || 5;
   const minCallers = opts.minCallers || 2;
   const topN = opts.top || 20;
@@ -1266,17 +1266,17 @@ function getExtractionCandidates(db, repoId, opts = {}) {
 
 function getClassHierarchy(db, repoId, opts = {}) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   const className = opts.class || opts.symbol;
   const direction = opts.direction || 'both'; // 'ancestors', 'descendants', 'both'
 
-  if (!className) return { error: 'Class name required. Pass --class or --symbol.' };
+  if (!className) {return { error: 'Class name required. Pass --class or --symbol.' };}
 
   // Find the symbol
   const sym = db
     .prepare('SELECT id, name, kind, file_path, parent_name FROM code_symbols WHERE repo_id = ? AND name = ?')
     .get(repoId, className);
-  if (!sym) return { error: `Symbol "${className}" not found in repo.` };
+  if (!sym) {return { error: `Symbol "${className}" not found in repo.` };}
 
   const result = { name: sym.name, kind: sym.kind, file_path: sym.file_path, parent_name: sym.parent_name };
 
@@ -1290,7 +1290,7 @@ function getClassHierarchy(db, repoId, opts = {}) {
       const parent = db
         .prepare('SELECT id, name, kind, file_path, parent_name FROM code_symbols WHERE repo_id = ? AND name = ?')
         .get(repoId, current.parent_name);
-      if (!parent) break;
+      if (!parent) {break;}
       ancestors.push({ name: parent.name, kind: parent.kind, file_path: parent.file_path });
       current = parent;
     }
@@ -1325,7 +1325,7 @@ const _CLI_PATTERNS = [/@click\.command\s*\(/g, /@app\.route\s*\(\s*['"\`]([^'"\
 
 function getSignalChains(db, repoId, opts = {}) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   const kind = opts.kind || null; // 'http', 'cli', or null for all
   const symbol = opts.symbol || null;
   const maxDepth = opts.maxDepth || 5;
@@ -1340,9 +1340,9 @@ function getSignalChains(db, repoId, opts = {}) {
     .prepare('SELECT caller_symbol_id, callee_name, callee_symbol_id FROM code_calls WHERE repo_id = ?')
     .all(repoId);
 
-  const callGraph = new Map(); // caller_id → [{callee_id, callee_name}]
+  const callGraph = new Map(); // Caller_id → [{callee_id, callee_name}]
   for (const c of calls) {
-    if (!callGraph.has(c.caller_symbol_id)) callGraph.set(c.caller_symbol_id, []);
+    if (!callGraph.has(c.caller_symbol_id)) {callGraph.set(c.caller_symbol_id, []);}
     callGraph.get(c.caller_symbol_id).push({ callee_id: c.callee_symbol_id, callee_name: c.callee_name });
   }
 
@@ -1351,7 +1351,7 @@ function getSignalChains(db, repoId, opts = {}) {
   // Detect gateways from symbol signatures
   const gateways = [];
   for (const sym of symbols) {
-    if (!sym.signature) continue;
+    if (!sym.signature) {continue;}
     const sig = sym.signature;
 
     // HTTP detection
@@ -1401,7 +1401,7 @@ function getSignalChains(db, repoId, opts = {}) {
   // If a specific symbol is requested, filter to chains containing it
   if (symbol) {
     const symRow = db.prepare('SELECT id, name FROM code_symbols WHERE repo_id = ? AND name = ?').get(repoId, symbol);
-    if (!symRow) return { chains: [], note: `Symbol "${symbol}" not found` };
+    if (!symRow) {return { chains: [], note: `Symbol "${symbol}" not found` };}
 
     // Trace upstream to find which gateway leads to this symbol
     const visited = new Set();
@@ -1410,7 +1410,7 @@ function getSignalChains(db, repoId, opts = {}) {
 
     while (queue.length) {
       const current = queue.shift();
-      if (visited.has(current)) continue;
+      if (visited.has(current)) {continue;}
       visited.add(current);
       const callers = db
         .prepare('SELECT caller_symbol_id FROM code_calls WHERE callee_symbol_id = ? AND repo_id = ?')
@@ -1453,17 +1453,17 @@ function getSignalChains(db, repoId, opts = {}) {
 
     for (let depth = 0; depth < maxDepth; depth++) {
       const callees = callGraph.get(current) || [];
-      if (callees.length === 0) break;
+      if (callees.length === 0) {break;}
       // Follow the first resolved callee (most common path)
       const resolved = callees.find((c) => c.callee_id) || callees[0];
-      if (!resolved || visited.has(resolved.callee_id || 0)) break;
+      if (!resolved || visited.has(resolved.callee_id || 0)) {break;}
       const calleeSym = resolved.callee_id ? symbolMap.get(resolved.callee_id) : null;
       chain.push({
         symbol_id: resolved.callee_id,
         name: resolved.callee_name,
         kind: calleeSym ? calleeSym.kind : 'unknown',
       });
-      if (resolved.callee_id) visited.add(resolved.callee_id);
+      if (resolved.callee_id) {visited.add(resolved.callee_id);}
       current = resolved.callee_id;
     }
 
@@ -1479,13 +1479,13 @@ function getSignalChains(db, repoId, opts = {}) {
 
 function getLayerViolations(db, repoId, opts = {}) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   let rules = opts.rules || null;
 
   // If no rules provided, look for .pimemory-layers.jsonc in repo root
   if (!rules) {
     const repo = db.prepare('SELECT path FROM code_repos WHERE id = ?').get(repoId);
-    if (!repo) return { error: 'Repo not found' };
+    if (!repo) {return { error: 'Repo not found' };}
 
     const fs = require('fs');
     const configPath = path.join(repo.path, '.pimemory-layers.jsonc');
@@ -1525,7 +1525,7 @@ function getLayerViolations(db, repoId, opts = {}) {
   function fileLayer(filePath, layers) {
     for (const layer of layers) {
       for (const prefix of layer.paths) {
-        if (filePath.includes(prefix)) return layer.name;
+        if (filePath.includes(prefix)) {return layer.name;}
       }
     }
     return null; // Unaffiliated file
@@ -1541,8 +1541,8 @@ function getLayerViolations(db, repoId, opts = {}) {
     const sourceLayer = fileLayer(imp.source_path, rules.layers);
     const targetLayer = fileLayer(imp.target_path, rules.layers);
 
-    if (!sourceLayer || !targetLayer) continue; // Skip unaffiliated files
-    if (sourceLayer === targetLayer) continue; // Same layer, ok
+    if (!sourceLayer || !targetLayer) {continue;} // Skip unaffiliated files
+    if (sourceLayer === targetLayer) {continue;} // Same layer, ok
 
     const forbidden = layerMap.get(sourceLayer);
     if (forbidden && forbidden.has(targetLayer)) {
@@ -1565,7 +1565,7 @@ function getLayerViolations(db, repoId, opts = {}) {
 
 function getUntestedSymbols(db, repoId, opts = {}) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   const { minConfidence = 0.5, includePrivate = false } = opts;
 
   // 1. Identify test files
@@ -1586,13 +1586,13 @@ function getUntestedSymbols(db, repoId, opts = {}) {
     const imports = db.prepare(
       'SELECT target_file_id FROM code_imports WHERE source_file_id = ? AND target_file_id IS NOT NULL'
     ).all(tfId);
-    for (const imp of imports) testImportedFiles.add(imp.target_file_id);
+    for (const imp of imports) {testImportedFiles.add(imp.target_file_id);}
   }
 
   // 3. Trace call graph from test functions → production symbols
   const testSymbols = db.prepare(
-    'SELECT id FROM code_symbols WHERE file_id IN (' +
-    [...testFileIds].map(() => '?').join(',') + ') AND repo_id = ?'
+    `SELECT id FROM code_symbols WHERE file_id IN (${ 
+    [...testFileIds].map(() => '?').join(',')  }) AND repo_id = ?`
   ).all(...[...testFileIds, repoId]);
 
   const testedSymbols = new Set();
@@ -1627,20 +1627,20 @@ function getUntestedSymbols(db, repoId, opts = {}) {
   const excludedFileIds = new Set();
   for (const f of allFiles) {
     const basename = path.basename(f.path);
-    if (entryPointPatterns.includes(basename)) excludedFileIds.add(f.id);
+    if (entryPointPatterns.includes(basename)) {excludedFileIds.add(f.id);}
   }
 
   // Build results with per-symbol confidence
   const untested = [];
   for (const sym of allSymbols) {
     // Skip test symbols themselves
-    if (testFileIds.has(sym.file_id)) continue;
+    if (testFileIds.has(sym.file_id)) {continue;}
     // Skip excluded patterns
-    if (excludedFileIds.has(sym.file_id)) continue;
+    if (excludedFileIds.has(sym.file_id)) {continue;}
     // Skip private symbols unless requested
-    if (!includePrivate && sym.name.startsWith('_')) continue;
+    if (!includePrivate && sym.name.startsWith('_')) {continue;}
 
-    if (testedSymbols.has(sym.id)) continue;
+    if (testedSymbols.has(sym.id)) {continue;}
 
     let confidence;
     if (indirectlyTested.has(sym.id)) {
@@ -1672,12 +1672,12 @@ function getUntestedSymbols(db, repoId, opts = {}) {
 
 function getPrRiskProfile(db, repoId, opts = {}) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) {return guard;}
   const { branch = 'HEAD', base = 'main' } = opts;
 
   // Get changed files between base and branch
   const repo = db.prepare('SELECT path FROM code_repos WHERE id = ?').get(repoId);
-  if (!repo) return { error: 'Repo not found' };
+  if (!repo) {return { error: 'Repo not found' };}
 
   let changedFiles = [];
   try {
@@ -1741,7 +1741,7 @@ function getPrRiskProfile(db, repoId, opts = {}) {
           symbol: db.prepare('SELECT name FROM code_symbols WHERE id = ?').get(sid)?.name
         });
         const edgeCount = (br.edges || []).length;
-        if (edgeCount > maxCallers) maxCallers = edgeCount;
+        if (edgeCount > maxCallers) {maxCallers = edgeCount;}
       }
       blastRadiusScore = Math.min(1.0, maxCallers / 50);
     }
@@ -1766,7 +1766,7 @@ function getPrRiskProfile(db, repoId, opts = {}) {
       const row = db.prepare(
         'SELECT commits FROM churn_metrics WHERE repo_id = ? AND file_path = ? AND window_days = 90'
       ).get(repoId, filePath);
-      if (row && row.commits > maxChurn) maxChurn = row.commits;
+      if (row && row.commits > maxChurn) {maxChurn = row.commits;}
     }
     churnScore = Math.min(1.0, maxChurn / 20);
   } catch (_) {}
@@ -1804,8 +1804,8 @@ function getPrRiskProfile(db, repoId, opts = {}) {
   let wBlastRadius = weights.blast_radius;
   let wComplexity = weights.complexity;
   let wChurn = weights.churn;
-  let wTestCoverage = testCoverageScore > 0 ? weights.test_coverage : 0;
-  let wChangeVolume = weights.change_volume;
+  const wTestCoverage = testCoverageScore > 0 ? weights.test_coverage : 0;
+  const wChangeVolume = weights.change_volume;
 
   if (wTestCoverage === 0) {
     const adjustment = weights.test_coverage;

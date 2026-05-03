@@ -1,8 +1,7 @@
 /**
- * bench-helper.js — Shared utilities for token efficiency benchmarks
+ * Bench-helper.js — Shared utilities for token efficiency benchmarks
  */
 
-const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
@@ -37,8 +36,8 @@ function estimateTokens(bytesOrObj) {
  * Format bytes as human-readable string.
  */
 function formatBytes(n) {
-  if (n < 1024) return `${n}B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)}KB`;
+  if (n < 1024) {return `${n}B`;}
+  if (n < 1024 * 1024) {return `${(n / 1024).toFixed(1)}KB`;}
   return `${(n / (1024 * 1024)).toFixed(1)}MB`;
 }
 
@@ -103,7 +102,7 @@ function findSymbolWithCallers(repo) {
     }).trim();
     const data = JSON.parse(stdout);
     const files = data.files || [];
-    if (files.length === 0) return null;
+    if (files.length === 0) {return null;}
     // Get symbols from the hottest file
     const hotFile = files[0].file_path;
     const outlineOut = execSync(`node memory-store.js outline --repo ${repo} --file "${hotFile}"`, {

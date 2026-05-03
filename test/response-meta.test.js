@@ -14,7 +14,7 @@ describe('response-meta.js', () => {
       let head;
       try {
         head = execSync('git rev-parse HEAD', { cwd: repoPath, encoding: 'utf-8', timeout: 5000 }).trim();
-      } catch (_) { return; /* skip if not in git repo */ }
+      } catch (_) { return; /* Skip if not in git repo */ }
 
       const result = responseMeta.checkFreshness(repoPath, head);
       expect(['fresh', 'edited_uncommitted']).toContain(result);
@@ -24,7 +24,7 @@ describe('response-meta.js', () => {
       const repoPath = require('path').resolve(__dirname, '..');
       // Only test if this is a git repo
       const fs = require('fs');
-      if (!fs.existsSync(require('path').join(repoPath, '.git'))) return;
+      if (!fs.existsSync(require('path').join(repoPath, '.git'))) {return;}
 
       const result = responseMeta.checkFreshness(repoPath, '0000000000000000000000000000000000000000');
       expect(result).toBe('stale_index');
@@ -38,7 +38,7 @@ describe('response-meta.js', () => {
     it('should return stale_index for null head_commit', () => {
       const repoPath = require('path').resolve(__dirname, '..');
       const fs = require('fs');
-      if (!fs.existsSync(require('path').join(repoPath, '.git'))) return;
+      if (!fs.existsSync(require('path').join(repoPath, '.git'))) {return;}
 
       const result = responseMeta.checkFreshness(repoPath, null);
       expect(result).toBe('stale_index');
@@ -49,7 +49,7 @@ describe('response-meta.js', () => {
     it('should cache results for 60 seconds', () => {
       const repoPath = require('path').resolve(__dirname, '..');
       const fs = require('fs');
-      if (!fs.existsSync(require('path').join(repoPath, '.git'))) return;
+      if (!fs.existsSync(require('path').join(repoPath, '.git'))) {return;}
 
       const result1 = responseMeta.getFreshness(null, 1, repoPath, null);
       const result2 = responseMeta.getFreshness(null, 1, repoPath, null);
