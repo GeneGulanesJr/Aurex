@@ -1,4 +1,4 @@
-// test/code-analysis.test.js
+// Integration tests for code-analysis (WASM)
 const { execSync } = require('child_process');
 const path = require('path');
 
@@ -10,7 +10,7 @@ function run(cmd) {
     const out = execSync(`node "${STORE}" ${cmd}`, { encoding: 'utf8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] });
     return JSON.parse(out.trim());
   } catch (e) {
-    if (e.stdout?.trim()) return JSON.parse(e.stdout.trim());
+    if (e.stdout?.trim()) { return JSON.parse(e.stdout.trim()); }
     throw e;
   }
 }
@@ -171,7 +171,7 @@ describe('code-analysis (v5)', () => {
         const first = r.standalone[0];
         expect(first.name || first.signature).toBeTruthy();
       }
-    } catch (_) {
+    } catch {
       expect(true).toBe(true);
     }
   });

@@ -1,4 +1,4 @@
-// test/doc-parser.test.js
+// Unit tests for doc-parser
 const docIndexer = require('../doc-indexer');
 
 const parseSections = docIndexer._parseMarkdownSections;

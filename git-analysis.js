@@ -1,5 +1,5 @@
 /**
- * git-analysis.js — Git commit frequency analysis for churn metrics
+ * Git-analysis.js — Git commit frequency analysis for churn metrics
  *
  * Uses git CLI (zero native deps). Gracefully degrades if git unavailable.
  */
