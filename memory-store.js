@@ -26,6 +26,38 @@ let db = null;
 
 /* ── subcommands ───────────────────────────────────────────── */
 
+// Tool tiering (v6) — control which commands appear in session-start context
+const TOOL_TIERS = {
+  core: new Set([
+    'search', 'save', 'context', 'search-code', 'get-code-source',
+    'importance', 'outline', 'winnow',
+  ]),
+  standard: new Set([
+    'search', 'save', 'context', 'search-code', 'get-code-source',
+    'importance', 'outline', 'winnow',
+    'complexity', 'dead-code', 'hotspots', 'blast-radius',
+    'call-hierarchy', 'cycles', 'coupling', 'churn', 'signal-chains',
+  ]),
+  full: null, // null = all commands
+};
+
+function _readTierConfig() {
+  const fs = require('fs');
+  const path = require('path');
+  const HOME = process.env.HOME || process.env.USERPROFILE || require('os').homedir();
+  const configPath = path.join(HOME, '.pi', 'memory', 'tier.jsonc');
+  try {
+    const raw = fs.readFileSync(configPath, 'utf-8');
+    // Strip comments (//-style) for JSON parsing
+    const cleaned = raw.replace(/\/\/.*$/gm, '');
+    return JSON.parse(cleaned);
+  } catch (_) {
+    return { tier: 'full' };
+  }
+}
+
+/* ── subcommands ───────────────────────────────────────────── */
+
 function sessionStart(args) {
   const project = args.project;
   if (!project) return jsonErr('Missing --project');
@@ -65,6 +97,18 @@ function sessionStart(args) {
 
   const compacted = runCompact();
 
+  // Tool tiering (v6)
+  const tierConfig = _readTierConfig();
+  const tier = tierConfig.tier || 'full';
+  const tierSet = TOOL_TIERS[tier];
+  const availableCommands = tierSet ? Object.keys(commands).filter(c => tierSet.has(c)) : Object.keys(commands);
+  // Apply extra/hidden overrides
+  const extra = tierConfig.extra_commands || [];
+  const hidden = tierConfig.hidden_commands || [];
+  const finalCommands = [...new Set([...availableCommands, ...extra])]
+    .filter(c => !hidden.includes(c))
+    .sort();
+
   return {
     sessionId,
     sessionCount,
@@ -74,6 +118,9 @@ function sessionStart(args) {
     recoveredSession,
     hasIncompletePreviousSession: incompleteSession.length > 0,
     incompleteSessionId: incompleteSession.length > 0 ? incompleteSession[0].id : null,
+    tool_tier: tier,
+    available_commands: finalCommands,
+    available_commands_count: finalCommands.length,
   };
 }
 
@@ -1313,6 +1360,9 @@ const codeParser = require('./parse-code');
 const codeAnalysis = require('./code-analysis');
 const gitAnalysis = require('./git-analysis');
 const docIndexer = require('./doc-indexer');
+const responseMeta = require('./response-meta');
+const wireFormat = require('./wire-format');
+const astPatterns = require('./ast-patterns');
 
 function parseCodeFile(filePath) {
   return codeParser.parseFile(filePath);
@@ -1380,6 +1430,16 @@ async function indexRepoInternal(repoPath, repoName) {
     repoId = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repoName])[0].id;
   }
 
+  // Capture current HEAD commit for freshness checks
+  let headCommit = null;
+  try {
+    headCommit = require('child_process').execSync('git rev-parse HEAD', {
+      cwd: absPath,
+      encoding: 'utf-8',
+      timeout: 5000,
+    }).trim();
+  } catch (_) { /* non-git repo or git error */ }
+
   for (const filePath of files) {
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
@@ -1435,9 +1495,10 @@ async function indexRepoInternal(repoPath, repoName) {
     }
   }
 
-  sqlRun("UPDATE code_repos SET file_count = ?, symbol_count = ?, updated_at = datetime('now') WHERE id = ?", [
+  sqlRun("UPDATE code_repos SET file_count = ?, symbol_count = ?, head_commit = ?, updated_at = datetime('now') WHERE id = ?", [
     fileCount,
     symbolCount,
+    headCommit || null,
     repoId,
   ]);
 
@@ -1794,6 +1855,76 @@ function archiveWorkspace(name) {
   return { success: true, workspace: name, archived: true };
 }
 
+/* ── dispatch helpers ─────────────────────────────────────── */
+
+/**
+ * _dispatch(repoName, fn) — DRY repo lookup for analysis subcommands.
+ * Resolves repo name → repoRow (with id, path, head_commit), calls fn(repoRow).
+ * Returns fn's result or throws via jsonErr if repo not found.
+ */
+function _dispatch(repoName, fn) {
+  if (!repoName) jsonErr('Missing --repo');
+  const repoRow = sqlJson('SELECT id, path, head_commit FROM code_repos WHERE name = ?', [repoName]);
+  if (!repoRow.length) jsonErr(`Repo "${repoName}" not found. Run index-repo first.`);
+  return fn(repoRow[0]);
+}
+
+/**
+ * _wrapAnalysis(toolName, data, repoRow, startTime) — wrap analysis result
+ * with _meta envelope and optional format conversion.
+ */
+function _wrapAnalysis(toolName, data, repoRow, startTime, format) {
+  // Map CLI subcommand names to internal tool names for confidence/computed
+  const toolMap = {
+    'import-graph': 'getImportGraph',
+    'call-hierarchy': 'getCallHierarchy',
+    'blast-radius': 'getBlastRadius',
+    'dead-code': 'getDeadCode',
+    complexity: 'getComplexity',
+    outline: 'getFileOutline',
+    churn: 'getChurn',
+    hotspots: 'getHotspots',
+    cycles: 'getDependencyCycles',
+    importance: 'getSymbolImportance',
+    coupling: 'getCouplingMetrics',
+    extractable: 'getExtractionCandidates',
+    hierarchy: 'getClassHierarchy',
+    'signal-chains': 'getSignalChains',
+    'layer-violations': 'getLayerViolations',
+    winnow: 'winnow',
+    'ast-patterns': 'astPatterns',
+    provenance: 'getProvenance',
+    untested: 'getUntestedSymbols',
+    'pr-risk': 'getPrRiskProfile',
+  };
+  const internalName = toolMap[toolName] || toolName;
+
+  const wrapped = responseMeta.buildEnvelope({
+    toolName: internalName,
+    data,
+    db,
+    repoId: repoRow.id,
+    repoPath: repoRow.path,
+    storedHeadCommit: repoRow.head_commit || null,
+    startTime,
+  });
+
+  if (format === 'compact') {
+    wrapped.data = wireFormat.compactResponse(wrapped.data);
+  } else if (format === 'auto') {
+    const autoFmt = wireFormat.autoFormat(wrapped.data);
+    if (autoFmt === 'compact') {
+      wrapped.data = wireFormat.compactResponse(wrapped.data);
+    }
+  }
+  // format === 'json' (default) — no transformation
+
+  return wrapped;
+}
+
+// Track the global --format flag for all analysis subcommands
+let _globalFormat = 'json'; // set by parseArgs at dispatch time
+
 /* ── dispatch ─────────────────────────────────────────────── */
 const commands = {
   'session-start': sessionStart,
@@ -2056,6 +2187,64 @@ const commands = {
     return codeAnalysis.getLayerViolations(db, repoRow[0].id, { rules });
   },
 
+  // ── v6: Winnow multi-axis query ──
+
+  winnow: (args) => {
+    return _dispatch(args.repo, (repoRow) =>
+      codeAnalysis.winnow(db, repoRow.id, {
+        kind: args.kind || null,
+        minComplexity: args['min-complexity'] ? parseInt(args['min-complexity']) : null,
+        minChurn: args['min-churn'] ? parseInt(args['min-churn']) : null,
+        minPageRank: args['min-pagerank'] ? parseFloat(args['min-pagerank']) : null,
+        minCallers: args['min-callers'] ? parseInt(args['min-callers']) : null,
+        fileGlob: args['file-glob'] || null,
+        nameRegex: args['name-regex'] || null,
+        sortBy: args['sort-by'] || 'pagerank',
+        top: args.top ? parseInt(args.top) : 20,
+      })
+    );
+  },
+
+  // ── v6: AST pattern matching ──
+
+  'ast-patterns': (args) => {
+    return _dispatch(args.repo, (repoRow) =>
+      astPatterns.scanAstPatterns(db, repoRow.id, {
+        category: args.category || 'all',
+        patterns: args.pattern ? args.pattern.split(',').map(s => s.trim()) : [],
+        limit: args.limit ? parseInt(args.limit) : 200,
+      })
+    );
+  },
+
+  // ── v6: Symbol provenance ──
+
+  provenance: (args) => {
+    return _dispatch(args.repo, (repoRow) =>
+      gitAnalysis.getProvenance(db, repoRow.id, args.symbol)
+    );
+  },
+
+  // ── v6: Untested symbols + PR risk ──
+
+  untested: (args) => {
+    return _dispatch(args.repo, (repoRow) =>
+      codeAnalysis.getUntestedSymbols(db, repoRow.id, {
+        minConfidence: args['min-confidence'] ? parseFloat(args['min-confidence']) : 0.5,
+        includePrivate: args['include-private'] === 'true',
+      })
+    );
+  },
+
+  'pr-risk': (args) => {
+    return _dispatch(args.repo, (repoRow) =>
+      codeAnalysis.getPrRiskProfile(db, repoRow.id, {
+        branch: args.branch || 'HEAD',
+        base: args.base || 'main',
+      })
+    );
+  },
+
   // ── v5.2: Doc analytics subcommands ──
 
   'doc-orphans': (args) => {
@@ -2179,11 +2368,36 @@ const commands = {
 const args = parseArgs(process.argv);
 const cmd = process.argv[2];
 
+// Code analysis tools that receive _meta envelope + format support
+const _ANALYSIS_TOOLS = new Set([
+  'import-graph', 'call-hierarchy', 'blast-radius', 'dead-code', 'complexity', 'outline',
+  'churn', 'hotspots', 'cycles', 'importance', 'coupling', 'extractable', 'hierarchy',
+  'signal-chains', 'layer-violations', 'winnow', 'ast-patterns', 'provenance', 'untested', 'pr-risk',
+]);
+
 (async () => {
   ensureDb();
-  db = getDb(); // make db handle available for direct access by code-analysis/doc-indexer
+  db = getDb();
+  _globalFormat = args.format || 'json';
+
   if (cmd && commands[cmd]) {
+    const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
     const result = await commands[cmd](args);
+
+    // Wrap code analysis results with _meta envelope
+    if (_ANALYSIS_TOOLS.has(cmd) && !result.error) {
+      const repoName = args.repo;
+      if (repoName) {
+        const repoRow = sqlJson('SELECT id, path, head_commit FROM code_repos WHERE name = ?', [repoName]);
+        if (repoRow.length > 0) {
+          jsonOut(_wrapAnalysis(cmd, result, repoRow[0], startTime, _globalFormat));
+          return;
+        }
+        // For tools querying churn (which has a different repo resolution),
+        // still try to wrap but fall through gracefully
+      }
+    }
+
     jsonOut(result);
   } else {
     console.error(

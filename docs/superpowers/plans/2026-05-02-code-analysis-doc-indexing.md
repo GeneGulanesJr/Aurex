@@ -2691,36 +2691,18 @@ git commit -m "docs: update SKILL.md and README for v5 code analysis + doc index
 
 ---
 
-### Task 9: Remove MCP bridge dependencies + update extension
+### Task 9: Remove the MCP bridge extension entirely
 
 **Files:**
-- Modify: `~/.pi/agent/extensions/mcp-bridge/index.ts` (remove jcodemunch and jdocmunch)
+- Remove: `~/.pi/agent/extensions/mcp-bridge/` (entire directory)
 - Modify: `~/.pi/agent/AGENTS.md` (update references)
 
-- [x] **Step 1: Strip jcodemunch and jdocmunch from MCP bridge**
+- [x] **Step 1: Remove the MCP bridge extension entirely**
 
-In `~/.pi/agent/extensions/mcp-bridge/index.ts`, change `session_start` from:
+The mcp-bridge extension at `~/.pi/agent/extensions/mcp-bridge/` is no longer needed since jCodeMunch, jDocMunch, and the Auth0 bridge have all been superseded or removed. Delete the entire directory:
 
-```ts
-const results = await Promise.all([
-  bridgeServer(pi, "jcodemunch", "uvx", ["--from", "jcodemunch-mcp>=1.44.0", "jcodemunch-mcp"]),
-  bridgeServer(pi, "jdocmunch", "uvx", ["--from", "jdocmunch-mcp>=0.9.0", "jdocmunch-mcp"]),
-  bridgeHttpServer(pi, "auth0", "https://auth0.com/ai/docs/mcp"),
-]);
-```
-
-To:
-
-```ts
-const results = await Promise.all([
-  bridgeHttpServer(pi, "auth0", "https://auth0.com/ai/docs/mcp"),
-]);
-```
-
-Update the notify message:
-
-```ts
-ctx.ui.notify("MCP bridge: connecting to Auth0 Docs…", "info");
+```bash
+rm -rf ~/.pi/agent/extensions/mcp-bridge
 ```
 
 - [x] **Step 2: Update AGENTS.md to reference memory-code/memory-doc instead of MCP tools**
@@ -2729,13 +2711,14 @@ In `~/.pi/agent/AGENTS.md`, replace references to the old MCP tool names with `m
 
 - [x] **Step 3: Verify Pi starts without the uvx spawns**
 
-Restart Pi (or reload extensions) and verify the session startup notification no longer shows "connecting to jCodeMunch + jDocMunch". Startup should be noticeably faster (~300ms vs ~700ms).
+Restart Pi (or reload extensions) and verify the session startup notification no longer shows any MCP bridge connection attempts.
 
 - [x] **Step 4: Commit**
 
 ```bash
-git add ~/.pi/agent/extensions/mcp-bridge/index.ts ~/.pi/agent/AGENTS.md
-git commit -m "chore: remove jcodemunch and jdocmunch from MCP bridge — replaced by memory-code/memory-doc"
+git rm -rf ~/.pi/agent/extensions/mcp-bridge
+git add ~/.pi/agent/AGENTS.md
+git commit -m "chore: remove MCP bridge extension entirely — superseded by memory-code/memory-doc"
 ```
 
 ---

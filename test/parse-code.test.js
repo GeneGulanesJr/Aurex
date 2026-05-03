@@ -14,20 +14,16 @@ describe('parse-code (WASM tree-sitter)', () => {
   });
 
   describe('initialization', () => {
-  beforeAll(async () => {
-    await codeParser.init();
-  });
+    it('should initialize successfully', () => {
+      expect(codeParser.isReady()).toBe(true);
+    });
 
-  it('should initialize successfully', () => {
-    expect(codeParser.isReady()).toBe(true);
+    it('should report loaded grammars via info()', () => {
+      const info = codeParser.info();
+      expect(info.ready).toBe(true);
+      expect(info.grammars.length).toBeGreaterThanOrEqual(2);
+    });
   });
-
-  it('should report loaded grammars via info()', () => {
-    const info = codeParser.info();
-    expect(info.ready).toBe(true);
-    expect(info.grammars.length).toBeGreaterThanOrEqual(2);
-  });
-});
 
 describe('parse-code: JavaScript', () => {
   it('should extract JS function declarations', () => {
@@ -147,8 +143,13 @@ describe('parse-code: multi-language support', () => {
     fs.unlinkSync(tmpFile);
     expect(symbols.length).toBeGreaterThanOrEqual(2);
     const greet = symbols.find(s => s.name === 'greet' && s.kind === 'function');
+    expect(greet).toBeDefined();
     expect(greet.language).toBe('python');
-    if (greet.docstring) { expect(greet.docstring).toContain('Say hello'); }
+    expect(greet.docstring).toBeDefined();
+    expect(typeof greet.docstring).toBe('string');
+    if (greet.docstring.length > 0) {
+      expect(greet.docstring).toContain('Say hello');
+    }
   });
 
   it('should parse Go files (.go) and extract functions', () => {

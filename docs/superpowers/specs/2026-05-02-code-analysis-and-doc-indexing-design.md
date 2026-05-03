@@ -30,7 +30,7 @@ JavaScript, TypeScript, TSX, SQL — via existing web-tree-sitter WASM grammars.
 
 ### Not in Scope
 - Additional language grammars (Python, Rust, Go, etc.)
-- Third-party API documentation (Auth0, etc.)
+- Third-party API documentation indexing
 - Semantic/embedding-based search
 - OpenAPI/protobuf/GraphQL schema indexing
 - Runtime test coverage analysis

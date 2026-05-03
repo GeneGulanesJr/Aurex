@@ -172,4 +172,108 @@ function upsertChurn(db, repoId, filePath, windowDays, metrics) {
   );
 }
 
-module.exports = { getChurn, isGitAvailable };
+// ══════════════════════════════════════════════════════════
+// SYMBOL PROVENANCE (v6 — Git archaeology for single symbol)
+// ══════════════════════════════════════════════════════════
+
+const CLASSIFICATION_RULES = [
+  { pattern: /^Initial commit|first commit/i, classification: 'creation' },
+  { pattern: /^Add\b|^Implement\b|^Create\b/i, classification: 'feature' },
+  { pattern: /\bfix(?:es)?\b|\bbug\b|\bhotfix\b|\bpatch\b/i, classification: 'bugfix' },
+  { pattern: /\brefactor\b|\bclean\s*up\b|\breorganize\b/i, classification: 'refactor' },
+  { pattern: /\bperf(?:ormance)?\b|\boptimize\b|\bspeed\b/i, classification: 'perf' },
+  { pattern: /\brename\b|\bmove\b|\brelocate\b/i, classification: 'rename' },
+  { pattern: /\brevert\b|\brollback\b/i, classification: 'revert' },
+];
+
+function classifyCommit(message) {
+  for (const rule of CLASSIFICATION_RULES) {
+    if (rule.pattern.test(message)) return rule.classification;
+  }
+  return 'unknown';
+}
+
+function getProvenance(db, repoId, symbolName) {
+  const guard = _requireNativeDb(db);
+  if (guard) return guard;
+
+  const symbol = db.prepare(
+    'SELECT id, name, file_path, start_line, end_line, kind FROM code_symbols WHERE repo_id = ? AND name = ?'
+  ).get(repoId, symbolName);
+
+  if (!symbol) return { error: `Symbol "${symbolName}" not found in repo ${repoId}` };
+
+  const repo = db.prepare('SELECT path FROM code_repos WHERE id = ?').get(repoId);
+  if (!repo) return { error: `Repo ${repoId} not found` };
+
+  let logEntries = [];
+  try {
+    const logOutput = execSync(
+      `git -C "${repo.path}" log --follow --format="%H|%an|%aI|%s" -- "${symbol.file_path}"`,
+      { encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] }
+    ).trim();
+
+    if (!logOutput) {
+      return { symbol: symbolName, commits: [], total_commits: 0, summary: 'No git history found.' };
+    }
+
+    logEntries = logOutput.split('\n').map(line => {
+      const [hash, author, date, ...msgParts] = line.split('|');
+      return {
+        hash, author, date,
+        message: msgParts.join('|'),
+        classification: classifyMessage(msgParts.join('|')),
+        touches_symbol: false,
+      };
+    });
+  } catch (e) {
+    return { error: `git log failed: ${e.message}` };
+  }
+
+  try {
+    const blameOutput = execSync(
+      `git -C "${repo.path}" blame -L ${symbol.start_line},${symbol.end_line} -- "${symbol.file_path}"`,
+      { encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] }
+    ).trim();
+    const blameHashes = new Set();
+    const blameRe = /^([a-f0-9]{8,})/gm;
+    let match;
+    while ((match = blameRe.exec(blameOutput)) !== null) blameHashes.add(match[1]);
+    for (const entry of logEntries) {
+      if (blameHashes.has(entry.hash.substring(0, 8)) || blameHashes.has(entry.hash))
+        entry.touches_symbol = true;
+    }
+  } catch (_) { /* blame failed, keep all */ }
+
+  const relevantCommits = logEntries.length > 50 && logEntries.some(e => e.touches_symbol)
+    ? logEntries.filter(e => e.touches_symbol).slice(0, 50)
+    : logEntries.slice(0, 50);
+
+  const classifications = {};
+  let creationDate = null, lastModifiedDate = null;
+  const authors = new Set();
+  for (const c of relevantCommits) {
+    classifications[c.classification] = (classifications[c.classification] || 0) + 1;
+    if (c.classification === 'creation' && !creationDate) creationDate = c.date;
+    authors.add(c.author);
+    if (!lastModifiedDate || c.date > lastModifiedDate) lastModifiedDate = c.date;
+  }
+
+  let summary = `${symbol.kind} "${symbolName}" in ${symbol.file_path}:${symbol.start_line}-${symbol.end_line}. `;
+  summary += `${relevantCommits.length} commits by ${authors.size} author(s). `;
+  if (creationDate) summary += `First seen: ${creationDate.split('T')[0]}. `;
+  if (lastModifiedDate) summary += `Last modified: ${lastModifiedDate.split('T')[0]}. `;
+  const clsSummary = Object.entries(classifications).sort((a, b) => b[1] - a[1])
+    .map(([cls, count]) => `${cls}(${count})`).join(', ');
+  summary += `Activity: ${clsSummary || 'unknown'}.`;
+
+  return {
+    symbol: symbolName, file: symbol.file_path, kind: symbol.kind,
+    lines: `${symbol.start_line}-${symbol.end_line}`,
+    commits: relevantCommits, total_commits: logEntries.length,
+    authors: [...authors], creation_date: creationDate, last_modified: lastModifiedDate,
+    classification_summary: classifications, summary,
+  };
+}
+
+module.exports = { getChurn, isGitAvailable, getProvenance, classifyCommit };

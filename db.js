@@ -137,7 +137,7 @@ function ensureDb() {
 // Critical tables that must exist for code analysis + doc indexing
 const _CRITICAL_TABLES = [
   // v3: code indexing
-  ['code_repos', 'CREATE TABLE IF NOT EXISTS code_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, path TEXT NOT NULL UNIQUE, file_count INTEGER DEFAULT 0, symbol_count INTEGER DEFAULT 0, indexed_at TEXT NOT NULL DEFAULT (datetime(\'now\')), updated_at TEXT NOT NULL DEFAULT (datetime(\'now\')))'],
+  ['code_repos', 'CREATE TABLE IF NOT EXISTS code_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, path TEXT NOT NULL UNIQUE, file_count INTEGER DEFAULT 0, symbol_count INTEGER DEFAULT 0, indexed_at TEXT NOT NULL DEFAULT (datetime(\'now\')), updated_at TEXT NOT NULL DEFAULT (datetime(\'now\')), head_commit TEXT)'],
   ['code_files', 'CREATE TABLE IF NOT EXISTS code_files (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE, path TEXT NOT NULL, language TEXT NOT NULL, content TEXT NOT NULL, content_hash TEXT NOT NULL, mtime REAL, size_bytes INTEGER DEFAULT 0, line_count INTEGER DEFAULT 0, UNIQUE(repo_id, path))'],
   ['code_symbols', 'CREATE TABLE IF NOT EXISTS code_symbols (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE, file_id INTEGER NOT NULL REFERENCES code_files(id) ON DELETE CASCADE, name TEXT NOT NULL, kind TEXT NOT NULL, signature TEXT, file_path TEXT NOT NULL, start_line INTEGER NOT NULL, end_line INTEGER NOT NULL, start_byte INTEGER NOT NULL, end_byte INTEGER NOT NULL, docstring TEXT DEFAULT \'\', body_preview TEXT DEFAULT \'\', language TEXT NOT NULL, parent_name TEXT DEFAULT \'\', qualified_name TEXT NOT NULL, indexed_at TEXT NOT NULL DEFAULT (datetime(\'now\')))'],
   // v5: code analysis
@@ -195,7 +195,7 @@ function runMigrations() {
     version = rows.length > 0 ? (rows[0].user_version || 0) : 0;
   } catch (_) {}
 
-  if (version >= 5) return { migrated: false, version };
+  if (version >= 6) return { migrated: false, version };
 
   // v2: observation_relations, recall_log
   if (version < 2) {
@@ -281,7 +281,15 @@ function runMigrations() {
     try { sqlRaw('PRAGMA user_version = 5'); } catch (_) {}
   }
 
-  return { migrated: true, fromVersion: version, toVersion: 5 };
+  // v6: head_commit column for freshness checks + PageRank cache invalidation
+  if (version < 6) {
+    try {
+      sqlRaw('ALTER TABLE code_repos ADD COLUMN head_commit TEXT');
+    } catch (_) { /* column may already exist */ }
+    try { sqlRaw('PRAGMA user_version = 6'); } catch (_) {}
+  }
+
+  return { migrated: true, fromVersion: version, toVersion: 6 };
 }
 
 /* ── utilities ────────────────────────────────────────────── */

@@ -913,17 +913,19 @@ function getDependencyCycles(db, repoId) {
   };
 }
 
-// ══════════════════════════════════════════════════════════
-// SYMBOL IMPORTANCE (PageRank on call graph)
-// ══════════════════════════════════════════════════════════
+// PageRank cache — shared between getSymbolImportance and winnow
+// Key: repoId, auto-invalidates on reindex via head_commit change
+const _pageRankCache = new Map(); // repoId → { ranks: Map, symbolMap: Map, n: number }
 
-function getSymbolImportance(db, repoId, opts = {}) {
+function buildPageRank(db, repoId) {
+  // Check cache — cache key is just repoId (invalidated by reindex/repo removal)
+  const cached = _pageRankCache.get(repoId);
+  if (cached) return cached;
+
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
-  const topN = opts.top || 20;
-  const scope = opts.scope || null;
+  if (guard) return { error: guard.error };
 
-  // Build call graph: caller → [callees] (only for symbols in this repo)
+  // Build call graph: caller → [callees]
   const calls = db
     .prepare(`
     SELECT cc.caller_symbol_id, cc.callee_symbol_id
@@ -933,18 +935,11 @@ function getSymbolImportance(db, repoId, opts = {}) {
   `)
     .all(repoId, repoId);
 
-  // Get all symbols in repo (optionally scoped)
-  let symbolQuery = 'SELECT id, name, kind, file_path FROM code_symbols WHERE repo_id = ?';
-  const symbolParams = [repoId];
-  if (scope) {
-    symbolQuery += ' AND file_path LIKE ?';
-    symbolParams.push(`${scope}%`);
-  }
-  const symbols = db.prepare(symbolQuery).all(...symbolParams);
+  const symbols = db.prepare('SELECT id, name, kind, file_path FROM code_symbols WHERE repo_id = ?').all(repoId);
   const symbolSet = new Set(symbols.map((s) => s.id));
   const symbolMap = new Map(symbols.map((s) => [s.id, s]));
 
-  // Build outgoing edges map (only between repo symbols)
+  // Build outgoing edges map
   const outEdges = new Map();
   for (const call of calls) {
     if (!symbolSet.has(call.caller_symbol_id) || !symbolSet.has(call.callee_symbol_id)) continue;
@@ -952,13 +947,12 @@ function getSymbolImportance(db, repoId, opts = {}) {
     outEdges.get(call.caller_symbol_id).push(call.callee_symbol_id);
   }
 
-  // Initialize PageRank
-  const d = 0.85; // damping factor
+  // PageRank computation
+  const d = 0.85;
   const n = symbolSet.size;
   let ranks = new Map();
   for (const id of symbolSet) ranks.set(id, 1 / n);
 
-  // Iterate (10 iterations)
   for (let i = 0; i < 10; i++) {
     const newRanks = new Map();
     for (const id of symbolSet) newRanks.set(id, (1 - d) / n);
@@ -974,13 +968,193 @@ function getSymbolImportance(db, repoId, opts = {}) {
     ranks = newRanks;
   }
 
+  const result = { ranks, symbolMap, n };
+  _pageRankCache.set(repoId, result);
+  return result;
+}
+
+// Clear PageRank cache (for testing / reindex)
+function clearPageRankCache(repoId) {
+  if (repoId) _pageRankCache.delete(repoId);
+  else _pageRankCache.clear();
+}
+
+// ══════════════════════════════════════════════════════════
+// SYMBOL IMPORTANCE (PageRank on call graph)
+// ══════════════════════════════════════════════════════════
+
+function getSymbolImportance(db, repoId, opts = {}) {
+  const guard = _requireNativeDb(db);
+  if (guard) return guard;
+  const topN = opts.top || 20;
+  const scope = opts.scope || null;
+
+  const pr = buildPageRank(db, repoId);
+  if (pr.error) return pr;
+
+  const { ranks, symbolMap, n: totalSymbols } = pr;
+
+  // Apply scope filter if provided
+  let entries = [...ranks.entries()];
+  if (scope) {
+    entries = entries.filter(([id]) => {
+      const sym = symbolMap.get(id);
+      return sym && sym.file_path.startsWith(scope);
+    });
+  }
+
   // Sort by rank and return top N
-  const results = [...ranks.entries()]
+  const results = entries
     .map(([id, rank]) => ({ ...symbolMap.get(id), pagerank: Math.round(rank * 10000) / 10000 }))
     .sort((a, b) => b.pagerank - a.pagerank)
     .slice(0, topN);
 
-  return { importance: results, total_symbols: n };
+  return { nodes: results, total_symbols: scope ? entries.length : totalSymbols };
+}
+
+// ══════════════════════════════════════════════════════════
+// WINNOW — Multi-axis symbol query (AND-intersected filters)
+// ══════════════════════════════════════════════════════════
+
+function winnow(db, repoId, opts = {}) {
+  const guard = _requireNativeDb(db);
+  if (guard) return guard;
+
+  const {
+    kind = null,
+    minComplexity = null,
+    minChurn = null,
+    minPageRank = null,
+    minCallers = null,
+    fileGlob = null,
+    nameRegex = null,
+    sortBy = 'pagerank',
+    top = 20,
+  } = opts;
+
+  // Get PageRank data
+  const pr = buildPageRank(db, repoId);
+  if (pr.error) return pr;
+  const { symbolMap, n: totalSymbols } = pr;
+
+  // Build query dynamically based on active axes
+  const conditions = ['s.repo_id = ?'];
+  const params = [repoId];
+  const joins = [];
+  const activeAxes = [];
+
+  // Kind filter
+  if (kind) {
+    conditions.push('s.kind = ?');
+    params.push(kind);
+    activeAxes.push('kind');
+  }
+
+  // File glob filter
+  if (fileGlob) {
+    conditions.push('s.file_path GLOB ?');
+    params.push(fileGlob);
+    activeAxes.push('file_glob');
+  }
+
+  // Name regex filter (applied in JS after query)
+  let nameRegexObj = null;
+  if (nameRegex) {
+    try {
+      nameRegexObj = new RegExp(nameRegex);
+      activeAxes.push('name_regex');
+    } catch (_) {
+      return { error: `Invalid regex: ${nameRegex}` };
+    }
+  }
+
+  // Complexity filter
+  if (minComplexity != null) {
+    joins.push('LEFT JOIN symbol_complexity sc ON sc.symbol_id = s.id');
+    conditions.push('sc.cyclomatic >= ?');
+    params.push(Number(minComplexity));
+    activeAxes.push('min_complexity');
+  }
+
+  // Churn filter
+  if (minChurn != null) {
+    joins.push('LEFT JOIN churn_metrics cm ON cm.file_path = s.file_path AND cm.repo_id = s.repo_id');
+    conditions.push('cm.commits >= ?');
+    params.push(Number(minChurn));
+    activeAxes.push('min_churn');
+  }
+
+  // Caller count filter
+  if (minCallers != null) {
+    joins.push(`LEFT JOIN (
+      SELECT callee_symbol_id, COUNT(DISTINCT caller_symbol_id) as caller_count
+      FROM code_calls WHERE repo_id = ? AND callee_symbol_id IS NOT NULL
+      GROUP BY callee_symbol_id
+    ) cc_cnt ON cc_cnt.callee_symbol_id = s.id`);
+    params.unshift(repoId); // Insert at front for the subquery param
+    conditions.push('cc_cnt.caller_count >= ?');
+    params.push(Number(minCallers));
+    activeAxes.push('min_callers');
+  }
+
+  // Build the SQL
+  let sql = `
+    SELECT s.id, s.name, s.kind, s.file_path, s.signature, s.start_line, s.end_line
+    FROM code_symbols s
+    ${joins.join('\n    ')}
+    WHERE ${conditions.join(' AND ')}
+  `;
+
+  if (sortBy === 'complexity' && minComplexity == null) {
+    // Need to join complexity for sorting
+    if (!joins.some(j => j.includes('symbol_complexity'))) {
+      sql = sql.replace('FROM code_symbols s', 'FROM code_symbols s\n    LEFT JOIN symbol_complexity sc ON sc.symbol_id = s.id');
+    }
+  }
+
+  if (sortBy === 'churn' && minChurn == null) {
+    if (!joins.some(j => j.includes('churn_metrics'))) {
+      sql = sql.replace('FROM code_symbols s', 'FROM code_symbols s\n    LEFT JOIN churn_metrics cm ON cm.file_path = s.file_path AND cm.repo_id = s.repo_id');
+    }
+  }
+
+  // Apply name regex filter in SQL if possible, otherwise filter in JS
+  const rows = db.prepare(sql).all(...params);
+
+  // Filter by name regex if needed
+  let filteredRows = rows;
+  if (nameRegexObj) {
+    filteredRows = rows.filter(r => nameRegexObj.test(r.name));
+  }
+
+  // Annotate with PageRank
+  const enriched = filteredRows.map(row => {
+    const prData = symbolMap.get(row.id);
+    const rank = prData ? pr.ranks.get(row.id) || 0 : 0;
+    return {
+      ...row,
+      pagerank: Math.round(rank * 1000000) / 1000000,
+    };
+  });
+
+  // Sort
+  const sortFn = {
+    pagerank: (a, b) => b.pagerank - a.pagerank,
+    complexity: (a, b) => (b.cyclomatic || 0) - (a.cyclomatic || 0),
+    churn: (a, b) => (b.commits || 0) - (a.commits || 0),
+    callers: (a, b) => (b.caller_count || 0) - (a.caller_count || 0),
+  }[sortBy] || ((a, b) => b.pagerank - a.pagerank);
+
+  enriched.sort(sortFn);
+
+  const topResults = enriched.slice(0, top);
+
+  return {
+    results: topResults,
+    total_matched: filteredRows.length,
+    total_symbols: totalSymbols,
+    axes: activeAxes,
+  };
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1385,10 +1559,294 @@ function getLayerViolations(db, repoId, opts = {}) {
   return { violations, total: violations.length };
 }
 
+// ══════════════════════════════════════════════════════════
+// UNTESTED SYMBOLS (v6)
+// ══════════════════════════════════════════════════════════
+
+function getUntestedSymbols(db, repoId, opts = {}) {
+  const guard = _requireNativeDb(db);
+  if (guard) return guard;
+  const { minConfidence = 0.5, includePrivate = false } = opts;
+
+  // 1. Identify test files
+  const allFiles = db.prepare('SELECT id, path FROM code_files WHERE repo_id = ?').all(repoId);
+  const testFileIds = new Set();
+  for (const f of allFiles) {
+    if (
+      f.path.includes('.test.') || f.path.includes('.spec.') ||
+      f.path.includes('/test/') || f.path.includes('/__tests__/')
+    ) {
+      testFileIds.add(f.id);
+    }
+  }
+
+  // 2. Trace import graph from test files → production files
+  const testImportedFiles = new Set();
+  for (const tfId of testFileIds) {
+    const imports = db.prepare(
+      'SELECT target_file_id FROM code_imports WHERE source_file_id = ? AND target_file_id IS NOT NULL'
+    ).all(tfId);
+    for (const imp of imports) testImportedFiles.add(imp.target_file_id);
+  }
+
+  // 3. Trace call graph from test functions → production symbols
+  const testSymbols = db.prepare(
+    'SELECT id FROM code_symbols WHERE file_id IN (' +
+    [...testFileIds].map(() => '?').join(',') + ') AND repo_id = ?'
+  ).all(...[...testFileIds, repoId]);
+
+  const testedSymbols = new Set();
+  const indirectlyTested = new Set();
+
+  for (const ts of testSymbols) {
+    // Direct calls from test symbols (recursive 2 levels)
+    const directCallees = db.prepare(
+      'SELECT callee_symbol_id FROM code_calls WHERE caller_symbol_id = ? AND callee_symbol_id IS NOT NULL'
+    ).all(ts.id);
+    for (const dc of directCallees) {
+      testedSymbols.add(dc.callee_symbol_id);
+      // Indirect calls (test → helper → production)
+      const indirectCallees = db.prepare(
+        'SELECT callee_symbol_id FROM code_calls WHERE caller_symbol_id = ? AND callee_symbol_id IS NOT NULL'
+      ).all(dc.callee_symbol_id);
+      for (const ic of indirectCallees) {
+        if (!testedSymbols.has(ic.callee_symbol_id)) {
+          indirectlyTested.add(ic.callee_symbol_id);
+        }
+      }
+    }
+  }
+
+  // 4. Get all production symbols
+  const allSymbols = db.prepare(
+    'SELECT id, name, kind, file_path, start_line, file_id FROM code_symbols WHERE repo_id = ?'
+  ).all(repoId);
+
+  // Exclusions
+  const entryPointPatterns = ['main.js', 'index.js', 'cli.js', 'app.js', 'server.js'];
+  const excludedFileIds = new Set();
+  for (const f of allFiles) {
+    const basename = path.basename(f.path);
+    if (entryPointPatterns.includes(basename)) excludedFileIds.add(f.id);
+  }
+
+  // Build results with per-symbol confidence
+  const untested = [];
+  for (const sym of allSymbols) {
+    // Skip test symbols themselves
+    if (testFileIds.has(sym.file_id)) continue;
+    // Skip excluded patterns
+    if (excludedFileIds.has(sym.file_id)) continue;
+    // Skip private symbols unless requested
+    if (!includePrivate && sym.name.startsWith('_')) continue;
+
+    if (testedSymbols.has(sym.id)) continue;
+
+    let confidence;
+    if (indirectlyTested.has(sym.id)) {
+      confidence = 0.4;
+    } else if (testImportedFiles.has(sym.file_id)) {
+      confidence = 0.7;
+    } else {
+      confidence = 1.0;
+    }
+
+    if (confidence >= minConfidence) {
+      untested.push({ ...sym, untested_confidence: confidence });
+    }
+  }
+
+  return {
+    untested,
+    total_symbols: allSymbols.length,
+    test_files_found: testFileIds.size,
+    total_files: allFiles.length,
+    tested_symbols: testedSymbols.size,
+    indirectly_tested: indirectlyTested.size,
+  };
+}
+
+// ══════════════════════════════════════════════════════════
+// PR RISK PROFILING (v6)
+// ══════════════════════════════════════════════════════════
+
+function getPrRiskProfile(db, repoId, opts = {}) {
+  const guard = _requireNativeDb(db);
+  if (guard) return guard;
+  const { branch = 'HEAD', base = 'main' } = opts;
+
+  // Get changed files between base and branch
+  const repo = db.prepare('SELECT path FROM code_repos WHERE id = ?').get(repoId);
+  if (!repo) return { error: 'Repo not found' };
+
+  let changedFiles = [];
+  try {
+    const { execSync } = require('child_process');
+    const diffOutput = execSync(
+      `git -C "${repo.path}" diff --name-only ${base}...${branch}`,
+      { encoding: 'utf-8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }
+    ).trim();
+    changedFiles = diffOutput ? diffOutput.split('\n').filter(Boolean) : [];
+  } catch (_) {
+    changedFiles = [];
+  }
+
+  if (changedFiles.length === 0) {
+    return { signals: {}, risk_level: 'low', composite: 0.0, note: 'No changed files detected.' };
+  }
+
+  // Get changed symbols
+  const changedSymbolIds = new Set();
+  const changedSymbols = [];
+  for (const filePath of changedFiles) {
+    const syms = db.prepare(
+      'SELECT id, name, kind, file_path FROM code_symbols WHERE repo_id = ? AND file_path = ?'
+    ).all(repoId, filePath);
+    for (const s of syms) {
+      changedSymbolIds.add(s.id);
+      changedSymbols.push(s);
+    }
+  }
+
+  if (changedSymbolIds.size === 0) {
+    return { signals: { changed_files: changedFiles.length }, risk_level: 'low', composite: 0.1 };
+  }
+
+  // Signal 1: Blast radius (30%) — batch computation for >20 symbols
+  let blastRadiusScore = 0;
+  try {
+    if (changedSymbolIds.size > 20) {
+      // Batch: recursive CTE for all changed symbols at once
+      const changedIdsList = [...changedSymbolIds].join(',');
+      const rows = db.prepare(`
+        WITH RECURSIVE call_tree AS (
+          SELECT callee_symbol_id, caller_symbol_id, 1 as depth
+          FROM code_calls WHERE repo_id = ? AND callee_symbol_id IN (${changedIdsList})
+          UNION ALL
+          SELECT cc.callee_symbol_id, cc.caller_symbol_id, ct.depth + 1
+          FROM code_calls cc JOIN call_tree ct ON cc.callee_symbol_id = ct.caller_symbol_id
+          WHERE ct.depth < 5
+        )
+        SELECT callee_symbol_id, COUNT(DISTINCT caller_symbol_id) as affected_callers
+        FROM call_tree GROUP BY callee_symbol_id
+      `).all(repoId);
+
+      const maxCallers = Math.max(...rows.map(r => r.affected_callers), 1);
+      blastRadiusScore = Math.min(1.0, maxCallers / 50);
+    } else {
+      // Per-symbol blast radius for small PRs
+      let maxCallers = 0;
+      for (const sid of changedSymbolIds) {
+        const br = getBlastRadius(db, repoId, {
+          symbol: db.prepare('SELECT name FROM code_symbols WHERE id = ?').get(sid)?.name
+        });
+        const edgeCount = (br.edges || []).length;
+        if (edgeCount > maxCallers) maxCallers = edgeCount;
+      }
+      blastRadiusScore = Math.min(1.0, maxCallers / 50);
+    }
+  } catch (_) {}
+
+  // Signal 2: Complexity (20%)
+  let complexityScore = 0;
+  try {
+    const rows = db.prepare(
+      `SELECT MAX(sc.cyclomatic) as max_cc FROM symbol_complexity sc
+       WHERE sc.symbol_id IN (${[...changedSymbolIds].join(',')})`
+    ).all();
+    const maxCc = rows[0]?.max_cc || 0;
+    complexityScore = Math.min(1.0, maxCc / 30);
+  } catch (_) {}
+
+  // Signal 3: Churn (20%)
+  let churnScore = 0;
+  try {
+    let maxChurn = 0;
+    for (const filePath of changedFiles) {
+      const row = db.prepare(
+        'SELECT commits FROM churn_metrics WHERE repo_id = ? AND file_path = ? AND window_days = 90'
+      ).get(repoId, filePath);
+      if (row && row.commits > maxChurn) maxChurn = row.commits;
+    }
+    churnScore = Math.min(1.0, maxChurn / 20);
+  } catch (_) {}
+
+  // Signal 4: Test coverage (20%) — from untested detection
+  let testCoverageScore = 0;
+  try {
+    const untestedData = getUntestedSymbols(db, repoId, { minConfidence: 0.5 });
+    if (untestedData.total_files > 0 && untestedData.test_files_found > 0) {
+      const untestedRatio = untestedData.untested.length / Math.max(untestedData.total_symbols, 1);
+      testCoverageScore = Math.min(1.0, untestedRatio);
+    }
+  } catch (_) {}
+
+  // Signal 5: Change volume (10%)
+  let changeVolumeScore = 0;
+  try {
+    const { execSync } = require('child_process');
+    const diffStat = execSync(
+      `git -C "${repo.path}" diff --stat ${base}...${branch}`,
+      { encoding: 'utf-8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }
+    ).trim();
+    // Parse the last line which has the total: "X files changed, Y insertions(+), Z deletions(-)"
+    const totalMatch = diffStat.match(/(\d+) insertions?.*?(\d+) deletions?/);
+    if (totalMatch) {
+      const totalLines = parseInt(totalMatch[1]) + (parseInt(totalMatch[2]) || 0);
+      changeVolumeScore = Math.min(1.0, totalLines / 500);
+    }
+  } catch (_) {}
+
+  // Composite score with weights
+  const weights = { blast_radius: 0.30, complexity: 0.20, churn: 0.20, test_coverage: 0.20, change_volume: 0.10 };
+
+  // If test coverage unavailable, redistribute weight
+  let wBlastRadius = weights.blast_radius;
+  let wComplexity = weights.complexity;
+  let wChurn = weights.churn;
+  let wTestCoverage = testCoverageScore > 0 ? weights.test_coverage : 0;
+  let wChangeVolume = weights.change_volume;
+
+  if (wTestCoverage === 0) {
+    const adjustment = weights.test_coverage;
+    wBlastRadius += adjustment * 0.5;
+    wComplexity += adjustment * 0.25;
+    wChurn += adjustment * 0.25;
+  }
+
+  const composite =
+    blastRadiusScore * wBlastRadius +
+    complexityScore * wComplexity +
+    churnScore * wChurn +
+    testCoverageScore * wTestCoverage +
+    changeVolumeScore * wChangeVolume;
+
+  const riskLevel =
+    composite <= 0.3 ? 'low' :
+    composite <= 0.6 ? 'medium' :
+    composite <= 0.8 ? 'high' : 'critical';
+
+  return {
+    signals: {
+      blast_radius: Math.round(blastRadiusScore * 100) / 100,
+      complexity: Math.round(complexityScore * 100) / 100,
+      churn: Math.round(churnScore * 100) / 100,
+      test_coverage: Math.round(testCoverageScore * 100) / 100,
+      change_volume: Math.round(changeVolumeScore * 100) / 100,
+    },
+    composite: Math.round(composite * 100) / 100,
+    risk_level: riskLevel,
+    changed_files: changedFiles.length,
+    changed_symbols: changedSymbolIds.size,
+  };
+}
+
 module.exports = {
   buildImportGraph,
   buildCallGraph,
   buildComplexity,
+  buildPageRank,
+  clearPageRankCache,
   getImportGraph,
   getCallHierarchy,
   getBlastRadius,
@@ -1403,4 +1861,7 @@ module.exports = {
   getClassHierarchy,
   getSignalChains,
   getLayerViolations,
+  winnow,
+  getUntestedSymbols,
+  getPrRiskProfile,
 };

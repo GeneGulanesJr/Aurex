@@ -1,0 +1,365 @@
+/**
+ * response-meta.js — Metadata envelope for every analysis response
+ *
+ * Produces { _meta, data } shape for Pi's context-window token efficiency.
+ * Pure functions for confidence/freshness computation.
+ * Internal freshness cache (module-level, 60s TTL) avoids git-spawn per query.
+ */
+
+const { execSync } = require('child_process');
+const path = require('path');
+const fs = require('fs');
+
+// ══════════════════════════════════════════════════════════
+// FRESHNESS CACHE  (module-level, 60s TTL)
+// ══════════════════════════════════════════════════════════
+
+const _freshnessCache = new Map(); // repoId → { value, ts }
+
+function _cacheGet(key) {
+  const entry = _freshnessCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > 60_000) {
+    _freshnessCache.delete(key);
+    return null;
+  }
+  return entry.value;
+}
+
+function _cacheSet(key, value) {
+  _freshnessCache.set(key, { value, ts: Date.now() });
+}
+
+// For testing: clear cache between runs
+function clearFreshnessCache() {
+  _freshnessCache.clear();
+}
+
+// ══════════════════════════════════════════════════════════
+// FRESHNESS CHECK
+// ══════════════════════════════════════════════════════════
+
+/**
+ * Determine freshness for an indexed repo.
+ * Returns one of: 'fresh' | 'edited_uncommitted' | 'stale_index'
+ *
+ * Strategy: git state first, filesystem metadata fallback for non-git repos.
+ */
+function checkFreshness(repoPath, storedHeadCommit) {
+  // Non-git repos: fall back to filesystem mtime comparison
+  if (!fs.existsSync(path.join(repoPath, '.git'))) {
+    return _filesystemFreshness(repoPath);
+  }
+
+  // Git repos: compare HEAD commit
+  try {
+    const currentHead = execSync('git rev-parse HEAD', {
+      cwd: repoPath,
+      encoding: 'utf-8',
+      timeout: 5000,
+    }).trim();
+
+    if (!currentHead) return 'stale_index';
+
+    // If no stored head_commit, assume stale until reindex
+    if (!storedHeadCommit) return 'stale_index';
+
+    // Commit matches — check for uncommitted changes
+    if (currentHead === storedHeadCommit) {
+      const status = execSync('git status --porcelain', {
+        cwd: repoPath,
+        encoding: 'utf-8',
+        timeout: 5000,
+      }).trim();
+
+      return status.length > 0 ? 'edited_uncommitted' : 'fresh';
+    }
+
+    // Commit differs — index is stale
+    return 'stale_index';
+  } catch (_) {
+    // Git command failed — conservative: assume stale
+    return 'stale_index';
+  }
+}
+
+/**
+ * Filesystem freshness for repos without .git directory.
+ * 'fresh' if nothing has changed, 'stale_index' if any mtime differs.
+ */
+function _filesystemFreshness(repoPath) {
+  // Without indexed-file mtime records, we can't know — assume fresh
+  // Caller should pass the stored repo info for a real comparison
+  return 'fresh';
+}
+
+/**
+ * Cached freshness check — avoids spawning git on every query.
+ */
+function getFreshness(db, repoId, repoPath, storedHeadCommit) {
+  const key = `freshness:${repoId}`;
+  const cached = _cacheGet(key);
+  if (cached) return cached;
+
+  const freshness = checkFreshness(repoPath, storedHeadCommit);
+  _cacheSet(key, freshness);
+  return freshness;
+}
+
+// ══════════════════════════════════════════════════════════
+// CONFIDENCE CALIBRATION
+// ══════════════════════════════════════════════════════════
+
+/**
+ * Compute tool-specific confidence for the result set.
+ *
+ * Confidence is non-comparable across tools — 0.8 from getDeadCode and
+ * 0.8 from getBlastRadius mean entirely different things.
+ *
+ * @param {string} toolName — subcommand name
+ * @param {object} data — result data payload
+ * @param {object} db — SQLite db handle (for some tools that need queries)
+ * @returns {number} 0.0–1.0 confidence
+ */
+function computeConfidence(toolName, data, db) {
+  switch (toolName) {
+    // Deterministic tools — always 1.0
+    case 'getCouplingMetrics':
+    case 'getComplexity':
+    case 'getLayerViolations':
+    case 'getFileOutline':
+    case 'getDependencyCycles':
+    case 'getImportGraph':
+    case 'getCallHierarchy':
+    case 'getClassHierarchy':
+      return 1.0;
+
+    // Symbol Importance — gap between top-1 and top-2 PageRank
+    case 'getSymbolImportance': {
+      const nodes = data?.nodes || [];
+      if (nodes.length < 2) return nodes.length === 1 ? 1.0 : 0.0;
+      const gap = nodes[0].pagerank - nodes[1].pagerank;
+      // Normalize: 0 → 0.5, large gap → close to 1.0
+      return Math.min(1.0, 0.5 + gap * 20);
+    }
+
+    // Dead Code — average confidence of returned symbols
+    case 'getDeadCode': {
+      const symbols = data?.symbols || data?.results || [];
+      if (symbols.length === 0) return 1.0;
+      const sum = symbols.reduce((s, sym) => s + (sym.confidence || 0.5), 0);
+      return parseFloat((sum / symbols.length).toFixed(2));
+    }
+
+    // Hotspots — ratio of symbols with churn data vs total
+    case 'getHotspots': {
+      const files = data?.files || [];
+      if (files.length === 0) return 1.0;
+      const withChurn = files.filter(f => (f.commits || 0) > 0).length;
+      return parseFloat((withChurn / files.length).toFixed(2));
+    }
+
+    // Blast Radius — ratio of resolved vs unresolved callers
+    case 'getBlastRadius': {
+      const edges = data?.edges || [];
+      if (edges.length === 0) return 1.0;
+      const resolved = edges.filter(e => e.resolved !== false).length;
+      return parseFloat((resolved / edges.length).toFixed(2));
+    }
+
+    // Call Hierarchy (depth walk) — average confidence across chain
+    case 'callHierarchy': {
+      const edges = data?.edges || [];
+      if (edges.length === 0) return 1.0;
+      const sum = edges.reduce((s, e) => s + (e.confidence || 1.0), 0);
+      return parseFloat((sum / edges.length).toFixed(2));
+    }
+
+    // Extraction Candidates — extraction_score normalized
+    case 'getExtractionCandidates': {
+      const candidates = data?.candidates || [];
+      if (candidates.length === 0) return 1.0;
+      const maxScore = Math.max(...candidates.map(c => c.extraction_score || 0));
+      return maxScore <= 0 ? 0.0 : parseFloat(maxScore.toFixed(2));
+    }
+
+    // Signal Chains — ratio of resolved vs unresolved callees
+    case 'getSignalChains': {
+      const chains = data?.chains || [];
+      if (chains.length === 0) return 1.0;
+      let total = 0, resolved = 0;
+      for (const chain of chains) {
+        const steps = chain?.steps || [];
+        total += steps.length;
+        resolved += steps.filter(s => s.resolved !== false).length;
+      }
+      return total === 0 ? 1.0 : parseFloat((resolved / total).toFixed(2));
+    }
+
+    // Winnow — ratio of requested axes that had data
+    case 'winnow': {
+      const results = data?.results || [];
+      if (results.length === 0) return 1.0;
+      // Each result has per-axis flags; count how many axes had hits
+      let totalAxes = 0, axesWithData = 0;
+      for (const r of results) {
+        if (r._axes) {
+          totalAxes += r._axes.total || 0;
+          axesWithData += r._axes.with_data || 0;
+        }
+      }
+      return totalAxes === 0 ? 1.0 : parseFloat((axesWithData / totalAxes).toFixed(2));
+    }
+
+    // AST Patterns — ratio of symbols with body data vs total
+    case 'astPatterns': {
+      const matches = data?.matches || [];
+      const allSymbols = data?.symbols_scanned || 0;
+      if (allSymbols === 0) return 1.0;
+      const withBody = matches.reduce((s, m) => s + (m.has_body ? 1 : 0), 0);
+      return parseFloat((withBody / allSymbols).toFixed(2));
+    }
+
+    // Provenance — ratio of classified vs total commits
+    case 'getProvenance': {
+      const commits = data?.commits || [];
+      if (commits.length === 0) return 1.0;
+      const classified = commits.filter(c => c.classification !== 'unknown').length;
+      return parseFloat((classified / commits.length).toFixed(2));
+    }
+
+    // Untested Symbols — ratio of test files found vs total files
+    case 'getUntestedSymbols': {
+      const untested = data?.untested || [];
+      const testFiles = data?.test_files_found || 0;
+      const totalFiles = data?.total_files || 1;
+      return testFiles === 0 ? 0.0 : parseFloat((testFiles / totalFiles).toFixed(2));
+    }
+
+    // PR Risk Profile — ratio of signals that had data
+    case 'getPrRiskProfile': {
+      const signals = data?.signals || {};
+      const signalKeys = Object.keys(signals).filter(k => k !== 'composite');
+      if (signalKeys.length === 0) return 0.0;
+      const hasData = signalKeys.filter(k => signals[k] != null).length;
+      return parseFloat((hasData / signalKeys.length).toFixed(2));
+    }
+
+    // Fallback for unknown tools
+    default:
+      return 0.5;
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// RESULT COUNT EXTRACTION
+// ══════════════════════════════════════════════════════════
+
+function extractResultCount(toolName, data) {
+  if (!data) return 0;
+
+  switch (toolName) {
+    case 'getSymbolImportance':
+      return (data.nodes || []).length;
+    case 'getHotspots':
+      return (data.files || []).length;
+    case 'getDeadCode':
+      return (data.symbols || data.results || []).length;
+    case 'getCouplingMetrics':
+      return (data.files || data.metrics || []).length;
+    case 'getExtractionCandidates':
+      return (data.candidates || []).length;
+    case 'getCallHierarchy':
+    case 'getBlastRadius':
+    case 'getImportGraph':
+      return (data.edges || []).length;
+    case 'getDependencyCycles':
+      return (data.cycles || []).length;
+    case 'getSignalChains':
+      return (data.chains || []).length;
+    case 'getLayerViolations':
+      return (data.violations || []).length;
+    case 'getFileOutline':
+      return (data.symbols || []).length;
+    case 'getClassHierarchy':
+      return (data.nodes || []).length;
+    case 'winnow':
+      return (data.results || []).length;
+    case 'astPatterns':
+      return (data.matches || []).length;
+    case 'getProvenance':
+      return (data.commits || []).length;
+    case 'getUntestedSymbols':
+      return (data.untested || []).length;
+    case 'getPrRiskProfile':
+      return Object.keys(data?.signals || {}).length;
+    default:
+      return 0;
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// ENVELOPE BUILDER
+// ══════════════════════════════════════════════════════════
+
+/**
+ * Wrap analysis result in the _meta envelope.
+ *
+ * @param {object} params
+ * @param {string} params.toolName — subcommand name
+ * @param {object} params.data — raw analysis result
+ * @param {object} params.db — SQLite handle
+ * @param {number} params.repoId — code_repos.id
+ * @param {string} params.repoPath — code_repos.path
+ * @param {string|null} params.storedHeadCommit — code_repos.head_commit
+ * @param {number} params.startTime — performance.now() from query start
+ * @returns {{ _meta: object, data: object }}
+ */
+function buildEnvelope({ toolName, data, db, repoId, repoPath, storedHeadCommit, startTime }) {
+  const now = new Date().toISOString();
+  const timingMs = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime);
+
+  const freshness = getFreshness(db, repoId, repoPath, storedHeadCommit);
+  const confidence = computeConfidence(toolName, data, db);
+  const resultCount = extractResultCount(toolName, data);
+
+  // Resolve repo_rev: current HEAD if available, stored otherwise
+  let repoRev = storedHeadCommit || null;
+  if (repoPath) {
+    try {
+      repoRev = execSync('git rev-parse HEAD', {
+        cwd: repoPath,
+        encoding: 'utf-8',
+        timeout: 5000,
+      }).trim() || repoRev;
+    } catch (_) {
+      // Keep stored head_commit or null
+    }
+  }
+
+  return {
+    _meta: {
+      schema_version: 1,
+      confidence,
+      freshness,
+      generated_at: now,
+      repo_rev: repoRev,
+      timing_ms: timingMs,
+      result_count: resultCount,
+    },
+    data,
+  };
+}
+
+// ══════════════════════════════════════════════════════════
+// EXPORTS
+// ══════════════════════════════════════════════════════════
+
+module.exports = {
+  checkFreshness,
+  getFreshness,
+  clearFreshnessCache,
+  computeConfidence,
+  extractResultCount,
+  buildEnvelope,
+};

@@ -1,7 +1,7 @@
 -- @genegulanesjr/memory-layer — Unified Schema v4
 -- Single database: ~/.pi/memory/memory.db
 -- Zero external dependencies. FTS5 search, trust scoring, dedup, recall ranking.
-PRAGMA user_version = 5;
+PRAGMA user_version = 6;
 
 -- ═══════════════════════════════════════════════════════════
 -- WORKSPACES  (v4 — formal project isolation)
@@ -216,7 +216,8 @@ CREATE TABLE IF NOT EXISTS code_repos (
   file_count    INTEGER DEFAULT 0,
   symbol_count  INTEGER DEFAULT 0,
   indexed_at    TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  head_commit   TEXT
 );
 
 -- ═══════════════════════════════════════════════════════════
