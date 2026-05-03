@@ -53,6 +53,11 @@ Close the feature gap between PiMemoryExtension and JCodeMunch, prioritized by t
 | `getCallHierarchy` | Average `code_calls.confidence` across chain | Resolution |
 | `getExtractionCandidates` | Extraction_score normalized 0-1 | Score |
 | `getSignalChains` | Ratio of resolved vs unresolved callees | Coverage |
+| `winnow` | Ratio of requested axes that had data (e.g., 3 of 4 → 0.75) | Coverage |
+| `astPatterns` | Ratio of symbols with body data available vs total scanned | Coverage |
+| `getProvenance` | Ratio of commits successfully classified vs total touching the lines | Classification |
+| `getUntestedSymbols` | Ratio of test files found vs total files (0.0 if no test files exist) | Coverage |
+| `getPrRiskProfile` | Ratio of signals that had data (0.8 if 4 of 5 signals available) | Coverage |
 
 **Freshness from git state first, filesystem second:**
 - `fresh`: `git status --porcelain` empty + stored `head_commit` matches current `git rev-parse HEAD`
@@ -60,6 +65,8 @@ Close the feature gap between PiMemoryExtension and JCodeMunch, prioritized by t
 - `stale_index`: stored `head_commit` differs from current HEAD (reindex needed)
 
 **Schema change:** The `code_repos` table currently has no commit hash column. Add `head_commit TEXT` to `code_repos` via migration in `db.js`. At index time, capture `git rev-parse HEAD` and store it. The PageRank cache in Section 2A also uses this — cache key includes `head_commit` so it auto-invalidates only on real code changes, not on redundant reindexes. This is the **only schema change** in the entire spec.
+
+**Non-git repos:** For repos without a `.git` directory, `head_commit` is stored as NULL. Freshness falls back to filesystem metadata: `fresh` if all indexed file mtimes match their values at index time, `stale_index` if any mtime has changed. The `edited_uncommitted` state is not possible for non-git repos (no version control to diff against).
 
 **Freshness caching:** Git status is a subprocess spawn. To avoid spawning git on every analysis query, `response-meta.js` caches freshness per repo in a module-level map keyed by `repoId`. Cache TTL is 60 seconds. Subsequent calls within the same minute reuse the cached result. Cache invalidates automatically on TTL expiry.
 
@@ -79,7 +86,7 @@ Every CLI subcommand gains an optional `--format` parameter:
 
 1. **Homogeneous list of objects → tagged CSV**
    - `_header` defines column order once
-   - Pipe-delimited rows, pipe in values escaped as `\p`
+   - Pipe-delimited rows. Escape sequence: `\` → `\\` first, then `|` → `\p`. During decode: `\p` → `|` first, then `\\` → `\`. This ensures round-trip is always lossless, even for values containing literal backslashes or `\p`.
    - Null/undefined → empty string between pipes
    - Always lossless — decode restores original objects exactly
 
@@ -155,7 +162,7 @@ winnow --repo NAME \
 
 Single SQL query JOINing across `code_symbols`, `symbol_complexity`, `churn_metrics`, `code_calls`, plus PageRank joined from a cached computation.
 
-**PageRank caching:** The existing `getSymbolImportance` computes a full 10-iteration PageRank on every call. Winnow needs the same data. Rather than computing it fresh, extract `buildPageRank(db, repoId)` as a standalone function with a module-level cache keyed by `repoId`. Cache invalidates when `code_repos.updated_at` changes (i.e., after reindex). Both `getSymbolImportance` and `winnow` share this cache. For repos under 5000 symbols, the computation adds <50ms on first call and 0ms on subsequent calls.
+**PageRank caching:** The existing `getSymbolImportance` computes a full 10-iteration PageRank on every call. Winnow needs the same data. Rather than computing it fresh, extract `buildPageRank(db, repoId)` as a standalone function with a module-level cache keyed by `repoId`. Cache key includes `code_repos.head_commit` — it auto-invalidates only on real code changes, not on redundant reindexes. Both `getSymbolImportance` and `winnow` share this cache. For repos under 5000 symbols, the computation adds <50ms on first call and 0ms on subsequent calls.
 
 **Operator support per axis:**
 
@@ -234,9 +241,13 @@ New `ast-patterns` command scanning all indexed symbol bodies against preset ant
 --pattern "lines:80+"           → body ≥ 80 lines
 ```
 
+Parse as `type:value` where type is one of `call`, `string`, `nesting`, `lines`, splitting on the first colon only. This handles values containing colons (e.g., `string:/api/v1/users` → type=`string`, value=`/api/v1/users`).
+
 **Implementation:** Hybrid approach — symbol body retrieval from indexed bytes + regex detection. Complexity-cross-ref for nesting/lines detectors. New `ast-patterns.js` module.
 
 **CLI:** `ast-patterns --repo NAME [--category CATEGORY] [--pattern CUSTOM]`
+
+Valid categories: `error_handling`, `quality`, `complexity`, `performance`, `security`, `maintenance`, `all` (default).
 
 **Confidence:** Ratio of symbols with body data available vs total scanned.
 
@@ -280,7 +291,7 @@ untested --repo NAME [--min-confidence 0.5] [--include-private true]
 - `0.7` — File imported by tests, but no test calls this specific symbol
 - `0.4` — Called indirectly (test → helper → symbol) but not directly
 
-**Default exclusions:** Test files, entry points, barrel files, private symbols (leading `_`) unless `--include-private`.
+**Default exclusions:** Test files, entry points, barrel files, private symbols (leading `_`) unless `--include-private`. Entry point identification reuses the same logic as `getDeadCode` in `code-analysis.js`: filename patterns (`main.js`, `index.js`, `cli.js`, `app.js`, `server.js`), shebang files, `package.json` main/bin entries, and barrel re-exports.
 
 **Implementation:** New `getUntestedSymbols(db, repoId, opts)` in `code-analysis.js`. No schema changes.
 
@@ -310,6 +321,8 @@ pr-risk --repo NAME [--branch BRANCH] [--base main]
 
 **Implementation:** New `getPrRiskProfile(db, repoId, opts)` in `code-analysis.js`. Depends on 3C — falls back to skipping test-coverage signal if unavailable.
 
+**Performance:** For branches with >20 changed symbols, batch the blast radius computation: create a temporary table `temp_changed_ids` populated with all changed symbol IDs, then run a single recursive CTE with `WHERE cc.callee_symbol_id IN (SELECT id FROM temp_changed_ids)`. Drop the temp table after the query. This produces one result set of all affected callers keyed by originating symbol, avoiding O(n) recursive queries on large PRs.
+
 **Implementation order:** Phase 3 must be implemented in order: 3A, 3B, 3C, then 3D. The 3D test suite must include a test case where untested data is unavailable (fallback path where test-coverage weight is redistributed to other signals).
 
 **Confidence:** Based on how many signals had data. Missing churn/untested data drops confidence proportionally.
@@ -335,8 +348,9 @@ pr-risk --repo NAME [--branch BRANCH] [--base main]
 | `memory-store.js` | 1, 2, 3 | Add `--format` handling, `_meta` wrapping, new CLI subcommands (winnow, ast-patterns, provenance, untested, pr-risk), tier config in session-start |
 | `code-analysis.js` | 2, 3 | Add `winnow`, `getUntestedSymbols`, `getPrRiskProfile` functions |
 | `git-analysis.js` | 3 | Add `getProvenance` function |
-| `db.js` | 1 | Minor: expose helper for git state queries (if needed) |
+| `db.js` | 1 | v6 migration: add `head_commit TEXT` to `code_repos` in `runMigrations()`. Update `_CRITICAL_TABLES` array. Also add at index time: capture `git rev-parse HEAD` and store it |
 | `~/.pi/agent/skills/memory-layer/SKILL.md` | 1, 2, 3 | Document new commands, compact format, tier system. **Must update all response shape examples** to reflect `{ _meta, data }` envelope — every analysis command's response example changes from `{ edges: [...] }` to `{ _meta: {...}, data: { edges: [...] } }` |
+| `schema.sql` | 1 | Add `head_commit TEXT` column to `code_repos` CREATE TABLE (for fresh install parity with migration) |
 | `test/code-analysis.test.js` | 2, 3 | Tests for winnow, untested, pr-risk |
 | `test/response-meta.test.js` | 1 | Tests for _meta envelope |
 | `test/wire-format.test.js` | 1 | Tests for compact encoding round-trip |
