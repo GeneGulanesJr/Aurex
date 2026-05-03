@@ -127,7 +127,63 @@ function ensureDb() {
   }
 
   runMigrations();
+
+  // Ensure critical v3+ tables exist (schema.sql may fail silently on some Node versions)
+  ensureCriticalTables();
+
   return { ok: true, db: DB_PATH, engine: _engine };
+}
+
+// Critical tables that must exist for code analysis + doc indexing
+const _CRITICAL_TABLES = [
+  // v3: code indexing
+  ['code_repos', 'CREATE TABLE IF NOT EXISTS code_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, path TEXT NOT NULL UNIQUE, file_count INTEGER DEFAULT 0, symbol_count INTEGER DEFAULT 0, indexed_at TEXT NOT NULL DEFAULT (datetime(\'now\')), updated_at TEXT NOT NULL DEFAULT (datetime(\'now\')))'],
+  ['code_files', 'CREATE TABLE IF NOT EXISTS code_files (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE, path TEXT NOT NULL, language TEXT NOT NULL, content TEXT NOT NULL, content_hash TEXT NOT NULL, mtime REAL, size_bytes INTEGER DEFAULT 0, line_count INTEGER DEFAULT 0, UNIQUE(repo_id, path))'],
+  ['code_symbols', 'CREATE TABLE IF NOT EXISTS code_symbols (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE, file_id INTEGER NOT NULL REFERENCES code_files(id) ON DELETE CASCADE, name TEXT NOT NULL, kind TEXT NOT NULL, signature TEXT, file_path TEXT NOT NULL, start_line INTEGER NOT NULL, end_line INTEGER NOT NULL, start_byte INTEGER NOT NULL, end_byte INTEGER NOT NULL, docstring TEXT DEFAULT \'\', body_preview TEXT DEFAULT \'\', language TEXT NOT NULL, parent_name TEXT DEFAULT \'\', qualified_name TEXT NOT NULL, indexed_at TEXT NOT NULL DEFAULT (datetime(\'now\')))'],
+  // v5: code analysis
+  ['code_imports', 'CREATE TABLE IF NOT EXISTS code_imports (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE, source_file_id INTEGER NOT NULL REFERENCES code_files(id) ON DELETE CASCADE, target_module TEXT NOT NULL, target_file_id INTEGER REFERENCES code_files(id) ON DELETE SET NULL, import_type TEXT NOT NULL DEFAULT \'static\', line_number INTEGER, UNIQUE(repo_id, source_file_id, target_module))'],
+  ['code_calls', 'CREATE TABLE IF NOT EXISTS code_calls (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE, caller_symbol_id INTEGER NOT NULL REFERENCES code_symbols(id) ON DELETE CASCADE, callee_name TEXT NOT NULL, callee_symbol_id INTEGER REFERENCES code_symbols(id) ON DELETE SET NULL, confidence REAL NOT NULL DEFAULT 1.0, line_number INTEGER, UNIQUE(repo_id, caller_symbol_id, callee_name))'],
+  ['symbol_complexity', 'CREATE TABLE IF NOT EXISTS symbol_complexity (id INTEGER PRIMARY KEY AUTOINCREMENT, symbol_id INTEGER NOT NULL UNIQUE REFERENCES code_symbols(id) ON DELETE CASCADE, cyclomatic INTEGER NOT NULL DEFAULT 1, nesting_depth INTEGER NOT NULL DEFAULT 0, param_count INTEGER NOT NULL DEFAULT 0, lines_of_code INTEGER NOT NULL DEFAULT 0, assessment TEXT NOT NULL DEFAULT \'low\')'],
+  ['churn_metrics', 'CREATE TABLE IF NOT EXISTS churn_metrics (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE, file_path TEXT NOT NULL, commits INTEGER NOT NULL DEFAULT 0, unique_authors INTEGER NOT NULL DEFAULT 0, first_seen TEXT, last_modified TEXT, churn_per_week REAL DEFAULT 0.0, window_days INTEGER NOT NULL DEFAULT 90, UNIQUE(repo_id, file_path, window_days))'],
+  // v5: doc indexing
+  ['doc_repos', 'CREATE TABLE IF NOT EXISTS doc_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, path TEXT NOT NULL UNIQUE, file_count INTEGER DEFAULT 0, section_count INTEGER DEFAULT 0, indexed_at TEXT NOT NULL DEFAULT (datetime(\'now\')), updated_at TEXT NOT NULL DEFAULT (datetime(\'now\')))'],
+  ['doc_files', 'CREATE TABLE IF NOT EXISTS doc_files (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES doc_repos(id) ON DELETE CASCADE, path TEXT NOT NULL, content TEXT NOT NULL, content_hash TEXT NOT NULL, mtime REAL, UNIQUE(repo_id, path))'],
+  ['doc_sections', 'CREATE TABLE IF NOT EXISTS doc_sections (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES doc_repos(id) ON DELETE CASCADE, file_id INTEGER NOT NULL REFERENCES doc_files(id) ON DELETE CASCADE, title TEXT NOT NULL, level INTEGER NOT NULL, parent_id INTEGER REFERENCES doc_sections(id) ON DELETE SET NULL, content TEXT DEFAULT \'\', content_hash TEXT NOT NULL, byte_start INTEGER NOT NULL, byte_end INTEGER NOT NULL, role TEXT DEFAULT \'other\', tags TEXT DEFAULT \'\', UNIQUE(repo_id, file_id, byte_start))'],
+  ['doc_links', 'CREATE TABLE IF NOT EXISTS doc_links (id INTEGER PRIMARY KEY AUTOINCREMENT, source_section_id INTEGER NOT NULL REFERENCES doc_sections(id) ON DELETE CASCADE, target_path TEXT NOT NULL, target_section_id INTEGER REFERENCES doc_sections(id) ON DELETE SET NULL, link_text TEXT DEFAULT \'\', is_broken INTEGER NOT NULL DEFAULT 0)'],
+  ['doc_terms', 'CREATE TABLE IF NOT EXISTS doc_terms (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES doc_repos(id) ON DELETE CASCADE, term TEXT NOT NULL, definition TEXT NOT NULL, section_id INTEGER REFERENCES doc_sections(id) ON DELETE SET NULL, UNIQUE(repo_id, term))'],
+  ['doc_code_blocks', 'CREATE TABLE IF NOT EXISTS doc_code_blocks (id INTEGER PRIMARY KEY AUTOINCREMENT, section_id INTEGER NOT NULL REFERENCES doc_sections(id) ON DELETE CASCADE, lang TEXT DEFAULT \'\', content TEXT NOT NULL, byte_start INTEGER NOT NULL, byte_end INTEGER NOT NULL)'],
+];
+
+function ensureCriticalTables() {
+  for (const [name, createSql] of _CRITICAL_TABLES) {
+    try {
+      const exists = _db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?").all(name);
+      if (!exists.length) {
+        _db.exec(createSql);
+        // Create indexes
+        _createTableIndexes(name, _db);
+      }
+    } catch (_) {}
+  }
+}
+
+function _createTableIndexes(name, db) {
+  const indexMap = {
+    code_repos: [],
+    code_files: ['CREATE INDEX IF NOT EXISTS idx_cf_repo ON code_files(repo_id)'],
+    code_symbols: ['CREATE INDEX IF NOT EXISTS idx_cs_repo ON code_symbols(repo_id)', 'CREATE INDEX IF NOT EXISTS idx_cs_name ON code_symbols(name)', 'CREATE INDEX IF NOT EXISTS idx_cs_file ON code_symbols(file_id)'],
+    code_imports: ['CREATE INDEX IF NOT EXISTS idx_ci_source ON code_imports(source_file_id)', 'CREATE INDEX IF NOT EXISTS idx_ci_target ON code_imports(target_file_id)', 'CREATE INDEX IF NOT EXISTS idx_ci_repo ON code_imports(repo_id)'],
+    code_calls: ['CREATE INDEX IF NOT EXISTS idx_cc_caller ON code_calls(caller_symbol_id)', 'CREATE INDEX IF NOT EXISTS idx_cc_callee_name ON code_calls(repo_id, callee_name)', 'CREATE INDEX IF NOT EXISTS idx_cc_callee ON code_calls(callee_symbol_id)'],
+    symbol_complexity: ['CREATE INDEX IF NOT EXISTS idx_sc_symbol ON symbol_complexity(symbol_id)'],
+    churn_metrics: ['CREATE INDEX IF NOT EXISTS idx_cm_repo ON churn_metrics(repo_id)'],
+    doc_sections: ['CREATE INDEX IF NOT EXISTS idx_ds_file ON doc_sections(file_id)', 'CREATE INDEX IF NOT EXISTS idx_ds_parent ON doc_sections(parent_id)', 'CREATE INDEX IF NOT EXISTS idx_ds_repo ON doc_sections(repo_id)', 'CREATE INDEX IF NOT EXISTS idx_ds_level ON doc_sections(level)'],
+    doc_links: ['CREATE INDEX IF NOT EXISTS idx_dl_source ON doc_links(source_section_id)', 'CREATE INDEX IF NOT EXISTS idx_dl_target ON doc_links(target_section_id)', 'CREATE INDEX IF NOT EXISTS idx_dl_broken ON doc_links(is_broken)'],
+    doc_terms: ['CREATE INDEX IF NOT EXISTS idx_dt_term ON doc_terms(term)', 'CREATE INDEX IF NOT EXISTS idx_dt_repo ON doc_terms(repo_id)'],
+    doc_code_blocks: ['CREATE INDEX IF NOT EXISTS idx_dcb_section ON doc_code_blocks(section_id)', 'CREATE INDEX IF NOT EXISTS idx_dcb_lang ON doc_code_blocks(lang)'],
+  };
+  for (const sql of (indexMap[name] || [])) {
+    try { db.exec(sql); } catch (_) {}
+  }
 }
 
 /* ── migrations ───────────────────────────────────────────── */
