@@ -59,7 +59,9 @@ Close the feature gap between PiMemoryExtension and JCodeMunch, prioritized by t
 - `edited_uncommitted`: `git status --porcelain` has tracked changes for relevant files
 - `stale_index`: index `updated_at` older than 7 days
 
-**Implementation:** New `response-meta.js` module — pure functions, no side effects, fully testable independently.
+**Freshness caching:** Git status is a subprocess spawn. To avoid spawning git on every analysis query, `response-meta.js` caches freshness per repo in a module-level map keyed by `repoId`. Cache TTL is 60 seconds. Subsequent calls within the same minute reuse the cached result. Cache invalidates automatically on TTL expiry.
+
+**Implementation:** New `response-meta.js` module — pure functions for confidence/freshness computation, with an internal freshness cache (module-level `Map`, 60s TTL). Fully testable independently.
 
 ### 1B. Compact Wire Format (MUNCH encoding)
 
@@ -95,6 +97,8 @@ Every CLI subcommand gains an optional `--format` parameter:
 
 Neither touches `code-analysis.js` — the analysis layer always returns native objects. Wrapping happens at the output boundary in `memory-store.js`.
 
+**Dispatch helper in `memory-store.js`:** The existing dispatch table has 30+ entries, each repeating the same repo lookup + error pattern (parse args → lookup repo → call analysis → return). Before adding new subcommands, extract a `_dispatch(repoName, fn)` helper that handles the repo lookup and error case. New subcommands become ~5 lines each. This keeps `memory-store.js` manageable as it grows past 2196 lines.
+
 **Expected savings:**
 
 | Tool | Typical rows | Est. savings |
@@ -113,7 +117,7 @@ Neither touches `code-analysis.js` — the analysis layer always returns native 
 
 A reproducible benchmark script (`bench/bench-tokens.js`) that:
 
-1. Indexes the PiMemoryExtension repo itself as a test codebase
+1. Checks for an existing index of the PiMemoryExtension repo (skips re-indexing unless `--reindex` is passed)
 2. Runs each analysis tool in three modes: raw, with `_meta`, with `_meta` + compact
 3. Measures byte count and estimated token count (`bytes / 3.5` heuristic)
 4. Outputs a comparison table
@@ -122,7 +126,7 @@ A reproducible benchmark script (`bench/bench-tokens.js`) that:
 
 **Benchmark matrix:** importance, hotspots, dead-code, coupling, extraction, call-hierarchy, cycles, blast-radius
 
-**Integration:** Runs via `node bench/bench-tokens.js`. Informational only in Phase 1 (no CI gate).
+**Integration:** Runs via `node bench/bench-tokens.js`. Informational only in Phase 1 (no CI gate). Pass `--reindex` to force a fresh index.
 
 ---
 
@@ -145,7 +149,9 @@ winnow --repo NAME \
   [--top N]
 ```
 
-Single SQL query JOINing across `code_symbols`, `symbol_complexity`, `churn_metrics`, `code_calls`, plus in-memory PageRank joined via temp map.
+Single SQL query JOINing across `code_symbols`, `symbol_complexity`, `churn_metrics`, `code_calls`, plus PageRank joined from a cached computation.
+
+**PageRank caching:** The existing `getSymbolImportance` computes a full 10-iteration PageRank on every call. Winnow needs the same data. Rather than computing it fresh, extract `buildPageRank(db, repoId)` as a standalone function with a module-level cache keyed by `repoId`. Cache invalidates when `code_repos.updated_at` changes (i.e., after reindex). Both `getSymbolImportance` and `winnow` share this cache. For repos under 5000 symbols, the computation adds <50ms on first call and 0ms on subsequent calls.
 
 **Operator support per axis:**
 
@@ -161,6 +167,8 @@ Single SQL query JOINing across `code_symbols`, `symbol_complexity`, `churn_metr
 | `--sort-by` | DESC | `--sort-by complexity` |
 
 **Implementation:** New `winnow(db, repoId, opts)` function in `code-analysis.js`. CLI subcommand in `memory-store.js`. No schema changes — reuses all existing tables.
+
+**File size note:** `code-analysis.js` is currently 1406 lines. Adding winnow (~80 lines) plus Phase 3 additions (~300 lines) pushes it to ~1800. If it exceeds 2000 lines after Phase 3, extract analytics functions (winnow, untested, pr-risk, hotspots, importance, coupling) into a new `analytics.js` module. The threshold is a guideline, not a hard rule — extract when readability degrades.
 
 **Response:** Uses Phase 1 envelope + compact format. Confidence reflects how many axes had data.
 
@@ -203,7 +211,7 @@ New `ast-patterns` command scanning all indexed symbol bodies against preset ant
 | Category | Detector | Pattern |
 |---|---|---|
 | Error handling | `empty_catch` | `catch {}` or `catch (e) {}` with empty body |
-| Error handling | `bare_except` | `catch` with no error type filter |
+| Debugging | `console_log` | `console.log()` calls left in production code |
 | Complexity | `deeply_nested` | Nesting depth ≥ 5 |
 | Performance | `nested_loops` | ≥ 3 nested loops |
 | Complexity | `god_function` | Body ≥ 100 lines |
@@ -295,6 +303,8 @@ pr-risk --repo NAME [--branch BRANCH] [--base main]
 **Risk levels:** low (0.0–0.3), medium (0.3–0.6), high (0.6–0.8), critical (0.8–1.0).
 
 **Implementation:** New `getPrRiskProfile(db, repoId, opts)` in `code-analysis.js`. Depends on 3C — falls back to skipping test-coverage signal if unavailable.
+
+**Implementation order:** Phase 3 must be implemented in order: 3A, 3B, 3C, then 3D. The 3D test suite must include a test case where untested data is unavailable (fallback path where test-coverage weight is redistributed to other signals).
 
 **Confidence:** Based on how many signals had data. Missing churn/untested data drops confidence proportionally.
 
