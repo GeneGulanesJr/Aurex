@@ -1598,8 +1598,71 @@ async function reindexRepoInternal(repo, mode) {
   };
 }
 
+/** Fallback search using LIKE when FTS5 is unavailable */
+function searchCodeLike(query, repoName, kind, maxResults) {
+  const likeQuery = '%' + query.replace(/%/g, '\\%').replace(/_/g, '\\_') + '%';
+  let sql = `
+    SELECT
+      s.id, r.name AS repo, s.file_path AS file,
+      s.name AS symbol_name, s.kind, s.start_line, s.end_line,
+      s.signature, s.docstring, s.body_preview AS snippet,
+      s.qualified_name, s.language,
+      0.0 AS score
+    FROM code_symbols s
+    JOIN code_repos r ON r.id = s.repo_id
+    WHERE s.name LIKE ?
+  `;
+  const params = [likeQuery];
+
+  if (repoName) {
+    sql += ' AND r.name = ?';
+    params.push(repoName);
+  }
+  if (kind) {
+    sql += ' AND s.kind = ?';
+    params.push(kind);
+  }
+
+  sql += ' LIMIT ?';
+  params.push(maxResults);
+
+  const rows = sqlJson(sql, params);
+  return { results: rows.map((row, i) => ({
+    rank: i + 1,
+    score: row.score,
+    repo: row.repo,
+    file: row.file,
+    symbol: row.symbol_name,
+    kind: row.kind,
+    line: row.start_line,
+    end_line: row.end_line,
+    signature: row.signature,
+    docstring: row.docstring,
+    snippet: row.snippet,
+    qualified_name: row.qualified_name,
+    language: row.language,
+  })) };
+}
+
 function searchCode(query, repoName, kind, maxResults) {
   ensureDb();
+
+  // Ensure FTS table exists (may fail silently on some SQLite builds)
+  try {
+    const ftsCheck = sqlJson("SELECT name FROM sqlite_master WHERE type='table' AND name='code_symbols_fts'");
+    if (!ftsCheck.length) {
+      // Try to create the FTS virtual table
+      try {
+        sqlRaw(`CREATE VIRTUAL TABLE IF NOT EXISTS code_symbols_fts USING fts5(
+          name, kind, signature, docstring, file_path, body_preview, content=code_symbols, content_rowid=id)`);
+      } catch (_) {
+        // FTS5 not available — fall back to LIKE-based search
+        return searchCodeLike(query, repoName, kind, maxResults);
+      }
+    }
+  } catch (_) {
+    return searchCodeLike(query, repoName, kind, maxResults);
+  }
 
   const ftsQuery = query.replace(/"/g, "''").split(/\s+/).join(' OR ');
 
