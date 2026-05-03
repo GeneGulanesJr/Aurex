@@ -1,4 +1,4 @@
-// test/index-repo.test.js
+// Integration tests for index-repo (WASM-based)
 const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
@@ -145,13 +145,13 @@ describe('index-repo (WASM)', () => {
 
   it('should report churn metrics with git data', () => {
     // Churn runs against PiMemoryExtension which is the repo itself on disk.
-    // In CI, the repo may not be indexed yet — index it first.
+    // In CI the repo may not be indexed yet — index it first.
     try {
       execSync(`node "${STORE}" index-repo --path "${path.resolve(__dirname, '..')}" --name PiMemoryExtension`, {
         encoding: 'utf8',
         timeout: 30000,
       });
-    } catch (_) { /* may already be indexed */ }
+    } catch { /* May already be indexed */ }
 
     try {
       const out = execSync(`node "${STORE}" churn --repo PiMemoryExtension`, {

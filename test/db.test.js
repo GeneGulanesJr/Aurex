@@ -1,5 +1,4 @@
-// test/db.test.js
-const path = require('path');
+// Test coverage for db.js database layer
 const fs = require('fs');
 
 const dbModule = require('../db');
@@ -104,12 +103,12 @@ describe('db.js (database layer)', () => {
   });
 
   it('jsonOut() should not throw on valid object', () => {
-    // jsonOut writes to stdout — just verify it doesn't throw
+    // JsonOut writes to stdout — just verify it doesn't throw
     expect(() => dbModule.jsonOut({ test: 1 })).not.toThrow();
   });
 
   it('parseArgs() should parse CLI arguments', () => {
-    // Simulate: node memory-store.js subcommand --repo X --path Y
+    // Simulate node memory-store.js subcommand with repo and path flags
     const args = dbModule.parseArgs(['node', 'memory-store.js', 'index-repo', '--repo', 'test', '--path', '/tmp', '--force']);
     expect(args.repo).toBe('test');
     expect(args.path).toBe('/tmp');
