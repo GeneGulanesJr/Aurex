@@ -868,8 +868,8 @@ function listProjects() {
 /* ── code-aware trust sync ─────────────────────────────────── */
 
 /**
- * Sync trust scores against code changes from jCodeMunch.
- * Pipe `jcodemunch_get_changed_symbols` output as --changed-symbols-json.
+ * Sync trust scores against code changes.
+ * Pipe changed symbols JSON as --changed-symbols-json.
  * For each linked symbol:
  *   - Changed → trust -= 0.3 (code drifted from memory)
  *   - Unchanged → trust += 0.05 (memory survived, proven durable)
