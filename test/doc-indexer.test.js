@@ -1,7 +1,6 @@
-// test/doc-indexer.test.js
+// Integration tests for doc-indexer (v5)
 const { execSync } = require('child_process');
 const path = require('path');
-const fs = require('fs');
 
 const STORE = path.resolve(__dirname, '..', 'memory-store.js');
 const DOC_REPO = 'pi-docs';
@@ -12,7 +11,7 @@ function run(cmd) {
     const out = execSync(`node "${STORE}" ${cmd}`, { encoding: 'utf8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] });
     return JSON.parse(out.trim());
   } catch (e) {
-    if (e.stdout?.trim()) return JSON.parse(e.stdout.trim());
+    if (e.stdout?.trim()) { return JSON.parse(e.stdout.trim()); }
     throw e;
   }
 }
@@ -21,7 +20,7 @@ describe('doc-indexer (v5)', () => {
   beforeAll(() => {
     try {
       run(`reindex-docs --repo ${DOC_REPO}`);
-    } catch (_) {
+    } catch {
       run(`index-docs --path "${DOC_PATH}" --name ${DOC_REPO}`);
     }
   });
@@ -34,21 +33,21 @@ describe('doc-indexer (v5)', () => {
 
   it('doc-search — role filter', () => {
     const r = run(`doc-search --query "code" --repo ${DOC_REPO} --role how_to`);
-    if (!r.error) expect(Array.isArray(r.results)).toBe(true);
+    if (!r.error) { expect(Array.isArray(r.results)).toBe(true); }
   });
 
   it('doc-outline — full outline', () => {
     try {
       const r = run(`doc-outline --repo ${DOC_REPO}`);
       expect(r.files || r.error).toBeTruthy();
-    } catch (_) {
+    } catch {
       expect(true).toBe(true);
     }
   });
 
   it('doc-outline — single file', () => {
     const r = run(`doc-outline --repo ${DOC_REPO} --file SKILL.md`);
-    if (!r.error) expect(Array.isArray(r) || r.length !== undefined).toBe(true);
+    if (!r.error) { expect(Array.isArray(r) || r.length !== undefined).toBe(true); }
   });
 
   it('backlinks — should find inbound links', () => {
@@ -68,7 +67,7 @@ describe('doc-indexer (v5)', () => {
 
   it('tutorial-path — should find path', () => {
     const r = run(`tutorial-path --repo ${DOC_REPO} --section 740`);
-    if (!r.error) expect(Array.isArray(r.chain)).toBe(true);
+    if (!r.error) { expect(Array.isArray(r.chain)).toBe(true); }
   });
 
   it('code-examples — should find code blocks', () => {
@@ -87,7 +86,7 @@ describe('doc-indexer (v5)', () => {
       const r = run(`doc-coverage --repo PiMemoryExtension --doc-repo ${DOC_REPO}`);
       expect(typeof r.coverage_pct).toBe('number');
       expect(r.total_symbols).toBeGreaterThan(0);
-    } catch (_) {
+    } catch {
       expect(true).toBe(true);
     }
   });
@@ -120,7 +119,7 @@ describe('doc-indexer (v5)', () => {
       expect(r.success).toBe(true);
       expect(typeof r.links).toBe('number');
       expect(typeof r.code_blocks).toBe('number');
-    } catch (_) {
+    } catch {
       expect(true).toBe(true);
     }
   });
