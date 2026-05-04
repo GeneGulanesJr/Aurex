@@ -2,8 +2,8 @@
 /**
  * Bench-tokens.js — Token efficiency benchmark
  *
- * Measures byte/token savings of _meta envelope + compact format
- * across all analysis tools. Runs against an indexed PiMemoryExtension repo.
+ * Measures actual byte/token savings of compact format across all analysis tools.
+ * Uses the real compactResponse function — no hardcoded estimates.
  *
  * Usage: node bench/bench-tokens.js [--reindex]
  */
@@ -11,12 +11,42 @@
 const path = require('path');
 const { execSync } = require('child_process');
 const {
-  BENCHMARK_TOOLS, estimateTokens, formatBytes, pct, pad,
+  BENCHMARK_TOOLS, formatBytes, pad,
   runCli, isRepoIndexed, findSymbolWithCallers,
 } = require('./bench-helper');
+const wf = require('../wire-format');
 
-const REPO_NAME = 'PiMemoryExtension (bench)';
+const REPO_NAME = 'PiMemoryExtension';
 const REPO_PATH = path.resolve(__dirname, '..');
+
+// ══════════════════════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════════════════════
+
+function unwrap(data) {
+  if (data && data._meta && data.data) return data.data;
+  return data;
+}
+
+function estimateRowCount(data, toolName) {
+  const d = unwrap(data);
+  switch (toolName) {
+    case 'getSymbolImportance': return (d.nodes || []).length;
+    case 'getHotspots': return (d.hotspots || d.files || []).length;
+    case 'getDeadCode': {
+      const syms = (d.dead_symbols || []).length;
+      const files = (d.dead_files || []).length;
+      return syms + files;
+    }
+    case 'getCouplingMetrics': return (d.metrics || d.files || []).length;
+    case 'getExtractionCandidates': return (d.candidates || []).length;
+    case 'getCallHierarchy': return (d.edges || []).length;
+    case 'getImportGraph': return (d.edges || []).length;
+    case 'getBlastRadius': return (d.edges || []).length;
+    case 'getDependencyCycles': return (d.cycles || []).length;
+    default: return 0;
+  }
+}
 
 // ══════════════════════════════════════════════════════════
 // MAIN
@@ -34,7 +64,7 @@ async function main() {
   const indexed = isRepoIndexed(REPO_NAME);
 
   if (!indexed || forceReindex) {
-    console.log(`[1/4] Indexing ${REPO_NAME}...`);
+    console.log(`[1/3] Indexing ${REPO_NAME}...`);
     if (forceReindex && indexed) {
       execSync(`node memory-store.js remove-code-repo --repo "${REPO_NAME}"`, {
         cwd: REPO_PATH, encoding: 'utf-8', timeout: 10000,
@@ -50,11 +80,11 @@ async function main() {
     }
     console.log(`  Done: ${idx.symbols_extracted} symbols, ${idx.files_indexed} files`);
   } else {
-    console.log('[1/4] Repo already indexed — skipping (use --reindex to force)');
+    console.log('[1/3] Repo already indexed — skipping (use --reindex to force)');
   }
 
   // Step 2: Find a symbol for call-hierarchy/blast-radius
-  console.log('\n[2/4] Finding representative symbol for call analysis...');
+  console.log('\n[2/3] Finding representative symbol for call analysis...');
   const callSymbol = findSymbolWithCallers(REPO_NAME);
   if (callSymbol) {
     console.log(`  Using symbol: "${callSymbol}"`);
@@ -63,7 +93,7 @@ async function main() {
   }
 
   // Step 3: Run benchmarks
-  console.log('\n[3/4] Running benchmarks...\n');
+  console.log('\n[3/3] Running benchmarks...\n');
 
   const results = [];
 
@@ -71,7 +101,6 @@ async function main() {
     let extraFlags = '';
     let toolData;
 
-    // Special handling for tools that need a symbol
     if (tool.cli === 'call-hierarchy' || tool.cli === 'blast-radius') {
       if (!callSymbol) {
         results.push({ tool: tool.name, error: 'No symbol available' });
@@ -83,7 +112,7 @@ async function main() {
     try {
       toolData = runCli(REPO_NAME, tool.cli, extraFlags);
     } catch (e) {
-      results.push({ tool: tool.name, error: e.message });
+      results.push({ tool: tool.name, error: e.message.slice(0, 60) });
       continue;
     }
 
@@ -92,101 +121,64 @@ async function main() {
       continue;
     }
 
-    // Measure sizes in three modes
-    const rawBytes = JSON.stringify(toolData).length;
-    const rawTokens = estimateTokens(toolData);
+    const payload = unwrap(toolData);
+    const rawBytes = JSON.stringify(payload).length;
+    const rawTokens = wf.estimateTokens(payload);
+    const compacted = wf.compactResponse(payload);
+    const compactBytes = JSON.stringify(compacted).length;
+    const compactTokens = wf.estimateTokens(compacted);
+    const savingsPct = rawBytes > 0 ? Math.round((1 - compactBytes / rawBytes) * 100) : 0;
 
     results.push({
       tool: tool.name,
       rawBytes,
       rawTokens,
+      compactBytes,
+      compactTokens,
+      savingsPct,
       rows: estimateRowCount(toolData, tool.toolName),
     });
   }
 
-  // Step 4: Print results
-  console.log('[4/4] Results:\n');
+  // Print results
+  console.log(pad('Tool', 15) + pad('Rows', 6) + pad('Raw (B)', 10) + pad('Compact (B)', 12) + pad('Savings', 8));
+  console.log('─'.repeat(51));
 
-  // Header
-  console.log(pad('Tool', 18) + pad('Rows', 8) + pad('Raw (bytes)', 14) + pad('Raw (tokens)', 14));
-  console.log('─'.repeat(54));
-
-  let totalRawBytes = 0;
-  let totalRawTokens = 0;
-  let totalRows = 0;
+  let totalRaw = 0, totalCompact = 0, totalRows = 0;
 
   for (const r of results) {
-    if (r.error) {continue;}
+    if (r.error) {
+      console.log(pad(r.tool, 15) + 'ERROR: ' + r.error.slice(0, 30));
+      continue;
+    }
     console.log(
-      pad(r.tool, 18) +
-      pad(r.rows, 8) +
-      pad(formatBytes(r.rawBytes), 14) +
-      pad(r.rawTokens, 14)
+      pad(r.tool, 15) +
+      pad(r.rows, 6) +
+      pad(r.rawBytes, 10) +
+      pad(r.compactBytes, 12) +
+      ('-' + r.savingsPct + '%').padStart(8)
     );
-    totalRawBytes += r.rawBytes;
-    totalRawTokens += r.rawTokens;
+    totalRaw += r.rawBytes;
+    totalCompact += r.compactBytes;
     totalRows += r.rows;
   }
 
-  console.log('─'.repeat(54));
+  console.log('─'.repeat(51));
+  const overallPct = totalRaw > 0 ? Math.round((1 - totalCompact / totalRaw) * 100) : 0;
   console.log(
-    pad('TOTAL', 18) +
-    pad(totalRows, 8) +
-    pad(formatBytes(totalRawBytes), 14) +
-    pad(totalRawTokens, 14)
+    pad('TOTAL', 15) +
+    pad(totalRows, 6) +
+    pad(totalRaw, 10) +
+    pad(totalCompact, 12) +
+    ('-' + overallPct + '%').padStart(8)
   );
 
-  // Estimate savings with _meta and compact
-  console.log('\n── Estimated Savings (with _meta + compact) ──\n');
-  console.log(pad('Tool', 18) + pad('Est. Savings', 16));
-  console.log('─'.repeat(34));
-
-  // Use the savings estimates from the design doc
-  const savingsEstimates = {
-    importance: 0.55,
-    hotspots: 0.50,
-    'dead-code': 0.60,
-    coupling: 0.55,
-    extraction: 0.45,
-    'call-hierarchy': 0.40,
-    cycles: 0.20,
-    'blast-radius': 0.25,
-  };
-
-  let totalSavingBytes = 0;
-  for (const r of results) {
-    if (r.error) {continue;}
-    const saving = savingsEstimates[r.tool] || 0;
-    const savedBytes = Math.round(r.rawBytes * saving);
-    totalSavingBytes += savedBytes;
-    console.log(pad(r.tool, 18) + pad(pct(saving), 16));
-  }
-
-  const overallSaving = totalRawBytes > 0 ? totalSavingBytes / totalRawBytes : 0;
-  console.log('─'.repeat(34));
-  console.log(pad('OVERALL', 18) + pad(pct(overallSaving), 16));
-
-  console.log('\n✓ Benchmark complete.');
-  console.log(`  Total raw: ${  formatBytes(totalRawBytes)  } (${  totalRawTokens  } tokens)`);
-  console.log(`  Est. saved: ${  formatBytes(totalSavingBytes)}`);
-}
-
-// ══════════════════════════════════════════════════════════
-// HELPERS
-// ══════════════════════════════════════════════════════════
-
-function estimateRowCount(data, toolName) {
-  switch (toolName) {
-    case 'getSymbolImportance': return (data.nodes || []).length;
-    case 'getHotspots': return (data.files || []).length;
-    case 'getDeadCode': return (data.symbols || data.results || []).length;
-    case 'getCouplingMetrics': return (data.files || data.metrics || []).length;
-    case 'getExtractionCandidates': return (data.candidates || []).length;
-    case 'getCallHierarchy':
-    case 'getBlastRadius': return (data.edges || []).length;
-    case 'getDependencyCycles': return (data.cycles || []).length;
-    default: return 0;
-  }
+  const savedBytes = totalRaw - totalCompact;
+  const savedTokens = Math.round(savedBytes / 3.5);
+  console.log(`\n✓ Benchmark complete.`);
+  console.log(`  Total raw:     ${formatBytes(totalRaw)} (${totalRaw}B)`);
+  console.log(`  Total compact: ${formatBytes(totalCompact)} (${totalCompact}B)`);
+  console.log(`  Saved:         ${formatBytes(savedBytes)} (~${savedTokens} tokens, -${overallPct}%)`);
 }
 
 main().catch(e => {
