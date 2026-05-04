@@ -1361,6 +1361,9 @@ const responseMeta = require('./response-meta');
 const wireFormat = require('./wire-format');
 const astPatterns = require('./ast-patterns');
 
+// Internal DB fields that are meaningless to the LLM consumer — stripped from compact output
+const _STRIP_FIELDS = ['symbol_id', 'id'];
+
 function parseCodeFile(filePath) {
   return codeParser.parseFile(filePath);
 }
@@ -1907,11 +1910,11 @@ function _wrapAnalysis(toolName, data, repoRow, startTime, format) {
   });
 
   if (format === 'compact') {
-    wrapped.data = wireFormat.compactResponse(wrapped.data);
+    wrapped.data = wireFormat.compactResponse(wrapped.data, { stripFields: _STRIP_FIELDS });
   } else if (format === 'auto') {
     const autoFmt = wireFormat.autoFormat(wrapped.data);
     if (autoFmt === 'compact') {
-      wrapped.data = wireFormat.compactResponse(wrapped.data);
+      wrapped.data = wireFormat.compactResponse(wrapped.data, { stripFields: _STRIP_FIELDS });
     }
   }
   // Format === 'json' (default) — no transformation
