@@ -51,8 +51,11 @@ function _unescapePipe(val) {
 function _encodeList(rows, opts = {}) {
   if (!rows || rows.length === 0) {return { _header: [], _rows: [] };}
 
+  // Filter out stripped fields from header
+  const stripSet = new Set(opts.stripFields || []);
+
   // Determine header from keys of first row (stable order)
-  const header = Object.keys(rows[0]);
+  const header = Object.keys(rows[0]).filter(k => !stripSet.has(k));
   const encodedRows = [];
 
   // Detect path-like columns for prefix interning
@@ -91,6 +94,11 @@ function _encodeList(rows, opts = {}) {
     if (prefixes[col].length > 0) {prefixMap[col] = prefixes[col];}
   }
   if (Object.keys(prefixMap).length > 0) {result._prefixes = prefixMap;}
+
+  // Record stripped fields for round-trip
+  if (stripSet.size > 0) {
+    result._stripped = [...stripSet].filter(k => Object.keys(rows[0]).includes(k));
+  }
 
   return result;
 }
@@ -196,6 +204,14 @@ function _decodeList(compact) {
         obj[key] = val;
       }
     });
+
+    // Restore stripped fields as null
+    if (compact._stripped) {
+      for (const field of compact._stripped) {
+        obj[field] = null;
+      }
+    }
+
     return obj;
   });
 }

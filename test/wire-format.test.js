@@ -97,6 +97,30 @@ describe('wire-format.js', () => {
       expect(decoded[0].name).toBe('foo|bar');
       expect(decoded[0].kind).toBe('func\\tion');
     });
+
+    it('should strip specified fields from encoded rows', () => {
+      const rows = [
+        { id: 100, name: 'foo', kind: 'function' },
+        { id: 200, name: 'bar', kind: 'class' },
+      ];
+      const compact = wireFormat._encodeList(rows, { stripFields: ['id'] });
+      expect(compact._header).toEqual(['name', 'kind']);
+      expect(compact._stripped).toEqual(['id']);
+      expect(compact._rows.length).toBe(2);
+    });
+
+    it('should round-trip stripped fields (restored as null)', () => {
+      const rows = [
+        { id: 100, name: 'foo', kind: 'function' },
+        { id: 200, name: 'bar', kind: 'class' },
+      ];
+      const compact = wireFormat._encodeList(rows, { stripFields: ['id'] });
+      const decoded = wireFormat._decodeList(compact);
+      expect(decoded[0].id).toBeNull();
+      expect(decoded[0].name).toBe('foo');
+      expect(decoded[1].id).toBeNull();
+      expect(decoded[1].name).toBe('bar');
+    });
   });
 
   describe('_isHomogeneous', () => {
