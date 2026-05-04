@@ -117,6 +117,36 @@ Restart Pi and memory auto-wires on session start.
 
 JavaScript, TypeScript, TSX, Go, Python, Rust, SQL
 
+## Token Efficiency Benchmark
+
+The wire format (`wire-format.js`) uses compact encoding (columnar CSV with path interning, uniform-column hoisting, and internal-ID stripping) to reduce the token footprint of analysis responses inside Pi's context window.
+
+Measured via `bench/bench-tokens.js` — runs real CLI commands against indexed repos, passes output through `compactResponse()`, and compares byte sizes.
+
+| Tool | [PiMemoryExtension](https://github.com/GeneGulanesJr/PiMemoryExtension) | [Aether (PCBuilder)](https://github.com/GeneGulanesJr/Aether) |
+|---|---|---|
+| importance | 27% | 26% |
+| hotspots | 48% | 0% |
+| dead-code | 42% | **47%** |
+| coupling | 33% | **39%** |
+| extraction | 33% | 24% |
+| cycles | 0% | 0% |
+| import-graph | 24% | 20% |
+| **OVERALL** | **36%** | **37%** |
+
+**Key findings:**
+- Dead-code sees the biggest gains (42–47%) — the `signals` and `confidence` fields are uniform across rows and get hoisted, while `symbol_id` is stripped
+- Coupling benefits from prefix interning on shared file paths (33–39%)
+- Larger repos trend higher — Aether (154 files, 1,359 symbols) edged out PiMemoryExtension (38 files) at 37% vs 36%
+- Cycles and very small result sets show no savings (no homogeneous lists to encode)
+
+All transforms are **lossless round-trip** — verified by 217 tests in `test/wire-format.test.js`.
+
+Run it yourself:
+```bash
+node bench/bench-tokens.js
+```
+
 ## License
 
 MIT
