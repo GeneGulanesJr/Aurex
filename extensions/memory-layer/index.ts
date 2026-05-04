@@ -200,6 +200,7 @@ let currentProject: string | null = null;
 let memoriesSavedThisSession = 0;
 let nudgeCountThisSession = 0;
 const MAX_NUDGES_PER_SESSION = 8;
+let exploredFiles = new Set<string>(); // files explored via memory-code → allowed for read
 
 // ── Reliability state ────────────────────────────────────
 let turnCount = 0;
@@ -227,6 +228,7 @@ export default function (pi: ExtensionAPI) {
     lastAutoDecisionSave = 0;
     hasInjectedContext = false;
     editedFiles = new Set();
+    exploredFiles = new Set();
     cachedRepos = null;
     repoCacheTime = 0;
 
@@ -460,57 +462,112 @@ export default function (pi: ExtensionAPI) {
   });
 
   // ────────────────────────────────────────────────────────
-  // Fix #5: tool_call interception — nudge toward memory-code
+
+  // ────────────────────────────────────────────────────────
+  // Code exploration enforcement — hard block + partial allow
+  // Forces structured analysis (memory-code) before raw file reads.
   // ────────────────────────────────────────────────────────
   pi.on("tool_call", async (event, ctx) => {
     const toolName = event.toolName;
-
-    // Track memory tool usage (for context reminder dedup)
-    if (toolName.startsWith("memory-")) {
-      lastMemoryToolCall = Date.now();
-      return; // don't nudge when already using memory tools
-    }
-
-    // Only nudge for read/bash on code files, not for every read
-    if (nudgeCountThisSession >= MAX_NUDGES_PER_SESSION) return;
-
     const input = event.input as Record<string, unknown>;
 
-    let targetFile: string | undefined;
-    if (toolName === "read" && typeof input?.path === "string") {
-      targetFile = input.path;
-    } else if (toolName === "bash" && typeof input?.command === "string") {
-      // Detect grep/rg/find/ls on source code patterns
-      const cmd = (input.command as string);
+    // Track memory tool usage — mark explored files for read enforcement
+    if (toolName === "memory-code") {
+      lastMemoryToolCall = Date.now();
+      const file = String(input?.file || "");
+      // If a specific file was analyzed, add to explored set
+      if (file) {
+        exploredFiles.add(file.toLowerCase());
+        exploredFiles.add(path.basename(file).toLowerCase());
+      }
+      return; // always allow memory-code
+    }
+    if (toolName.startsWith("memory-")) {
+      lastMemoryToolCall = Date.now();
+      return; // always allow other memory tools
+    }
+
+    // ── Hard block: bash grep/rg/find on source code in indexed repos ───
+    if (toolName === "bash" && typeof input?.command === "string") {
+      const cmd = input.command as string;
       if (/\b(rg\b|grep\b|ag\b|ack\b|find\b).*\.(ts|js|tsx|jsx|py|go|rs|java)/i.test(cmd)) {
-        // This is a code search — nudge
-        nudgeCountThisSession++;
-        ctx.ui.notify(
-          `💡 Tip: Consider memory-code or memory-doc for structured code analysis instead of grep/find.`,
-          "info",
+        const repos = await getKnownRepos();
+        const matchedRepo = repos.find(r =>
+          currentProject?.toLowerCase() === r.name.toLowerCase()
         );
-        return;
+        if (matchedRepo) {
+          return {
+            block: true,
+            reason: `Code search detected in indexed repo "${matchedRepo.name}". Use \`memory-code\` instead:\n` +
+              `• \`memory-code outline --repo ${matchedRepo.name} --file <path>\` — file structure\n` +
+              `• \`memory-code callers --repo ${matchedRepo.name} --symbol <name>\` — call hierarchy\n` +
+              `• \`memory-code deps --repo ${matchedRepo.name}\` — dependency graph\n` +
+              `• \`memory-code importance --repo ${matchedRepo.name}\` — hotspots & churn`,
+          };
+        }
+        // Not indexed — soft nudge with index command
+        if (nudgeCountThisSession < MAX_NUDGES_PER_SESSION) {
+          nudgeCountThisSession++;
+          ctx.ui.notify(
+            `💡 Use \`memory-code\` for structured analysis. Index this repo first: \`memory-store.js index-repo\``,
+            "info",
+          );
+        }
+        return; // allow if not indexed
       }
     }
 
-    if (targetFile && isCodeFile(targetFile) && !targetFile.includes("node_modules")) {
-      // Check if we have a repo indexed for this project
+    // ── Hard block: read on unexplored code files in indexed repos ────────
+    if (toolName === "read" && typeof input?.path === "string") {
+      const filePath = input.path as string;
+
+      // Allow non-code files (configs, markdown, JSON, etc.)
+      if (!isCodeFile(filePath)) return;
+
+      // Allow node_modules
+      if (filePath.includes("node_modules")) return;
+
+      // Allow partial/targeted reads (offset or limit) — agent is editing
+      if (input.offset || input.limit) return;
+
+      // Resolve to absolute path for matching
+      const absPath = path.resolve(filePath);
+
+      // Find which indexed repo this file belongs to
       const repos = await getKnownRepos();
-      const hasRepo = repos.some(r =>
-        r.name.toLowerCase() === currentProject?.toLowerCase()
+      const matchedRepo = repos.find(r =>
+        absPath.toLowerCase().startsWith(r.path.toLowerCase() + "/") ||
+        absPath.toLowerCase() === r.path.toLowerCase()
       );
 
-      if (hasRepo) {
-        nudgeCountThisSession++;
-        // Return a soft injection — not blocking, just injecting context
-        return {
-          message: {
-            customType: "memory-nudge",
-            content: `ℹ️ Code file detected: \"${path.basename(targetFile)}\". Consider using \`memory-code\` (modes: outline, callers, deps, complexity) or \`memory-doc\` for structured analysis instead of reading files directly.`,
-            display: false,
-          },
-        };
+      // Not in any indexed repo — allow with nudge to index
+      if (!matchedRepo) {
+        if (nudgeCountThisSession < MAX_NUDGES_PER_SESSION) {
+          nudgeCountThisSession++;
+          ctx.ui.notify(
+            `💡 This code file isn't in an indexed repo. Index it: \`memory-store.js index-repo\``,
+            "info",
+          );
+        }
+        return; // allow
       }
+
+      // Check if file has been explored via memory-code
+      const basename = path.basename(filePath).toLowerCase();
+      const relPath = path.relative(matchedRepo.path, absPath).toLowerCase();
+      if (exploredFiles.has(basename) || exploredFiles.has(relPath) || exploredFiles.has(absPath.toLowerCase())) {
+        return; // already explored — allow read for editing
+      }
+
+      // HARD BLOCK: code file in indexed repo, not yet explored
+      return {
+        block: true,
+        reason: `Use \`memory-code\` first to understand "${path.basename(filePath)}" before reading it:\n` +
+          `• \`memory-code outline --repo ${matchedRepo.name} --file ${relPath || path.basename(filePath)}\` — file structure & symbols\n` +
+          `• \`memory-code callers --repo ${matchedRepo.name} --symbol <name>\` — who calls what\n` +
+          `• \`memory-code deps --repo ${matchedRepo.name}\` — dependency graph\n` +
+          `After reviewing the outline, use \`read\` with \`offset\`/\`limit\` for targeted editing.`,
+      };
     }
   });
 
