@@ -123,8 +123,10 @@ The wire format (`wire-format.js`) uses compact encoding (columnar CSV with path
 
 Measured via `bench/bench-tokens.js` — runs real CLI commands against indexed repos, passes output through `compactResponse()`, and compares byte sizes.
 
+### Results: Percentage Saved per Tool
+
 | Tool | [PiMemoryExtension](https://github.com/GeneGulanesJr/PiMemoryExtension) | [Aether (PCBuilder)](https://github.com/GeneGulanesJr/Aether) |
-|---|---|---|
+| :--- | :---: | :---: |
 | importance | 27% | 26% |
 | hotspots | 48% | 0% |
 | dead-code | 42% | **47%** |
@@ -133,6 +135,16 @@ Measured via `bench/bench-tokens.js` — runs real CLI commands against indexed 
 | cycles | 0% | 0% |
 | import-graph | 24% | 20% |
 | **OVERALL** | **36%** | **37%** |
+
+### Total Savings
+
+| | PiMemoryExtension | Aether (PCBuilder) |
+| :--- | :---: | :---: |
+| Repo size | 38 files · 210 symbols | 154 files · 1,359 symbols |
+| Raw JSON | 42.6 KB | 181.7 KB |
+| Compact format | 27.1 KB | 114.3 KB |
+| Bytes saved | 15.5 KB | 67.4 KB |
+| Tokens saved | ~4,445 tokens | ~19,242 tokens |
 
 **Key findings:**
 - Dead-code sees the biggest gains (42–47%) — the `signals` and `confidence` fields are uniform across rows and get hoisted, while `symbol_id` is stripped
