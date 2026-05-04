@@ -55,7 +55,19 @@ function _encodeList(rows, opts = {}) {
   const stripSet = new Set(opts.stripFields || []);
 
   // Determine header from keys of first row (stable order)
-  const header = Object.keys(rows[0]).filter(k => !stripSet.has(k));
+  const allKeys = Object.keys(rows[0]).filter(k => !stripSet.has(k));
+
+  // Detect and hoist uniform columns (all rows have identical value)
+  const hoisted = {};
+  const header = allKeys.filter(col => {
+    const firstVal = JSON.stringify(rows[0][col]);
+    const allSame = rows.every(r => JSON.stringify(r[col]) === firstVal);
+    if (allSame && rows.length >= 2) {
+      hoisted[col] = rows[0][col];
+      return false;
+    }
+    return true;
+  });
   const encodedRows = [];
 
   // Detect path-like columns for prefix interning
@@ -98,6 +110,11 @@ function _encodeList(rows, opts = {}) {
   // Record stripped fields for round-trip
   if (stripSet.size > 0) {
     result._stripped = [...stripSet].filter(k => Object.keys(rows[0]).includes(k));
+  }
+
+  // Attach hoisted uniform columns
+  if (Object.keys(hoisted).length > 0) {
+    result._hoisted = hoisted;
   }
 
   return result;
@@ -209,6 +226,13 @@ function _decodeList(compact) {
     if (compact._stripped) {
       for (const field of compact._stripped) {
         obj[field] = null;
+      }
+    }
+
+    // Broadcast hoisted values back to row
+    if (compact._hoisted) {
+      for (const [key, val] of Object.entries(compact._hoisted)) {
+        obj[key] = val;
       }
     }
 

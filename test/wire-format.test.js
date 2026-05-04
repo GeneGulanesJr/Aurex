@@ -121,6 +121,41 @@ describe('wire-format.js', () => {
       expect(decoded[1].id).toBeNull();
       expect(decoded[1].name).toBe('bar');
     });
+
+    it('should hoist columns where all rows have the same value', () => {
+      const rows = [
+        { name: 'foo', kind: 'function', count: 1 },
+        { name: 'bar', kind: 'function', count: 1 },
+        { name: 'baz', kind: 'function', count: 1 },
+      ];
+      const compact = wireFormat._encodeList(rows);
+      expect(compact._header).not.toContain('count');
+      expect(compact._header).not.toContain('kind');
+      expect(compact._hoisted).toEqual({ kind: 'function', count: 1 });
+    });
+
+    it('should round-trip hoisted columns', () => {
+      const rows = [
+        { name: 'foo', kind: 'function', count: 1 },
+        { name: 'bar', kind: 'function', count: 1 },
+      ];
+      const compact = wireFormat._encodeList(rows);
+      const decoded = wireFormat._decodeList(compact);
+      expect(decoded[0]).toEqual({ name: 'foo', kind: 'function', count: 1 });
+      expect(decoded[1]).toEqual({ name: 'bar', kind: 'function', count: 1 });
+    });
+
+    it('should hoist array values that are identical across rows', () => {
+      const rows = [
+        { name: 'a', signals: ['no_callers', 'dead'] },
+        { name: 'b', signals: ['no_callers', 'dead'] },
+      ];
+      const compact = wireFormat._encodeList(rows);
+      expect(compact._header).not.toContain('signals');
+      expect(compact._hoisted.signals).toEqual(['no_callers', 'dead']);
+      const decoded = wireFormat._decodeList(compact);
+      expect(decoded[0].signals).toEqual(['no_callers', 'dead']);
+    });
   });
 
   describe('_isHomogeneous', () => {
