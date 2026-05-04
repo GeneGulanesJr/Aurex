@@ -270,11 +270,19 @@ function _compactSize(compact) {
  * @returns {{ _meta: null, data: object }} compact payload
  */
 function compactResponse(data, opts = {}) {
-  const encodable = _findEncodableList(data);
-  if (!encodable) {return data;} // Not encodable — return as-is JSON
+  if (!data || typeof data !== 'object') {return data;}
 
-  const compact = _encodeList(encodable.rows, opts);
-  return { ...data, [encodable.key]: compact };
+  let modified = false;
+  const result = { ...data };
+
+  for (const [key, value] of Object.entries(result)) {
+    if (Array.isArray(value) && _isHomogeneous(value) && value.length >= 2) {
+      result[key] = _encodeList(value, opts);
+      modified = true;
+    }
+  }
+
+  return modified ? result : data;
 }
 
 /**
@@ -286,14 +294,17 @@ function compactResponse(data, opts = {}) {
 function expandResponse(compact) {
   if (!compact || typeof compact !== 'object') {return compact;}
 
-  // Find the compact-encoded field
-  for (const [key, value] of Object.entries(compact)) {
+  const result = { ...compact };
+  let modified = false;
+
+  for (const [key, value] of Object.entries(result)) {
     if (value && typeof value === 'object' && value._header && value._rows) {
-      return { ...compact, [key]: _decodeList(value) };
+      result[key] = _decodeList(value);
+      modified = true;
     }
   }
 
-  return compact;
+  return modified ? result : compact;
 }
 
 /**

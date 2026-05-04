@@ -167,6 +167,44 @@ describe('wire-format.js', () => {
       const result = wireFormat.compactResponse(data);
       expect(result).toEqual(data);
     });
+
+    it('should encode ALL homogeneous lists, not just the largest', () => {
+      const data = {
+        main_items: [
+          { name: 'foo', kind: 'function', file: 'src/a.js' },
+          { name: 'bar', kind: 'function', file: 'src/b.js' },
+          { name: 'baz', kind: 'function', file: 'src/c.js' },
+        ],
+        secondary_items: [
+          { id: 1, path: 'src/dead.js' },
+          { id: 2, path: 'src/old.js' },
+        ],
+        count: 5,
+      };
+      const compact = wireFormat.compactResponse(data);
+      expect(compact.main_items._header).toBeDefined();
+      expect(compact.main_items._rows).toBeDefined();
+      expect(compact.secondary_items._header).toBeDefined();
+      expect(compact.secondary_items._rows).toBeDefined();
+      expect(compact.count).toBe(5);
+    });
+
+    it('should round-trip multi-list encoding via expandResponse', () => {
+      const data = {
+        symbols: [
+          { name: 'a', kind: 'fn', score: 0.5 },
+          { name: 'b', kind: 'fn', score: 0.8 },
+        ],
+        files: [
+          { path: 'src/x.js', size: 100 },
+          { path: 'src/y.js', size: 200 },
+        ],
+      };
+      const compact = wireFormat.compactResponse(data);
+      const expanded = wireFormat.expandResponse(compact);
+      expect(expanded.symbols).toEqual(data.symbols);
+      expect(expanded.files).toEqual(data.files);
+    });
   });
 
   describe('autoFormat', () => {
