@@ -1101,13 +1101,18 @@ function autoRecoverInternal(sessionId) {
     `
     SELECT id, title, type, content, created_at
     FROM observations
-    WHERE session_id = ? AND deleted_at IS NULL AND type != 'skill'
+    WHERE session_id = ? AND deleted_at IS NULL AND type NOT IN ('skill', 'session_summary', 'progress', 'accomplished')
     ORDER BY created_at ASC
   `,
     [sessionId],
   );
 
-  if (obs.length === 0) {return null;}
+  // If no valuable observations, just close the session silently
+  // (skip noise types: skill, session_summary, progress, accomplished)
+  if (obs.length === 0) {
+    sqlRun("UPDATE session_log SET ended_at = datetime('now') WHERE id = ?", [parseInt(sessionId)]);
+    return null;
+  }
 
   const types = {};
   for (const o of obs) {
@@ -1158,10 +1163,55 @@ function recoverOrphans() {
   if (orphans.length === 0) {return { recovered: [], total: 0 };}
 
   const recovered = [];
+  const allObservations = [];
   for (const o of orphans) {
     const r = autoRecoverInternal(String(o.id));
-    if (r) {recovered.push(o.project);}
+    if (r) {
+      recovered.push(o.project);
+      allObservations.push(r.observations_processed);
+    }
   }
+
+  // If multiple orphans were recovered, consolidate into a single summary
+  // instead of leaving N individual session_summary observations
+  if (recovered.length > 1) {
+    // Collect all auto-recovered session_summary observations created just now
+    const recentSummaries = sqlJson(
+      `SELECT id, content FROM observations
+       WHERE type = 'session_summary'
+       AND title = 'Auto-Recovered Session Summary'
+       AND created_at > datetime('now', '-5 minutes')
+       AND deleted_at IS NULL
+       ORDER BY id ASC`,
+    );
+
+    if (recentSummaries.length > 1) {
+      // Build a single consolidated summary
+      const lines = ['## Consolidated Recovery Summary', ''];
+      lines.push(`**Sessions recovered:** ${recentSummaries.length}`);
+      lines.push(`**Total observations:** ${allObservations.reduce((a, b) => a + b, 0)}`);
+      lines.push('');
+
+      const projects = [...new Set(recovered)];
+      lines.push(`**Projects:** ${projects.join(', ')}`);
+      lines.push('');
+
+      // Soft-delete the individual summaries
+      for (const s of recentSummaries) {
+        sqlRun('UPDATE observations SET deleted_at = datetime(\'now\') WHERE id = ?', [s.id]);
+      }
+
+      // Insert the consolidated summary
+      const consolidatedContent = lines.join('\n');
+      sqlJson(
+        `INSERT INTO observations (session_id, type, title, content, project, scope)
+         VALUES (?, 'session_summary', 'Consolidated Recovery Summary', ?, ?, 'project')
+         RETURNING id`,
+        [recentSummaries[0].id, consolidatedContent, orphans[0].project],
+      );
+    }
+  }
+
   return { recovered, total: orphans.length };
 }
 

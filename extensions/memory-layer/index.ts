@@ -238,20 +238,14 @@ export default function (pi: ExtensionAPI) {
 
     sessionId = result.sessionId as number;
 
-    // Auto-recover ALL orphaned sessions (any project)
-    const recovered: string[] = [];
+    // Auto-recover only the current project's orphaned session
+    // (session-start already recovers the most recent incomplete session for this project)
+    // We do NOT call recover-orphans here — it creates one observation per orphan,
+    // which pollutes the observation pool with low-value session_summary entries.
+    // Cross-project orphans are cleaned up lazily during compact/maintenance.
     if (result.recoveredSession) {
-      recovered.push(currentProject);
-    }
-    // Also recover orphaned sessions from other projects
-    const orphanResult = await memCmd("recover-orphans");
-    if (orphanResult && (orphanResult as any).recovered?.length > 0) {
-      recovered.push(...(orphanResult as any).recovered);
-    }
-
-    if (recovered.length > 0) {
       ctx.ui.notify(
-        `Memory: recovered orphaned sessions from: ${[...new Set(recovered)].join(", ")}`,
+        `Memory: recovered orphaned session for ${currentProject}`,
         "info",
       );
     }
