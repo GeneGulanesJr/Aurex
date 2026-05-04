@@ -199,7 +199,18 @@ let sessionId: number | null = null;
 let currentProject: string | null = null;
 let memoriesSavedThisSession = 0;
 let nudgeCountThisSession = 0;
-const MAX_NUDGES_PER_SESSION = 3;
+const MAX_NUDGES_PER_SESSION = 8;
+
+// ── Reliability state ────────────────────────────────────
+let turnCount = 0;
+let llmCallCount = 0;
+let lastMemoryToolCall = 0;         // timestamp of last memory tool usage
+let lastAutoDecisionSave = 0;       // timestamp of last auto-detected decision save
+let hasInjectedContext = false;      // whether before_agent_start context was injected this turn
+let editedFiles = new Set<string>(); // files edited this session
+const AUTO_DECISION_COOLDOWN = 60000; // 1 min between auto-decision saves
+const MEMORY_REMINDER_INTERVAL = 8;   // inject reminder every Nth LLM call
+const CHECKPOINT_INTERVAL = 10;       // save progress checkpoint every N turns
 
 // ── Extension ───────────────────────────────────────────────
 
@@ -210,6 +221,12 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (event, ctx) => {
     currentProject = await detectProject(ctx.cwd);
     nudgeCountThisSession = 0;
+    turnCount = 0;
+    llmCallCount = 0;
+    lastMemoryToolCall = 0;
+    lastAutoDecisionSave = 0;
+    hasInjectedContext = false;
+    editedFiles = new Set();
     cachedRepos = null;
     repoCacheTime = 0;
 
@@ -240,6 +257,84 @@ export default function (pi: ExtensionAPI) {
     }
 
     ctx.ui.setStatus("memory", `🧠 session ${sessionId}`);
+  });
+
+  // ────────────────────────────────────────────────────────
+  // Fix #6: COMPACTION RECOVERY — re-inject memory context after /compact
+  // Without this, compaction destroys the initial context injection and
+  // the LLM completely loses awareness of memory tools and project context.
+  // ────────────────────────────────────────────────────────
+  pi.on("session_compact", async (_event, ctx) => {
+    if (!currentProject) return;
+
+    const contextResult = await mem("context", {
+      project: currentProject,
+      limit: "15",
+      ...(sessionId ? { "session-id": String(sessionId) } : {}),
+    });
+
+    let crossProjectResult: MemResult | null = null;
+    if (!contextResult || !((contextResult.observations as any[]) || []).length) {
+      crossProjectResult = await mem("context", {
+        "all-projects": "true",
+        limit: "10",
+        ...(sessionId ? { "session-id": String(sessionId) } : {}),
+      });
+    }
+
+    if (!contextResult && !crossProjectResult) return;
+
+    const isNewProject = crossProjectResult !== null;
+    const effectiveObservations = isNewProject
+      ? ((crossProjectResult!.observations as any[]) || [])
+      : ((contextResult!.observations as any[]) || []);
+    const stats = contextResult?.stats as any;
+    const personal = (contextResult?.personal as any[]) || [];
+
+    const lines: string[] = [
+      "## Memory Context (re-injected after compaction)",
+      "",
+    ];
+
+    if (isNewProject) {
+      lines.push(`Project: **${currentProject}** | 🆕 new project`);
+      if (effectiveObservations.length > 0) {
+        lines.push("");
+        lines.push("### 🔗 Related memories from other projects");
+        for (const o of effectiveObservations.slice(0, 5)) {
+          lines.push(`- [${o.type}] ${o.title}`);
+        }
+      }
+    } else {
+      lines.push(`Project: **${currentProject}** | ${stats?.total_memories || 0} memories`);
+      if (effectiveObservations.length > 0) {
+        lines.push("");
+        lines.push("### Recent Relevant Memory");
+        for (const o of effectiveObservations) {
+          const trust = o.trust_score < 0.5 ? "⚠️" : o.trust_score < 0.8 ? "🔎" : "";
+          lines.push(`- [${o.type}] ${o.title} ${trust}`);
+        }
+      }
+    }
+
+    if (personal.length > 0) {
+      lines.push("");
+      lines.push("### Your Preferences (cross-project)");
+      for (const p of personal.slice(0, 3)) {
+        lines.push(`- ${p.title}`);
+      }
+    }
+
+    lines.push("");
+    lines.push("Use `memory-save`, `memory-search`, and `memory-get` tools to interact with memory.");
+
+    return {
+      message: {
+        customType: "memory-context",
+        content: lines.join("\n"),
+        display: false,
+      },
+    };
   });
 
   // ────────────────────────────────────────────────────────
@@ -288,6 +383,8 @@ export default function (pi: ExtensionAPI) {
       : observations;
     const effectiveStats = isNewProject ? crossProjectResult!.stats as any : stats;
     const effectiveProject = isNewProject ? currentProject : currentProject;
+
+    hasInjectedContext = true;
 
     // Build context injection
     const topicNote = topic ? ` | topic: ${topic}` : "";
@@ -372,10 +469,17 @@ export default function (pi: ExtensionAPI) {
   // Fix #5: tool_call interception — nudge toward memory-code
   // ────────────────────────────────────────────────────────
   pi.on("tool_call", async (event, ctx) => {
+    const toolName = event.toolName;
+
+    // Track memory tool usage (for context reminder dedup)
+    if (toolName.startsWith("memory-")) {
+      lastMemoryToolCall = Date.now();
+      return; // don't nudge when already using memory tools
+    }
+
     // Only nudge for read/bash on code files, not for every read
     if (nudgeCountThisSession >= MAX_NUDGES_PER_SESSION) return;
 
-    const toolName = event.toolName;
     const input = event.input as Record<string, unknown>;
 
     let targetFile: string | undefined;
@@ -417,7 +521,41 @@ export default function (pi: ExtensionAPI) {
   });
 
   // ────────────────────────────────────────────────────────
-  // TOOL RESULT — auto-detect saveable events
+  // Fix #7: CONTEXT EVENT — lightweight persistent memory reminder
+  // After compaction or in long sessions, the LLM may forget memory tools
+  // exist. This injects a minimal reminder every Nth LLM call, but only
+  // if no memory tool was used recently (to avoid redundancy).
+  // ────────────────────────────────────────────────────────
+  pi.on("context", async (event, _ctx) => {
+    llmCallCount++;
+
+    // Don't inject if context was already injected this turn
+    // (before_agent_start already loaded full context)
+    if (hasInjectedContext) {
+      hasInjectedContext = false;
+      return;
+    }
+
+    // Only inject every Nth call
+    if (llmCallCount % MEMORY_REMINDER_INTERVAL !== 0) return;
+
+    // Don't inject if memory tool was used recently (within 3 min)
+    if (Date.now() - lastMemoryToolCall < 180000) return;
+
+    // Inject a lightweight reminder
+    return {
+      messages: [
+        ...event.messages,
+        {
+          role: "user" as const,
+          content: "💡 Memory reminder: Use `memory-search` before decisions to avoid repeating past mistakes. Use `memory-save` for decisions, bugfixes, and discoveries.",
+        },
+      ],
+    };
+  });
+
+  // ────────────────────────────────────────────────────────
+  // TOOL RESULT — auto-detect saveable events + git trust sync
   // ────────────────────────────────────────────────────────
   pi.on("tool_result", async (event, ctx) => {
     // Auto-save when files are edited — record what changed
@@ -427,6 +565,9 @@ export default function (pi: ExtensionAPI) {
 
       // Don't auto-save edits to the memory layer itself
       if (input.path.includes("memory-store.js") || input.path.includes("memory-layer")) return;
+
+      // Track edited files for session summary
+      editedFiles.add(input.path);
 
       // Only auto-save occasionally to avoid noise — every 5th file edit
       memoriesSavedThisSession++;
@@ -441,15 +582,129 @@ export default function (pi: ExtensionAPI) {
         content: `**What**: File edited during session\n**Where**: ${input.path}`,
       });
     }
+
+    // Fix #7: Git-triggered trust sync — after git pull/checkout/merge/rebase,
+    // code symbols may have changed. Auto-sync trust scores.
+    if (event.toolName === "bash") {
+      const input = event.input as { command?: string };
+      const cmd = input?.command || "";
+      if (/\bgit\s+(pull|checkout|merge|rebase|reset|stash\s+pop)\b/.test(cmd) && currentProject) {
+        const repos = await getKnownRepos();
+        const repo = repos.find(r =>
+          r.name.toLowerCase() === currentProject.toLowerCase()
+        );
+        if (repo) {
+          // Best-effort trust sync — don't block or fail on error
+          mem("sync-code-trust", {
+            repo: repo.name,
+            "changed-symbols-json": "{}",
+          }).catch(() => {});
+          ctx.ui.notify(`🔄 Memory: syncing trust scores after git operation on ${repo.name}`, "info");
+        }
+      }
+    }
   });
 
   // ────────────────────────────────────────────────────────
-  // SESSION SHUTDOWN — auto-save summary + close
+  // Fix #2: DECISION AUTO-DETECTION — detect decision/bugfix/architecture
+  // patterns in assistant messages and auto-save them as memories.
+  // ────────────────────────────────────────────────────────
+  const DECISION_PATTERNS: Array<{ regex: RegExp; type: string; label: string }> = [
+    // Architecture/design decisions
+    { regex: /\b(I['']ll use|let's use|we should use|going with|switching to|using .* instead of)\b/i, type: "decision", label: "Design decision" },
+    { regex: /\b(approach|strategy|architecture|pattern|design):\s/i, type: "decision", label: "Architecture choice" },
+    // Bugfix discoveries
+    { regex: /\b(root cause|the bug was|issue is|problem is|fix is|fixed by|workaround is)\b/i, type: "bugfix", label: "Bug fix" },
+    // Pattern discoveries
+    { regex: /\b(I discovered|turns out|found that|interesting:|note that)\b/i, type: "discovery", label: "Discovery" },
+    // Constraint/requirement identification
+    { regex: /\b(we need to|cannot|constraint|requirement|limitation is)\b/i, type: "architecture", label: "Constraint identified" },
+  ];
+
+  // Extract text content from a message (handles both string and content array)
+  function extractMessageText(msg: any): string {
+    if (!msg) return "";
+    if (typeof msg.content === "string") return msg.content;
+    if (Array.isArray(msg.content)) {
+      return msg.content
+        .filter((c: any) => c.type === "text")
+        .map((c: any) => c.text || "")
+        .join(" ");
+    }
+    return "";
+  }
+
+  pi.on("message_end", async (event, _ctx) => {
+    if (event.message?.role !== "assistant") return;
+    const text = extractMessageText(event.message);
+    if (!text || text.length < 50) return; // skip very short messages
+
+    // Don't auto-save if already saved a decision recently (cooldown)
+    if (Date.now() - lastAutoDecisionSave < AUTO_DECISION_COOLDOWN) return;
+
+    // Skip messages that already involve memory tools
+    if (text.includes("memory-save") || text.includes("memory-search") || text.includes("memory-get")) return;
+
+    // Check for decision patterns
+    for (const pattern of DECISION_PATTERNS) {
+      if (pattern.regex.test(text)) {
+        lastAutoDecisionSave = Date.now();
+
+        // Extract a meaningful title from the matched text
+        const firstLine = text.split("\n")[0].slice(0, 120);
+        const title = `${pattern.label}: ${firstLine.slice(0, 80)}`;
+
+        await mem("save", {
+          title,
+          type: pattern.type,
+          project: currentProject || "unknown",
+          scope: "project",
+          force: "true",
+          content: [
+            `**What**: Auto-detected ${pattern.label.toLowerCase()}`,
+            `**Where**: Session ${sessionId || "unknown"}`,
+            `**Learned**: ${text.slice(0, 300)}`,
+          ].join("\n"),
+        });
+        break; // only save once per message
+      }
+    }
+  });
+
+  // ────────────────────────────────────────────────────────
+  // Fix #4: PERIODIC PROGRESS CHECKPOINT — save a checkpoint every N turns
+  // so long sessions don't lose all progress if interrupted.
+  // ────────────────────────────────────────────────────────
+  pi.on("turn_end", async (_event, _ctx) => {
+    turnCount++;
+    if (turnCount % CHECKPOINT_INTERVAL !== 0 || turnCount === 0) return;
+    if (!currentProject) return;
+
+    const summaryFiles = [...editedFiles].slice(0, 10).map(f =>
+      `- ${path.basename(f)}`).join("\n");
+
+    await mem("save", {
+      title: `Progress checkpoint (turn ${turnCount})`,
+      type: "progress",
+      project: currentProject,
+      scope: "project",
+      force: "true",
+      content: [
+        `**What**: Auto-checkpoint at turn ${turnCount}`,
+        `**Where**: Session ${sessionId}`,
+        `**Learned**: ${memoriesSavedThisSession} explicit memories saved, ${editedFiles.size} files edited`,
+        summaryFiles ? `Files touched:\n${summaryFiles}` : "",
+      ].join("\n"),
+    });
+  });
+
+  // ────────────────────────────────────────────────────────
+  // SESSION SHUTDOWN — auto-save rich summary + close
   // ────────────────────────────────────────────────────────
   pi.on("session_shutdown", async (_event, ctx) => {
     if (!sessionId || !currentProject) return;
 
-    // Build a simple summary from the session
+    // Build a rich summary from the session content
     const entries = ctx.sessionManager.getEntries();
     const userMessages = entries.filter(
       (e: any) => e.type === "message" && e.message?.role === "user",
@@ -458,15 +713,40 @@ export default function (pi: ExtensionAPI) {
       (e: any) => e.type === "message" && e.message?.role === "assistant",
     );
 
+    // Extract unique topics from user messages
+    const topics: string[] = [];
+    for (const m of userMessages) {
+      const text = extractMessageText((m as any).message);
+      if (text) {
+        const firstSentence = text.split(/[.!?\n]/)[0].slice(0, 100);
+        if (firstSentence && !topics.includes(firstSentence)) {
+          topics.push(firstSentence);
+        }
+      }
+    }
+
     const summaryParts: string[] = [
       "## Goal",
       userMessages.length > 0
         ? (userMessages[0] as any).message?.content?.[0]?.text?.slice(0, 200) || "Session work"
         : "Session work",
       "",
-      "## Accomplished",
-      `${memoriesSavedThisSession} memories saved, ${assistantMessages.length} assistant turns`,
+      "## Topics Discussed",
+      ...topics.slice(0, 10).map(t => `- ${t}`),
     ];
+
+    if (editedFiles.size > 0) {
+      summaryParts.push("", "## Files Modified");
+      for (const f of [...editedFiles].slice(0, 20)) {
+        summaryParts.push(`- ${path.relative(process.cwd(), f) || f}`);
+      }
+    }
+
+    summaryParts.push(
+      "",
+      "## Accomplished",
+      `${memoriesSavedThisSession} memories saved, ${assistantMessages.length} assistant turns, ${turnCount} total turns`,
+    );
 
     await mem("session-summary", {
       content: summaryParts.join("\n"),
@@ -480,7 +760,7 @@ export default function (pi: ExtensionAPI) {
     });
 
     if (ctx.hasUI) {
-      ctx.ui.notify(`Memory: session saved (${memoriesSavedThisSession} memories)`, "info");
+      ctx.ui.notify(`Memory: session saved (${memoriesSavedThisSession} memories, ${turnCount} turns)`, "info");
     }
   });
 
