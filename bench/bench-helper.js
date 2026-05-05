@@ -96,20 +96,25 @@ function isRepoIndexed(repo) {
  */
 function findSymbolWithCallers(repo) {
   try {
-    const stdout = execSync(`node memory-store.js hotspots --repo ${repo} --top 1`, {
-      cwd: path.resolve(__dirname, '..'),
-      encoding: 'utf-8',
-      timeout: 10000,
-    }).trim();
-    const data = JSON.parse(stdout);
-    const payload = data.data || data;
-    const files = payload.hotspots || payload.files || [];
-    if (files.length === 0) {return null;}
-    const hotFile = files[0].file_path || files[0].path;
+    const hotFile = _pickHotFile(repo);
+    if (!hotFile) {return null;}
     return _pickCallSymbolFromOutline(repo, hotFile);
   } catch (_) {
     return null;
   }
+}
+
+function _pickHotFile(repo) {
+  const stdout = execSync(`node memory-store.js hotspots --repo ${repo} --top 1`, {
+    cwd: path.resolve(__dirname, '..'),
+    encoding: 'utf-8',
+    timeout: 10000,
+  }).trim();
+  const data = JSON.parse(stdout);
+  const payload = data.data || data;
+  const files = payload.hotspots || payload.files || [];
+  if (files.length === 0) {return null;}
+  return files[0].file_path || files[0].path;
 }
 
 function _pickCallSymbolFromOutline(repo, hotFile) {

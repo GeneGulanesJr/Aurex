@@ -24,7 +24,7 @@ const REPO_PATH = path.resolve(__dirname, '..');
 // ══════════════════════════════════════════════════════════
 
 function unwrap(data) {
-  if (data && data._meta && data.data) return data.data;
+  if (data && data._meta && data.data) {return data.data;}
   return data;
 }
 
@@ -52,6 +52,15 @@ function estimateRowCount(data, toolName) {
 // MAIN
 // ══════════════════════════════════════════════════════════
 
+async function main() {
+  const { forceReindex } = parseArgs();
+  printHeader();
+  ensureRepoIndexed(forceReindex);
+  const callSymbol = findCallSymbol();
+  const results = runBenchmarks(callSymbol);
+  printResults(results);
+}
+
 function parseArgs() {
   const args = process.argv.slice(2);
   return { forceReindex: args.includes('--reindex') };
@@ -65,20 +74,24 @@ function printHeader() {
 
 function ensureRepoIndexed(forceReindex) {
   const indexed = isRepoIndexed(REPO_NAME);
-  if (!indexed || forceReindex) {
-    _doIndexRepo(forceReindex, indexed);
-  } else {
+  if (indexed && !forceReindex) {
     console.log('[1/3] Repo already indexed — skipping (use --reindex to force)');
+    return;
   }
-}
-
-function _doIndexRepo(forceReindex, indexed) {
   console.log(`[1/3] Indexing ${REPO_NAME}...`);
   if (forceReindex && indexed) {
-    execSync(`node memory-store.js remove-code-repo --repo "${REPO_NAME}"`, {
-      cwd: REPO_PATH, encoding: 'utf-8', timeout: 10000,
-    });
+    _removeExistingRepo(REPO_NAME);
   }
+  _doIndexRepo();
+}
+
+function _removeExistingRepo(repoName) {
+  execSync(`node memory-store.js remove-code-repo --repo "${repoName}"`, {
+    cwd: REPO_PATH, encoding: 'utf-8', timeout: 10000,
+  });
+}
+
+function _doIndexRepo() {
   const indexResult = execSync(`node memory-store.js index-repo --path "${REPO_PATH}" --name "${REPO_NAME}"`, {
     cwd: REPO_PATH, encoding: 'utf-8', timeout: 120000,
   });
@@ -103,47 +116,34 @@ function findCallSymbol() {
 
 function runBenchmarks(callSymbol) {
   console.log('\n[3/3] Running benchmarks...\n');
-
   const results = [];
-
   for (const tool of BENCHMARK_TOOLS) {
     const result = benchmarkTool(tool, callSymbol);
     results.push(result);
   }
-
   return results;
 }
 
 function benchmarkTool(tool, callSymbol) {
   let extraFlags = '';
-
   if (tool.cli === 'call-hierarchy' || tool.cli === 'blast-radius') {
-    if (!callSymbol) {
-      return { tool: tool.name, error: 'No symbol available' };
-    }
+    if (!callSymbol) {return { tool: tool.name, error: 'No symbol available' };}
     extraFlags = `--symbol "${callSymbol}"`;
   }
-
-  let toolData;
-  try {
-    toolData = runCli(REPO_NAME, tool.cli, extraFlags);
-  } catch (e) {
-    return { tool: tool.name, error: e.message.slice(0, 60) };
-  }
-
-  if (toolData.error) {
-    return { tool: tool.name, error: toolData.error };
-  }
-
-  const stats = _computeCompactStats(toolData);
-  return {
-    tool: tool.name,
-    ...stats,
-    rows: estimateRowCount(toolData, tool.toolName),
-  };
+  const toolData = _runToolCli(tool, extraFlags);
+  if (toolData.error) {return { tool: tool.name, error: toolData.error };}
+  return { ..._computeCompactStats(toolData, tool), rows: estimateRowCount(toolData, tool.toolName) };
 }
 
-function _computeCompactStats(toolData) {
+function _runToolCli(tool, extraFlags) {
+  try {
+    return runCli(REPO_NAME, tool.cli, extraFlags);
+  } catch (e) {
+    return { error: e.message.slice(0, 60) };
+  }
+}
+
+function _computeCompactStats(toolData, tool) {
   const payload = unwrap(toolData);
   const rawBytes = JSON.stringify(payload).length;
   const rawTokens = wf.estimateTokens(payload);
@@ -151,31 +151,34 @@ function _computeCompactStats(toolData) {
   const compactBytes = JSON.stringify(compacted).length;
   const compactTokens = wf.estimateTokens(compacted);
   const savingsPct = rawBytes > 0 ? Math.round((1 - compactBytes / rawBytes) * 100) : 0;
-  return { rawBytes, rawTokens, compactBytes, compactTokens, savingsPct };
+  return { tool: tool.name, rawBytes, rawTokens, compactBytes, compactTokens, savingsPct };
 }
 
 function printResults(results) {
   _printResultsHeader();
-
-  let totalRaw = 0, totalCompact = 0, totalRows = 0;
-
-  for (const r of results) {
-    if (r.error) {
-      console.log(pad(r.tool, 15) + 'ERROR: ' + r.error.slice(0, 30));
-      continue;
-    }
-    _printResultRow(r);
-    totalRaw += r.rawBytes;
-    totalCompact += r.compactBytes;
-    totalRows += r.rows;
-  }
-
-  _printSummary(totalRaw, totalCompact, totalRows);
+  const totals = _printResultRows(results);
+  console.log('─'.repeat(51));
+  _printSummary(totals.totalRaw, totals.totalCompact, totals.totalRows);
 }
 
 function _printResultsHeader() {
   console.log(pad('Tool', 15) + pad('Rows', 6) + pad('Raw (B)', 10) + pad('Compact (B)', 12) + pad('Savings', 8));
   console.log('─'.repeat(51));
+}
+
+function _printResultRows(results) {
+  let totalRaw = 0, totalCompact = 0, totalRows = 0;
+  for (const r of results) {
+    if (r.error) {
+      console.log(`${pad(r.tool, 15)}ERROR: ${r.error.slice(0, 30)}`);
+    } else {
+      _printResultRow(r);
+      totalRaw += r.rawBytes;
+      totalCompact += r.compactBytes;
+      totalRows += r.rows;
+    }
+  }
+  return { totalRaw, totalCompact, totalRows };
 }
 
 function _printResultRow(r) {
@@ -189,7 +192,6 @@ function _printResultRow(r) {
 }
 
 function _printSummary(totalRaw, totalCompact, totalRows) {
-  console.log('─'.repeat(51));
   const overallPct = totalRaw > 0 ? Math.round((1 - totalCompact / totalRaw) * 100) : 0;
   console.log(
     pad('TOTAL', 15) +
@@ -198,7 +200,6 @@ function _printSummary(totalRaw, totalCompact, totalRows) {
     pad(totalCompact, 12) +
     ('-' + overallPct + '%').padStart(8)
   );
-
   const savedBytes = totalRaw - totalCompact;
   const savedTokens = Math.round(savedBytes / 3.5);
   console.log(`\n✓ Benchmark complete.`);
@@ -207,18 +208,7 @@ function _printSummary(totalRaw, totalCompact, totalRows) {
   console.log(`  Saved:         ${formatBytes(savedBytes)} (~${savedTokens} tokens, -${overallPct}%)`);
 }
 
-function main() {
-  printHeader();
-  const { forceReindex } = parseArgs();
-  ensureRepoIndexed(forceReindex);
-  const callSymbol = findCallSymbol();
-  const results = runBenchmarks(callSymbol);
-  printResults(results);
-}
-
-try {
-  main();
-} catch (e) {
+main().catch(e => {
   console.error('Benchmark failed:', e.message);
   process.exit(1);
-}
+});
