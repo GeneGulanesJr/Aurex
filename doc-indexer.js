@@ -9,15 +9,10 @@ const path = require('path');
 const crypto = require('crypto');
 
 // Guard: reject calls when db handle is not available (CLI fallback mode)
-const _DB_ERROR = {
+const _DB_ERROR = Object.freeze({
   error:
     'This operation requires a native SQLite backend (node:sqlite or better-sqlite3). The CLI fallback does not support doc indexing.',
-};
-
-function _requireNativeDb(db) {
-  if (!db || typeof db.prepare !== 'function') {return _DB_ERROR;}
-  return null;
-}
+});
 
 function _withDb(fn) {
   return function _guarded(db, ...args) {
@@ -418,8 +413,9 @@ function indexDocs(db, rootPath, repoName, ignoreGlob) {
 function _resolveSlug(db, fileId, slug) {
   const candidates = db.prepare('SELECT id, title FROM doc_sections WHERE file_id = ?').all(fileId);
   for (const c of candidates) {
-    if (slugify(c.title) === slug) {return c.id;}
-    if (slugify(c.title).startsWith(slug) || slug.startsWith(slugify(c.title))) {return c.id;}
+    const s = slugify(c.title);
+    if (s === slug) {return c.id;}
+    if (s.startsWith(slug) || slug.startsWith(s)) {return c.id;}
   }
   return null;
 }
@@ -847,7 +843,7 @@ module.exports = {
   lookupTerm: _withDb(lookupTerm),
   getTutorialPath: _withDb(getTutorialPath),
   findCodeExamples: _withDb(findCodeExamples),
-  resolveLinks,
+  resolveLinks: _withDb(resolveLinks),
   getOrphanSections: _withDb(getOrphanSections),
   getDocCoverage: _withDb(getDocCoverage),
   getStalePages: _withDb(getStalePages),
