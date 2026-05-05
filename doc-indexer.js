@@ -9,14 +9,21 @@ const path = require('path');
 const crypto = require('crypto');
 
 // Guard: reject calls when db handle is not available (CLI fallback mode)
+const _DB_ERROR = {
+  error:
+    'This operation requires a native SQLite backend (node:sqlite or better-sqlite3). The CLI fallback does not support doc indexing.',
+};
+
 function _requireNativeDb(db) {
-  if (!db || typeof db.prepare !== 'function') {
-    return {
-      error:
-        'This operation requires a native SQLite backend (node:sqlite or better-sqlite3). The CLI fallback does not support doc indexing.',
-    };
-  }
+  if (!db || typeof db.prepare !== 'function') {return _DB_ERROR;}
   return null;
+}
+
+function _withDb(fn) {
+  return function _guarded(db, ...args) {
+    if (!db || typeof db.prepare !== 'function') {return _DB_ERROR;}
+    return fn(db, ...args);
+  };
 }
 
 const _MD_EXTENSIONS = new Set(['.md', '.mdx']);
@@ -79,6 +86,19 @@ function extractTags(content) {
 }
 
 // ── Markdown section parser ──
+function _newSection(title, level, byteStart, startLine) {
+  return { title, level, content: '', byte_start: byteStart, byte_end: 0, _startLine: startLine, role: 'other', tags: '', content_hash: '' };
+}
+
+function _finalizeSection(sec, lines, endIdx, byteEnd) {
+  sec.content = lines.slice(sec._startLine, endIdx).join('\n').trim();
+  sec.byte_end = byteEnd;
+  sec.content_hash = hashContent(sec.content);
+  sec.role = classifyRole(sec.title, sec.content);
+  sec.tags = extractTags(sec.content);
+  return sec;
+}
+
 function parseMarkdownSections(content, filePath) {
   const sections = [];
   const lines = content.split('\n');
@@ -105,53 +125,19 @@ function parseMarkdownSections(content, filePath) {
 
     if (atxMatch) {
       hasHeadings = true;
-      if (currentSection) {
-        currentSection.content = lines.slice(currentSection._startLine, i).join('\n').trim();
-        currentSection.byte_end = lineByteOffsets[i];
-        currentSection.content_hash = hashContent(currentSection.content);
-        currentSection.role = classifyRole(currentSection.title, currentSection.content);
-        currentSection.tags = extractTags(currentSection.content);
-        sections.push(currentSection);
-      }
+      if (currentSection) {sections.push(_finalizeSection(currentSection, lines, i, lineByteOffsets[i]));}
       const level = atxMatch[1].length;
       const title = atxMatch[2].replace(/\s*#+\s*$/, '').trim();
-      currentSection = {
-        title,
-        level,
-        content: '',
-        byte_start: lineByteOffsets[i],
-        byte_end: 0,
-        _startLine: i + 1,
-        role: 'other',
-        tags: '',
-        content_hash: '',
-      };
+      currentSection = _newSection(title, level, lineByteOffsets[i], i + 1);
       i++;
       continue;
     }
 
     if (setextMatch) {
       hasHeadings = true;
-      if (currentSection) {
-        currentSection.content = lines.slice(currentSection._startLine, i).join('\n').trim();
-        currentSection.byte_end = lineByteOffsets[i];
-        currentSection.content_hash = hashContent(currentSection.content);
-        currentSection.role = classifyRole(currentSection.title, currentSection.content);
-        currentSection.tags = extractTags(currentSection.content);
-        sections.push(currentSection);
-      }
+      if (currentSection) {sections.push(_finalizeSection(currentSection, lines, i, lineByteOffsets[i]));}
       const level = lines[i + 1].includes('=') ? 1 : 2;
-      currentSection = {
-        title: line.trim(),
-        level,
-        content: '',
-        byte_start: lineByteOffsets[i],
-        byte_end: 0,
-        _startLine: i + 2,
-        role: 'other',
-        tags: '',
-        content_hash: '',
-      };
+      currentSection = _newSection(line.trim(), level, lineByteOffsets[i], i + 2);
       i += 2;
       continue;
     }
@@ -159,14 +145,7 @@ function parseMarkdownSections(content, filePath) {
     i++;
   }
 
-  if (currentSection) {
-    currentSection.content = lines.slice(currentSection._startLine, i).join('\n').trim();
-    currentSection.byte_end = lineByteOffsets[i] || content.length;
-    currentSection.content_hash = hashContent(currentSection.content);
-    currentSection.role = classifyRole(currentSection.title, currentSection.content);
-    currentSection.tags = extractTags(currentSection.content);
-    sections.push(currentSection);
-  }
+  if (currentSection) {sections.push(_finalizeSection(currentSection, lines, i, lineByteOffsets[i] || content.length));}
 
   if (!hasHeadings) {
     sections.push({
@@ -314,8 +293,6 @@ function walkDir(dirPath, ignoreGlob) {
 
 // ── Main indexing function ──
 function indexDocs(db, rootPath, repoName, ignoreGlob) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
   if (!fs.existsSync(rootPath)) {return { error: `Path not found: ${rootPath}` };}
 
   // Upsert repo
@@ -438,6 +415,27 @@ function indexDocs(db, rootPath, repoName, ignoreGlob) {
   };
 }
 
+function _resolveSlug(db, fileId, slug) {
+  const candidates = db.prepare('SELECT id, title FROM doc_sections WHERE file_id = ?').all(fileId);
+  for (const c of candidates) {
+    if (slugify(c.title) === slug) {return c.id;}
+    if (slugify(c.title).startsWith(slug) || slug.startsWith(slugify(c.title))) {return c.id;}
+  }
+  return null;
+}
+
+function _findDocFile(db, repoId, pathPart) {
+  let docs = db
+    .prepare('SELECT id, path FROM doc_files WHERE repo_id = ? AND (path = ? OR path LIKE ?)')
+    .all(repoId, pathPart, `%/${pathPart}`);
+  if (docs.length === 0 && !pathPart.endsWith('.md') && !pathPart.endsWith('.mdx')) {
+    docs = db
+      .prepare('SELECT id, path FROM doc_files WHERE repo_id = ? AND (path = ? OR path LIKE ?)')
+      .all(repoId, `${pathPart}.md`, `%/${pathPart}.md`);
+  }
+  return docs;
+}
+
 // ── Link resolution ──
 function resolveLinks(db, repoId) {
   let resolved = 0,
@@ -457,53 +455,17 @@ function resolveLinks(db, repoId) {
     const href = link.target_path;
 
     if (href.startsWith('#')) {
-      // Anchor-only link: resolve within the same file
-      const slug = slugify(href.slice(1));
-      const candidates = db.prepare('SELECT id, title FROM doc_sections WHERE file_id = ?').all(link.file_id);
-      for (const c of candidates) {
-        if (slugify(c.title) === slug) {
-          targetSectionId = c.id;
-          break;
-        }
-        // Also try partial match: doc sections often have more text than the slug
-        if (slugify(c.title).startsWith(slug) || slug.startsWith(slugify(c.title))) {
-          targetSectionId = c.id;
-          break;
-        }
-      }
+      targetSectionId = _resolveSlug(db, link.file_id, slugify(href.slice(1)));
     } else {
-      // Path link (possibly with anchor)
       let [pathPart, anchor] = href.split('#');
-      // Normalize path: strip leading ./ or ../
       pathPart = pathPart.replace(/^\.\/|^\.\.\//, '');
-
-      // Try exact path match first
-      let docs = db
-        .prepare('SELECT id, path FROM doc_files WHERE repo_id = ? AND (path = ? OR path LIKE ?)')
-        .all(repoId, pathPart, `%/${pathPart}`);
-
-      // Also try with .md extension if not present
-      if (docs.length === 0 && !pathPart.endsWith('.md') && !pathPart.endsWith('.mdx')) {
-        docs = db
-          .prepare('SELECT id, path FROM doc_files WHERE repo_id = ? AND (path = ? OR path LIKE ?)')
-          .all(repoId, `${pathPart  }.md`, `%/${pathPart}.md`);
-      }
+      const docs = _findDocFile(db, repoId, pathPart);
 
       if (docs.length > 0) {
         if (anchor) {
           const slug = slugify(anchor);
           for (const d of docs) {
-            const candidates = db.prepare('SELECT id, title FROM doc_sections WHERE file_id = ?').all(d.id);
-            for (const c of candidates) {
-              if (slugify(c.title) === slug) {
-                targetSectionId = c.id;
-                break;
-              }
-              if (slugify(c.title).startsWith(slug) || slug.startsWith(slugify(c.title))) {
-                targetSectionId = c.id;
-                break;
-              }
-            }
+            targetSectionId = _resolveSlug(db, d.id, slug);
             if (targetSectionId) {break;}
           }
         } else {
@@ -528,8 +490,6 @@ function resolveLinks(db, repoId) {
 // ── Query functions ──
 
 function searchDocs(db, repoId, query, opts) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
   opts = opts || {};
   let sql = `SELECT ds.id, ds.title, ds.level, ds.role, ds.tags, ds.content_hash, df.path as file_path,
     length(ds.content) as content_length
@@ -579,8 +539,6 @@ function searchDocs(db, repoId, query, opts) {
 }
 
 function getDocOutline(db, repoId, filePath) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
   if (filePath) {
     const file = db.prepare('SELECT id FROM doc_files WHERE repo_id = ? AND path LIKE ?').get(repoId, `%${filePath}%`);
     if (!file) {return { error: `Doc file not found: ${filePath}` };}
@@ -610,9 +568,17 @@ function buildOutlineTree(sections) {
   return roots;
 }
 
+function _queryLinks(db, where, params = []) {
+  return db
+    .prepare(`
+    SELECT dl.target_path, dl.link_text, ds.title as source_title, df.path as source_file
+    FROM doc_links dl JOIN doc_sections ds ON ds.id = dl.source_section_id JOIN doc_files df ON df.id = ds.file_id
+    WHERE ${where}
+  `)
+    .all(...params);
+}
+
 function getBacklinks(db, repoId, docPath) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
   const targetFile = db
     .prepare('SELECT id FROM doc_files WHERE repo_id = ? AND path LIKE ?')
     .get(repoId, `%${docPath}%`);
@@ -620,33 +586,16 @@ function getBacklinks(db, repoId, docPath) {
   const targetSections = db.prepare('SELECT id FROM doc_sections WHERE file_id = ?').all(targetFile.id);
   const targetIds = targetSections.map((s) => s.id);
   if (!targetIds.length) {return { backlinks: [] };}
-
   const placeholders = targetIds.map(() => '?').join(',');
-  const backlinks = db
-    .prepare(`
-    SELECT dl.target_path, dl.link_text, ds.title as source_title, df.path as source_file
-    FROM doc_links dl JOIN doc_sections ds ON ds.id = dl.source_section_id JOIN doc_files df ON df.id = ds.file_id
-    WHERE dl.target_section_id IN (${placeholders}) AND dl.is_broken = 0
-  `)
-    .all(...targetIds);
+  const backlinks = _queryLinks(db, `dl.target_section_id IN (${placeholders}) AND dl.is_broken = 0`, targetIds);
   return { backlinks };
 }
 
 function getBrokenLinks(db, repoId) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
-  return db
-    .prepare(`
-    SELECT dl.target_path, dl.link_text, ds.title as source_title, df.path as source_file
-    FROM doc_links dl JOIN doc_sections ds ON ds.id = dl.source_section_id JOIN doc_files df ON df.id = ds.file_id
-    WHERE dl.is_broken = 1 AND ds.repo_id = ? ORDER BY df.path
-  `)
-    .all(repoId);
+  return _queryLinks(db, 'dl.is_broken = 1 AND ds.repo_id = ? ORDER BY df.path', [repoId]);
 }
 
 function lookupTerm(db, repoId, term) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
   if (term) {
     return (
       db.prepare('SELECT * FROM doc_terms WHERE repo_id = ? AND term = ?').get(repoId, term.toLowerCase()) || {
@@ -658,8 +607,6 @@ function lookupTerm(db, repoId, term) {
 }
 
 function getTutorialPath(db, repoId, sectionId) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
   const section = db.prepare('SELECT id, title, file_id, content FROM doc_sections WHERE id = ?').get(sectionId);
   if (!section) {return { error: `Section ${sectionId} not found` };}
 
@@ -703,8 +650,6 @@ function getTutorialPath(db, repoId, sectionId) {
 }
 
 function findCodeExamples(db, repoId, query, lang) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
   let sql = `SELECT dcb.id, dcb.lang, dcb.content, ds.title as section_title, df.path as file_path
     FROM doc_code_blocks dcb JOIN doc_sections ds ON ds.id = dcb.section_id JOIN doc_files df ON df.id = ds.file_id
     WHERE ds.repo_id = ? AND dcb.content LIKE ?`;
@@ -718,8 +663,6 @@ function findCodeExamples(db, repoId, query, lang) {
 }
 
 function reindexDocs(db, repoId, mode, ignoreGlob) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
   const repo = db.prepare('SELECT id, name, path FROM doc_repos WHERE id = ?').get(repoId);
   if (!repo) {return { error: `Repo ${repoId} not found` };}
   return indexDocs(db, repo.path, repo.name, ignoreGlob);
@@ -730,40 +673,19 @@ function reindexDocs(db, repoId, mode, ignoreGlob) {
 // ══════════════════════════════════════════════════════════
 
 function getOrphanSections(db, repoId, opts = {}) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
   const includeSameDoc = opts.includeSameDoc || false;
-
-  let query, params;
-  if (includeSameDoc) {
-    query = `
-      SELECT ds.id, ds.title, ds.level, df.path as file_path, ds.role
-      FROM doc_sections ds
-      JOIN doc_files df ON df.id = ds.file_id
-      WHERE ds.repo_id = ?
-        AND ds.id NOT IN (SELECT DISTINCT target_section_id FROM doc_links WHERE target_section_id IS NOT NULL)
-      ORDER BY ds.level, ds.title
-    `;
-    params = [repoId];
-  } else {
-    query = `
-      SELECT ds.id, ds.title, ds.level, df.path as file_path, ds.role
-      FROM doc_sections ds
-      JOIN doc_files df ON df.id = ds.file_id
-      WHERE ds.repo_id = ?
-        AND ds.id NOT IN (
-          SELECT DISTINCT dl.target_section_id
-          FROM doc_links dl
-          JOIN doc_sections src ON src.id = dl.source_section_id
-          WHERE dl.target_section_id IS NOT NULL AND src.file_id != ds.file_id
-        )
-        AND ds.level > 1
-      ORDER BY ds.level, ds.title
-    `;
-    params = [repoId];
-  }
-
-  const orphans = db.prepare(query).all(...params);
+  const notInClause = includeSameDoc
+    ? 'SELECT DISTINCT target_section_id FROM doc_links WHERE target_section_id IS NOT NULL'
+    : `SELECT DISTINCT dl.target_section_id
+       FROM doc_links dl JOIN doc_sections src ON src.id = dl.source_section_id
+       WHERE dl.target_section_id IS NOT NULL AND src.file_id != ds.file_id`;
+  const extraWhere = includeSameDoc ? '' : 'AND ds.level > 1';
+  const orphans = db.prepare(`
+    SELECT ds.id, ds.title, ds.level, df.path as file_path, ds.role
+    FROM doc_sections ds JOIN doc_files df ON df.id = ds.file_id
+    WHERE ds.repo_id = ? AND ds.id NOT IN (${notInClause}) ${extraWhere}
+    ORDER BY ds.level, ds.title
+  `).all(repoId);
   return { orphans, total: orphans.length };
 }
 
@@ -772,8 +694,6 @@ function getOrphanSections(db, repoId, opts = {}) {
 // ══════════════════════════════════════════════════════════
 
 function getDocCoverage(db, repoId, docRepoId, opts = {}) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
   // Get all function/constant/method symbols from the code repo
   const symbols = db
     .prepare(`
@@ -839,8 +759,6 @@ function getDocCoverage(db, repoId, docRepoId, opts = {}) {
 // ══════════════════════════════════════════════════════════
 
 function getDuplicateSections(db, repoId) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
   // Find sections with identical content_hash
   const duplicates = db
     .prepare(`
@@ -887,9 +805,6 @@ function getDuplicateSections(db, repoId) {
 }
 
 function getStalePages(db, repoId) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
-
   const repo = db.prepare('SELECT path FROM doc_repos WHERE id = ?').get(repoId);
   if (!repo) {return { error: 'Repo not found' };}
 
@@ -923,20 +838,20 @@ function getStalePages(db, repoId) {
 }
 
 module.exports = {
-  indexDocs,
-  reindexDocs,
-  searchDocs,
-  getDocOutline,
-  getBacklinks,
-  getBrokenLinks,
-  lookupTerm,
-  getTutorialPath,
-  findCodeExamples,
+  indexDocs: _withDb(indexDocs),
+  reindexDocs: _withDb(reindexDocs),
+  searchDocs: _withDb(searchDocs),
+  getDocOutline: _withDb(getDocOutline),
+  getBacklinks: _withDb(getBacklinks),
+  getBrokenLinks: _withDb(getBrokenLinks),
+  lookupTerm: _withDb(lookupTerm),
+  getTutorialPath: _withDb(getTutorialPath),
+  findCodeExamples: _withDb(findCodeExamples),
   resolveLinks,
-  getOrphanSections,
-  getDocCoverage,
-  getStalePages,
-  getDuplicateSections,
+  getOrphanSections: _withDb(getOrphanSections),
+  getDocCoverage: _withDb(getDocCoverage),
+  getStalePages: _withDb(getStalePages),
+  getDuplicateSections: _withDb(getDuplicateSections),
   _parseMarkdownSections: parseMarkdownSections,
   _slugify: slugify,
 };
