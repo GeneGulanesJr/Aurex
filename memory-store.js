@@ -13,10 +13,17 @@ const fs = require('fs');
 const crypto = require('crypto');
 
 const {
-  DB_PATH, HOME,
-  sqlJson, sqlRun, sqlRaw, ensureDb,
-  getDb, getEngine,
-  jsonOut, jsonErrNoExit, parseArgs,
+  DB_PATH,
+  HOME,
+  sqlJson,
+  sqlRun,
+  sqlRaw,
+  ensureDb,
+  getDb,
+  getEngine,
+  jsonOut,
+  jsonErrNoExit,
+  parseArgs,
 } = require('./db');
 
 const { getConfig } = require('./config');
@@ -42,21 +49,29 @@ const TYPE_PRIORITY_CASE = `CASE o.type
   ELSE 0
 END`;
 
-
-
 /* ── subcommands ───────────────────────────────────────────── */
 
 // Tool tiering (v6) — control which commands appear in session-start context
 const TOOL_TIERS = {
-  core: new Set([
-    'search', 'save', 'context', 'search-code', 'get-code-source',
-    'importance', 'outline', 'winnow',
-  ]),
+  core: new Set(['search', 'save', 'context', 'search-code', 'get-code-source', 'importance', 'outline', 'winnow']),
   standard: new Set([
-    'search', 'save', 'context', 'search-code', 'get-code-source',
-    'importance', 'outline', 'winnow',
-    'complexity', 'dead-code', 'hotspots', 'blast-radius',
-    'call-hierarchy', 'cycles', 'coupling', 'churn', 'signal-chains',
+    'search',
+    'save',
+    'context',
+    'search-code',
+    'get-code-source',
+    'importance',
+    'outline',
+    'winnow',
+    'complexity',
+    'dead-code',
+    'hotspots',
+    'blast-radius',
+    'call-hierarchy',
+    'cycles',
+    'coupling',
+    'churn',
+    'signal-chains',
   ]),
   full: null, // Null = all commands
 };
@@ -77,7 +92,9 @@ function _readTierConfig() {
 
 function sessionStart(args) {
   const project = args.project;
-  if (!project) {return jsonErrNoExit('Missing --project');}
+  if (!project) {
+    return jsonErrNoExit('Missing --project');
+  }
 
   const sessionRows = sqlJson('INSERT INTO session_log (project) VALUES (?) RETURNING id, started_at', [project]);
   const sessionId = sessionRows[0].id;
@@ -119,13 +136,11 @@ function sessionStart(args) {
   const tierConfig = _readTierConfig();
   const tier = tierConfig.tier || 'full';
   const tierSet = TOOL_TIERS[tier];
-  const availableCommands = tierSet ? Object.keys(commands).filter(c => tierSet.has(c)) : Object.keys(commands);
+  const availableCommands = tierSet ? Object.keys(commands).filter((c) => tierSet.has(c)) : Object.keys(commands);
   // Apply extra/hidden overrides
   const extra = tierConfig.extra_commands || [];
   const hidden = tierConfig.hidden_commands || [];
-  const finalCommands = [...new Set([...availableCommands, ...extra])]
-    .filter(c => !hidden.includes(c))
-    .sort();
+  const finalCommands = [...new Set([...availableCommands, ...extra])].filter((c) => !hidden.includes(c)).sort();
 
   return {
     sessionId,
@@ -146,17 +161,23 @@ function sessionEnd(args) {
   const id = args.id;
   const memories = parseInt(args.memories || '0', 10);
   const auto = args.auto === 'true' || args.auto === true;
-  if (!id) {return jsonErrNoExit('Missing --id');}
+  if (!id) {
+    return jsonErrNoExit('Missing --id');
+  }
 
   let trustRecoveryResult = null;
-  if (auto) {trustRecoveryResult = trustRecovery({ session: id });}
+  if (auto) {
+    trustRecoveryResult = trustRecovery({ session: id });
+  }
 
   sqlRun("UPDATE session_log SET ended_at = datetime('now'), memories_saved = ? WHERE id = ?", [
     memories,
     parseInt(id, 10),
   ]);
   const result = { ok: true, sessionId: parseInt(id, 10) };
-  if (trustRecoveryResult) {result.trustRecovery = trustRecoveryResult;}
+  if (trustRecoveryResult) {
+    result.trustRecovery = trustRecoveryResult;
+  }
   return result;
 }
 
@@ -172,7 +193,9 @@ function save(args) {
   const sessionId = args['session-id'] || findLatestSession(project);
   const force = args.force === 'true' || args.force === true;
 
-  if (!title || !content) {return jsonErrNoExit('Missing --title and --content');}
+  if (!title || !content) {
+    return jsonErrNoExit('Missing --title and --content');
+  }
 
   // Dedup check (skip if forced)
   if (!force) {
@@ -252,7 +275,7 @@ function rankObservations(rows, query = '') {
         const hits = queryWords.filter((w) => title.includes(w)).length;
         ftsScore = queryWords.length > 0 ? (hits / queryWords.length) * 2 : 0;
       }
-      const ageMs = now - new Date(`${row.created_at  }Z`).getTime();
+      const ageMs = now - new Date(`${row.created_at}Z`).getTime();
       const recencyScore = Math.exp(-ageMs / (7 * 24 * 60 * 60 * 1000));
       const trustScore = row.trust_score !== undefined && row.trust_score !== null ? row.trust_score : 0.7;
       const recallScore = Math.log(1 + (row.recall_count || 0)) * 0.2;
@@ -270,7 +293,12 @@ function rankObservations(rows, query = '') {
           skill: 0.5,
         }[row.type] || 1.0;
       const ranking = getConfig().ranking;
-      const composite = (ftsScore * ranking.fts_relevance + recencyScore * ranking.recency + trustScore * ranking.trust + recallScore * ranking.recall) * typeBoost;
+      const composite =
+        (ftsScore * ranking.fts_relevance +
+          recencyScore * ranking.recency +
+          trustScore * ranking.trust +
+          recallScore * ranking.recall) *
+        typeBoost;
       return { ...row, _score: composite };
     })
     .sort((a, b) => b._score - a._score);
@@ -284,7 +312,9 @@ function search(args) {
   const limit = parseInt(args.limit || '10', 10);
   const sessionId = args['session-id'] ? parseInt(args['session-id'], 10) : null;
   const includeCode = args['include-code'] === 'true' || args['include-code'] === true;
-  if (!query) {return jsonErrNoExit('Missing --query');}
+  if (!query) {
+    return jsonErrNoExit('Missing --query');
+  }
 
   const isFtsSpecial = /[*"\-]|\b(AND|OR|NOT)\b/i.test(query);
   const needsFallback = query === '*' || query === '' || isFtsSpecial;
@@ -385,7 +415,9 @@ function context(args) {
   const topicQuery = args.query || null;
   const deep = args.deep === 'true' || args.deep === true;
   const crossProject = !project || args['all-projects'] === 'true' || args['all-projects'] === true;
-  if (!project && !crossProject) {return jsonErrNoExit('Missing --project');}
+  if (!project && !crossProject) {
+    return jsonErrNoExit('Missing --project');
+  }
 
   // Active sessions
   const sessions = project
@@ -536,7 +568,9 @@ function context(args) {
 
 function get(args) {
   const id = args.id;
-  if (!id) {return jsonErrNoExit('Missing --id');}
+  if (!id) {
+    return jsonErrNoExit('Missing --id');
+  }
   const rows = sqlJson(
     `
     SELECT id, title, content, type, project, scope, topic_key,
@@ -546,13 +580,17 @@ function get(args) {
   `,
     [parseInt(id, 10)],
   );
-  if (rows.length === 0) {return { error: 'Observation not found' };}
+  if (rows.length === 0) {
+    return { error: 'Observation not found' };
+  }
 
   const obs = rows[0];
 
   // Attach symbol links
   const links = sqlJson('SELECT symbol_id, repo, trust_score FROM symbol_links WHERE memory_id = ?', [String(id)]);
-  if (links.length > 0) {obs.symbols = links;}
+  if (links.length > 0) {
+    obs.symbols = links;
+  }
 
   // Attach recall count
   const recallCount = sqlJson('SELECT COUNT(*) as cnt FROM recall_log WHERE memory_id = ?', [parseInt(id, 10)]);
@@ -563,7 +601,9 @@ function get(args) {
 
 function update(args) {
   const id = args.id;
-  if (!id) {return jsonErrNoExit('Missing --id');}
+  if (!id) {
+    return jsonErrNoExit('Missing --id');
+  }
   const sets = [];
   const params = [];
   if (args.title) {
@@ -590,7 +630,9 @@ function update(args) {
     sets.push('topic_key = ?');
     params.push(args['topic-key']);
   }
-  if (sets.length === 0) {return jsonErrNoExit('Nothing to update');}
+  if (sets.length === 0) {
+    return jsonErrNoExit('Nothing to update');
+  }
 
   params.push(parseInt(id, 10));
   sqlRun(`UPDATE observations SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = ?`, params);
@@ -609,7 +651,9 @@ function update(args) {
 function del(args) {
   const id = args.id;
   const hard = args.hard === 'true' || args.hard === true;
-  if (!id) {return jsonErrNoExit('Missing --id');}
+  if (!id) {
+    return jsonErrNoExit('Missing --id');
+  }
 
   if (hard) {
     sqlRun('DELETE FROM observations WHERE id = ?', [parseInt(id, 10)]);
@@ -623,7 +667,9 @@ function timeline(args) {
   const id = parseInt(args.id);
   const before = parseInt(args.before || '5', 10);
   const after = parseInt(args.after || '5', 10);
-  if (isNaN(id)) {return jsonErrNoExit('Missing --id');}
+  if (isNaN(id)) {
+    return jsonErrNoExit('Missing --id');
+  }
 
   return sqlJson(
     `
@@ -653,7 +699,9 @@ function savePrompt(args) {
   const content = args.content;
   const project = args.project || null;
   const sessionId = args['session-id'] || findLatestSession(project);
-  if (!content) {return jsonErrNoExit('Missing --content');}
+  if (!content) {
+    return jsonErrNoExit('Missing --content');
+  }
 
   const rows = sqlJson(
     `
@@ -668,10 +716,14 @@ function savePrompt(args) {
 
 function capturePassive(args) {
   const content = args.content;
-  if (!content) {return jsonErrNoExit('Missing --content');}
+  if (!content) {
+    return jsonErrNoExit('Missing --content');
+  }
 
   const match = content.match(/##\s*Key\s*Learnings?:\s*([\s\S]*)/i);
-  if (!match) {return { extracted: 0, items: [] };}
+  if (!match) {
+    return { extracted: 0, items: [] };
+  }
 
   const section = match[1];
   const itemRe = /(?:^|\n)\s*(?:[-*]|\d+[.)])\s*([^\n]*(?:\n(?!\s*(?:[-*]|\d+[.)])\s*)[^\n]*)*)/g;
@@ -679,13 +731,15 @@ function capturePassive(args) {
   let m;
   while ((m = itemRe.exec(section)) !== null) {
     const cleaned = m[1].replace(/\n\s+/g, ' ').trim();
-    if (cleaned) {items.push(cleaned);}
+    if (cleaned) {
+      items.push(cleaned);
+    }
   }
 
   let inserted = 0;
   const sessionId = findLatestSession(null);
   for (const item of items) {
-    const summary = item.length > 80 ? `${item.slice(0, 77)  }…` : item;
+    const summary = item.length > 80 ? `${item.slice(0, 77)}…` : item;
     sqlJson('INSERT INTO observations (session_id, type, title, content, scope) VALUES (?, ?, ?, ?, ?)', [
       String(sessionId),
       'learning',
@@ -717,7 +771,9 @@ function sessionSummary(args) {
   const content = args.content;
   const project = args.project || null;
   const sessionId = args['session-id'] || findLatestSession(project);
-  if (!content) {return jsonErrNoExit('Missing --content');}
+  if (!content) {
+    return jsonErrNoExit('Missing --content');
+  }
 
   const rows = sqlJson(
     `
@@ -738,7 +794,9 @@ function linkSymbol(args) {
   const repo = args.repo;
   const trust = parseFloat(args.trust || (symbolId ? '1.0' : '0.7'));
 
-  if (!memoryId || !repo) {return jsonErrNoExit('Missing --memory and --repo');}
+  if (!memoryId || !repo) {
+    return jsonErrNoExit('Missing --memory and --repo');
+  }
   const symVal = symbolId || '__unlinked__';
 
   sqlRun('INSERT OR REPLACE INTO symbol_links (memory_id, symbol_id, repo, trust_score) VALUES (?, ?, ?, ?)', [
@@ -752,7 +810,9 @@ function linkSymbol(args) {
 
 function autoLink(args) {
   const project = args.project;
-  if (!project) {return jsonErrNoExit('Missing --project');}
+  if (!project) {
+    return jsonErrNoExit('Missing --project');
+  }
 
   const unlinked = sqlJson(
     `
@@ -780,7 +840,9 @@ function adjustTrust(args) {
   const memoryId = args.memory;
   const reason = args.reason;
   const delta = parseFloat(args.delta);
-  if (!memoryId || !reason || isNaN(delta)) {return jsonErrNoExit('Missing --memory, --reason, --delta');}
+  if (!memoryId || !reason || isNaN(delta)) {
+    return jsonErrNoExit('Missing --memory, --reason, --delta');
+  }
 
   sqlRun('UPDATE symbol_links SET trust_score = MAX(0.0, trust_score + ?) WHERE memory_id = ?', [delta, memoryId]);
   sqlRun('INSERT INTO trust_adjustments (memory_id, reason, delta) VALUES (?, ?, ?)', [memoryId, reason, delta]);
@@ -792,14 +854,18 @@ function adjustTrust(args) {
 function recordRecall(args) {
   const sessionId = parseInt(args.session);
   const memoryId = args.memory;
-  if (!sessionId || !memoryId) {return jsonErrNoExit('Missing --session and --memory');}
+  if (!sessionId || !memoryId) {
+    return jsonErrNoExit('Missing --session and --memory');
+  }
   sqlRun('INSERT OR IGNORE INTO session_recalls (session_id, memory_id) VALUES (?, ?)', [sessionId, memoryId]);
   return { ok: true };
 }
 
 function staleLinks(args) {
   const project = args.project;
-  if (!project) {return jsonErrNoExit('Missing --project');}
+  if (!project) {
+    return jsonErrNoExit('Missing --project');
+  }
   return sqlJson(
     `SELECT memory_id, symbol_id, repo, trust_score, last_verified
      FROM symbol_links
@@ -835,7 +901,9 @@ function listProjects() {
 function syncCodeTrust(args) {
   const repo = args.repo;
   const changedJson = args['changed-symbols-json'] || args['changed-symbols'];
-  if (!repo || !changedJson) {return jsonErrNoExit('Missing --repo and --changed-symbols-json');}
+  if (!repo || !changedJson) {
+    return jsonErrNoExit('Missing --repo and --changed-symbols-json');
+  }
 
   let changedData;
   try {
@@ -848,22 +916,34 @@ function syncCodeTrust(args) {
   const changedSet = new Set();
   if (Array.isArray(changedData)) {
     for (const s of changedData) {
-      if (typeof s === 'string') {changedSet.add(s);}
-      else if (s && s.symbol_id) {changedSet.add(s.symbol_id);}
-      else if (s && s.name) {changedSet.add(s.name);}
+      if (typeof s === 'string') {
+        changedSet.add(s);
+      } else if (s && s.symbol_id) {
+        changedSet.add(s.symbol_id);
+      } else if (s && s.name) {
+        changedSet.add(s.name);
+      }
     }
   } else if (changedData && typeof changedData === 'object') {
     for (const key of ['added', 'modified', 'removed', 'changed']) {
       const arr = changedData[key];
-      if (!Array.isArray(arr)) {continue;}
+      if (!Array.isArray(arr)) {
+        continue;
+      }
       for (const s of arr) {
-        if (typeof s === 'string') {changedSet.add(s);}
-        else if (s && s.symbol_id) {changedSet.add(s.symbol_id);}
-        else if (s && s.name) {changedSet.add(s.name);}
+        if (typeof s === 'string') {
+          changedSet.add(s);
+        } else if (s && s.symbol_id) {
+          changedSet.add(s.symbol_id);
+        } else if (s && s.name) {
+          changedSet.add(s.name);
+        }
       }
     }
   }
-  if (changedSet.size === 0) {return jsonErrNoExit('No changed symbols found in input');}
+  if (changedSet.size === 0) {
+    return jsonErrNoExit('No changed symbols found in input');
+  }
 
   // Get all anchored links for this repo
   const allLinks = sqlJson(
@@ -876,7 +956,7 @@ function syncCodeTrust(args) {
 
   for (const link of allLinks) {
     const isChanged = [...changedSet].some(
-      (cs) => link.symbol_id === cs || link.symbol_id.endsWith(`::${  cs}`) || link.symbol_id.includes(cs),
+      (cs) => link.symbol_id === cs || link.symbol_id.endsWith(`::${cs}`) || link.symbol_id.includes(cs),
     );
 
     if (isChanged) {
@@ -928,7 +1008,9 @@ function syncCodeTrust(args) {
 function symbolCluster(args) {
   const symbolId = args.symbol;
   const repo = args.repo || null;
-  if (!symbolId) {return jsonErrNoExit('Missing --symbol');}
+  if (!symbolId) {
+    return jsonErrNoExit('Missing --symbol');
+  }
 
   let q = `
     SELECT o.id, o.title, o.type, o.project, o.scope, o.topic_key, o.created_at,
@@ -950,13 +1032,17 @@ function symbolCluster(args) {
 
 function related(args) {
   const id = parseInt(args.id);
-  if (isNaN(id)) {return jsonErrNoExit('Missing --id');}
+  if (isNaN(id)) {
+    return jsonErrNoExit('Missing --id');
+  }
 
   const symbols = sqlJson('SELECT symbol_id, repo FROM symbol_links WHERE memory_id = ? AND symbol_id != ?', [
     String(id),
     '__unlinked__',
   ]);
-  if (symbols.length === 0) {return { memory_id: id, related: [] };}
+  if (symbols.length === 0) {
+    return { memory_id: id, related: [] };
+  }
 
   const result = [];
   for (const sym of symbols) {
@@ -986,16 +1072,24 @@ function trigramOverlap(a, b) {
   const trigrams = (s) => {
     const t = new Set();
     const lower = s.toLowerCase().replace(/[^a-z0-9]/g, '');
-    for (let i = 0; i <= lower.length - 3; i++) {t.add(lower.slice(i, i + 3));}
+    for (let i = 0; i <= lower.length - 3; i++) {
+      t.add(lower.slice(i, i + 3));
+    }
     return t;
   };
   const ta = trigrams(a);
   const tb = trigrams(b);
-  if (ta.size === 0 && tb.size === 0) {return 1.0;}
-  if (ta.size === 0 || tb.size === 0) {return 0.0;}
+  if (ta.size === 0 && tb.size === 0) {
+    return 1.0;
+  }
+  if (ta.size === 0 || tb.size === 0) {
+    return 0.0;
+  }
   let shared = 0;
   for (const t of ta) {
-    if (tb.has(t)) {shared++;}
+    if (tb.has(t)) {
+      shared++;
+    }
   }
   return shared / Math.max(ta.size, tb.size);
 }
@@ -1040,7 +1134,9 @@ function markDuplicate(args) {
   const source = parseInt(args.source);
   const target = parseInt(args.target);
   const confidence = parseFloat(args.confidence || '0.9');
-  if (!source || !target) {return jsonErrNoExit('Missing --source and --target');}
+  if (!source || !target) {
+    return jsonErrNoExit('Missing --source and --target');
+  }
 
   sqlRun(
     'INSERT OR REPLACE INTO observation_relations (source_id, target_id, relation, confidence) VALUES (?, ?, ?, ?)',
@@ -1054,7 +1150,9 @@ function markDuplicate(args) {
 
 function autoRecoverInternal(sessionId) {
   const session = sqlJson('SELECT * FROM session_log WHERE id = ?', [parseInt(sessionId)]);
-  if (session.length === 0) {return null;}
+  if (session.length === 0) {
+    return null;
+  }
 
   const obs = sqlJson(
     `
@@ -1075,18 +1173,22 @@ function autoRecoverInternal(sessionId) {
 
   const types = {};
   for (const o of obs) {
-    if (!types[o.type]) {types[o.type] = [];}
+    if (!types[o.type]) {
+      types[o.type] = [];
+    }
     types[o.type].push(o.title);
   }
 
   const lines = ['## Auto-Recovered Session Summary', ''];
-  lines.push(`**Session:** ${  sessionId}`);
-  lines.push(`**Started:** ${  session[0].started_at}`);
-  lines.push(`**Observations:** ${  obs.length}`);
+  lines.push(`**Session:** ${sessionId}`);
+  lines.push(`**Started:** ${session[0].started_at}`);
+  lines.push(`**Observations:** ${obs.length}`);
   lines.push('');
   for (const [type, titles] of Object.entries(types)) {
-    lines.push(`### ${  type}`);
-    for (const t of titles) {lines.push('- ' + t);}
+    lines.push(`### ${type}`);
+    for (const t of titles) {
+      lines.push('- ' + t);
+    }
     lines.push('');
   }
   const summary = lines.join('\n');
@@ -1111,15 +1213,21 @@ function autoRecoverInternal(sessionId) {
 
 function autoRecover(args) {
   const sessionId = args.session;
-  if (!sessionId) {return jsonErrNoExit('Missing --session');}
+  if (!sessionId) {
+    return jsonErrNoExit('Missing --session');
+  }
   const result = autoRecoverInternal(sessionId);
-  if (!result) {return { status: 'nothing_to_recover' };}
+  if (!result) {
+    return { status: 'nothing_to_recover' };
+  }
   return result;
 }
 
 function recoverOrphans() {
   const orphans = sqlJson('SELECT id, project FROM session_log WHERE ended_at IS NULL ORDER BY started_at DESC');
-  if (orphans.length === 0) {return { recovered: [], total: 0 };}
+  if (orphans.length === 0) {
+    return { recovered: [], total: 0 };
+  }
 
   const recovered = [];
   const allObservations = [];
@@ -1157,7 +1265,7 @@ function recoverOrphans() {
 
       // Soft-delete the individual summaries
       for (const s of recentSummaries) {
-        sqlRun('UPDATE observations SET deleted_at = datetime(\'now\') WHERE id = ?', [s.id]);
+        sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [s.id]);
       }
 
       // Insert the consolidated summary
@@ -1181,7 +1289,9 @@ function saveWorkflow(args) {
   const name = args.name;
   const project = args.project || null;
   const stepsRaw = args.steps || null;
-  if (!id || !name) {return jsonErrNoExit('Missing --id and --name');}
+  if (!id || !name) {
+    return jsonErrNoExit('Missing --id and --name');
+  }
 
   sqlRun('INSERT OR IGNORE INTO procedural_memory (id, name, project) VALUES (?, ?, ?)', [id, name, project]);
 
@@ -1206,7 +1316,9 @@ function recordStep(args) {
   const workflow = args.workflow;
   const step = parseInt(args.step);
   const command = args.command;
-  if (!workflow || isNaN(step) || !command) {return jsonErrNoExit('Missing --workflow, --step, --command');}
+  if (!workflow || isNaN(step) || !command) {
+    return jsonErrNoExit('Missing --workflow, --step, --command');
+  }
   sqlRun(
     'INSERT OR REPLACE INTO procedural_steps (workflow, step_num, command, success, attempts) VALUES (?, ?, ?, 1.0, 1)',
     [workflow, step, command],
@@ -1219,7 +1331,9 @@ function stepOutcome(args) {
   const step = parseInt(args.step);
   const success = args.success === 'true';
   const workaround = args.workaround || null;
-  if (!workflow || isNaN(step)) {return jsonErrNoExit('Missing --workflow and --step');}
+  if (!workflow || isNaN(step)) {
+    return jsonErrNoExit('Missing --workflow and --step');
+  }
 
   if (success) {
     sqlRun(
@@ -1241,9 +1355,13 @@ function stepOutcome(args) {
 
 function getWorkflow(args) {
   const id = args.id;
-  if (!id) {return jsonErrNoExit('Missing --id');}
+  if (!id) {
+    return jsonErrNoExit('Missing --id');
+  }
   const meta = sqlJson('SELECT * FROM procedural_memory WHERE id = ? LIMIT 1', [id]);
-  if (meta.length === 0) {return { error: 'Workflow not found' };}
+  if (meta.length === 0) {
+    return { error: 'Workflow not found' };
+  }
   const steps = sqlJson('SELECT * FROM procedural_steps WHERE workflow = ? ORDER BY step_num', [id]);
   return { ...meta[0], steps };
 }
@@ -1331,7 +1449,9 @@ function initDb() {
 
 function trustRecovery(args) {
   const sessionId = parseInt(args.session);
-  if (!sessionId) {return jsonErrNoExit('Missing --session');}
+  if (!sessionId) {
+    return jsonErrNoExit('Missing --session');
+  }
 
   const recalled = sqlJson('SELECT memory_id FROM session_recalls WHERE session_id = ?', [sessionId]);
   let recovered = 0;
@@ -1378,7 +1498,9 @@ function parseCodeFile(filePath) {
 }
 
 async function ensureParserAvailable() {
-  if (codeParser.isReady()) {return true;}
+  if (codeParser.isReady()) {
+    return true;
+  }
   await codeParser.init();
   return codeParser.isReady();
 }
@@ -1396,10 +1518,14 @@ function walkDir(dirPath) {
     try {
       const entries = fs.readdirSync(dir, { withFileTypes: true });
       for (const entry of entries) {
-        if (entry.name.startsWith('.')) {continue;}
+        if (entry.name.startsWith('.')) {
+          continue;
+        }
         const fullPath = path.join(dir, entry.name);
         if (entry.isDirectory()) {
-          if (!_IGNORE_DIRS.has(entry.name)) {walk(fullPath);}
+          if (!_IGNORE_DIRS.has(entry.name)) {
+            walk(fullPath);
+          }
         } else if (entry.isFile() && isCodeFile(entry.name)) {
           results.push(fullPath);
         }
@@ -1416,11 +1542,13 @@ function hashContent(content) {
 
 async function indexRepoInternal(repoPath, repoName) {
   if (!(await ensureParserAvailable())) {
-    return { error: `WASM tree-sitter parser not available. Run: cd ${  __dirname  } && npm install web-tree-sitter` };
+    return { error: `WASM tree-sitter parser not available. Run: cd ${__dirname} && npm install web-tree-sitter` };
   }
 
   const absPath = path.resolve(repoPath);
-  if (!fs.existsSync(absPath)) {return { error: `Path not found: ${absPath}` };}
+  if (!fs.existsSync(absPath)) {
+    return { error: `Path not found: ${absPath}` };
+  }
 
   const files = walkDir(absPath);
   let symbolCount = 0;
@@ -1442,12 +1570,16 @@ async function indexRepoInternal(repoPath, repoName) {
   // Capture current HEAD commit for freshness checks
   let headCommit = null;
   try {
-    headCommit = require('child_process').execSync('git rev-parse HEAD', {
-      cwd: absPath,
-      encoding: 'utf-8',
-      timeout: 5000,
-    }).trim();
-  } catch (_) { /* Non-git repo or git error */ }
+    headCommit = require('child_process')
+      .execSync('git rev-parse HEAD', {
+        cwd: absPath,
+        encoding: 'utf-8',
+        timeout: 5000,
+      })
+      .trim();
+  } catch (_) {
+    /* Non-git repo or git error */
+  }
 
   for (const filePath of files) {
     try {
@@ -1504,12 +1636,10 @@ async function indexRepoInternal(repoPath, repoName) {
     }
   }
 
-  sqlRun("UPDATE code_repos SET file_count = ?, symbol_count = ?, head_commit = ?, updated_at = datetime('now') WHERE id = ?", [
-    fileCount,
-    symbolCount,
-    headCommit || null,
-    repoId,
-  ]);
+  sqlRun(
+    "UPDATE code_repos SET file_count = ?, symbol_count = ?, head_commit = ?, updated_at = datetime('now') WHERE id = ?",
+    [fileCount, symbolCount, headCommit || null, repoId],
+  );
 
   // Build import graph, call graph, and complexity
   let importEdges = 0,
@@ -1517,15 +1647,21 @@ async function indexRepoInternal(repoPath, repoName) {
     complexityCount = 0;
   try {
     const ig = codeAnalysis.buildImportGraph(db, repoId);
-    if (ig.success) {importEdges = ig.edges;}
+    if (ig.success) {
+      importEdges = ig.edges;
+    }
   } catch (_) {}
   try {
     const cg = codeAnalysis.buildCallGraph(db, repoId);
-    if (cg.success) {callEdges = cg.calls;}
+    if (cg.success) {
+      callEdges = cg.calls;
+    }
   } catch (_) {}
   try {
     const cc = codeAnalysis.buildComplexity(db, repoId);
-    if (cc.success) {complexityCount = cc.symbols;}
+    if (cc.success) {
+      complexityCount = cc.symbols;
+    }
   } catch (_) {}
 
   return {
@@ -1544,7 +1680,9 @@ async function indexRepoInternal(repoPath, repoName) {
 
 async function reindexRepoInternal(repo, mode) {
   const existing = sqlJson('SELECT id, path FROM code_repos WHERE name = ?', [repo]);
-  if (existing.length === 0) {return { error: `Repo not found: ${repo}` };}
+  if (existing.length === 0) {
+    return { error: `Repo not found: ${repo}` };
+  }
   const { id: repoId, path: repoPath } = existing[0];
 
   if (mode === 'full') {
@@ -1554,7 +1692,9 @@ async function reindexRepoInternal(repo, mode) {
   }
 
   // Incremental: only re-index files whose mtime changed
-  if (!(await ensureParserAvailable())) {return { error: 'WASM tree-sitter parser not available' };}
+  if (!(await ensureParserAvailable())) {
+    return { error: 'WASM tree-sitter parser not available' };
+  }
 
   const files = walkDir(repoPath);
   let reindexed = 0;
@@ -1563,7 +1703,9 @@ async function reindexRepoInternal(repo, mode) {
 
   const existingFiles = {};
   const efRows = sqlJson('SELECT path, mtime, id FROM code_files WHERE repo_id = ?', [repoId]);
-  for (const row of efRows) {existingFiles[row.path] = { mtime: row.mtime, id: row.id };}
+  for (const row of efRows) {
+    existingFiles[row.path] = { mtime: row.mtime, id: row.id };
+  }
 
   for (const filePath of files) {
     try {
@@ -1645,15 +1787,21 @@ async function reindexRepoInternal(repo, mode) {
     complexityCount = 0;
   try {
     const ig = codeAnalysis.buildImportGraph(db, repoId);
-    if (ig.success) {importEdges = ig.edges;}
+    if (ig.success) {
+      importEdges = ig.edges;
+    }
   } catch (_) {}
   try {
     const cg = codeAnalysis.buildCallGraph(db, repoId);
-    if (cg.success) {callEdges = cg.calls;}
+    if (cg.success) {
+      callEdges = cg.calls;
+    }
   } catch (_) {}
   try {
     const cc = codeAnalysis.buildComplexity(db, repoId);
-    if (cc.success) {complexityCount = cc.symbols;}
+    if (cc.success) {
+      complexityCount = cc.symbols;
+    }
   } catch (_) {}
   return {
     success: true,
@@ -1670,7 +1818,7 @@ async function reindexRepoInternal(repo, mode) {
 
 /** Fallback search using LIKE when FTS5 is unavailable */
 function searchCodeLike(query, repoName, kind, maxResults) {
-  const likeQuery = `%${  query.replace(/%/g, '\\%').replace(/_/g, '\\_')  }%`;
+  const likeQuery = `%${query.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
   let sql = `
     SELECT
       s.id, r.name AS repo, s.file_path AS file,
@@ -1697,21 +1845,23 @@ function searchCodeLike(query, repoName, kind, maxResults) {
   params.push(maxResults);
 
   const rows = sqlJson(sql, params);
-  return { results: rows.map((row, i) => ({
-    rank: i + 1,
-    score: row.score,
-    repo: row.repo,
-    file: row.file,
-    symbol: row.symbol_name,
-    kind: row.kind,
-    line: row.start_line,
-    end_line: row.end_line,
-    signature: row.signature,
-    docstring: row.docstring,
-    snippet: row.snippet,
-    qualified_name: row.qualified_name,
-    language: row.language,
-  })) };
+  return {
+    results: rows.map((row, i) => ({
+      rank: i + 1,
+      score: row.score,
+      repo: row.repo,
+      file: row.file,
+      symbol: row.symbol_name,
+      kind: row.kind,
+      line: row.start_line,
+      end_line: row.end_line,
+      signature: row.signature,
+      docstring: row.docstring,
+      snippet: row.snippet,
+      qualified_name: row.qualified_name,
+      language: row.language,
+    })),
+  };
 }
 
 function searchCode(query, repoName, kind, maxResults) {
@@ -1791,7 +1941,9 @@ function getCodeSource(repoName, filePath, symbolName) {
      WHERE r.name = ? AND s.file_path = ? AND s.name = ?`,
     [repoName, filePath, symbolName],
   );
-  if (rows.length === 0) {return { success: false, error: 'Symbol not found' };}
+  if (rows.length === 0) {
+    return { success: false, error: 'Symbol not found' };
+  }
 
   const row = rows[0];
   // Use Buffer for byte-accurate slicing (Python reports byte offsets,
@@ -1822,7 +1974,9 @@ function listCodeReposInternal() {
 function removeCodeRepoInternal(repo) {
   ensureDb();
   const existing = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repo]);
-  if (existing.length === 0) {return { error: `Repo not found: ${repo}` };}
+  if (existing.length === 0) {
+    return { error: `Repo not found: ${repo}` };
+  }
   sqlRun('DELETE FROM code_repos WHERE id = ?', [existing[0].id]);
   return { success: true, repo, removed: true };
 }
@@ -1844,7 +1998,9 @@ function listWorkspaces() {
 }
 
 function createWorkspace(name) {
-  if (!name) {return { error: 'Missing --name' };}
+  if (!name) {
+    return { error: 'Missing --name' };
+  }
   ensureDb();
   try {
     sqlRun('INSERT INTO workspaces (name) VALUES (?)', [name]);
@@ -1856,32 +2012,79 @@ function createWorkspace(name) {
 }
 
 function archiveWorkspace(name) {
-  if (!name) {return { error: 'Missing --name' };}
+  if (!name) {
+    return { error: 'Missing --name' };
+  }
   ensureDb();
   const existing = sqlJson('SELECT id FROM workspaces WHERE name = ? AND archived_at IS NULL', [name]);
-  if (existing.length === 0) {return { error: `Workspace not found or already archived: ${name}` };}
+  if (existing.length === 0) {
+    return { error: `Workspace not found or already archived: ${name}` };
+  }
   sqlRun("UPDATE workspaces SET archived_at = datetime('now') WHERE id = ?", [existing[0].id]);
   return { success: true, workspace: name, archived: true };
 }
 
 /* ── dispatch helpers ─────────────────────────────────────── */
 
+/** Per-command usage strings shown when --repo or other required args are missing. */
+const _USAGE = {
+  'import-graph': '--repo X [--file F] [--direction imports|importers|both] [--depth N]',
+  'call-hierarchy': '--symbol S --repo X [--direction callers|callees] [--depth N]',
+  'blast-radius': '--symbol S --repo X [--depth N]',
+  'dead-code': '--repo X [--min-confidence 0.5] [--include-tests true]',
+  complexity: '--repo X [--symbol S | --file F]',
+  outline: '--file F --repo X',
+  churn: '--repo X [--file F] [--days 90] [--refresh]',
+  hotspots: '--repo X [--top N] [--days N]',
+  cycles: '--repo X',
+  importance: '--repo X [--top N] [--scope dir/]',
+  coupling: '--repo X [--file F] [--sort-by instability|afferent|efferent]',
+  extractable: '--repo X [--min-complexity N] [--min-callers N] [--top N]',
+  hierarchy: '--repo X --symbol S [--direction both|ancestors|descendants]',
+  'signal-chains': '--repo X [--kind http|cli] [--symbol S] [--max-depth N]',
+  'layer-violations': '--repo X [--rules JSON]',
+  winnow: '--repo X [--kind K] [--min-complexity N] [--top N] ...',
+  'ast-patterns': '--repo X [--category C] [--pattern P] [--limit N]',
+  provenance: '--repo X --symbol S',
+  untested: '--repo X [--min-confidence 0.5] [--include-private]',
+  'pr-risk': '--repo X [--branch B] [--base B]',
+  'doc-orphans': '--repo X [--include-same-doc]',
+  'stale-pages': '--repo X',
+  'doc-duplicates': '--repo X',
+  'reindex-docs': '--repo X [--mode full|incremental] [--ignore GLOB]',
+  'doc-search': '--query Q --repo X [--level N] [--role TYPE]',
+  'doc-outline': '--repo X [--file F]',
+  backlinks: '--repo X --path F',
+  'broken-links': '--repo X',
+  glossary: '--repo X [--term T]',
+  'tutorial-path': '--section S --repo X',
+  'code-examples': '--query Q --repo X [--lang X]',
+};
+
 /**
- * _dispatch(repoName, fn) — DRY repo lookup for analysis subcommands.
+ * _dispatch(cmd, repoName, fn) — DRY repo lookup for code analysis subcommands.
  * Resolves repo name → repoRow (with id, path, head_commit), calls fn(repoRow).
  * Returns fn's result or returns an error object via jsonErrNoExit if repo not found.
  */
-function _dispatch(repoName, fn) {
-  if (!repoName) {return jsonErrNoExit('Missing --repo');}
+function _dispatch(cmd, repoName, fn) {
+  if (!repoName) {
+    return jsonErrNoExit(`Missing --repo. Usage: ${cmd} ${_USAGE[cmd] || ''}`);
+  }
   const repoRow = sqlJson('SELECT id, path, head_commit FROM code_repos WHERE name = ?', [repoName]);
-  if (!repoRow.length) {return jsonErrNoExit(`Repo "${repoName}" not found. Run index-repo first.`);}
+  if (!repoRow.length) {
+    return jsonErrNoExit(`Repo "${repoName}" not found. Run index-repo first.`);
+  }
   return fn(repoRow[0]);
 }
 
-function _dispatchDoc(repoName, fn) {
-  if (!repoName) {return jsonErrNoExit('Missing --repo');}
+function _dispatchDoc(cmd, repoName, fn) {
+  if (!repoName) {
+    return jsonErrNoExit(`Missing --repo. Usage: ${cmd} ${_USAGE[cmd] || ''}`);
+  }
   const repoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [repoName]);
-  if (!repoRow.length) {return jsonErrNoExit(`Doc repo "${repoName}" not found. Run index-docs first.`);}
+  if (!repoRow.length) {
+    return jsonErrNoExit(`Doc repo "${repoName}" not found. Run index-docs first.`);
+  }
   return fn(repoRow[0]);
 }
 
@@ -1984,142 +2187,180 @@ const commands = {
   // ── v3 code indexing commands ──
   'index-repo': (args) => {
     const repoPath = args.path;
-    if (!repoPath) {return jsonErrNoExit('Usage: node memory-store.js index-repo --path <path> [--name NAME]');}
+    if (!repoPath) {
+      return jsonErrNoExit('Usage: node memory-store.js index-repo --path <path> [--name NAME]');
+    }
     const repoName = args.name || path.basename(repoPath);
     return indexRepoInternal(repoPath, repoName);
   },
   'reindex-repo': (args) => {
     const repo = args.repo;
-    if (!repo) {return jsonErrNoExit('Usage: node memory-store.js reindex-repo --repo <repo-name> [--mode full|incremental]');}
+    if (!repo) {
+      return jsonErrNoExit('Usage: node memory-store.js reindex-repo --repo <repo-name> [--mode full|incremental]');
+    }
     return reindexRepoInternal(repo, args.mode || 'incremental');
   },
   'search-code': (args) => {
     const query = args.query;
-    if (!query)
-      {return jsonErrNoExit('Usage: node memory-store.js search-code --query <text> [--repo NAME] [--kind TYPE] [--max-results N]');}
+    if (!query) {
+      return jsonErrNoExit(
+        'Usage: node memory-store.js search-code --query <text> [--repo NAME] [--kind TYPE] [--max-results N]',
+      );
+    }
     return searchCode(query, args.repo || null, args.kind || null, parseInt(args['max-results'] || '20', 10));
   },
   'get-code-source': (args) => {
     const repo = args.repo;
     const file = args.file;
     const name = args.name;
-    if (!repo || !file || !name)
-      {return jsonErrNoExit('Usage: node memory-store.js get-code-source --repo NAME --file PATH --name SYMBOL');}
+    if (!repo || !file || !name) {
+      return jsonErrNoExit('Usage: node memory-store.js get-code-source --repo NAME --file PATH --name SYMBOL');
+    }
     return getCodeSource(repo, file, name);
   },
   'list-code-repos': () => listCodeReposInternal(),
   'remove-code-repo': (args) => {
     const repo = args.repo;
-    if (!repo) {return jsonErrNoExit('Usage: node memory-store.js remove-code-repo --repo <repo-name>');}
+    if (!repo) {
+      return jsonErrNoExit('Usage: node memory-store.js remove-code-repo --repo <repo-name>');
+    }
     return removeCodeRepoInternal(repo);
   },
 
   // ── v5: Code analysis subcommands ──
 
-  'import-graph': (args) => _dispatch(args.repo, (r) =>
+  'import-graph': (args) =>
+    _dispatch('import-graph', args.repo, (r) =>
       codeAnalysis.getImportGraph(db, r.id, {
         file: args.file || null,
         direction: args.direction || 'both',
         depth: parseInt(args.depth || '1'),
-      })),
+      }),
+    ),
 
   'call-hierarchy': (args) => {
-    if (!args.symbol) {return jsonErrNoExit('Missing --symbol');}
-    return _dispatch(args.repo, (r) =>
+    if (!args.symbol) {
+      return jsonErrNoExit('Missing --symbol. Usage: call-hierarchy --symbol S --repo X');
+    }
+    return _dispatch('call-hierarchy', args.repo, (r) =>
       codeAnalysis.getCallHierarchy(db, r.id, {
         symbol: args.symbol,
         direction: args.direction || 'callers',
         depth: parseInt(args.depth || '3'),
-      }));
+      }),
+    );
   },
 
   'blast-radius': (args) => {
-    if (!args.symbol) {return jsonErrNoExit('Missing --symbol');}
-    return _dispatch(args.repo, (r) =>
+    if (!args.symbol) {
+      return jsonErrNoExit('Missing --symbol. Usage: blast-radius --symbol S --repo X');
+    }
+    return _dispatch('blast-radius', args.repo, (r) =>
       codeAnalysis.getBlastRadius(db, r.id, {
         symbol: args.symbol,
         depth: parseInt(args.depth || '3'),
-      }));
+      }),
+    );
   },
 
-  'dead-code': (args) => _dispatch(args.repo, (r) =>
+  'dead-code': (args) =>
+    _dispatch('dead-code', args.repo, (r) =>
       codeAnalysis.getDeadCode(db, r.id, {
         minConfidence: parseFloat(args['min-confidence'] || '0.5'),
         includeTests: args['include-tests'] === 'true',
-      })),
+      }),
+    ),
 
-  complexity: (args) => _dispatch(args.repo, (r) => {
+  complexity: (args) =>
+    _dispatch('complexity', args.repo, (r) => {
       const symbolId = args.symbol
-        ? db.prepare('SELECT id FROM code_symbols WHERE repo_id = ? AND name = ?').get(r.id, args.symbol)?.id
+        ? (sqlJson('SELECT id FROM code_symbols WHERE repo_id = ? AND name = ?', [r.id, args.symbol])[0]?.id ?? null)
         : null;
       return codeAnalysis.getComplexity(db, r.id, symbolId);
     }),
 
   outline: (args) => {
-    if (!args.file) {return jsonErrNoExit('Missing --file');}
-    return _dispatch(args.repo, (r) =>
-      codeAnalysis.getFileOutline(db, r.id, args.file));
+    if (!args.file) {
+      return jsonErrNoExit('Missing --file. Usage: outline --file F --repo X');
+    }
+    return _dispatch('outline', args.repo, (r) => codeAnalysis.getFileOutline(db, r.id, args.file));
   },
 
-  churn: (args) => _dispatch(args.repo, (r) =>
-      gitAnalysis.getChurn(db, r.id, args.file || '__all__', parseInt(args.days || '90'), args.refresh === 'true')),
+  churn: (args) =>
+    _dispatch('churn', args.repo, (r) =>
+      gitAnalysis.getChurn(db, r.id, args.file || '__all__', parseInt(args.days || '90'), args.refresh === 'true'),
+    ),
 
-  hotspots: (args) => _dispatch(args.repo, (r) =>
+  hotspots: (args) =>
+    _dispatch('hotspots', args.repo, (r) =>
       codeAnalysis.getHotspots(db, r.id, {
         top: args.top ? parseInt(args.top) : 20,
         days: args.days ? parseInt(args.days) : 90,
-      })),
+      }),
+    ),
 
-  cycles: (args) => _dispatch(args.repo, (r) =>
-      codeAnalysis.getDependencyCycles(db, r.id)),
+  cycles: (args) => _dispatch('cycles', args.repo, (r) => codeAnalysis.getDependencyCycles(db, r.id)),
 
-  importance: (args) => _dispatch(args.repo, (r) =>
+  importance: (args) =>
+    _dispatch('importance', args.repo, (r) =>
       codeAnalysis.getSymbolImportance(db, r.id, {
         top: args.top ? parseInt(args.top) : 20,
         scope: args.scope || null,
-      })),
+      }),
+    ),
 
-  coupling: (args) => _dispatch(args.repo, (r) =>
+  coupling: (args) =>
+    _dispatch('coupling', args.repo, (r) =>
       codeAnalysis.getCouplingMetrics(db, r.id, {
         file: args.file || null,
         minCa: args['min-ca'] ? parseInt(args['min-ca']) : 0,
         sortBy: args['sort-by'] || 'instability',
-      })),
+      }),
+    ),
 
-  extractable: (args) => _dispatch(args.repo, (r) =>
+  extractable: (args) =>
+    _dispatch('extractable', args.repo, (r) =>
       codeAnalysis.getExtractionCandidates(db, r.id, {
         minComplexity: args['min-complexity'] ? parseInt(args['min-complexity']) : 5,
         minCallers: args['min-callers'] ? parseInt(args['min-callers']) : 2,
         top: args.top ? parseInt(args.top) : 20,
-      })),
+      }),
+    ),
 
-  hierarchy: (args) => _dispatch(args.repo, (r) =>
+  hierarchy: (args) =>
+    _dispatch('hierarchy', args.repo, (r) =>
       codeAnalysis.getClassHierarchy(db, r.id, {
         class: args.class,
         symbol: args.symbol,
         direction: args.direction || 'both',
-      })),
+      }),
+    ),
 
-  'signal-chains': (args) => _dispatch(args.repo, (r) =>
+  'signal-chains': (args) =>
+    _dispatch('signal-chains', args.repo, (r) =>
       codeAnalysis.getSignalChains(db, r.id, {
         kind: args.kind || null,
         symbol: args.symbol || null,
         maxDepth: args['max-depth'] ? parseInt(args['max-depth']) : 5,
-      })),
+      }),
+    ),
 
   'layer-violations': (args) => {
     let rules = null;
     if (args.rules) {
-      try { rules = JSON.parse(args.rules); }
-      catch (e) { return jsonErrNoExit(`Invalid rules JSON: ${e.message}`); }
+      try {
+        rules = JSON.parse(args.rules);
+      } catch (e) {
+        return jsonErrNoExit(`Invalid rules JSON: ${e.message}`);
+      }
     }
-    return _dispatch(args.repo, (r) =>
-      codeAnalysis.getLayerViolations(db, r.id, { rules }));
+    return _dispatch('layer-violations', args.repo, (r) => codeAnalysis.getLayerViolations(db, r.id, { rules }));
   },
 
   // ── v6: Winnow multi-axis query ──
 
-  winnow: (args) => _dispatch(args.repo, (repoRow) =>
+  winnow: (args) =>
+    _dispatch('winnow', args.repo, (repoRow) =>
       codeAnalysis.winnow(db, repoRow.id, {
         kind: args.kind || null,
         minComplexity: args['min-complexity'] ? parseInt(args['min-complexity']) : null,
@@ -2130,111 +2371,133 @@ const commands = {
         nameRegex: args['name-regex'] || null,
         sortBy: args['sort-by'] || 'pagerank',
         top: args.top ? parseInt(args.top) : 20,
-      })
+      }),
     ),
 
   // ── v6: AST pattern matching ──
 
-  'ast-patterns': (args) => _dispatch(args.repo, (repoRow) =>
+  'ast-patterns': (args) =>
+    _dispatch('ast-patterns', args.repo, (repoRow) =>
       astPatterns.scanAstPatterns(db, repoRow.id, {
         category: args.category || 'all',
-        patterns: args.pattern ? args.pattern.split(',').map(s => s.trim()) : [],
+        patterns: args.pattern ? args.pattern.split(',').map((s) => s.trim()) : [],
         limit: args.limit ? parseInt(args.limit) : 200,
-      })
+      }),
     ),
 
   // ── v6: Symbol provenance ──
 
-  provenance: (args) => _dispatch(args.repo, (repoRow) =>
-      gitAnalysis.getProvenance(db, repoRow.id, args.symbol)
-    ),
+  provenance: (args) =>
+    _dispatch('provenance', args.repo, (repoRow) => gitAnalysis.getProvenance(db, repoRow.id, args.symbol)),
 
   // ── v6: Untested symbols + PR risk ──
 
-  untested: (args) => _dispatch(args.repo, (repoRow) =>
+  untested: (args) =>
+    _dispatch('untested', args.repo, (repoRow) =>
       codeAnalysis.getUntestedSymbols(db, repoRow.id, {
         minConfidence: args['min-confidence'] ? parseFloat(args['min-confidence']) : 0.5,
         includePrivate: args['include-private'] === 'true',
-      })
+      }),
     ),
 
-  'pr-risk': (args) => _dispatch(args.repo, (repoRow) =>
+  'pr-risk': (args) =>
+    _dispatch('pr-risk', args.repo, (repoRow) =>
       codeAnalysis.getPrRiskProfile(db, repoRow.id, {
         branch: args.branch || 'HEAD',
         base: args.base || 'main',
-      })
+      }),
     ),
 
   // ── v5.2: Doc analytics subcommands ──
 
-  'doc-orphans': (args) => _dispatchDoc(args.repo, (r) =>
+  'doc-orphans': (args) =>
+    _dispatchDoc('doc-orphans', args.repo, (r) =>
       docIndexer.getOrphanSections(db, r.id, {
         includeSameDoc: args['include-same-doc'] === 'true',
-      })),
+      }),
+    ),
 
   'doc-coverage': (args) => {
     const codeRepo = args.repo;
     const docRepo = args['doc-repo'] || codeRepo;
-    if (!codeRepo) {return jsonErrNoExit('Missing --repo');}
+    if (!codeRepo) {
+      return jsonErrNoExit('Missing --repo');
+    }
     const codeRepoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [codeRepo]);
-    if (!codeRepoRow.length) {return jsonErrNoExit(`Code repo "${codeRepo}" not found. Run index-repo first.`);}
+    if (!codeRepoRow.length) {
+      return jsonErrNoExit(`Code repo "${codeRepo}" not found. Run index-repo first.`);
+    }
     const docRepoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [docRepo]);
-    if (!docRepoRow.length) {return jsonErrNoExit(`Doc repo "${docRepo}" not found. Run index-docs first.`);}
+    if (!docRepoRow.length) {
+      return jsonErrNoExit(`Doc repo "${docRepo}" not found. Run index-docs first.`);
+    }
     return docIndexer.getDocCoverage(db, codeRepoRow[0].id, docRepoRow[0].id);
   },
 
-  'stale-pages': (args) => _dispatchDoc(args.repo, (r) =>
-      docIndexer.getStalePages(db, r.id)),
+  'stale-pages': (args) => _dispatchDoc('stale-pages', args.repo, (r) => docIndexer.getStalePages(db, r.id)),
 
-  'doc-duplicates': (args) => _dispatchDoc(args.repo, (r) =>
-      docIndexer.getDuplicateSections(db, r.id)),
+  'doc-duplicates': (args) =>
+    _dispatchDoc('doc-duplicates', args.repo, (r) => docIndexer.getDuplicateSections(db, r.id)),
 
   // ── v5: Doc indexing subcommands ──
 
   'index-docs': (args) => {
     const docPath = args.path;
     const name = args.name;
-    if (!docPath || !name) {return jsonErrNoExit('Usage: node memory-store.js index-docs --path P --name X [--ignore GLOB]');}
+    if (!docPath || !name) {
+      return jsonErrNoExit('Usage: node memory-store.js index-docs --path P --name X [--ignore GLOB]');
+    }
     return docIndexer.indexDocs(db, path.resolve(docPath), name, args.ignore || null);
   },
 
-  'reindex-docs': (args) => _dispatchDoc(args.repo, (r) =>
-      docIndexer.reindexDocs(db, r.id, args.mode || 'full', args.ignore || null)),
+  'reindex-docs': (args) =>
+    _dispatchDoc('reindex-docs', args.repo, (r) =>
+      docIndexer.reindexDocs(db, r.id, args.mode || 'full', args.ignore || null),
+    ),
 
   'doc-search': (args) => {
-    if (!args.query) {return jsonErrNoExit('Missing --query');}
-    return _dispatchDoc(args.repo, (r) =>
+    if (!args.query) {
+      return jsonErrNoExit('Missing --query. Usage: doc-search --query Q --repo X');
+    }
+    return _dispatchDoc('doc-search', args.repo, (r) =>
       docIndexer.searchDocs(db, r.id, args.query, {
         level: args.level ? parseInt(args.level) : null,
         role: args.role || null,
-      }));
+      }),
+    );
   },
 
-  'doc-outline': (args) => _dispatchDoc(args.repo, (r) =>
-      docIndexer.getDocOutline(db, r.id, args.file || null)),
+  'doc-outline': (args) =>
+    _dispatchDoc('doc-outline', args.repo, (r) => docIndexer.getDocOutline(db, r.id, args.file || null)),
 
   backlinks: (args) => {
-    if (!args.path) {return jsonErrNoExit('Missing --path');}
-    return _dispatchDoc(args.repo, (r) =>
-      docIndexer.getBacklinks(db, r.id, args.path));
+    if (!args.path) {
+      return jsonErrNoExit('Missing --path. Usage: backlinks --repo X --path F');
+    }
+    return _dispatchDoc('backlinks', args.repo, (r) => docIndexer.getBacklinks(db, r.id, args.path));
   },
 
-  'broken-links': (args) => _dispatchDoc(args.repo, (r) =>
-      ({ broken_links: docIndexer.getBrokenLinks(db, r.id) })),
+  'broken-links': (args) =>
+    _dispatchDoc('broken-links', args.repo, (r) => ({ broken_links: docIndexer.getBrokenLinks(db, r.id) })),
 
-  glossary: (args) => _dispatchDoc(args.repo, (r) =>
-      docIndexer.lookupTerm(db, r.id, args.term || null)),
+  glossary: (args) => _dispatchDoc('glossary', args.repo, (r) => docIndexer.lookupTerm(db, r.id, args.term || null)),
 
   'tutorial-path': (args) => {
-    if (!args.section) {return jsonErrNoExit('Missing --section');}
-    return _dispatchDoc(args.repo, (r) =>
-      docIndexer.getTutorialPath(db, r.id, parseInt(args.section)));
+    if (!args.section) {
+      return jsonErrNoExit('Missing --section. Usage: tutorial-path --section S --repo X');
+    }
+    return _dispatchDoc('tutorial-path', args.repo, (r) =>
+      docIndexer.getTutorialPath(db, r.id, parseInt(args.section)),
+    );
   },
 
   'code-examples': (args) => {
-    if (!args.query) {return jsonErrNoExit('Missing --query');}
-    return _dispatchDoc(args.repo, (r) =>
-      docIndexer.findCodeExamples(db, r.id, args.query, args.lang || null));
+    if (!args.query) {
+      return jsonErrNoExit('Missing --query. Usage: code-examples --query Q --repo X');
+    }
+    return _dispatchDoc('code-examples', args.repo, (r) =>
+      docIndexer.findCodeExamples(db, r.id, args.query, args.lang || null),
+    );
   },
 };
 
@@ -2243,9 +2506,26 @@ const cmd = process.argv[2];
 
 // Code analysis tools that receive _meta envelope + format support
 const _ANALYSIS_TOOLS = new Set([
-  'import-graph', 'call-hierarchy', 'blast-radius', 'dead-code', 'complexity', 'outline',
-  'churn', 'hotspots', 'cycles', 'importance', 'coupling', 'extractable', 'hierarchy',
-  'signal-chains', 'layer-violations', 'winnow', 'ast-patterns', 'provenance', 'untested', 'pr-risk',
+  'import-graph',
+  'call-hierarchy',
+  'blast-radius',
+  'dead-code',
+  'complexity',
+  'outline',
+  'churn',
+  'hotspots',
+  'cycles',
+  'importance',
+  'coupling',
+  'extractable',
+  'hierarchy',
+  'signal-chains',
+  'layer-violations',
+  'winnow',
+  'ast-patterns',
+  'provenance',
+  'untested',
+  'pr-risk',
 ]);
 
 (async () => {
@@ -2280,8 +2560,7 @@ const _ANALYSIS_TOOLS = new Set([
   } else {
     console.error(
       `Usage: node memory-store.js <subcommand> [--option value ...]\n` +
-        `Subcommands: ${ 
-        Object.keys(commands).join(', ')}`,
+        `Subcommands: ${Object.keys(commands).join(', ')}`,
     );
     process.exit(1);
   }
