@@ -749,7 +749,28 @@ function getFileOutline(db, repoId, filePath) {
   const fileRow = db
     .prepare('SELECT id FROM code_files WHERE repo_id = ? AND path LIKE ?')
     .get(repoId, `%${filePath}%`);
-  if (!fileRow) {return { error: `File not found: ${filePath}` };}
+  if (!fileRow) {
+    // Suggest available files that partially match
+    const suggestions = db
+      .prepare('SELECT path FROM code_files WHERE repo_id = ? AND path LIKE ? LIMIT 20')
+      .all(repoId, `%${filePath.split('/').pop()}%`);
+    const totalFiles = db
+      .prepare('SELECT COUNT(*) as cnt FROM code_files WHERE repo_id = ?')
+      .get(repoId).cnt;
+    if (suggestions.length) {
+      return {
+        error: `File not found: "${filePath}". Did you mean one of these?`,
+        suggestions: suggestions.map(s => s.path),
+        total_files_in_repo: totalFiles,
+        hint: `Files are resolved relative to the repo root. List all files with: memory-store.js outline --repo <repo> (no --file)`
+      };
+    }
+    return {
+      error: `File not found: "${filePath}" in repo. ${totalFiles} files indexed.`,
+      total_files_in_repo: totalFiles,
+      hint: `Use --file with a path relative to the repo root.`
+    };
+  }
 
   const symbols = db
     .prepare(`
