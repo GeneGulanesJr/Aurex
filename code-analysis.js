@@ -759,14 +759,22 @@ function getFileOutline(db, repoId, filePath) {
       .get(repoId).cnt;
     if (suggestions.length) {
       return {
-        error: `File not found: "${filePath}". Did you mean one of these?`,
+        file: filePath,
+        classes: [],
+        standalone: [],
+        not_found: true,
+        message: `File not found: "${filePath}". Did you mean one of these?`,
         suggestions: suggestions.map(s => s.path),
         total_files_in_repo: totalFiles,
         hint: `Files are resolved relative to the repo root. List all files with: memory-store.js outline --repo <repo> (no --file)`
       };
     }
     return {
-      error: `File not found: "${filePath}" in repo. ${totalFiles} files indexed.`,
+      file: filePath,
+      classes: [],
+      standalone: [],
+      not_found: true,
+      message: `File not found: "${filePath}" in repo. ${totalFiles} files indexed.`,
       total_files_in_repo: totalFiles,
       hint: `Use --file with a path relative to the repo root.`
     };
