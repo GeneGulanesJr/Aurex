@@ -3,7 +3,7 @@ name: memory-layer
 description: Standalone persistent memory for Pi — smart search, symbol clustering, dedup, auto-recovery, trust scoring. Zero Python dependency.
 ---
 
-# Pi Memory Layer v5
+# Pi Memory Layer v6.1
 
 Persistent memory via a single SQLite database (`~/.pi/memory/memory.db`).
 All operations through `memory-store.js` — zero Python dependency, zero MCP servers.
@@ -186,3 +186,34 @@ On `save`, trigram overlap checked against existing observations:
 - No sqlite3 → fails with install instructions
 - DB corrupted → suggest deleting `~/.pi/memory/memory.db`
 - No MCP server needed — fully self-contained (v5 includes code analysis + doc indexing natively)
+
+## Reliability Layer (v6 — extension hooks)
+
+The extension proactively ensures memory is always invoked at the right moment.
+All hooks are non-blocking — they enhance, not replace, explicit tool usage.
+
+| Hook | Situation | Response |
+| ---- | --------- | -------- |
+| `session_compact` | User runs `/compact` or auto-compaction fires | Re-inject full memory context (observations + preferences + status) so LLM retains awareness |
+| `context` | Every LLM call (8th call onwards) | Lightweight reminder to use memory-search/memory-save if no memory tool used recently |
+| `message_end` | Assistant message with decision/bugfix/discovery pattern | Auto-save as observation with detected type |
+| `turn_end` | Every 10th turn | Progress checkpoint with files touched + memory count |
+| `tool_call` | LLM reads code files directly (indexed repo, no offset/limit) | **Hard block** — forces `memory-code outline` first; partial reads (offset/limit) allowed for editing |
+| `tool_call` | LLM uses grep/rg/find on source code in indexed repo | **Hard block** — forces `memory-code` instead |
+| `tool_call` | LLM calls memory-code with file param | Marks file as explored → future reads allowed |
+| `tool_call` | LLM uses memory-* tools | Track last-usage timestamp (suppress redundant reminders) |
+| `tool_result` | bash with git pull/checkout/merge | Auto-sync code trust scores |
+| `tool_result` | edit/write on code files | Track file for session summary + periodic auto-save |
+| `session_shutdown` | Session ends | Rich summary with topics discussed + files modified + turn count |
+
+### Decision Detection Patterns
+
+The extension pattern-matches assistant messages for:
+- **Design decisions**: "I'll use X", "going with", "switching to", "using X instead of Y"
+- **Architecture choices**: "approach:", "strategy:", "architecture:", "pattern:"
+- **Bug fixes**: "root cause", "the bug was", "fix is", "workaround is"
+- **Discoveries**: "I discovered", "turns out", "found that"
+- **Constraints**: "we need to", "cannot", "constraint", "requirement"
+
+Cooldown of 60s between auto-saved decisions prevents noise.
+Auto-saved decisions are explicitly marked with `**What**: Auto-detected ...` format.
