@@ -254,15 +254,15 @@ export default function (pi: ExtensionAPI) {
 
     ctx.ui.setStatus("memory", `🧠 session ${sessionId}`);
 
-    // ── Auto-dream: every 10th session, prune outdated memories ──
-    // dream() targets OUTDATEDNESS (superseded, low-value, never-recalled),
-    // not age. A 6-month-old valid decision stays. A 1-day-old wrong one goes.
+    // ── Auto-dream: every 10th session, run the Dream Cycle ──
+    // dream() targets STALENESS (superseded, zero-recall, stale corrections),
+    // not age. A 6-month-old valid decision stays. A 1-day-old superseded one goes.
     if (sessionId % 10 === 0) {
       try {
         const dreamResult = await memCmd("dream");
-        if (dreamResult && (dreamResult as any).totalPruned > 0) {
+        if (dreamResult && (dreamResult as any).totalCleaned > 0) {
           ctx.ui.notify(
-            `💤 Dream: pruned ${(dreamResult as any).totalPruned} outdated memories (session #${sessionId})`,
+            `💤 Dream Cycle: ${(dreamResult as any).totalCleaned} memories cleaned (session #${sessionId})`,
             "info",
           );
         }
@@ -1233,7 +1233,7 @@ export default function (pi: ExtensionAPI) {
     name: "memory-delete",
     label: "Delete Memory",
     description:
-      "Soft-delete a memory by ID. Use to remove outdated, incorrect, or duplicate memories. " +
+      "Soft-delete a memory by ID. Use to remove stale, incorrect, or duplicate memories. " +
       "The memory is soft-deleted (can be recovered) rather than permanently destroyed.",
     parameters: Type.Object({
       id: Type.Number({ description: "Memory observation ID to delete" }),
@@ -1568,7 +1568,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("memory-dream", {
-    description: "Manually trigger memory dreaming — prune outdated (not just old) memories",
+    description: "Manually trigger the Dream Cycle — clean stale (not just old) memories",
     handler: async (_args, ctx) => {
       try {
         const result = await memCmd("dream");
@@ -1578,12 +1578,12 @@ export default function (pi: ExtensionAPI) {
             .map(([k, v]) => `${k}: ${(v as any).count}`)
             .join(", ");
           ctx.ui.notify(
-            `💤 Dream complete: ${(result as any).totalPruned} outdated memories pruned (${phases || 'nothing to prune'})`,
+            `💤 Dream Cycle complete: ${(result as any).totalCleaned} memories cleaned (${phases || 'nothing to clean'})`,
             "info",
           );
         }
       } catch (e) {
-        ctx.ui.notify(`Dream failed: ${e instanceof Error ? e.message : String(e)}`, "error");
+        ctx.ui.notify(`Dream Cycle failed: ${e instanceof Error ? e.message : String(e)}`, "error");
       }
     },
   });

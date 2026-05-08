@@ -1441,19 +1441,19 @@ function compact() {
   return runCompact();
 }
 
-/* ── dreaming: outdatedness-based pruning ────────────────── */
+/* ── dreaming: Dream Cycle ───────────────────────────── */
 
 /**
- * dream() — Consolidate memories by pruning outdated (not just old) observations.
+ * dream() — Dream Cycle: clean stale (not just old) memories.
  *
  * Unlike compact (housekeeping: vacuum, FTS optimize, purge soft-deleted),
- * dream targets OUTDATEDNESS — information that is no longer accurate or useful:
+ * dream targets STALENESS — information that is no longer accurate or useful:
  *
  *   1. Superseded memories — replaced by newer observations (via observation_relations)
- *   2. Low-value auto-saved — progress checkpoints, "accomplished" edits with zero recall
+ *   2. Stale auto-progress — progress checkpoints, "accomplished" edits with zero recall
  *   3. Never-recalled low-trust — auto-detected decisions never acted upon
- *   4. Stale correction entries — "CORRECTION:" prefix memories (should have used update)
- *   5. Obsolete setup states — superseded config/setup memories (e.g., "using frpc" → "switched to CF Tunnel")
+ *   4. Stale corrections — "CORRECTION:" prefix memories (should have used update)
+ *   5. Replaced configs — superseded config/setup memories (e.g., "using frpc" → "switched to CF Tunnel")
  *
  * Age alone is NOT a signal. A 6-month-old architecture decision that's still valid stays.
  * A 1-day-old memory that's been superseded goes.
@@ -1461,8 +1461,8 @@ function compact() {
 function dream() {
   const startedAt = new Date().toISOString();
   const report = { startedAt, phases: {} };
-  let totalPruned = 0;
-  const prunedIds = [];
+  let totalCleaned = 0;
+  const cleanedIds = [];
 
   // ── Phase 1: Superseded memories (observation_relations) ──
   // Memories that have been explicitly superseded by newer ones
@@ -1477,15 +1477,15 @@ function dream() {
   `);
   for (const row of superseded) {
     sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [row.id]);
-    prunedIds.push({ id: row.id, title: row.title, reason: `superseded by #${row.newer_id} (${row.relation}, ${Math.round(row.confidence * 100)}%)` });
+    cleanedIds.push({ id: row.id, title: row.title, reason: `superseded by #${row.newer_id} (${row.relation}, ${Math.round(row.confidence * 100)}%)` });
   }
   report.phases.superseded = { count: superseded.length };
-  totalPruned += superseded.length;
+  totalCleaned += superseded.length;
 
-  // ── Phase 2: Low-value auto-saved memories ──
+  // ── Phase 2: Stale auto-progress memories ──
   // Progress checkpoints and "accomplished" edit tracking with zero recall
-  const lowValueTypes = ['progress', 'accomplished'];
-  for (const type of lowValueTypes) {
+  const staleAutoTypes = ['progress', 'accomplished'];
+  for (const type of staleAutoTypes) {
     const rows = sqlJson(`
       SELECT o.id, o.title, o.project
       FROM observations o
@@ -1498,10 +1498,10 @@ function dream() {
     `, [type]);
     for (const row of rows) {
       sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [row.id]);
-      prunedIds.push({ id: row.id, title: row.title, reason: `${type} type, never recalled` });
+      cleanedIds.push({ id: row.id, title: row.title, reason: `${type} type, never recalled` });
     }
-    report.phases[`lowValue_${type}`] = { count: rows.length };
-    totalPruned += rows.length;
+    report.phases[`stale_${type}`] = { count: rows.length };
+    totalCleaned += rows.length;
   }
 
   // ── Phase 3: Never-recalled auto-detected decisions with low trust ──
@@ -1527,10 +1527,10 @@ function dream() {
     `, [type]);
     for (const row of rows) {
       sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [row.id]);
-      prunedIds.push({ id: row.id, title: row.title, reason: `auto-detected ${type}, never recalled in 7+ days` });
+      cleanedIds.push({ id: row.id, title: row.title, reason: `auto-detected ${type}, never recalled in 7+ days` });
     }
     report.phases[`staleAuto_${type}`] = { count: rows.length };
-    totalPruned += rows.length;
+    totalCleaned += rows.length;
   }
 
   // ── Phase 4: Correction entry cleanup ──
@@ -1547,10 +1547,10 @@ function dream() {
     const refMatch = row.content.match(/#(\d+)/);
     const refNote = refMatch ? ` (referenced #${refMatch[1]} — ensure it was updated)` : '';
     sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [row.id]);
-    prunedIds.push({ id: row.id, title: row.title, reason: `correction entry${refNote} — should use memory-update instead` });
+    cleanedIds.push({ id: row.id, title: row.title, reason: `correction entry${refNote} — should use memory-update instead` });
   }
-  report.phases.corrections = { count: corrections.length };
-  totalPruned += corrections.length;
+  report.phases.staleCorrections = { count: corrections.length };
+  totalCleaned += corrections.length;
 
   // ── Phase 5: Obsolete setup/config states ──
   // Find memories about replaced tools/setups by looking for "replacing" or "replaced"
@@ -1575,10 +1575,10 @@ function dream() {
   `);
   for (const row of obsoleteConfigs) {
     sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [row.id]);
-    prunedIds.push({ id: row.id, title: row.title, reason: `obsolete setup — superseded by #${row.newer_id} "${row.newer_title}"` });
+    cleanedIds.push({ id: row.id, title: row.title, reason: `replaced config — superseded by #${row.newer_id} "${row.newer_title}"` });
   }
-  report.phases.obsoleteSetups = { count: obsoleteConfigs.length };
-  totalPruned += obsoleteConfigs.length;
+  report.phases.replacedConfigs = { count: obsoleteConfigs.length };
+  totalCleaned += obsoleteConfigs.length;
 
   // ── Run compact as final step ──
   const compactResult = runCompact();
@@ -1586,8 +1586,8 @@ function dream() {
 
   report.completedAt = new Date().toISOString();
   report.ok = true;
-  report.totalPruned = totalPruned;
-  report.pruned = prunedIds;
+  report.totalCleaned = totalCleaned;
+  report.cleaned = cleanedIds;
   return report;
 }
 

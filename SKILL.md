@@ -29,7 +29,7 @@ Code analysis (imports, call graph, complexity, dead code, churn) and doc indexi
   - Use instead of saving a correction entry to avoid duplicate/misleading memories.
 - `delete --id INT`
   - Soft-delete an observation by ID. The memory is marked deleted but can be recovered.
-  - Use to clean up outdated, incorrect, or superseded memories.
+  - Use to clean up stale, incorrect, or superseded memories.
 - `search --query TEXT [--project NAME] [--type TYPE] [--scope SCOPE] [--limit N] [--session-id ID]`
   - Hybrid ranking: FTS5 relevance × recency × trust × recall history.
   - **Recall auto-logged** when `--session-id` is provided.
@@ -123,12 +123,12 @@ Dead code confidence: 0.33 per signal (no callers, unreachable file), 1.0 = prov
 ### Maintenance
 
 - `compact` — prune dead links, decay stale trust, VACUUM, optimize FTS5 (auto-runs every 5 sessions)
-- `dream` — prune **outdated** (not just old) memories:
+- `dream` — Dream Cycle: clean **stale** (not just old) memories:
   1. **Superseded** — memories replaced by newer ones (via `observation_relations`)
-  2. **Low-value auto-saved** — progress checkpoints & edit tracking with zero recall
+  2. **Stale auto-progress** — progress checkpoints & edit tracking with zero recall
   3. **Never-recalled auto-detected** — auto-saved decisions/bugfixes never useful + low trust
-  4. **Correction entries** — "CORRECTION:" titles (should've used `update`)
-  5. **Obsolete setups** — replaced configs (e.g. "using frpc" → "switched to CF Tunnel")
+  4. **Stale corrections** — "CORRECTION:" titles (should've used `update`)
+  5. **Replaced configs** — superseded configs (e.g. "using frpc" → "switched to CF Tunnel")
 
   Age alone is NOT a signal. A 6-month-old valid decision stays. A 1-day-old superseded one goes.
   Auto-runs every 10th session. Run manually: `memory-store.js dream` or `/memory-dream`.

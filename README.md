@@ -24,7 +24,7 @@ Restart Pi and memory auto-wires on session start.
 - **Workspaces** — formal project isolation with create/list/archive
 - **Session lifecycle** — auto-recovery of incomplete sessions, trust recovery on close
 - **Zero servers** — single Node.js CLI + SQLite, called on demand by Pi. Zero Python dependency.
-- **Dream (outdatedness pruning)** — every 10 sessions, prunes superseded, zero-recall, correction, and obsolete memories
+- **Dream Cycle** — every 10 sessions, cleans superseded, zero-recall, stale corrections, and replaced configs
 - **Update & delete** — update memories in-place instead of spawning correction entries
 
 ## Commands (called by Pi automatically)
@@ -108,21 +108,21 @@ Restart Pi and memory auto-wires on session start.
 | Command                                | Purpose                                               |
 | -------------------------------------- | ----------------------------------------------------- |
 | `compact`                              | Prune dead links, decay trust, VACUUM, optimize FTS5  |
-| `dream`                                | Prune **outdated** memories (not just old). Auto-runs every 10 sessions |
+| `dream`                                | Dream Cycle — clean **stale** memories (not just old). Auto-runs every 10 sessions |
 | `stats`                                | Database statistics                                    |
 | `list-projects`                        | List all known project names                           |
 
-#### Dream — Outdatedness-Based Pruning
+#### Dream Cycle
 
-Unlike `compact` (housekeeping: vacuum, FTS optimize), `dream` targets **outdatedness** — information that is no longer accurate or useful:
+Unlike `compact` (housekeeping: vacuum, FTS optimize), the Dream Cycle targets **staleness** — information that is no longer accurate or useful:
 
-| Phase | What it prunes | Why it's outdated |
+| Phase | What it cleans | Why it's stale |
 | ----- | -------------- | ----------------- |
 | Superseded | Memories with `duplicate`/`supersedes` relations | A newer memory replaces it |
-| Low-value auto-saved | `progress` & `accomplished` types with zero recall | Never useful, just noise |
+| Stale auto-progress | `progress` & `accomplished` types with zero recall | Never useful, just noise |
 | Stale auto-detected | Auto-detected decisions with zero recall + low trust | Pattern-matched junk never acted on |
-| Correction entries | Titles starting with "CORRECTION:" | Should've used `update` instead |
-| Obsolete setups | Replaced configs (e.g. "using frpc" → "switched to CF Tunnel") | Superseded setup info |
+| Stale corrections | Titles starting with "CORRECTION:" | Should've used `update` instead |
+| Replaced configs | Superseded configs (e.g. "using frpc" → "switched to CF Tunnel") | Superseded setup info |
 
 **Age alone is NOT a signal.** A 6-month-old valid decision stays. A 1-day-old superseded one goes.
 

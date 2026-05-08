@@ -94,7 +94,7 @@
   <rect x="600" y="168" width="276" height="112" rx="4" fill="rgba(139,92,246,0.04)" stroke="#8b5cf6" stroke-width="1"/>
   <rect x="608" y="172" width="48" height="12" rx="2" fill="transparent" stroke="rgba(139,92,246,0.40)" stroke-width="0.8"/>
   <text x="632" y="181" fill="rgba(139,92,246,0.70)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DREAM</text>
-  <text x="738" y="192" fill="#0b0d0b" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Outdatedness Pruning</text>
+  <text x="738" y="192" fill="#0b0d0b" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Dream Cycle</text>
   <text x="738" y="208" fill="#8b5cf6" font-size="9" font-family="'Geist Mono', monospace" font-weight="600" text-anchor="middle">Every 10 sessions</text>
   <text x="738" y="224" fill="#52534e" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Superseded memories</text>
   <text x="738" y="240" fill="#52534e" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Low-value auto-saved</text>
@@ -170,7 +170,7 @@
   <text x="392" y="580" fill="#52534e" font-size="8" font-family="'Geist Mono', monospace">WASM parser</text>
 
   <rect x="498" y="573" width="16" height="8" rx="2" fill="rgba(139,92,246,0.04)" stroke="#8b5cf6" stroke-width="0.8"/>
-  <text x="522" y="580" fill="#52534e" font-size="8" font-family="'Geist Mono', monospace">Dream (outdatedness pruning)</text>
+  <text x="522" y="580" fill="#52534e" font-size="8" font-family="'Geist Mono', monospace">Dream Cycle</text>
 
   <rect x="700" y="573" width="16" height="8" rx="2" fill="rgba(247,89,31,0.06)" stroke="#f7591f" stroke-width="0.8"/>
   <text x="724" y="580" fill="#52534e" font-size="8" font-family="'Geist Mono', monospace">Focal element</text>
