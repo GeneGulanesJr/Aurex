@@ -24,6 +24,8 @@ Restart Pi and memory auto-wires on session start.
 - **Workspaces** — formal project isolation with create/list/archive
 - **Session lifecycle** — auto-recovery of incomplete sessions, trust recovery on close
 - **Zero servers** — single Node.js CLI + SQLite, called on demand by Pi. Zero Python dependency.
+- **Dream (outdatedness pruning)** — every 10 sessions, prunes superseded, zero-recall, correction, and obsolete memories
+- **Update & delete** — update memories in-place instead of spawning correction entries
 
 ## Commands (called by Pi automatically)
 
@@ -32,6 +34,8 @@ Restart Pi and memory auto-wires on session start.
 | Command                                | Purpose                                               |
 | -------------------------------------- | ----------------------------------------------------- |
 | `save`                                 | Save an observation (decision, bugfix, pattern, etc.) |
+| `update --id`                          | Update an existing observation in-place by ID          |
+| `delete --id`                          | Soft-delete an observation by ID (recoverable)        |
 | `search`                               | FTS5 full-text search with hybrid ranking             |
 | `search --include-code`                | Search both memories AND indexed code symbols         |
 | `context`                               | Load session context by project                       |
@@ -104,8 +108,23 @@ Restart Pi and memory auto-wires on session start.
 | Command                                | Purpose                                               |
 | -------------------------------------- | ----------------------------------------------------- |
 | `compact`                              | Prune dead links, decay trust, VACUUM, optimize FTS5  |
+| `dream`                                | Prune **outdated** memories (not just old). Auto-runs every 10 sessions |
 | `stats`                                | Database statistics                                    |
 | `list-projects`                        | List all known project names                           |
+
+#### Dream — Outdatedness-Based Pruning
+
+Unlike `compact` (housekeeping: vacuum, FTS optimize), `dream` targets **outdatedness** — information that is no longer accurate or useful:
+
+| Phase | What it prunes | Why it's outdated |
+| ----- | -------------- | ----------------- |
+| Superseded | Memories with `duplicate`/`supersedes` relations | A newer memory replaces it |
+| Low-value auto-saved | `progress` & `accomplished` types with zero recall | Never useful, just noise |
+| Stale auto-detected | Auto-detected decisions with zero recall + low trust | Pattern-matched junk never acted on |
+| Correction entries | Titles starting with "CORRECTION:" | Should've used `update` instead |
+| Obsolete setups | Replaced configs (e.g. "using frpc" → "switched to CF Tunnel") | Superseded setup info |
+
+**Age alone is NOT a signal.** A 6-month-old valid decision stays. A 1-day-old superseded one goes.
 
 ## Configuration
 

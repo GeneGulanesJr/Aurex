@@ -53,7 +53,7 @@ END`;
 
 // Tool tiering (v6) — control which commands appear in session-start context
 const TOOL_TIERS = {
-  core: new Set(['search', 'save', 'context', 'search-code', 'get-code-source', 'importance', 'outline', 'winnow']),
+  core: new Set(['search', 'save', 'context', 'search-code', 'get-code-source', 'importance', 'outline', 'winnow', 'dream']),
   standard: new Set([
     'search',
     'save',
@@ -63,6 +63,7 @@ const TOOL_TIERS = {
     'importance',
     'outline',
     'winnow',
+    'dream',
     'complexity',
     'dead-code',
     'hotspots',
@@ -1440,6 +1441,156 @@ function compact() {
   return runCompact();
 }
 
+/* ── dreaming: outdatedness-based pruning ────────────────── */
+
+/**
+ * dream() — Consolidate memories by pruning outdated (not just old) observations.
+ *
+ * Unlike compact (housekeeping: vacuum, FTS optimize, purge soft-deleted),
+ * dream targets OUTDATEDNESS — information that is no longer accurate or useful:
+ *
+ *   1. Superseded memories — replaced by newer observations (via observation_relations)
+ *   2. Low-value auto-saved — progress checkpoints, "accomplished" edits with zero recall
+ *   3. Never-recalled low-trust — auto-detected decisions never acted upon
+ *   4. Stale correction entries — "CORRECTION:" prefix memories (should have used update)
+ *   5. Obsolete setup states — superseded config/setup memories (e.g., "using frpc" → "switched to CF Tunnel")
+ *
+ * Age alone is NOT a signal. A 6-month-old architecture decision that's still valid stays.
+ * A 1-day-old memory that's been superseded goes.
+ */
+function dream() {
+  const startedAt = new Date().toISOString();
+  const report = { startedAt, phases: {} };
+  let totalPruned = 0;
+  const prunedIds = [];
+
+  // ── Phase 1: Superseded memories (observation_relations) ──
+  // Memories that have been explicitly superseded by newer ones
+  const superseded = sqlJson(`
+    SELECT o.id, o.title, o.type, o.project,
+           r.source_id AS newer_id, r.relation, r.confidence
+    FROM observations o
+    JOIN observation_relations r ON r.target_id = o.id
+    WHERE r.relation IN ('duplicate', 'supersedes')
+      AND o.deleted_at IS NULL
+      AND r.confidence >= 0.6
+  `);
+  for (const row of superseded) {
+    sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [row.id]);
+    prunedIds.push({ id: row.id, title: row.title, reason: `superseded by #${row.newer_id} (${row.relation}, ${Math.round(row.confidence * 100)}%)` });
+  }
+  report.phases.superseded = { count: superseded.length };
+  totalPruned += superseded.length;
+
+  // ── Phase 2: Low-value auto-saved memories ──
+  // Progress checkpoints and "accomplished" edit tracking with zero recall
+  const lowValueTypes = ['progress', 'accomplished'];
+  for (const type of lowValueTypes) {
+    const rows = sqlJson(`
+      SELECT o.id, o.title, o.project
+      FROM observations o
+      LEFT JOIN (
+        SELECT memory_id, COUNT(*) as recall_count
+        FROM recall_log GROUP BY memory_id
+      ) rl ON rl.memory_id = o.id
+      WHERE o.type = ? AND o.deleted_at IS NULL
+        AND (rl.recall_count IS NULL OR rl.recall_count = 0)
+    `, [type]);
+    for (const row of rows) {
+      sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [row.id]);
+      prunedIds.push({ id: row.id, title: row.title, reason: `${type} type, never recalled` });
+    }
+    report.phases[`lowValue_${type}`] = { count: rows.length };
+    totalPruned += rows.length;
+  }
+
+  // ── Phase 3: Never-recalled auto-detected decisions with low trust ──
+  // Auto-detected decisions/bugfixes that were never useful and have low confidence
+  const autoDetectedTypes = ['decision', 'bugfix', 'discovery'];
+  for (const type of autoDetectedTypes) {
+    const rows = sqlJson(`
+      SELECT o.id, o.title, o.project
+      FROM observations o
+      LEFT JOIN (
+        SELECT memory_id, COUNT(*) as recall_count
+        FROM recall_log GROUP BY memory_id
+      ) rl ON rl.memory_id = o.id
+      LEFT JOIN (
+        SELECT memory_id, MAX(trust_score) as trust_score
+        FROM symbol_links GROUP BY memory_id
+      ) sl ON sl.memory_id = CAST(o.id AS TEXT)
+      WHERE o.type = ? AND o.deleted_at IS NULL
+        AND (rl.recall_count IS NULL OR rl.recall_count = 0)
+        AND o.content LIKE '%Auto-detected%'
+        AND (sl.trust_score IS NULL OR sl.trust_score < 0.3)
+        AND o.created_at < datetime('now', '-7 days')
+    `, [type]);
+    for (const row of rows) {
+      sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [row.id]);
+      prunedIds.push({ id: row.id, title: row.title, reason: `auto-detected ${type}, never recalled in 7+ days` });
+    }
+    report.phases[`staleAuto_${type}`] = { count: rows.length };
+    totalPruned += rows.length;
+  }
+
+  // ── Phase 4: Correction entry cleanup ──
+  // Memories starting with "CORRECTION:" are workarounds that should have used update.
+  // Find the corrected memory (referenced in content), ensure it's updated, then delete the correction.
+  const corrections = sqlJson(`
+    SELECT id, title, content, project
+    FROM observations
+    WHERE (title LIKE 'CORRECTION:%' OR title LIKE 'Correction:%')
+      AND deleted_at IS NULL
+  `);
+  for (const row of corrections) {
+    // Extract referenced memory ID from content (e.g., "Memory #1331 was wrong")
+    const refMatch = row.content.match(/#(\d+)/);
+    const refNote = refMatch ? ` (referenced #${refMatch[1]} — ensure it was updated)` : '';
+    sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [row.id]);
+    prunedIds.push({ id: row.id, title: row.title, reason: `correction entry${refNote} — should use memory-update instead` });
+  }
+  report.phases.corrections = { count: corrections.length };
+  totalPruned += corrections.length;
+
+  // ── Phase 5: Obsolete setup/config states ──
+  // Find memories about replaced tools/setups by looking for "replacing" or "replaced"
+  // in content where a newer memory on the same topic exists
+  const obsoleteConfigs = sqlJson(`
+    SELECT o1.id, o1.title, o1.project, o1.type,
+           o2.id AS newer_id, o2.title AS newer_title
+    FROM observations o1
+    JOIN observations o2 ON o1.project = o2.project
+      AND o1.id < o2.id
+      AND o2.deleted_at IS NULL
+      AND o1.type IN ('decision', 'config', 'architecture')
+      AND o2.type IN ('decision', 'config', 'architecture')
+    WHERE o1.deleted_at IS NULL
+      AND (
+        (o1.content LIKE '%replaced%' AND o2.content LIKE '%replacing%')
+        OR (o1.content LIKE '%setup%' AND o2.content LIKE '%replaced%')
+        OR (o1.title LIKE '%setup%' AND o2.title LIKE '%overhaul%')
+        OR (o1.title LIKE '%setup%' AND o2.title LIKE '%complete%')
+      )
+      AND o1.created_at < o2.created_at
+  `);
+  for (const row of obsoleteConfigs) {
+    sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [row.id]);
+    prunedIds.push({ id: row.id, title: row.title, reason: `obsolete setup — superseded by #${row.newer_id} "${row.newer_title}"` });
+  }
+  report.phases.obsoleteSetups = { count: obsoleteConfigs.length };
+  totalPruned += obsoleteConfigs.length;
+
+  // ── Run compact as final step ──
+  const compactResult = runCompact();
+  report.phases.compact = compactResult;
+
+  report.completedAt = new Date().toISOString();
+  report.ok = true;
+  report.totalPruned = totalPruned;
+  report.pruned = prunedIds;
+  return report;
+}
+
 /* ── init ─────────────────────────────────────────────────── */
 function initDb() {
   // EnsureDb() is called from the main dispatch block, so the DB is already initialized
@@ -2184,6 +2335,7 @@ const commands = {
   'recover-orphans': recoverOrphans,
   init: initDb,
   compact,
+  dream,
   // ── v3 code indexing commands ──
   'index-repo': (args) => {
     const repoPath = args.path;

@@ -253,6 +253,23 @@ export default function (pi: ExtensionAPI) {
     }
 
     ctx.ui.setStatus("memory", `🧠 session ${sessionId}`);
+
+    // ── Auto-dream: every 10th session, prune outdated memories ──
+    // dream() targets OUTDATEDNESS (superseded, low-value, never-recalled),
+    // not age. A 6-month-old valid decision stays. A 1-day-old wrong one goes.
+    if (sessionId % 10 === 0) {
+      try {
+        const dreamResult = await memCmd("dream");
+        if (dreamResult && (dreamResult as any).totalPruned > 0) {
+          ctx.ui.notify(
+            `💤 Dream: pruned ${(dreamResult as any).totalPruned} outdated memories (session #${sessionId})`,
+            "info",
+          );
+        }
+      } catch (e) {
+        console.error("[memory-layer] auto-dream failed:", e);
+      }
+    }
   });
 
   // ────────────────────────────────────────────────────────
@@ -1180,6 +1197,60 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
+    name: "memory-update",
+    label: "Update Memory",
+    description:
+      "Update an existing memory in-place by ID. Use when you need to correct or refine a previously saved memory " +
+      "instead of creating a duplicate or correction entry. Updates only the fields you provide.",
+    parameters: Type.Object({
+      id: Type.Number({ description: "Memory observation ID to update" }),
+      title: Type.Optional(Type.String({ description: "New title (optional)" })),
+      content: Type.Optional(Type.String({ description: "New content (optional). Use **What**/**Why**/**Where**/**Learned** format." })),
+      type: Type.Optional(Type.String({ description: "New type: decision, bugfix, architecture, pattern, discovery, config, preference, learning" })),
+      scope: Type.Optional(Type.String({ description: "New scope: project or personal" })),
+      topic_key: Type.Optional(Type.String({ description: "New topic key (optional)" })),
+    }),
+    async execute(_id, params, _signal, _onUpdate, _ctx) {
+      const args: Record<string, string> = { id: String(params.id) };
+      if (params.title) args.title = params.title;
+      if (params.content) args.content = params.content;
+      if (params.type) args.type = params.type;
+      if (params.scope) args.scope = params.scope;
+      if (params.topic_key) args["topic-key"] = params.topic_key;
+
+      const result = await mem("update", args);
+      if (!result || result.error) {
+        return { content: [{ type: "text", text: `Failed to update memory #${params.id}: ${result?.error || "unknown error"}` }], details: {}, isError: true };
+      }
+      return {
+        content: [{ type: "text", text: `✅ Memory updated: [#${result.id}] ${result.title}` }],
+        details: result,
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "memory-delete",
+    label: "Delete Memory",
+    description:
+      "Soft-delete a memory by ID. Use to remove outdated, incorrect, or duplicate memories. " +
+      "The memory is soft-deleted (can be recovered) rather than permanently destroyed.",
+    parameters: Type.Object({
+      id: Type.Number({ description: "Memory observation ID to delete" }),
+    }),
+    async execute(_id, params, _signal, _onUpdate, _ctx) {
+      const result = await mem("delete", { id: String(params.id) });
+      if (!result || result.error) {
+        return { content: [{ type: "text", text: `Failed to delete memory #${params.id}: ${result?.error || "unknown error"}` }], details: {}, isError: true };
+      }
+      return {
+        content: [{ type: "text", text: `🗑️ Memory #${params.id} deleted${result.hardDeleted ? " (hard)" : " (soft)"}` }],
+        details: result,
+      };
+    },
+  });
+
+  pi.registerTool({
     name: "memory-related",
     label: "Find Related Memories",
     description:
@@ -1492,6 +1563,27 @@ export default function (pi: ExtensionAPI) {
           `🧠 ${result.total_observations} observations | ${result.total_sessions} sessions | ${result.total_symbol_links} symbol links`,
           "info",
         );
+      }
+    },
+  });
+
+  pi.registerCommand("memory-dream", {
+    description: "Manually trigger memory dreaming — prune outdated (not just old) memories",
+    handler: async (_args, ctx) => {
+      try {
+        const result = await memCmd("dream");
+        if (result) {
+          const phases = Object.entries((result as any).phases || {})
+            .filter(([k, v]) => k !== "compact" && (v as any).count > 0)
+            .map(([k, v]) => `${k}: ${(v as any).count}`)
+            .join(", ");
+          ctx.ui.notify(
+            `💤 Dream complete: ${(result as any).totalPruned} outdated memories pruned (${phases || 'nothing to prune'})`,
+            "info",
+          );
+        }
+      } catch (e) {
+        ctx.ui.notify(`Dream failed: ${e instanceof Error ? e.message : String(e)}`, "error");
       }
     },
   });
