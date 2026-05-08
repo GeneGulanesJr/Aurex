@@ -929,8 +929,9 @@ function _extractSqlSymbols(filePath, sourceStr, parser) {
 
 /**
  * Extract call expressions from a file using AST parsing.
- * Returns array of { callee: string, line: number, is_method: boolean }.
- * More precise than the body-regex approach used in buildCallGraph.
+ * Returns array of { callee, line, is_method, receiver, full_path }.
+ * - receiver: the object part of a member call (e.g., 'this', 'super', 'obj', or null for direct calls)
+ * - full_path: the complete callee text (e.g., 'this.method', 'obj.method', 'foo')
  */
 function extractCallees(filePath) {
   if (!_ready) {return [];}
@@ -938,49 +939,12 @@ function extractCallees(filePath) {
   const langConfig = LANGUAGE_MAP[ext];
   if (!langConfig || langConfig.languageName === 'sql') {return [];}
 
-  // Skip JS/TS keywords that look like function calls
   const _SKIP = new Set([
-    'if',
-    'else',
-    'for',
-    'while',
-    'do',
-    'switch',
-    'case',
-    'try',
-    'catch',
-    'finally',
-    'class',
-    'function',
-    'return',
-    'throw',
-    'new',
-    'typeof',
-    'instanceof',
-    'void',
-    'delete',
-    'in',
-    'of',
-    'yield',
-    'await',
-    'async',
-    'export',
-    'import',
-    'from',
-    'const',
-    'let',
-    'var',
-    'true',
-    'false',
-    'null',
-    'undefined',
-    'this',
-    'super',
-    'constructor',
-    'extends',
-    'static',
-    'get',
-    'set',
+    'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'try', 'catch', 'finally',
+    'class', 'function', 'return', 'throw', 'new', 'typeof', 'instanceof', 'void',
+    'delete', 'in', 'of', 'yield', 'await', 'async', 'export', 'import', 'from',
+    'const', 'let', 'var', 'true', 'false', 'null', 'undefined', 'this', 'super',
+    'constructor', 'extends', 'static', 'get', 'set',
   ]);
 
   const parser = _parsers[langConfig.parserKey];
@@ -999,31 +963,45 @@ function extractCallees(filePath) {
   const seen = new Set();
 
   function walk(node) {
-    // Call_expression: callee is the first child
     if (node.type === 'call_expression') {
       const calleeNode = node.child(0);
       if (calleeNode) {
-        // Direct call: foo()
         if (calleeNode.type === 'identifier') {
           const name = calleeNode.text;
           if (!_SKIP.has(name)) {
             const key = `${name}:${node.startPosition.row + 1}`;
             if (!seen.has(key)) {
               seen.add(key);
-              callees.push({ callee: name, line: node.startPosition.row + 1, is_method: false });
+              callees.push({
+                callee: name,
+                line: node.startPosition.row + 1,
+                is_method: false,
+                receiver: null,
+                full_path: name,
+              });
             }
           }
-        }
-        // Member call: obj.method() — extract 'method'
-        else if (calleeNode.type === 'member_expression') {
+        } else if (calleeNode.type === 'member_expression') {
           const propNode = calleeNode.child(calleeNode.childCount - 1);
+          const objNode = calleeNode.child(0);
           if (propNode && (propNode.type === 'property_identifier' || propNode.type === 'identifier')) {
             const name = propNode.text;
             if (!_SKIP.has(name)) {
               const key = `${name}:${node.startPosition.row + 1}`;
               if (!seen.has(key)) {
                 seen.add(key);
-                callees.push({ callee: name, line: node.startPosition.row + 1, is_method: true });
+                let receiver = null;
+                if (objNode) {
+                  receiver = objNode.text;
+                }
+                const full_path = receiver ? `${receiver}.${name}` : name;
+                callees.push({
+                  callee: name,
+                  line: node.startPosition.row + 1,
+                  is_method: true,
+                  receiver: receiver,
+                  full_path: full_path,
+                });
               }
             }
           }
@@ -1031,7 +1009,6 @@ function extractCallees(filePath) {
       }
     }
 
-    // New_expression: new ClassName()
     if (node.type === 'new_expression') {
       for (const child of node.children) {
         if (child.type === 'identifier' || child.type === 'type_identifier') {
@@ -1039,7 +1016,13 @@ function extractCallees(filePath) {
           const key = `new_${name}:${node.startPosition.row + 1}`;
           if (!seen.has(key)) {
             seen.add(key);
-            callees.push({ callee: name, line: node.startPosition.row + 1, is_method: false });
+            callees.push({
+              callee: name,
+              line: node.startPosition.row + 1,
+              is_method: false,
+              receiver: null,
+              full_path: `new ${name}`,
+            });
           }
           break;
         }

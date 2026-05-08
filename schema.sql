@@ -321,7 +321,7 @@ CREATE TABLE IF NOT EXISTS code_calls (
   callee_symbol_id  INTEGER REFERENCES code_symbols(id) ON DELETE SET NULL,
   confidence        REAL NOT NULL DEFAULT 1.0,
   line_number       INTEGER,
-  UNIQUE(repo_id, caller_symbol_id, callee_name)
+  UNIQUE(repo_id, caller_symbol_id, callee_name, line_number)
 );
 CREATE INDEX IF NOT EXISTS idx_cc_caller ON code_calls(caller_symbol_id);
 CREATE INDEX IF NOT EXISTS idx_cc_callee_name ON code_calls(repo_id, callee_name);

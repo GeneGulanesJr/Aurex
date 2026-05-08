@@ -80,13 +80,9 @@ function extractImportsFromSource(content) {
     }
   }
 
-  // ES imports: import X from 'module'
   const esRe = /import\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+(?:\s*,\s*\{[^}]*\})?)\s+from\s+)?['"]([^'"]+)['"]/g;
-  // Re-exports: export ... from 'module'
   const reExportRe = /export\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+)\s+from\s+)['"]([^'"]+)['"]/g;
-  // Require()
   const requireRe = /require\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
-  // Dynamic import
   const dynamicRe = /import\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
 
   let match;
@@ -109,6 +105,81 @@ function extractImportsFromSource(content) {
   }
 
   return imports;
+}
+
+function extractImportBindings(content) {
+  const bindings = [];
+
+  const lines = content.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    let m;
+
+    m = line.match(/^import\s+(\w+)\s+from\s+['"]([^'"]+)['"]/);
+    if (m) {
+      bindings.push({ localName: m[1], originalName: 'default', modulePath: m[2], line: i + 1 });
+      continue;
+    }
+
+    m = line.match(/^import\s+\*\s+as\s+(\w+)\s+from\s+['"]([^'"]+)['"]/);
+    if (m) {
+      bindings.push({ localName: m[1], originalName: '*', modulePath: m[2], line: i + 1 });
+      continue;
+    }
+
+    const namedMatch = line.match(/^import\s+(?:([\w]+)\s*,\s*)?\{([^}]+)\}\s+from\s+['"]([^'"]+)['"]/);
+    if (namedMatch) {
+      if (namedMatch[1]) {
+        bindings.push({ localName: namedMatch[1], originalName: 'default', modulePath: namedMatch[3], line: i + 1 });
+      }
+      const names = namedMatch[2].split(',').map((s) => s.trim()).filter(Boolean);
+      for (const nameStr of names) {
+        const asMatch = nameStr.match(/^(\w+)\s+as\s+(\w+)$/);
+        if (asMatch) {
+          bindings.push({ localName: asMatch[2], originalName: asMatch[1], modulePath: namedMatch[3], line: i + 1 });
+        } else {
+          bindings.push({ localName: nameStr, originalName: nameStr, modulePath: namedMatch[3], line: i + 1 });
+        }
+      }
+      continue;
+    }
+
+    const reExportNamed = line.match(/^export\s+\{([^}]+)\}\s+from\s+['"]([^'"]+)['"]/);
+    if (reExportNamed) {
+      const names = reExportNamed[1].split(',').map((s) => s.trim()).filter(Boolean);
+      for (const nameStr of names) {
+        const asMatch = nameStr.match(/^(\w+)\s+as\s+(\w+)$/);
+        if (asMatch) {
+          bindings.push({ localName: asMatch[2], originalName: asMatch[1], modulePath: reExportNamed[2], line: i + 1, isReExport: true });
+        } else {
+          bindings.push({ localName: nameStr, originalName: nameStr, modulePath: reExportNamed[2], line: i + 1, isReExport: true });
+        }
+      }
+      continue;
+    }
+
+    m = line.match(/^(?:const|let|var)\s+(\w+)\s*=\s*require\s*\(\s*['"]([^'"]+)['"]\s*\)/);
+    if (m) {
+      bindings.push({ localName: m[1], originalName: '*', modulePath: m[2], line: i + 1 });
+      continue;
+    }
+
+    const destructureRequire = line.match(/^(?:const|let|var)\s+\{([^}]+)\}\s*=\s*require\s*\(\s*['"]([^'"]+)['"]\s*\)/);
+    if (destructureRequire) {
+      const names = destructureRequire[1].split(',').map((s) => s.trim()).filter(Boolean);
+      for (const nameStr of names) {
+        const asMatch = nameStr.match(/^(\w+)\s*:\s*(\w+)$/);
+        if (asMatch) {
+          bindings.push({ localName: asMatch[2], originalName: asMatch[1], modulePath: destructureRequire[2], line: i + 1 });
+        } else {
+          bindings.push({ localName: nameStr, originalName: nameStr, modulePath: destructureRequire[2], line: i + 1 });
+        }
+      }
+      continue;
+    }
+  }
+
+  return bindings;
 }
 
 function resolveImportTarget(db, repoId, sourceFilePath, targetModule) {
@@ -247,40 +318,147 @@ function buildCallGraph(db, repoId) {
 
   const symbols = db
     .prepare(`
-    SELECT cs.id, cs.name, cs.file_id, cs.file_path, cs.start_byte, cs.end_byte, cs.start_line, cf.content as file_content
+    SELECT cs.id, cs.name, cs.file_id, cs.file_path, cs.start_byte, cs.end_byte, cs.start_line, cs.end_line,
+           cs.parent_name, cs.kind, cs.qualified_name, cf.content as file_content
     FROM code_symbols cs JOIN code_files cf ON cf.id = cs.file_id WHERE cs.repo_id = ?
   `)
     .all(repoId);
 
-  // Build name → symbol lookup
-  const allSymbols = db.prepare('SELECT id, name, file_id, file_path FROM code_symbols WHERE repo_id = ?').all(repoId);
+  const allSymbols = db.prepare('SELECT id, name, file_id, file_path, parent_name, kind, qualified_name FROM code_symbols WHERE repo_id = ?').all(repoId);
   const symbolsByName = new Map();
+  const symbolsByQualified = new Map();
   for (const sym of allSymbols) {
     if (!symbolsByName.has(sym.name)) {symbolsByName.set(sym.name, []);}
     symbolsByName.get(sym.name).push(sym);
+    if (sym.qualified_name && sym.qualified_name !== sym.name) {
+      if (!symbolsByQualified.has(sym.qualified_name)) {symbolsByQualified.set(sym.qualified_name, []);}
+      symbolsByQualified.get(sym.qualified_name).push(sym);
+    }
   }
 
   let totalCalls = 0;
 
-  // Resolve callee name to symbol ID (import-aware → same-file → repo-wide)
-  function resolveCallee(calleeName, sym, fileImportsCache) {
+  const fileImportsCache = {};
+  const fileBindingsCache = {};
+
+  function getFileImports(fileId) {
+    if (fileImportsCache[fileId]) {return fileImportsCache[fileId];}
+    const imports = db
+      .prepare('SELECT target_file_id, target_module FROM code_imports WHERE source_file_id = ? AND target_file_id IS NOT NULL')
+      .all(fileId);
+    fileImportsCache[fileId] = imports;
+    return imports;
+  }
+
+  function getFileBindings(fileId, fileContent) {
+    if (fileBindingsCache[fileId]) {return fileBindingsCache[fileId];}
+    const bindings = extractImportBindings(fileContent || '');
+    const imports = getFileImports(fileId);
+    const importMap = new Map();
+    for (const imp of imports) {
+      importMap.set(imp.target_module, imp.target_file_id);
+    }
+    const resolved = bindings.map((b) => ({
+      ...b,
+      target_file_id: importMap.get(b.modulePath) || null,
+    }));
+    fileBindingsCache[fileId] = resolved;
+    return resolved;
+  }
+
+  function resolveCallee(calleeName, callerSym, receiver, fileContent) {
     let calleeSymbolId = null;
-    let confidence = 0.7;
+    let confidence = 0.5;
 
-    // Import-aware resolution (cached per file)
-    const fileImports =
-      fileImportsCache[sym.file_id] ||
-      (fileImportsCache[sym.file_id] = db
-        .prepare('SELECT target_file_id FROM code_imports WHERE source_file_id = ? AND target_file_id IS NOT NULL')
-        .all(sym.file_id));
+    const bindings = getFileBindings(callerSym.file_id, fileContent);
+    const bindingMatch = bindings.find((b) => b.localName === calleeName && !b.isReExport);
+    if (bindingMatch) {
+      const originalName = bindingMatch.originalName;
+      if (bindingMatch.target_file_id) {
+        if (originalName === '*' || originalName === 'default') {
+          const matchSym = db
+            .prepare('SELECT id FROM code_symbols WHERE file_id = ? AND name = ? LIMIT 1')
+            .get(bindingMatch.target_file_id, calleeName);
+          if (matchSym) {
+            return { calleeSymbolId: matchSym.id, confidence: 1.0, resolvedVia: 'import-binding' };
+          }
+        } else {
+          const matchSym = db
+            .prepare('SELECT id FROM code_symbols WHERE file_id = ? AND name = ? LIMIT 1')
+            .get(bindingMatch.target_file_id, originalName);
+          if (matchSym) {
+            return { calleeSymbolId: matchSym.id, confidence: 1.0, resolvedVia: 'import-binding-alias' };
+          }
+        }
+      }
+    }
 
+    if (receiver === 'this' && callerSym.parent_name) {
+      const qualifiedName = `${callerSym.parent_name}.${calleeName}`;
+      const qualifiedMatches = symbolsByQualified.get(qualifiedName);
+      if (qualifiedMatches && qualifiedMatches.length === 1) {
+        return { calleeSymbolId: qualifiedMatches[0].id, confidence: 0.95, resolvedVia: 'this-dispatch' };
+      }
+      if (qualifiedMatches && qualifiedMatches.length > 1) {
+        const sameFile = qualifiedMatches.find((m) => m.file_id === callerSym.file_id);
+        if (sameFile) {
+          return { calleeSymbolId: sameFile.id, confidence: 0.90, resolvedVia: 'this-dispatch-same-file' };
+        }
+      }
+    }
+
+    if (receiver === 'super' && callerSym.parent_name) {
+      const parentClass = db
+        .prepare('SELECT parent_name FROM code_symbols WHERE repo_id = ? AND name = ? AND kind = ? LIMIT 1')
+        .get(repoId, callerSym.parent_name, 'class');
+      if (parentClass && parentClass.parent_name) {
+        const superQualified = `${parentClass.parent_name}.${calleeName}`;
+        const superMatches = symbolsByQualified.get(superQualified);
+        if (superMatches && superMatches.length === 1) {
+          return { calleeSymbolId: superMatches[0].id, confidence: 0.90, resolvedVia: 'super-dispatch' };
+        }
+      }
+    }
+
+    if (receiver && receiver !== 'this' && receiver !== 'super') {
+      const binding = bindings.find((b) => b.localName === receiver && !b.isReExport);
+      if (binding && binding.target_file_id) {
+        if (binding.originalName === '*') {
+          const matchSym = db
+            .prepare('SELECT id FROM code_symbols WHERE file_id = ? AND name = ? AND kind = ? LIMIT 1')
+            .get(binding.target_file_id, calleeName, 'function');
+          if (matchSym) {
+            return { calleeSymbolId: matchSym.id, confidence: 0.95, resolvedVia: 'namespace-member' };
+          }
+        }
+        const classSym = db
+          .prepare('SELECT id FROM code_symbols WHERE file_id = ? AND name = ? AND kind = ? LIMIT 1')
+          .get(binding.target_file_id, binding.originalName === 'default' ? receiver : binding.originalName, 'class');
+        if (classSym) {
+          const methodSym = db
+            .prepare('SELECT id FROM code_symbols WHERE parent_name = ? AND name = ? LIMIT 1')
+            .get(binding.originalName === 'default' ? receiver : binding.originalName, calleeName);
+          if (methodSym) {
+            return { calleeSymbolId: methodSym.id, confidence: 0.90, resolvedVia: 'object-type-member' };
+          }
+        }
+      }
+
+      const qualifiedName = `${receiver}.${calleeName}`;
+      const qualifiedMatches = symbolsByQualified.get(qualifiedName);
+      if (qualifiedMatches && qualifiedMatches.length === 1) {
+        return { calleeSymbolId: qualifiedMatches[0].id, confidence: 0.85, resolvedVia: 'qualified-name' };
+      }
+    }
+
+    const fileImports = getFileImports(callerSym.file_id);
     for (const imp of fileImports) {
       const matchSym = db
         .prepare('SELECT id FROM code_symbols WHERE file_id = ? AND name = ? LIMIT 1')
         .get(imp.target_file_id, calleeName);
       if (matchSym) {
         calleeSymbolId = matchSym.id;
-        confidence = 1.0;
+        confidence = 0.8;
         break;
       }
     }
@@ -288,7 +466,7 @@ function buildCallGraph(db, repoId) {
     if (!calleeSymbolId) {
       const sameFile = db
         .prepare('SELECT id FROM code_symbols WHERE file_id = ? AND name = ? LIMIT 1')
-        .get(sym.file_id, calleeName);
+        .get(callerSym.file_id, calleeName);
       if (sameFile) {
         calleeSymbolId = sameFile.id;
         confidence = 0.9;
@@ -306,37 +484,33 @@ function buildCallGraph(db, repoId) {
     return { calleeSymbolId, confidence };
   }
 
-  const fileImportsCache = {};
-
   for (const sym of symbols) {
     if (!sym.file_content || sym.end_byte <= sym.start_byte) {continue;}
 
-    // V5.3: Try AST-based call extraction first (more precise)
     let astCallees = [];
     try {
       const allCallees = codeParser.extractCallees(sym.file_path);
-      // Filter to callees within this symbol's line range
       astCallees = allCallees.filter((c) => c.line >= sym.start_line && c.line <= sym.end_line);
     } catch (_) {
-      astCallees = []; // Will fall back to regex
+      astCallees = [];
     }
 
     const seen = new Set();
 
     if (astCallees.length > 0) {
-      // AST-based extraction: use callee names directly
       for (const c of astCallees) {
         if (_SKIP_CALLEE_NAMES.has(c.callee)) {continue;}
         const key = `${c.callee}:${c.line}`;
         if (seen.has(key)) {continue;}
         seen.add(key);
 
-        const { calleeSymbolId, confidence } = resolveCallee(c.callee, sym, fileImportsCache);
+        const { calleeSymbolId, confidence } = resolveCallee(
+          c.callee, sym, c.receiver || null, sym.file_content
+        );
         insertStmt.run(repoId, sym.id, c.callee, calleeSymbolId, confidence, c.line);
         totalCalls++;
       }
     } else {
-      // Regex fallback for SQL or when AST isn't available
       const body = Buffer.from(sym.file_content, 'utf-8').toString('utf-8', sym.start_byte, sym.end_byte);
       if (!body || body.length < 2) {continue;}
 
@@ -355,7 +529,9 @@ function buildCallGraph(db, repoId) {
           if (seen.has(calleeName)) {continue;}
           seen.add(calleeName);
 
-          const { calleeSymbolId, confidence } = resolveCallee(calleeName, sym, fileImportsCache);
+          const { calleeSymbolId, confidence } = resolveCallee(
+            calleeName, sym, null, sym.file_content
+          );
           const lineNum = sym.start_line + body.substring(0, match.index).split('\n').length - 1;
           insertStmt.run(repoId, sym.id, calleeName, calleeSymbolId, confidence, lineNum);
           totalCalls++;
@@ -370,7 +546,7 @@ function buildCallGraph(db, repoId) {
 function getCallHierarchy(db, repoId, opts) {
   const guard = _requireNativeDb(db);
   if (guard) {return guard;}
-  const { symbol, direction = 'callers', depth = 3 } = opts;
+  const { symbol, direction = 'callers', depth = 3, minConfidence = 0.0 } = opts;
   if (!symbol) {return { error: 'Missing --symbol' };}
 
   const symRow = db
@@ -385,22 +561,32 @@ function getCallHierarchy(db, repoId, opts) {
     const rows = db
       .prepare(`
       WITH RECURSIVE upstream AS (
-        SELECT cc.caller_symbol_id, cs.name, cs.file_path, 1 as depth FROM code_calls cc JOIN code_symbols cs ON cs.id = cc.caller_symbol_id WHERE cc.callee_symbol_id = ?
-        UNION ALL SELECT cc.caller_symbol_id, cs.name, cs.file_path, u.depth + 1 FROM code_calls cc JOIN upstream u ON cc.callee_symbol_id = u.caller_symbol_id JOIN code_symbols cs ON cs.id = cc.caller_symbol_id WHERE u.depth < ?
+        SELECT cc.caller_symbol_id, cs.name, cs.file_path, 1 as depth
+        FROM code_calls cc JOIN code_symbols cs ON cs.id = cc.caller_symbol_id
+        WHERE cc.callee_symbol_id = ? AND cc.confidence >= ?
+        UNION ALL
+        SELECT cc.caller_symbol_id, cs.name, cs.file_path, u.depth + 1
+        FROM code_calls cc JOIN upstream u ON cc.callee_symbol_id = u.caller_symbol_id JOIN code_symbols cs ON cs.id = cc.caller_symbol_id
+        WHERE u.depth < ? AND cc.confidence >= ?
       ) SELECT * FROM upstream
     `)
-      .all(symbolId, depth);
+      .all(symbolId, minConfidence, depth, minConfidence);
     return { symbol: symRow[0].name, direction: 'callers', depth, callers: rows };
   }
 
   const rows = db
     .prepare(`
     WITH RECURSIVE downstream AS (
-      SELECT cc.callee_name, cc.callee_symbol_id, cs.file_path, cc.confidence, 1 as depth FROM code_calls cc LEFT JOIN code_symbols cs ON cs.id = cc.callee_symbol_id WHERE cc.caller_symbol_id = ?
-      UNION ALL SELECT cc.callee_name, cc.callee_symbol_id, cs.file_path, cc.confidence, d.depth + 1 FROM code_calls cc JOIN downstream d ON cc.caller_symbol_id = d.callee_symbol_id LEFT JOIN code_symbols cs ON cs.id = cc.callee_symbol_id WHERE d.depth < ?
+      SELECT cc.callee_name, cc.callee_symbol_id, cs.file_path, cc.confidence, 1 as depth
+      FROM code_calls cc LEFT JOIN code_symbols cs ON cs.id = cc.callee_symbol_id
+      WHERE cc.caller_symbol_id = ? AND cc.confidence >= ?
+      UNION ALL
+      SELECT cc.callee_name, cc.callee_symbol_id, cs.file_path, cc.confidence, d.depth + 1
+      FROM code_calls cc JOIN downstream d ON cc.caller_symbol_id = d.callee_symbol_id LEFT JOIN code_symbols cs ON cs.id = cc.callee_symbol_id
+      WHERE d.depth < ? AND cc.confidence >= ?
     ) SELECT * FROM downstream
   `)
-    .all(symbolId, depth);
+    .all(symbolId, minConfidence, depth, minConfidence);
   return { symbol: symRow[0].name, direction: 'callees', depth, callees: rows };
 }
 
@@ -411,7 +597,7 @@ function getCallHierarchy(db, repoId, opts) {
 function getBlastRadius(db, repoId, opts) {
   const guard = _requireNativeDb(db);
   if (guard) {return guard;}
-  const { symbol, depth = 3 } = opts;
+  const { symbol, depth = 3, minConfidence = 0.7 } = opts;
   if (!symbol) {return { error: 'Missing --symbol' };}
 
   const symRow = db
@@ -426,11 +612,16 @@ function getBlastRadius(db, repoId, opts) {
   const callers = db
     .prepare(`
     WITH RECURSIVE upstream AS (
-      SELECT cc.caller_symbol_id, cs.name, cs.file_path, 1 as depth FROM code_calls cc JOIN code_symbols cs ON cs.id = cc.caller_symbol_id WHERE cc.callee_symbol_id = ?
-      UNION ALL SELECT cc.caller_symbol_id, cs.name, cs.file_path, u.depth + 1 FROM code_calls cc JOIN upstream u ON cc.callee_symbol_id = u.caller_symbol_id JOIN code_symbols cs ON cs.id = cc.caller_symbol_id WHERE u.depth < ?
+      SELECT cc.caller_symbol_id, cs.name, cs.file_path, cc.confidence, 1 as depth
+      FROM code_calls cc JOIN code_symbols cs ON cs.id = cc.caller_symbol_id
+      WHERE cc.callee_symbol_id = ? AND cc.confidence >= ?
+      UNION ALL
+      SELECT cc.caller_symbol_id, cs.name, cs.file_path, cc.confidence, u.depth + 1
+      FROM code_calls cc JOIN upstream u ON cc.callee_symbol_id = u.caller_symbol_id JOIN code_symbols cs ON cs.id = cc.caller_symbol_id
+      WHERE u.depth < ? AND cc.confidence >= ?
     ) SELECT * FROM upstream
   `)
-    .all(symbolId, depth);
+    .all(symbolId, minConfidence, depth, minConfidence);
 
   const fileImporters = db
     .prepare(`
@@ -447,6 +638,7 @@ function getBlastRadius(db, repoId, opts) {
     callers,
     file_importers: fileImporters,
     affected_files: [...new Set([...callers.map((c) => c.file_path), ...fileImporters.map((f) => f.path)])],
+    min_confidence: minConfidence,
   };
 }
 
@@ -1893,4 +2085,5 @@ module.exports = {
   winnow,
   getUntestedSymbols,
   getPrRiskProfile,
+  extractImportBindings,
 };
