@@ -21,6 +21,7 @@ const DEFAULTS = {
     warning_threshold: 0.60,
   },
   compact_every_n_sessions: 5,
+  context_limit: 5,
   tier_config_path: path.join(HOME, '.pi', 'memory', 'tier.jsonc'),
 };
 

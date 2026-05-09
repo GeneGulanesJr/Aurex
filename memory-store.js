@@ -410,7 +410,7 @@ function search(args) {
 
 function context(args) {
   const project = args.project || null;
-  const limit = parseInt(args.limit || '20', 10);
+  const limit = parseInt(args.limit || String(getConfig().context_limit), 10);
   const sessionId = args['session-id'] ? parseInt(args['session-id'], 10) : null;
   const topicKey = args['topic-key'] || null;
   const topicQuery = args.query || null;
@@ -434,19 +434,29 @@ function context(args) {
       )
     : [];
 
-  // Personal-scope observations (cross-project preferences)
+  // Personal-scope observations (cross-project preferences) — limit to 3 for compact context
   const personal = sqlJson(`
     SELECT id, title, type, scope, topic_key, created_at
     FROM observations
     WHERE scope = 'personal' AND deleted_at IS NULL
     ORDER BY created_at DESC
-    LIMIT 10
+    LIMIT 3
   `);
+
+  // Relevance-weighted context: recent recall + trust + recency + type priority
+  // This ensures memories for the current project are ranked highest,
+  // with recall history surfacing what's been actively useful.
+  const RELEVANCE_WEIGHTS = {
+    recall: 0.35,    // Frequently recalled = actively relevant
+    trust: 0.25,    // High trust = verified and still accurate
+    recency: 0.25,  // Recent = likely still applicable
+    typePriority: 0.15, // Decisions/architecture > trivial types
+  };
 
   // Topic-aware, cross-project, or standard observations
   let obsQuery, obsParams;
   if (crossProject) {
-    const crossLimit = deep ? limit * 2 : limit;
+    const crossLimit = deep ? Math.min(limit * 2, 30) : limit;
     obsQuery = `
       SELECT o.id, o.title, o.type, o.scope, o.topic_key, o.project, o.created_at,
              COALESCE(sl.trust_score, 0.7) as trust_score,
@@ -455,12 +465,12 @@ function context(args) {
       FROM observations o
       ${TRUST_RECALL_JOINS}
       WHERE o.deleted_at IS NULL AND o.type != 'skill' AND o.scope = 'project'
-      ORDER BY type_priority DESC, trust_score DESC, o.created_at DESC
+      ORDER BY recall_count DESC, trust_score DESC, type_priority DESC, o.created_at DESC
       LIMIT ?
     `;
     obsParams = [crossLimit];
   } else if (topicKey || topicQuery) {
-    const topicLimit = deep ? Math.min(limit * 3, 100) : Math.min(limit * 2, 50);
+    const topicLimit = deep ? Math.min(limit * 2, 30) : limit;
     if (topicQuery) {
       obsQuery = `
         WITH topic_matches AS (
@@ -477,7 +487,7 @@ function context(args) {
         FROM observations o
         JOIN topic_matches tm ON o.id = tm.id
         ${TRUST_RECALL_JOINS}
-        ORDER BY type_priority DESC, trust_score DESC, o.created_at DESC
+        ORDER BY recall_count DESC, trust_score DESC, type_priority DESC, o.created_at DESC
       `;
       const like = `%${topicQuery.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
       obsParams = [project, like, like, like, topicLimit];
@@ -497,10 +507,10 @@ function context(args) {
         FROM observations o
         ${TRUST_RECALL_JOINS}
         WHERE o.project = ? AND o.deleted_at IS NULL AND o.type != 'skill'
-        ORDER BY type_priority DESC, trust_score DESC, o.created_at DESC
+        ORDER BY recall_count DESC, CASE WHEN o.topic_key = ? THEN 5 ELSE type_priority END DESC, trust_score DESC, o.created_at DESC
         LIMIT ?
       `;
-      obsParams = [topicKey, project, topicLimit];
+      obsParams = [topicKey, project, topicKey, topicLimit];
     }
   } else {
     obsQuery = `
@@ -511,7 +521,7 @@ function context(args) {
       FROM observations o
       ${TRUST_RECALL_JOINS}
       WHERE o.project = ? AND o.deleted_at IS NULL AND o.type != 'skill'
-      ORDER BY type_priority DESC, trust_score DESC, o.created_at DESC
+      ORDER BY recall_count DESC, type_priority DESC, trust_score DESC, o.created_at DESC
       LIMIT ?
     `;
     obsParams = [project, limit];
@@ -1579,6 +1589,79 @@ function dream() {
   }
   report.phases.replacedConfigs = { count: obsoleteConfigs.length };
   totalCleaned += obsoleteConfigs.length;
+
+  // ── Phase 6: Low-value titled decisions (noise cleanup) ──
+  // Auto-saved decisions with vague/generic titles provide no retrieval value.
+  // Pattern: starts with "Architecture choice:", "Constraint identified:", etc.
+  // followed by conversational filler ("Done!", "OK", "Now I'll", "Here's what I changed:")
+  // These are session progress notes, not real decisions.
+  const noiseTitlePatterns = [
+    /^Architecture choice:\s*(Done!|OK|Now I|Here's what|All \d+ |The complex|The symlink|Good concern|You're right|Approved)/i,
+    /^Constraint identified:\s*(Here's my review|Two issues|All errors)/i,
+  ];
+  const allDecisions = sqlJson(`
+    SELECT id, title, type, project, content, created_at
+    FROM observations
+    WHERE type = 'decision' AND deleted_at IS NULL
+    ORDER BY created_at DESC
+  `);
+  let noiseCleaned = 0;
+  for (const row of allDecisions) {
+    if (noiseTitlePatterns.some(p => p.test(row.title))) {
+      sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [row.id]);
+      cleanedIds.push({ id: row.id, title: row.title, reason: 'low-value noise title — session progress, not a real decision' });
+      noiseCleaned++;
+    }
+  }
+  report.phases.noiseTitles = { count: noiseCleaned };
+  totalCleaned += noiseCleaned;
+
+  // ── Phase 7: Consolidate related memories on the same topic ──
+  // Find groups of 3+ memories with the same topic_key within 24 hours of each other.
+  // Merge them into a single consolidated entry, then soft-delete the originals.
+  const topicGroups = sqlJson(`
+    SELECT topic_key, project, COUNT(*) as cnt, MIN(id) as keep_id,
+           GROUP_CONCAT(id) as ids, GROUP_CONCAT(title, '\n') as titles
+    FROM observations
+    WHERE topic_key IS NOT NULL AND topic_key != ''
+      AND deleted_at IS NULL
+      AND type NOT IN ('skill', 'session_summary')
+    GROUP BY topic_key, project
+    HAVING COUNT(*) >= 3
+  `);
+  let consolidated = 0;
+  for (const group of topicGroups) {
+    const ids = group.ids.split(',').map(Number);
+    const keepId = Math.min(...ids);
+    const otherIds = ids.filter(id => id !== keepId);
+
+    // Get full content of all entries in this group
+    const entries = sqlJson(
+      `SELECT id, title, content, type, created_at FROM observations WHERE id IN (${ids.map(() => '?').join(',')}) ORDER BY created_at ASC`,
+      ids
+    );
+
+    if (entries.length < 3) continue; // Safety check
+
+    // Build consolidated content
+    const mergedContent = entries.map(e => `**${e.title}** (${e.created_at}):\n${e.content}`).join('\n\n---\n\n');
+    const mergedTitle = `${group.topic_key} — consolidated (${entries.length} entries)`;
+
+    // Update the kept entry with merged content
+    sqlRun(
+      'UPDATE observations SET content = ?, title = ?, type = ? WHERE id = ?',
+      [mergedContent, mergedTitle, 'decision', keepId]
+    );
+
+    // Soft-delete the others
+    for (const otherId of otherIds) {
+      sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [otherId]);
+      cleanedIds.push({ id: otherId, title: entries.find(e => e.id === otherId)?.title || '', reason: `consolidated into #${keepId} (topic: ${group.topic_key})` });
+    }
+    consolidated += otherIds.length;
+  }
+  report.phases.consolidated = { count: consolidated };
+  totalCleaned += consolidated;
 
   // ── Run compact as final step ──
   const compactResult = runCompact();
