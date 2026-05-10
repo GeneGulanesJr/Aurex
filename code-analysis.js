@@ -341,6 +341,53 @@ function buildCallGraph(db, repoId) {
   const fileImportsCache = {};
   const fileBindingsCache = {};
 
+  // Pre-load per-file symbol maps to eliminate N+1 queries in resolveCallee
+  const symbolsByFile = new Map();
+  for (const sym of allSymbols) {
+    if (!symbolsByFile.has(sym.file_id)) {symbolsByFile.set(sym.file_id, []);}
+    symbolsByFile.get(sym.file_id).push(sym);
+  }
+  const symbolsByFileAndName = new Map();
+  for (const [fileId, syms] of symbolsByFile) {
+    const byName = new Map();
+    for (const s of syms) {
+      if (!byName.has(s.name)) {byName.set(s.name, []);}
+      byName.get(s.name).push(s);
+    }
+    symbolsByFileAndName.set(fileId, byName);
+  }
+  // Pre-load class → parent_name map for super dispatch
+  const classParentMap = new Map();
+  for (const sym of allSymbols) {
+    if (sym.kind === 'class' && sym.parent_name) {classParentMap.set(sym.name, sym.parent_name);}
+  }
+  // Pre-load parent_name → child symbols for method dispatch
+  const methodsByParent = new Map();
+  for (const sym of allSymbols) {
+    if (sym.parent_name) {
+      if (!methodsByParent.has(sym.parent_name)) {methodsByParent.set(sym.parent_name, []);}
+      methodsByParent.get(sym.parent_name).push(sym);
+    }
+  }
+  const methodsByParentAndName = new Map();
+  for (const [parent, methods] of methodsByParent) {
+    const byName = new Map();
+    for (const m of methods) {
+      if (!byName.has(m.name)) {byName.set(m.name, []);}
+      byName.get(m.name).push(m);
+    }
+    methodsByParentAndName.set(parent, byName);
+  }
+
+  function getFileSymbol(fileId, name, kind) {
+    const byName = symbolsByFileAndName.get(fileId);
+    if (!byName) {return null;}
+    const matches = byName.get(name);
+    if (!matches) {return null;}
+    if (kind) {return matches.find((s) => s.kind === kind) || null;}
+    return matches[0] || null;
+  }
+
   function getFileImports(fileId) {
     if (fileImportsCache[fileId]) {return fileImportsCache[fileId];}
     const imports = db
@@ -376,16 +423,12 @@ function buildCallGraph(db, repoId) {
       const originalName = bindingMatch.originalName;
       if (bindingMatch.target_file_id) {
         if (originalName === '*' || originalName === 'default') {
-          const matchSym = db
-            .prepare('SELECT id FROM code_symbols WHERE file_id = ? AND name = ? LIMIT 1')
-            .get(bindingMatch.target_file_id, calleeName);
+          const matchSym = getFileSymbol(bindingMatch.target_file_id, calleeName);
           if (matchSym) {
             return { calleeSymbolId: matchSym.id, confidence: 1.0, resolvedVia: 'import-binding' };
           }
         } else {
-          const matchSym = db
-            .prepare('SELECT id FROM code_symbols WHERE file_id = ? AND name = ? LIMIT 1')
-            .get(bindingMatch.target_file_id, originalName);
+          const matchSym = getFileSymbol(bindingMatch.target_file_id, originalName);
           if (matchSym) {
             return { calleeSymbolId: matchSym.id, confidence: 1.0, resolvedVia: 'import-binding-alias' };
           }
@@ -408,11 +451,9 @@ function buildCallGraph(db, repoId) {
     }
 
     if (receiver === 'super' && callerSym.parent_name) {
-      const parentClass = db
-        .prepare('SELECT parent_name FROM code_symbols WHERE repo_id = ? AND name = ? AND kind = ? LIMIT 1')
-        .get(repoId, callerSym.parent_name, 'class');
-      if (parentClass && parentClass.parent_name) {
-        const superQualified = `${parentClass.parent_name}.${calleeName}`;
+      const parentName = classParentMap.get(callerSym.parent_name);
+      if (parentName) {
+        const superQualified = `${parentName}.${calleeName}`;
         const superMatches = symbolsByQualified.get(superQualified);
         if (superMatches && superMatches.length === 1) {
           return { calleeSymbolId: superMatches[0].id, confidence: 0.90, resolvedVia: 'super-dispatch' };
@@ -424,20 +465,16 @@ function buildCallGraph(db, repoId) {
       const binding = bindings.find((b) => b.localName === receiver && !b.isReExport);
       if (binding && binding.target_file_id) {
         if (binding.originalName === '*') {
-          const matchSym = db
-            .prepare('SELECT id FROM code_symbols WHERE file_id = ? AND name = ? AND kind = ? LIMIT 1')
-            .get(binding.target_file_id, calleeName, 'function');
+          const matchSym = getFileSymbol(binding.target_file_id, calleeName, 'function');
           if (matchSym) {
             return { calleeSymbolId: matchSym.id, confidence: 0.95, resolvedVia: 'namespace-member' };
           }
         }
-        const classSym = db
-          .prepare('SELECT id FROM code_symbols WHERE file_id = ? AND name = ? AND kind = ? LIMIT 1')
-          .get(binding.target_file_id, binding.originalName === 'default' ? receiver : binding.originalName, 'class');
+        const resolvedName = binding.originalName === 'default' ? receiver : binding.originalName;
+        const classSym = getFileSymbol(binding.target_file_id, resolvedName, 'class');
         if (classSym) {
-          const methodSym = db
-            .prepare('SELECT id FROM code_symbols WHERE parent_name = ? AND name = ? LIMIT 1')
-            .get(binding.originalName === 'default' ? receiver : binding.originalName, calleeName);
+          const parentMethods = methodsByParentAndName.get(resolvedName);
+          const methodSym = parentMethods ? (parentMethods.get(calleeName)?.[0] || null) : null;
           if (methodSym) {
             return { calleeSymbolId: methodSym.id, confidence: 0.90, resolvedVia: 'object-type-member' };
           }
@@ -453,9 +490,7 @@ function buildCallGraph(db, repoId) {
 
     const fileImports = getFileImports(callerSym.file_id);
     for (const imp of fileImports) {
-      const matchSym = db
-        .prepare('SELECT id FROM code_symbols WHERE file_id = ? AND name = ? LIMIT 1')
-        .get(imp.target_file_id, calleeName);
+      const matchSym = getFileSymbol(imp.target_file_id, calleeName);
       if (matchSym) {
         calleeSymbolId = matchSym.id;
         confidence = 0.8;
@@ -464,9 +499,7 @@ function buildCallGraph(db, repoId) {
     }
 
     if (!calleeSymbolId) {
-      const sameFile = db
-        .prepare('SELECT id FROM code_symbols WHERE file_id = ? AND name = ? LIMIT 1')
-        .get(callerSym.file_id, calleeName);
+      const sameFile = getFileSymbol(callerSym.file_id, calleeName);
       if (sameFile) {
         calleeSymbolId = sameFile.id;
         confidence = 0.9;
@@ -1801,38 +1834,48 @@ function getUntestedSymbols(db, repoId, opts = {}) {
     }
   }
 
-  // 2. Trace import graph from test files → production files
+  // 2. Trace import graph from test files → production files (batch)
   const testImportedFiles = new Set();
-  for (const tfId of testFileIds) {
-    const imports = db.prepare(
-      'SELECT target_file_id FROM code_imports WHERE source_file_id = ? AND target_file_id IS NOT NULL'
-    ).all(tfId);
-    for (const imp of imports) {testImportedFiles.add(imp.target_file_id);}
+  if (testFileIds.size > 0) {
+    const testIdList = [...testFileIds];
+    const batchImports = db.prepare(
+      `SELECT target_file_id FROM code_imports WHERE source_file_id IN (${testIdList.map(() => '?').join(',')}) AND target_file_id IS NOT NULL`
+    ).all(...testIdList);
+    for (const imp of batchImports) {testImportedFiles.add(imp.target_file_id);}
   }
 
-  // 3. Trace call graph from test functions → production symbols
-  const testSymbols = db.prepare(
-    `SELECT id FROM code_symbols WHERE file_id IN (${ 
-    [...testFileIds].map(() => '?').join(',')  }) AND repo_id = ?`
-  ).all(...[...testFileIds, repoId]);
-
+  // 3. Trace call graph from test functions → production symbols (batch)
   const testedSymbols = new Set();
   const indirectlyTested = new Set();
 
-  for (const ts of testSymbols) {
-    // Direct calls from test symbols (recursive 2 levels)
-    const directCallees = db.prepare(
-      'SELECT callee_symbol_id FROM code_calls WHERE caller_symbol_id = ? AND callee_symbol_id IS NOT NULL'
-    ).all(ts.id);
-    for (const dc of directCallees) {
-      testedSymbols.add(dc.callee_symbol_id);
-      // Indirect calls (test → helper → production)
-      const indirectCallees = db.prepare(
-        'SELECT callee_symbol_id FROM code_calls WHERE caller_symbol_id = ? AND callee_symbol_id IS NOT NULL'
-      ).all(dc.callee_symbol_id);
-      for (const ic of indirectCallees) {
-        if (!testedSymbols.has(ic.callee_symbol_id)) {
-          indirectlyTested.add(ic.callee_symbol_id);
+  if (testFileIds.size > 0) {
+    const testSymbols = db.prepare(
+      `SELECT id FROM code_symbols WHERE file_id IN (${
+      [...testFileIds].map(() => '?').join(',')  }) AND repo_id = ?`
+    ).all(...[...testFileIds, repoId]);
+
+    if (testSymbols.length > 0) {
+      const testSymIds = testSymbols.map((ts) => ts.id);
+
+      // Batch: direct callees for all test symbols at once
+      const directCallees = db.prepare(
+        `SELECT caller_symbol_id, callee_symbol_id FROM code_calls WHERE caller_symbol_id IN (${testSymIds.map(() => '?').join(',')}) AND callee_symbol_id IS NOT NULL`
+      ).all(...testSymIds);
+
+      for (const dc of directCallees) {
+        testedSymbols.add(dc.callee_symbol_id);
+      }
+
+      // Batch: indirect callees (level 2) for all direct callee IDs at once
+      const directCalleeIds = [...testedSymbols];
+      if (directCalleeIds.length > 0) {
+        const indirectCallees = db.prepare(
+          `SELECT caller_symbol_id, callee_symbol_id FROM code_calls WHERE caller_symbol_id IN (${directCalleeIds.map(() => '?').join(',')}) AND callee_symbol_id IS NOT NULL`
+        ).all(...directCalleeIds);
+        for (const ic of indirectCallees) {
+          if (!testedSymbols.has(ic.callee_symbol_id)) {
+            indirectlyTested.add(ic.callee_symbol_id);
+          }
         }
       }
     }

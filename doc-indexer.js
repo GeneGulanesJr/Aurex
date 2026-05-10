@@ -452,72 +452,88 @@ function resolveLinks(db, repoId) {
   `)
     .all(repoId);
 
+  // Pre-load all sections and files to eliminate N+1 per-link queries
+  const allSections = db.prepare('SELECT id, file_id, title FROM doc_sections WHERE repo_id = ?').all(repoId);
+  const sectionsByFile = new Map();
+  const sectionSlugCache = new Map();
+  for (const s of allSections) {
+    if (!sectionsByFile.has(s.file_id)) {sectionsByFile.set(s.file_id, []);}
+    sectionsByFile.get(s.file_id).push(s);
+    sectionSlugCache.set(s.id, slugify(s.title));
+  }
+
+  const allDocFiles = db.prepare('SELECT id, path FROM doc_files WHERE repo_id = ?').all(repoId);
+  const docFileByPath = new Map();
+  for (const f of allDocFiles) {
+    docFileByPath.set(f.path, f);
+    // Also index by trailing path segment for relative lookups
+    const short = f.path.split('/').pop();
+    if (short && !docFileByPath.has(short)) {docFileByPath.set(short, f);}
+  }
+
+  function findFileByPath(pathPart) {
+    if (docFileByPath.has(pathPart)) {return docFileByPath.get(pathPart);}
+    // Try suffix match
+    for (const f of allDocFiles) {
+      if (f.path.endsWith(`/${pathPart}`) || f.path === pathPart) {return f;}
+    }
+    return null;
+  }
+
+  function resolveAnchor(fileId, anchor) {
+    const slug = slugify(anchor);
+    const candidates = sectionsByFile.get(fileId) || [];
+    for (const c of candidates) {
+      const cSlug = sectionSlugCache.get(c.id);
+      if (cSlug === slug || cSlug.startsWith(slug) || slug.startsWith(cSlug)) {
+        return c.id;
+      }
+    }
+    return null;
+  }
+
+  const updateStmt = db.prepare('UPDATE doc_links SET target_section_id = ? WHERE id = ?');
+  const breakStmt = db.prepare('UPDATE doc_links SET is_broken = 1 WHERE id = ?');
+  const firstSectionStmt = db.prepare('SELECT id FROM doc_sections WHERE file_id = ? LIMIT 1');
+
   for (const link of allLinks) {
     let targetSectionId = null;
     const href = link.target_path;
 
     if (href.startsWith('#')) {
-      // Anchor-only link: resolve within the same file
       const slug = slugify(href.slice(1));
-      const candidates = db.prepare('SELECT id, title FROM doc_sections WHERE file_id = ?').all(link.file_id);
+      const candidates = sectionsByFile.get(link.file_id) || [];
       for (const c of candidates) {
-        if (slugify(c.title) === slug) {
-          targetSectionId = c.id;
-          break;
-        }
-        // Also try partial match: doc sections often have more text than the slug
-        if (slugify(c.title).startsWith(slug) || slug.startsWith(slugify(c.title))) {
+        const cSlug = sectionSlugCache.get(c.id);
+        if (cSlug === slug || cSlug.startsWith(slug) || slug.startsWith(cSlug)) {
           targetSectionId = c.id;
           break;
         }
       }
     } else {
-      // Path link (possibly with anchor)
       let [pathPart, anchor] = href.split('#');
-      // Normalize path: strip leading ./ or ../
       pathPart = pathPart.replace(/^\.\/|^\.\.\//, '');
 
-      // Try exact path match first
-      let docs = db
-        .prepare('SELECT id, path FROM doc_files WHERE repo_id = ? AND (path = ? OR path LIKE ?)')
-        .all(repoId, pathPart, `%/${pathPart}`);
+      let docFile = findFileByPath(pathPart);
 
-      // Also try with .md extension if not present
-      if (docs.length === 0 && !pathPart.endsWith('.md') && !pathPart.endsWith('.mdx')) {
-        docs = db
-          .prepare('SELECT id, path FROM doc_files WHERE repo_id = ? AND (path = ? OR path LIKE ?)')
-          .all(repoId, `${pathPart  }.md`, `%/${pathPart}.md`);
+      if (!docFile && !pathPart.endsWith('.md') && !pathPart.endsWith('.mdx')) {
+        docFile = findFileByPath(`${pathPart}.md`);
       }
 
-      if (docs.length > 0) {
+      if (docFile) {
         if (anchor) {
-          const slug = slugify(anchor);
-          for (const d of docs) {
-            const candidates = db.prepare('SELECT id, title FROM doc_sections WHERE file_id = ?').all(d.id);
-            for (const c of candidates) {
-              if (slugify(c.title) === slug) {
-                targetSectionId = c.id;
-                break;
-              }
-              if (slugify(c.title).startsWith(slug) || slug.startsWith(slugify(c.title))) {
-                targetSectionId = c.id;
-                break;
-              }
-            }
-            if (targetSectionId) {break;}
-          }
+          targetSectionId = resolveAnchor(docFile.id, anchor);
         } else {
-          targetSectionId =
-            db.prepare('SELECT id FROM doc_sections WHERE file_id = ? LIMIT 1').get(docs[0].id)?.id || null;
+          targetSectionId = firstSectionStmt.get(docFile.id)?.id || null;
         }
       }
     }
 
     if (targetSectionId) {
-      db.prepare('UPDATE doc_links SET target_section_id = ? WHERE id = ?').run(targetSectionId, link.id);
+      updateStmt.run(targetSectionId, link.id);
       resolved++;
     } else {
-      db.prepare('UPDATE doc_links SET is_broken = 1 WHERE id = ?').run(link.id);
+      breakStmt.run(link.id);
       broken++;
     }
   }

@@ -389,15 +389,10 @@ function search(args) {
 
   const ranked = rankObservations(rows, query).slice(0, limit);
 
-  // Wire recall tracking: log every surfaced memory for ranking feedback
+  // Wire recall tracking: batch insert for ranking feedback
   if (sessionId && ranked.length > 0) {
-    for (const r of ranked) {
-      sqlRun('INSERT OR IGNORE INTO recall_log (memory_id, session_id, query) VALUES (?, ?, ?)', [
-        r.id,
-        sessionId,
-        query,
-      ]);
-    }
+    const values = ranked.map((r) => `(${r.id}, ${sessionId}, '${query.replace(/'/g, "''")}')`).join(',');
+    sqlRun(`INSERT OR IGNORE INTO recall_log (memory_id, session_id, query) VALUES ${values}`);
   }
 
   // If --include-code, also search code symbols
@@ -543,15 +538,11 @@ function context(args) {
       )
     : [];
 
-  // Wire recall tracking
+  // Wire recall tracking: batch insert
   if (sessionId && observations.length > 0) {
-    for (const o of observations) {
-      sqlRun('INSERT OR IGNORE INTO recall_log (memory_id, session_id, query) VALUES (?, ?, ?)', [
-        o.id,
-        sessionId,
-        topicQuery || topicKey || 'context-auto',
-      ]);
-    }
+    const recallQuery = topicQuery || topicKey || 'context-auto';
+    const values = observations.map((o) => `(${o.id}, ${sessionId}, '${recallQuery.replace(/'/g, "''")}')`).join(',');
+    sqlRun(`INSERT OR IGNORE INTO recall_log (memory_id, session_id, query) VALUES ${values}`);
   }
 
   // Calculate stats: total across all projects vs current
@@ -1057,21 +1048,34 @@ function related(args) {
   }
 
   const result = [];
-  for (const sym of symbols) {
-    const cluster = sqlJson(
+  if (symbols.length > 0) {
+    const symbolIds = symbols.map((s) => s.symbol_id);
+    const placeholders = symbolIds.map(() => '?').join(',');
+    const clusters = sqlJson(
       `
-      SELECT o.id, o.title, o.type, o.project, o.created_at
+      SELECT sl.symbol_id, o.id, o.title, o.type, o.project, o.created_at
       FROM observations o
       JOIN symbol_links sl ON sl.memory_id = CAST(o.id AS TEXT)
-      WHERE sl.symbol_id = ?
+      WHERE sl.symbol_id IN (${placeholders})
         AND o.id != ?
         AND o.deleted_at IS NULL
-      ORDER BY o.created_at DESC LIMIT 5
+      ORDER BY o.created_at DESC
     `,
-      [sym.symbol_id, id],
+      [...symbolIds, id],
     );
-    if (cluster.length > 0) {
-      result.push({ symbol: sym.symbol_id, repo: sym.repo, memories: cluster });
+    // Group by symbol_id, limit 5 per group
+    const grouped = new Map();
+    for (const row of clusters) {
+      if (!grouped.has(row.symbol_id)) {grouped.set(row.symbol_id, []);}
+      if (grouped.get(row.symbol_id).length < 5) {
+        grouped.get(row.symbol_id).push(row);
+      }
+    }
+    for (const sym of symbols) {
+      const cluster = grouped.get(sym.symbol_id);
+      if (cluster && cluster.length > 0) {
+        result.push({ symbol: sym.symbol_id, repo: sym.repo, memories: cluster });
+      }
     }
   }
 
