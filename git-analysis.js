@@ -4,7 +4,7 @@
  * Uses git CLI (zero native deps). Gracefully degrades if git unavailable.
  */
 
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const path = require('path');
 
 // Guard: reject calls when db handle is not available (CLI fallback mode)
@@ -20,7 +20,7 @@ function _requireNativeDb(db) {
 
 function isGitAvailable() {
   try {
-    execSync('git --version', { encoding: 'utf8', timeout: 3000, stdio: 'pipe' });
+    execFileSync('git', ['--version'], { encoding: 'utf8', timeout: 3000, stdio: 'pipe' });
     return true;
   } catch {
     return false;
@@ -73,7 +73,7 @@ function getChurn(db, repoId, target, days, refresh) {
 
 function getFirstSeen(repoPath, filePath) {
   try {
-    const fullLog = execSync(`git -C "${repoPath}" log --follow --format="%aI" -- "${filePath}"`, {
+    const fullLog = execFileSync('git', ['-C', repoPath, 'log', '--follow', '--format=%aI', '--', filePath], {
       encoding: 'utf8',
       timeout: 10000,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -106,8 +106,7 @@ function buildFileChurnResult(lines, authors, dates, firstSeen, days) {
 function computeFileChurn(db, repo, filePath, days, since) {
   const absPath = path.isAbsolute(filePath) ? filePath : path.resolve(repo.path, filePath);
   try {
-    const log = execSync(
-      `git -C "${repo.path}" log --follow --format="%H|%an|%aI" --since="${since}" -- "${filePath}"`,
+    const log = execFileSync('git', ['-C', repo.path, 'log', '--follow', '--format=%H|%an|%aI', `--since=${since}`, '--', filePath],
       { encoding: 'utf8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] },
     ).trim();
 
@@ -129,7 +128,7 @@ function computeFileChurn(db, repo, filePath, days, since) {
 
 function computeRepoChurn(db, repo, days, since) {
   try {
-    const log = execSync(`git -C "${repo.path}" log --since="${since}" --format="" --name-only`, {
+    const log = execFileSync('git', ['-C', repo.path, 'log', `--since=${since}`, '--format=', '--name-only'], {
       encoding: 'utf8',
       timeout: 30000,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -208,9 +207,8 @@ function getProvenance(db, repoId, symbolName) {
 
   let logEntries = [];
   try {
-    const logOutput = execSync(
-      `git -C "${repo.path}" log --follow --format="%H|%an|%aI|%s" -- "${symbol.file_path}"`,
-      { encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] }
+    const logOutput = execFileSync('git', ['-C', repo.path, 'log', '--follow', '--format=%H|%an|%aI|%s', '--', symbol.file_path],
+      { encoding: 'utf8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] }
     ).trim();
 
     if (!logOutput) {
@@ -222,7 +220,7 @@ function getProvenance(db, repoId, symbolName) {
       return {
         hash, author, date,
         message: msgParts.join('|'),
-        classification: classifyMessage(msgParts.join('|')),
+        classification: classifyCommit(msgParts.join('|')),
         touches_symbol: false,
       };
     });
@@ -231,9 +229,8 @@ function getProvenance(db, repoId, symbolName) {
   }
 
   try {
-    const blameOutput = execSync(
-      `git -C "${repo.path}" blame -L ${symbol.start_line},${symbol.end_line} -- "${symbol.file_path}"`,
-      { encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] }
+    const blameOutput = execFileSync('git', ['-C', repo.path, 'blame', `-L${symbol.start_line},${symbol.end_line}`, '--', symbol.file_path],
+      { encoding: 'utf8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] }
     ).trim();
     const blameHashes = new Set();
     const blameRe = /^([a-f0-9]{8,})/gm;
