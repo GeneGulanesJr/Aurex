@@ -44,8 +44,12 @@ function computeSince(days) {
 function resolveTarget(repoId, target, db) {
   const repo = lookupRepo(db, repoId);
   if (!repo) { return { error: `Repo ID ${repoId} not found` }; }
-  const filePath = target && target !== '__all__' ? target : null;
-  return { repo, filePath };
+  if (target && target !== '__all__') {
+    // Normalize to absolute path for consistent cache key
+    const filePath = path.isAbsolute(target) ? target : path.resolve(repo.path, target);
+    return { repo, filePath };
+  }
+  return { repo, filePath: null };
 }
 
 // eslint-disable-next-line max-statements -- churn computation inherently requires many steps
@@ -126,6 +130,7 @@ function computeFileChurn(db, repo, filePath, days, since) {
   }
 }
 
+// eslint-disable-next-line max-statements -- repo churn computation requires many steps
 function computeRepoChurn(db, repo, days, since) {
   try {
     const log = execFileSync('git', ['-C', repo.path, 'log', `--since=${since}`, '--format=', '--name-only'], {
@@ -149,7 +154,10 @@ function computeRepoChurn(db, repo, days, since) {
         churn_per_week: Math.round((commits / (days / 7)) * 100) / 100,
       }));
 
-    return { repo: repo.name, window_days: days, total_files_changed: fileCounts.size, top_files: topFiles };
+    const result = { repo: repo.name, window_days: days, total_files_changed: fileCounts.size, top_files: topFiles };
+    // Cache repo-level churn as well (key: '__all__')
+    upsertChurn(db, repo.id, '__all__', days, { commits: fileCounts.size, unique_authors: 0, first_seen: null, last_modified: null, churn_per_week: 0 });
+    return result;
   } catch (e) {
     return { error: `git log failed: ${e.message}` };
   }
