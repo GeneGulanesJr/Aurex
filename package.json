@@ -3,15 +3,15 @@
   "version": "1.0.0",
   "description": "💎 LaPis — Persistent memory for the Pi coding agent. One SQLite DB, zero cloud, zero API keys.",
   "keywords": [],
-  "homepage": "https://github.com/GeneGulanesJr/PiMemoryExtension#readme",
+  "homepage": "https://github.com/GeneGulanesJr/LaPis#readme",
   "bugs": {
-    "url": "https://github.com/GeneGulanesJr/PiMemoryExtension/issues"
+    "url": "https://github.com/GeneGulanesJr/LaPis/issues"
   },
   "license": "ISC",
   "author": "",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/GeneGulanesJr/PiMemoryExtension.git"
+    "url": "git+https://github.com/GeneGulanesJr/LaPis.git"
   },
   "directories": {
     "doc": "docs"
