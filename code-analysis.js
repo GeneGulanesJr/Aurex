@@ -1938,11 +1938,13 @@ function getPrRiskProfile(db, repoId, opts = {}) {
   try {
     if (changedSymbolIds.size > 20) {
       // Batch: recursive CTE for all changed symbols at once
-      const changedIdsList = [...changedSymbolIds].join(',');
+      // Use parameterized query to prevent SQL injection
+      const changedIdsArr = [...changedSymbolIds];
+      const placeholders = changedIdsArr.map(() => '?').join(',');
       const rows = db.prepare(`
         WITH RECURSIVE call_tree AS (
           SELECT callee_symbol_id, caller_symbol_id, 1 as depth
-          FROM code_calls WHERE repo_id = ? AND callee_symbol_id IN (${changedIdsList})
+          FROM code_calls WHERE repo_id = ? AND callee_symbol_id IN (${placeholders})
           UNION ALL
           SELECT cc.callee_symbol_id, cc.caller_symbol_id, ct.depth + 1
           FROM code_calls cc JOIN call_tree ct ON cc.callee_symbol_id = ct.caller_symbol_id
@@ -1950,7 +1952,7 @@ function getPrRiskProfile(db, repoId, opts = {}) {
         )
         SELECT callee_symbol_id, COUNT(DISTINCT caller_symbol_id) as affected_callers
         FROM call_tree GROUP BY callee_symbol_id
-      `).all(repoId);
+      `).all(repoId, ...changedIdsArr);
 
       const maxCallers = Math.max(...rows.map(r => r.affected_callers), 1);
       blastRadiusScore = Math.min(1.0, maxCallers / 50);
@@ -1971,10 +1973,12 @@ function getPrRiskProfile(db, repoId, opts = {}) {
   // Signal 2: Complexity (20%)
   let complexityScore = 0;
   try {
+    const changedIdsArr = [...changedSymbolIds];
+    const placeholders = changedIdsArr.map(() => '?').join(',');
     const rows = db.prepare(
       `SELECT MAX(sc.cyclomatic) as max_cc FROM symbol_complexity sc
-       WHERE sc.symbol_id IN (${[...changedSymbolIds].join(',')})`
-    ).all();
+       WHERE sc.symbol_id IN (${placeholders})`
+    ).all(...changedIdsArr);
     const maxCc = rows[0]?.max_cc || 0;
     complexityScore = Math.min(1.0, maxCc / 30);
   } catch (_) {}
