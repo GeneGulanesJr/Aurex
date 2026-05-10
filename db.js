@@ -75,6 +75,11 @@ function tryNodeSqlite() {
     const cfg = getConfig();
     const mod = require('node:sqlite');
     const d = new mod.DatabaseSync(cfg.db_path);
+    // FTS5 is required for search — skip node:sqlite if unavailable
+    try {
+      d.exec('CREATE VIRTUAL TABLE IF NOT EXISTS _fts5_check USING fts5(x)');
+      d.exec('DROP TABLE IF EXISTS _fts5_check');
+    } catch (_) { d.close(); return null; }
     d.exec('PRAGMA journal_mode=WAL;');
     d.exec(`PRAGMA busy_timeout=${safeInt(cfg.busy_timeout_ms, 5000)};`);
     d.exec(`PRAGMA wal_autocheckpoint=${safeInt(cfg.wal_autocheckpoint, 1000)};`);
@@ -98,13 +103,13 @@ function tryBetterSqlite3() {
 }
 
 function openDb() {
-  const nodeDb = tryNodeSqlite();
-  if (nodeDb) { _engine = 'node-sqlite'; _db = nodeDb; return nodeDb; }
   const betterDb = tryBetterSqlite3();
   if (betterDb) { _engine = 'better-sqlite3'; _db = betterDb; return betterDb; }
+  const nodeDb = tryNodeSqlite();
+  if (nodeDb) { _engine = 'node-sqlite'; _db = nodeDb; return nodeDb; }
   const msg = `No SQLite backend found.\n` +
-    `  Option 1: Use Node.js ≥ 22.5 (built-in node:sqlite)\n` +
-    `  Option 2: cd ${  __dirname  } && npm install better-sqlite3`;
+    `  Option 1: cd ${__dirname} && npm install better-sqlite3\n` +
+    `  Option 2: Use Node.js ≥ 22.5 with FTS5 support (built-in node:sqlite)`;
   throw new Error(msg);
 }
 
