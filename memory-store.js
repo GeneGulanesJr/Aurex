@@ -24,6 +24,7 @@ const {
   jsonOut,
   jsonErrNoExit,
   parseArgs,
+  MemoryError,
 } = require('./db');
 
 const { getConfig } = require('./config');
@@ -2770,7 +2771,16 @@ const _ANALYSIS_TOOLS = new Set([
 
   if (cmd && commands[cmd]) {
     const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    const result = await commands[cmd](args);
+    let result;
+    try {
+      result = await commands[cmd](args);
+    } catch (e) {
+      if (e instanceof MemoryError) {
+        process.stderr.write(`${JSON.stringify({ error: e.message })}\n`);
+        process.exit(1);
+      }
+      throw e;
+    }
 
     if (result && result.error) {
       process.stderr.write(`${JSON.stringify(result)}\n`);

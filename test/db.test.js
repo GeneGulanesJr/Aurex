@@ -1,5 +1,7 @@
 // Test coverage for db.js database layer
 const fs = require('fs');
+const path = require('path');
+const os = require('os');
 
 const dbModule = require('../db');
 
@@ -124,6 +126,43 @@ describe('db.js (database layer)', () => {
       }).toThrow('forced error');
       // Table should not exist after rollback
       expect(() => dbModule.sqlJson('SELECT 1 FROM _txn_test2')).toThrow();
+    });
+  });
+
+  describe('resetDb and createDb', () => {
+    it('resetDb should null out the db handle', () => {
+      const db = dbModule.getDb();
+      expect(db).toBeTruthy(); // ensure db is initialized
+      dbModule.resetDb();
+      expect(dbModule.getDb()).toBeNull();
+      dbModule.ensureDb(); // restore for subsequent tests
+    });
+
+    it('createDb should open a database at custom path', () => {
+      const tmpPath = path.join(os.tmpdir(), `pi-mem-test-${Date.now()}.db`);
+      const result = dbModule.createDb({ db_path: tmpPath });
+      expect(result.ok).toBe(true);
+      // Cleanup
+      dbModule.resetDb();
+      try { fs.unlinkSync(tmpPath); } catch (_) {}
+      try { fs.unlinkSync(`${tmpPath}-wal`); } catch (_) {}
+      try { fs.unlinkSync(`${tmpPath}-shm`); } catch (_) {}
+      const { resetConfigCache } = require('../config');
+      resetConfigCache();
+      dbModule.ensureDb();
+    });
+  });
+
+  describe('MemoryError', () => {
+    it('should be an Error subclass with context', () => {
+      const err = new dbModule.MemoryError('test', { code: 'TEST' });
+      expect(err).toBeInstanceOf(Error);
+      expect(err.name).toBe('MemoryError');
+      expect(err.context).toEqual({ code: 'TEST' });
+    });
+
+    it('jsonErr should throw MemoryError', () => {
+      expect(() => dbModule.jsonErr('fatal')).toThrow(dbModule.MemoryError);
     });
   });
 

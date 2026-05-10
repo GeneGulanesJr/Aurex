@@ -10,6 +10,15 @@ const fs = require('fs');
 const os = require('os');
 const { getConfig } = require('./config');
 
+/* ── custom error ─────────────────────────────────────────── */
+class MemoryError extends Error {
+  constructor(message, context = {}) {
+    super(message);
+    this.name = 'MemoryError';
+    this.context = context;
+  }
+}
+
 /* ── paths ────────────────────────────────────────────────── */
 const HOME = process.env.HOME || process.env.USERPROFILE || os.homedir();
 const SCHEMA_PATH = path.resolve(__dirname, 'schema.sql');
@@ -21,6 +30,38 @@ let _engine = null; // 'node-sqlite' | 'better-sqlite3'
 function getDb() { return _db; }
 function getEngine() { return _engine; }
 function getDbPath() { return getConfig().db_path; }
+
+function resetDb() {
+  if (_db) {
+    try { _db.close(); } catch (_) {}
+  }
+  _db = null;
+  _engine = null;
+}
+
+function createDb(configOverride = {}) {
+  const mergedConfig = { ...getConfig(), ...configOverride };
+  const savedConfig = getConfig._cached;
+  const savedDb = _db;
+  const savedEngine = _engine;
+
+  getConfig._cached = mergedConfig;
+  try {
+    _db = null;
+    _engine = null;
+    const result = ensureDb();
+    return result;
+  } catch (e) {
+    // Restore on failure
+    _db = savedDb;
+    _engine = savedEngine;
+    getConfig._cached = savedConfig;
+    throw e;
+  }
+  // NOTE: After successful createDb, the global _db/_engine point to the isolated DB.
+  // To restore the global singleton, call resetDb() then ensureDb().
+  // Config is NOT auto-restored so callers can continue using the isolated DB.
+}
 
 /* ── backend detection ────────────────────────────────────── */
 
@@ -50,7 +91,10 @@ function tryBetterSqlite3() {
     d.pragma(`busy_timeout = ${safeInt(cfg.busy_timeout_ms, 5000)}`);
     d.pragma(`wal_autocheckpoint = ${safeInt(cfg.wal_autocheckpoint, 1000)}`);
     return d;
-  } catch (_) { return null; }
+  } catch (e) {
+    console.error(`[db] better-sqlite3 failed: ${e.message}`);
+    return null;
+  }
 }
 
 function openDb() {
@@ -100,7 +144,7 @@ const sqlRaw = _sqlExec;
 /* ── transaction helper ───────────────────────────────────── */
 
 function withTransaction(fn, onRollbackError) {
-  if (!_db) {throw new Error('Database not initialized. Call ensureDb() first.');}
+  if (!_db) { throw new MemoryError('Database not initialized. Call ensureDb() first.'); }
   if (typeof _db.transaction === 'function') {
     return _db.transaction(fn)();
   }
@@ -134,7 +178,12 @@ function ensureDb() {
       .map(s => s.trim())
       .filter(s => s.length > 0 && !s.startsWith('--') && !s.startsWith('PRAGMA'));
     for (const stmt of statements) {
-      try { _sqlExec(stmt); } catch (_) {}
+      try { _sqlExec(stmt); } catch (e) {
+        // Log schema errors but don't abort — CREATE IF NOT EXISTS is idempotent
+        if (!/already exists|duplicate column/i.test(e.message)) {
+          console.error(`[db] Schema statement error: ${e.message}`);
+        }
+      }
     }
   }
 
@@ -174,7 +223,9 @@ function ensureCriticalTables() {
         // Create indexes
         _createTableIndexes(name, _db);
       }
-    } catch (_) {}
+    } catch (e) {
+      console.error(`[db] Failed to ensure critical table ${name}: ${e.message}`);
+    }
   }
 }
 
@@ -204,103 +255,180 @@ function runMigrations() {
   try {
     const rows = sqlJson('PRAGMA user_version');
     version = rows.length > 0 ? (rows[0].user_version || 0) : 0;
-  } catch (_) {}
-
-  if (version >= 6) {return { migrated: false, version };}
-
-  // V2: observation_relations, recall_log
-  if (version < 2) {
-    const v2 = [
-      `CREATE TABLE IF NOT EXISTS observation_relations (
-        source_id INTEGER NOT NULL REFERENCES observations(id) ON DELETE CASCADE,
-        target_id INTEGER NOT NULL REFERENCES observations(id) ON DELETE CASCADE,
-        relation TEXT NOT NULL, confidence REAL NOT NULL DEFAULT 0.8,
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        PRIMARY KEY (source_id, target_id, relation))`,
-      'CREATE INDEX IF NOT EXISTS idx_obs_rel_source ON observation_relations(source_id)',
-      'CREATE INDEX IF NOT EXISTS idx_obs_rel_target ON observation_relations(target_id)',
-      `CREATE TABLE IF NOT EXISTS recall_log (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        memory_id INTEGER NOT NULL REFERENCES observations(id) ON DELETE CASCADE,
-        session_id INTEGER NOT NULL, query TEXT, was_useful INTEGER,
-        created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
-      'CREATE INDEX IF NOT EXISTS idx_recall_memory ON recall_log(memory_id)',
-      'CREATE INDEX IF NOT EXISTS idx_recall_session ON recall_log(session_id)',
-    ];
-    for (const s of v2) { try { sqlRaw(s); } catch (_) {} }
-    try { sqlRaw('PRAGMA user_version = 2'); } catch (_) {}
+  } catch (e) {
+    console.error('[db] Failed to read user_version:', e.message);
   }
 
-  // V3: code_repos, code_files, code_symbols, code_symbols_fts
-  if (version < 3) {
-    const v3 = [
-      `CREATE TABLE IF NOT EXISTS code_repos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE,
-        path TEXT NOT NULL UNIQUE, file_count INTEGER DEFAULT 0, symbol_count INTEGER DEFAULT 0,
-        indexed_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')))`,
-      `CREATE TABLE IF NOT EXISTS code_files (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE,
-        path TEXT NOT NULL, language TEXT NOT NULL, content TEXT NOT NULL, content_hash TEXT NOT NULL,
-        mtime REAL, size_bytes INTEGER DEFAULT 0, line_count INTEGER DEFAULT 0, UNIQUE(repo_id, path))`,
-      `CREATE TABLE IF NOT EXISTS code_symbols (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE,
-        file_id INTEGER NOT NULL REFERENCES code_files(id) ON DELETE CASCADE, name TEXT NOT NULL, kind TEXT NOT NULL,
-        signature TEXT, file_path TEXT NOT NULL, start_line INTEGER NOT NULL, end_line INTEGER NOT NULL,
-        start_byte INTEGER NOT NULL, end_byte INTEGER NOT NULL, docstring TEXT DEFAULT '',
-        body_preview TEXT DEFAULT '', language TEXT NOT NULL, parent_name TEXT DEFAULT '',
-        qualified_name TEXT NOT NULL, indexed_at TEXT NOT NULL DEFAULT (datetime('now')))`,
-      'CREATE INDEX IF NOT EXISTS idx_cs_repo ON code_symbols(repo_id)',
-      'CREATE INDEX IF NOT EXISTS idx_cs_name ON code_symbols(name)',
-      'CREATE INDEX IF NOT EXISTS idx_cs_file ON code_symbols(file_id)',
-      'CREATE INDEX IF NOT EXISTS idx_cf_repo ON code_files(repo_id)',
-    ];
-    for (const s of v3) { try { sqlRaw(s); } catch (_) {} }
-    try {
+  if (version >= 6) { return { migrated: false, version }; }
+
+  const migrations = [
+    { to: 2, run: runMigrationV2 },
+    { to: 3, run: runMigrationV3 },
+    { to: 4, run: runMigrationV4 },
+    { to: 5, run: runMigrationV5 },
+    { to: 6, run: runMigrationV6 },
+  ];
+
+  const fromVersion = version;
+  for (const migration of migrations) {
+    if (version >= migration.to) { continue; }
+    const errors = migration.run();
+    if (errors.length > 0) {
+      console.error(`[db] Migration to V${migration.to} failed (${errors.length} errors):`);
+      for (const e of errors) { console.error(`  - ${e}`); }
+      // Don't advance version — stop here
+      return { migrated: false, fromVersion, toVersion: version, errors };
+    }
+    // Verify version bump succeeded
+    const rows = sqlJson('PRAGMA user_version');
+    version = rows.length > 0 ? (rows[0].user_version || 0) : 0;
+    if (version < migration.to) {
+      console.error(`[db] Migration V${migration.to} did not advance user_version (still ${version})`);
+      return { migrated: false, fromVersion, toVersion: version, errors: [`V${migration.to}: user_version not advanced`] };
+    }
+  }
+
+  return { migrated: true, fromVersion, toVersion: version };
+}
+
+function runMigrationV2() {
+  const errors = [];
+  try {
+    withTransaction(() => {
+      const stmts = [
+        `CREATE TABLE IF NOT EXISTS observation_relations (
+          source_id INTEGER NOT NULL REFERENCES observations(id) ON DELETE CASCADE,
+          target_id INTEGER NOT NULL REFERENCES observations(id) ON DELETE CASCADE,
+          relation TEXT NOT NULL, confidence REAL NOT NULL DEFAULT 0.8,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          PRIMARY KEY (source_id, target_id, relation))`,
+        'CREATE INDEX IF NOT EXISTS idx_obs_rel_source ON observation_relations(source_id)',
+        'CREATE INDEX IF NOT EXISTS idx_obs_rel_target ON observation_relations(target_id)',
+        `CREATE TABLE IF NOT EXISTS recall_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          memory_id INTEGER NOT NULL REFERENCES observations(id) ON DELETE CASCADE,
+          session_id INTEGER NOT NULL, query TEXT, was_useful INTEGER,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+        'CREATE INDEX IF NOT EXISTS idx_recall_memory ON recall_log(memory_id)',
+        'CREATE INDEX IF NOT EXISTS idx_recall_session ON recall_log(session_id)',
+      ];
+      for (const s of stmts) { sqlRaw(s); }
+      sqlRaw('PRAGMA user_version = 2');
+    });
+  } catch (e) {
+    errors.push(`V2: ${e.message}`);
+  }
+  return errors;
+}
+
+function runMigrationV3() {
+  const errors = [];
+  try {
+    withTransaction(() => {
+      const stmts = [
+        `CREATE TABLE IF NOT EXISTS code_repos (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE,
+          path TEXT NOT NULL UNIQUE, file_count INTEGER DEFAULT 0, symbol_count INTEGER DEFAULT 0,
+          indexed_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+        `CREATE TABLE IF NOT EXISTS code_files (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE,
+          path TEXT NOT NULL, language TEXT NOT NULL, content TEXT NOT NULL, content_hash TEXT NOT NULL,
+          mtime REAL, size_bytes INTEGER DEFAULT 0, line_count INTEGER DEFAULT 0, UNIQUE(repo_id, path))`,
+        `CREATE TABLE IF NOT EXISTS code_symbols (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE,
+          file_id INTEGER NOT NULL REFERENCES code_files(id) ON DELETE CASCADE, name TEXT NOT NULL, kind TEXT NOT NULL,
+          signature TEXT, file_path TEXT NOT NULL, start_line INTEGER NOT NULL, end_line INTEGER NOT NULL,
+          start_byte INTEGER NOT NULL, end_byte INTEGER NOT NULL, docstring TEXT DEFAULT '',
+          body_preview TEXT DEFAULT '', language TEXT NOT NULL, parent_name TEXT DEFAULT '',
+          qualified_name TEXT NOT NULL, indexed_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+        'CREATE INDEX IF NOT EXISTS idx_cs_repo ON code_symbols(repo_id)',
+        'CREATE INDEX IF NOT EXISTS idx_cs_name ON code_symbols(name)',
+        'CREATE INDEX IF NOT EXISTS idx_cs_file ON code_symbols(file_id)',
+        'CREATE INDEX IF NOT EXISTS idx_cf_repo ON code_files(repo_id)',
+      ];
+      for (const s of stmts) { sqlRaw(s); }
       sqlRaw(`CREATE VIRTUAL TABLE IF NOT EXISTS code_symbols_fts USING fts5(
         name, kind, signature, docstring, file_path, body_preview, content=code_symbols, content_rowid=id)`);
-    } catch (_) {}
-    try { sqlRaw('PRAGMA user_version = 3'); } catch (_) {}
+      sqlRaw('PRAGMA user_version = 3');
+    });
+  } catch (e) {
+    errors.push(`V3: ${e.message}`);
   }
+  return errors;
+}
 
-  // V4: workspaces
-  if (version < 4) {
-    try {
+function runMigrationV4() {
+  const errors = [];
+  try {
+    // Check table existence BEFORE transaction — SQLite fails inside tx after error
+    const hasObs = sqlJson("SELECT name FROM sqlite_master WHERE type='table' AND name='observations'").length > 0;
+    const hasSession = sqlJson("SELECT name FROM sqlite_master WHERE type='table' AND name='session_log'").length > 0;
+
+    withTransaction(() => {
       sqlRaw(`CREATE TABLE IF NOT EXISTS workspaces (
         id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE,
         created_at TEXT NOT NULL DEFAULT (datetime('now')), archived_at TEXT)`);
       sqlRaw('CREATE INDEX IF NOT EXISTS idx_ws_active ON workspaces(archived_at) WHERE archived_at IS NULL');
-    } catch (_) {}
-    try {
-      const projects = sqlJson(
-        "SELECT DISTINCT project FROM observations WHERE project IS NOT NULL AND project != '' AND deleted_at IS NULL");
-      for (const r of projects) { try { sqlRun('INSERT OR IGNORE INTO workspaces (name) VALUES (?)', [r.project]); } catch (_) {} }
-      const sp = sqlJson("SELECT DISTINCT project FROM session_log WHERE project IS NOT NULL AND project != ''");
-      for (const r of sp) { try { sqlRun('INSERT OR IGNORE INTO workspaces (name) VALUES (?)', [r.project]); } catch (_) {} }
-    } catch (_) {}
-    try { sqlRaw('PRAGMA user_version = 4'); } catch (_) {}
+      // Migrate existing projects only if source tables exist
+      if (hasObs) {
+        const projects = sqlJson(
+          "SELECT DISTINCT project FROM observations WHERE project IS NOT NULL AND project != '' AND deleted_at IS NULL");
+        for (const r of projects) { sqlRun('INSERT OR IGNORE INTO workspaces (name) VALUES (?)', [r.project]); }
+      }
+      if (hasSession) {
+        const sp = sqlJson("SELECT DISTINCT project FROM session_log WHERE project IS NOT NULL AND project != ''");
+        for (const r of sp) { sqlRun('INSERT OR IGNORE INTO workspaces (name) VALUES (?)', [r.project]); }
+      }
+      sqlRaw('PRAGMA user_version = 4');
+    });
+  } catch (e) {
+    errors.push(`V4: ${e.message}`);
   }
+  return errors;
+}
 
-  // V5: code analysis + doc indexing tables (CREATE IF NOT EXISTS from schema.sql)
-  if (version < 5) {
+function runMigrationV5() {
+  const errors = [];
+  try {
+    const schema = fs.readFileSync(SCHEMA_PATH, 'utf8');
+    // _db.exec() correctly handles complex multi-statement SQL with triggers etc.
+    // It cannot run inside a transaction because schema.sql contains PRAGMAs.
     try {
-      const schema = fs.readFileSync(SCHEMA_PATH, 'utf8');
       _db.exec(schema);
     } catch (e) {
-      const stmts = schema.split(/;\s*\n/).map(s => s.trim()).filter(s => s.length > 0);
-      for (const s of stmts) { try { sqlRaw(s); } catch (_) {} }
+      // Fall back to statement-by-statement if exec fails
+      const stmts = schema.split(/;\s*\n/).map(s => s.trim()).filter(s => s.length > 0 && !/^\s*PRAGMA/i.test(s));
+      for (const s of stmts) {
+        try { sqlRaw(s); } catch (inner) {
+          if (!/already exists|duplicate column/i.test(inner.message)) {
+            errors.push(`V5 statement: ${inner.message}`);
+          }
+        }
+      }
     }
-    try { sqlRaw('PRAGMA user_version = 5'); } catch (_) {}
+    sqlRaw('PRAGMA user_version = 5');
+  } catch (e) {
+    errors.push(`V5: ${e.message}`);
   }
+  return errors;
+}
 
-  // V6: head_commit column for freshness checks + PageRank cache invalidation
-  if (version < 6) {
-    try {
-      sqlRaw('ALTER TABLE code_repos ADD COLUMN head_commit TEXT');
-    } catch (_) { /* Column may already exist */ }
-    try { sqlRaw('PRAGMA user_version = 6'); } catch (_) {}
+function runMigrationV6() {
+  const errors = [];
+  try {
+    withTransaction(() => {
+      try {
+        sqlRaw('ALTER TABLE code_repos ADD COLUMN head_commit TEXT');
+      } catch (e) {
+        // Column may already exist — that's fine
+        if (!/duplicate column/i.test(e.message)) { throw e; }
+      }
+      sqlRaw('PRAGMA user_version = 6');
+    });
+  } catch (e) {
+    errors.push(`V6: ${e.message}`);
   }
-
-  return { migrated: true, fromVersion: version, toVersion: 6 };
+  return errors;
 }
 
 /* ── utilities ────────────────────────────────────────────── */
@@ -308,9 +436,7 @@ function runMigrations() {
 function jsonOut(obj) { console.log(JSON.stringify(obj, null, 2)); }
 function jsonErrNoExit(msg) { return { error: msg }; }
 function jsonErr(msg) {
-  const obj = jsonErrNoExit(msg);
-  process.stderr.write(`${JSON.stringify(obj)}\n`);
-  process.exit(1);
+  throw new MemoryError(msg);
 }
 
 function parseArgs(argv) {
@@ -327,8 +453,9 @@ function parseArgs(argv) {
 module.exports = {
   get DB_PATH() { return getConfig().db_path; },
   SCHEMA_PATH, HOME,
-  getDb, getEngine, getDbPath,
+  getDb, getEngine, getDbPath, resetDb, createDb,
   sqlJson, sqlRun, sqlRaw,
   ensureDb, withTransaction,
   jsonOut, jsonErr, jsonErrNoExit, parseArgs,
+  MemoryError,
 };
