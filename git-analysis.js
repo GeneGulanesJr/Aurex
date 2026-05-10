@@ -65,7 +65,22 @@ function getChurn(db, repoId, target, days, refresh) {
 
   if (!refresh) {
     const cached = getCachedChurn(db, repoId, resolved.filePath, days);
-    if (cached) { return cached; }
+    if (cached) {
+      if (!resolved.filePath) {
+        return {
+          repo: resolved.repo.name,
+          window_days: days,
+          total_files_changed: cached.commits,
+          top_files: [],
+          commits: cached.commits,
+          unique_authors: cached.unique_authors,
+          first_seen: cached.first_seen,
+          last_modified: cached.last_modified,
+          churn_per_week: cached.churn_per_week,
+        };
+      }
+      return cached;
+    }
   }
 
   const since = computeSince(days);
@@ -154,9 +169,23 @@ function computeRepoChurn(db, repo, days, since) {
         churn_per_week: Math.round((commits / (days / 7)) * 100) / 100,
       }));
 
-    const result = { repo: repo.name, window_days: days, total_files_changed: fileCounts.size, top_files: topFiles };
-    // Cache repo-level churn as well (key: '__all__')
-    upsertChurn(db, repo.id, '__all__', days, { commits: fileCounts.size, unique_authors: 0, first_seen: null, last_modified: null, churn_per_week: 0 });
+    const totalCommits = [...fileCounts.values()].reduce((a, b) => a + b, 0);
+    const uniqueAuthorsRaw = execFileSync('git', ['-C', repo.path, 'log', `--since=${since}`, '--format=%an'], {
+      encoding: 'utf8',
+      timeout: 10000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+    const uniqueAuthors = new Set(uniqueAuthorsRaw.split('\n').filter(Boolean)).size;
+
+    const cacheMetrics = {
+      commits: totalCommits,
+      unique_authors: uniqueAuthors,
+      first_seen: null,
+      last_modified: null,
+      churn_per_week: Math.round((totalCommits / (days / 7)) * 100) / 100,
+    };
+    const result = { repo: repo.name, window_days: days, total_files_changed: fileCounts.size, top_files: topFiles, ...cacheMetrics };
+    upsertChurn(db, repo.id, '__all__', days, cacheMetrics);
     return result;
   } catch (e) {
     return { error: `git log failed: ${e.message}` };
