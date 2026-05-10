@@ -1169,11 +1169,32 @@ function getDependencyCycles(db, repoId) {
 
 // PageRank cache — shared between getSymbolImportance and winnow
 // Key: repoId, auto-invalidates on reindex via head_commit change
+// Bounded LRU: evicts oldest entry when MAX_CACHE_SIZE is exceeded
+const MAX_PAGE_RANK_CACHE_SIZE = 8;
 const _pageRankCache = new Map(); // RepoId → { ranks: Map, symbolMap: Map, n: number }
+
+function _prCacheGet(repoId) {
+  if (!_pageRankCache.has(repoId)) {return undefined;}
+  // Move to end (most recently used)
+  const entry = _pageRankCache.get(repoId);
+  _pageRankCache.delete(repoId);
+  _pageRankCache.set(repoId, entry);
+  return entry;
+}
+
+function _prCacheSet(repoId, value) {
+  if (_pageRankCache.has(repoId)) {_pageRankCache.delete(repoId);}
+  if (_pageRankCache.size >= MAX_PAGE_RANK_CACHE_SIZE) {
+    // Evict oldest (first inserted)
+    const oldest = _pageRankCache.keys().next().value;
+    _pageRankCache.delete(oldest);
+  }
+  _pageRankCache.set(repoId, value);
+}
 
 function buildPageRank(db, repoId) {
   // Check cache — cache key is just repoId (invalidated by reindex/repo removal)
-  const cached = _pageRankCache.get(repoId);
+  const cached = _prCacheGet(repoId);
   if (cached) {return cached;}
 
   const guard = _requireNativeDb(db);
@@ -1223,7 +1244,7 @@ function buildPageRank(db, repoId) {
   }
 
   const result = { ranks, symbolMap, n };
-  _pageRankCache.set(repoId, result);
+  _prCacheSet(repoId, result);
   return result;
 }
 
