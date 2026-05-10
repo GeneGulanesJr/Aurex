@@ -1,7 +1,7 @@
 {
-  "name": "pimemoryextension",
+  "name": "lapis",
   "version": "1.0.0",
-  "description": "Persistent memory for the [Pi coding agent](https://github.com/mariozechner/pi-coding-agent). One SQLite database, zero cloud dependencies, zero API keys.",
+  "description": "💎 LaPis — Persistent memory for the Pi coding agent. One SQLite DB, zero cloud, zero API keys.",
   "keywords": [],
   "homepage": "https://github.com/GeneGulanesJr/PiMemoryExtension#readme",
   "bugs": {

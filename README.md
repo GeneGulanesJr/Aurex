@@ -1,4 +1,8 @@
-# Pi Memory Layer
+# LaPis 💎
+
+> 🇵🇭 *lapis* — pencil, to write
+> 🪨 *lapis* — stone, precious gem
+> 🧠 La**Pi**s — memory for Pi
 
 Persistent memory for the [Pi coding agent](https://github.com/mariozechner/pi-coding-agent). One SQLite database, zero cloud dependencies, zero API keys.
 
