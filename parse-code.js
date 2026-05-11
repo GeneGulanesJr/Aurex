@@ -127,7 +127,8 @@ function parseFile(filePath) {
   let source;
   try {
     source = fs.readFileSync(filePath, 'utf-8');
-  } catch (_) {
+  } catch (e) {
+    console.error(`[parse-code] Failed to read ${filePath}: ${e.message}`);
     return [];
   }
 
@@ -953,7 +954,8 @@ function extractCallees(filePath) {
   let source;
   try {
     source = fs.readFileSync(filePath, 'utf-8');
-  } catch (_) {
+  } catch (e) {
+    console.error(`[parse-code] Failed to read ${filePath}: ${e.message}`);
     return [];
   }
 

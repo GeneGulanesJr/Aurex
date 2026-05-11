@@ -1820,58 +1820,75 @@ async function indexRepoInternal(repoPath, repoName) {
     /* Non-git repo or git error */
   }
 
-  for (const filePath of files) {
-    try {
-      const content = fs.readFileSync(filePath, 'utf-8');
-      const contentHash = hashContent(content);
-      const lines = content.split('\n');
-      const stats = fs.statSync(filePath);
+  const BATCH_SIZE = 50;
+  for (let i = 0; i < files.length; i += BATCH_SIZE) {
+    const batch = files.slice(i, i + BATCH_SIZE);
+    const reads = await Promise.all(batch.map(async (fp) => {
+      try {
+        const [content, stats] = await Promise.all([
+          fs.promises.readFile(fp, 'utf-8'),
+          fs.promises.stat(fp),
+        ]);
+        return { filePath: fp, content, stats };
+      } catch (e) {
+        skipped.push({ file: fp, error: e.message });
+        return null;
+      }
+    }));
 
-      sqlRun(
-        'INSERT INTO code_files (repo_id, path, language, content, content_hash, mtime, size_bytes, line_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [
-          repoId,
-          filePath,
-          path.extname(filePath).slice(1),
-          content,
-          contentHash,
-          stats.mtimeMs,
-          stats.size,
-          lines.length,
-        ],
-      );
-      const fileRow = sqlJson('SELECT id FROM code_files WHERE repo_id = ? AND path = ?', [repoId, filePath]);
-      const fileId = fileRow[0].id;
+    for (const entry of reads) {
+      if (!entry) {continue;}
+      const { filePath, content, stats } = entry;
+      try {
+        const contentHash = hashContent(content);
+        const lines = content.split('\n');
 
-      const symbols = parseCodeFile(filePath);
-      for (const sym of symbols) {
         sqlRun(
-          `INSERT INTO code_symbols (repo_id, file_id, file_path, name, kind, signature, qualified_name,
-           start_line, end_line, start_byte, end_byte, docstring, body_preview, language, parent_name)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          'INSERT INTO code_files (repo_id, path, language, content, content_hash, mtime, size_bytes, line_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
           [
             repoId,
-            fileId,
             filePath,
-            sym.name,
-            sym.kind,
-            sym.signature,
-            sym.qualified_name,
-            sym.start_line,
-            sym.end_line,
-            sym.start_byte,
-            sym.end_byte,
-            sym.docstring || '',
-            sym.body_preview || '',
-            sym.language,
-            sym.parent_name || '',
+            path.extname(filePath).slice(1),
+            content,
+            contentHash,
+            stats.mtimeMs,
+            stats.size,
+            lines.length,
           ],
         );
-        symbolCount++;
+        const fileRow = sqlJson('SELECT id FROM code_files WHERE repo_id = ? AND path = ?', [repoId, filePath]);
+        const fileId = fileRow[0].id;
+
+        const symbols = parseCodeFile(filePath);
+        for (const sym of symbols) {
+          sqlRun(
+            `INSERT INTO code_symbols (repo_id, file_id, file_path, name, kind, signature, qualified_name,
+             start_line, end_line, start_byte, end_byte, docstring, body_preview, language, parent_name)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              repoId,
+              fileId,
+              filePath,
+              sym.name,
+              sym.kind,
+              sym.signature,
+              sym.qualified_name,
+              sym.start_line,
+              sym.end_line,
+              sym.start_byte,
+              sym.end_byte,
+              sym.docstring || '',
+              sym.body_preview || '',
+              sym.language,
+              sym.parent_name || '',
+            ],
+          );
+          symbolCount++;
+        }
+        fileCount++;
+      } catch (e) {
+        skipped.push({ file: filePath, error: e.message });
       }
-      fileCount++;
-    } catch (e) {
-      skipped.push({ file: filePath, error: e.message });
     }
   }
 
@@ -2681,7 +2698,7 @@ const commands = {
 
   // ── v5: Doc indexing subcommands ──
 
-  'index-docs': (args) => {
+  'index-docs': async (args) => {
     const docPath = args.path;
     const name = args.name;
     if (!docPath || !name) {
@@ -2690,8 +2707,8 @@ const commands = {
     return docIndexer.indexDocs(db, path.resolve(docPath), name, args.ignore || null);
   },
 
-  'reindex-docs': (args) =>
-    _dispatchDoc('reindex-docs', args.repo, (r) =>
+  'reindex-docs': async (args) =>
+    _dispatchDoc('reindex-docs', args.repo, async (r) =>
       docIndexer.reindexDocs(db, r.id, args.mode || 'full', args.ignore || null),
     ),
 

@@ -313,7 +313,7 @@ function walkDir(dirPath, ignoreGlob) {
 }
 
 // ── Main indexing function ──
-function indexDocs(db, rootPath, repoName, ignoreGlob) {
+async function indexDocs(db, rootPath, repoName, ignoreGlob) {
   const guard = _requireNativeDb(db);
   if (guard) {return guard;}
   if (!fs.existsSync(rootPath)) {return { error: `Path not found: ${rootPath}` };}
@@ -359,60 +359,76 @@ function indexDocs(db, rootPath, repoName, ignoreGlob) {
     'INSERT INTO doc_code_blocks (section_id, lang, content, byte_start, byte_end) VALUES (?, ?, ?, ?, ?)',
   );
 
-  for (const filePath of files) {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const stat = fs.statSync(filePath);
-    const relPath = path.relative(rootPath, filePath);
+  const BATCH_SIZE = 50;
+  for (let i = 0; i < files.length; i += BATCH_SIZE) {
+    const batch = files.slice(i, i + BATCH_SIZE);
+    const reads = await Promise.all(batch.map(async (fp) => {
+      try {
+        const [content, stat] = await Promise.all([
+          fs.promises.readFile(fp, 'utf-8'),
+          fs.promises.stat(fp),
+        ]);
+        return { filePath: fp, content, stat };
+      } catch (e) {
+        return null;
+      }
+    }));
 
-    const fileRow = insertFile.get(repoId, relPath, content, hashContent(content), stat.mtimeMs);
-    const fileId = fileRow.id;
+    for (const entry of reads) {
+      if (!entry) {continue;}
+      const { filePath, content, stat } = entry;
+      const relPath = path.relative(rootPath, filePath);
 
-    const sections = parseMarkdownSections(content, filePath);
-    const withParent = buildSectionHierarchy(sections);
-    const sectionIdMap = new Map();
+      const fileRow = insertFile.get(repoId, relPath, content, hashContent(content), stat.mtimeMs);
+      const fileId = fileRow.id;
 
-    for (let idx = 0; idx < withParent.length; idx++) {
-      const sec = withParent[idx];
-      const parentId = sec.parent_idx !== null ? sectionIdMap.get(sec.parent_idx) || null : null;
+      const sections = parseMarkdownSections(content, filePath);
+      const withParent = buildSectionHierarchy(sections);
+      const sectionIdMap = new Map();
 
-      const sectionRow = insertSection.get(
-        repoId,
-        fileId,
-        sec.title,
-        sec.level,
-        parentId,
-        sec.content,
-        sec.content_hash,
-        sec.byte_start,
-        sec.byte_end,
-        sec.role,
-        sec.tags,
-      );
-      const sectionDbId = sectionRow.id;
-      sectionIdMap.set(idx, sectionDbId);
-      totalSections++;
+      for (let idx = 0; idx < withParent.length; idx++) {
+        const sec = withParent[idx];
+        const parentId = sec.parent_idx !== null ? sectionIdMap.get(sec.parent_idx) || null : null;
 
-      // Links
-      const links = extractLinks(sec.content);
-      for (const link of links) {
-        if (link.is_internal) {
-          insertLink.run(sectionDbId, link.target_path, null, link.link_text, 0);
-          totalLinks++;
+        const sectionRow = insertSection.get(
+          repoId,
+          fileId,
+          sec.title,
+          sec.level,
+          parentId,
+          sec.content,
+          sec.content_hash,
+          sec.byte_start,
+          sec.byte_end,
+          sec.role,
+          sec.tags,
+        );
+        const sectionDbId = sectionRow.id;
+        sectionIdMap.set(idx, sectionDbId);
+        totalSections++;
+
+        // Links
+        const links = extractLinks(sec.content);
+        for (const link of links) {
+          if (link.is_internal) {
+            insertLink.run(sectionDbId, link.target_path, null, link.link_text, 0);
+            totalLinks++;
+          }
         }
-      }
 
-      // Glossary terms
-      const terms = extractGlossaryTerms(sec.content);
-      for (const term of terms) {
-        insertTerm.run(repoId, term.term, term.definition, sectionDbId);
-        totalTerms++;
-      }
+        // Glossary terms
+        const terms = extractGlossaryTerms(sec.content);
+        for (const term of terms) {
+          insertTerm.run(repoId, term.term, term.definition, sectionDbId);
+          totalTerms++;
+        }
 
-      // Code blocks
-      const blocks = extractCodeBlocks(sec.content, sec.byte_start);
-      for (const block of blocks) {
-        insertCodeBlock.run(sectionDbId, block.lang, block.content, block.byte_start, block.byte_end);
-        totalCodeBlocks++;
+        // Code blocks
+        const blocks = extractCodeBlocks(sec.content, sec.byte_start);
+        for (const block of blocks) {
+          insertCodeBlock.run(sectionDbId, block.lang, block.content, block.byte_start, block.byte_end);
+          totalCodeBlocks++;
+        }
       }
     }
   }
@@ -733,7 +749,7 @@ function findCodeExamples(db, repoId, query, lang) {
   return { results: db.prepare(sql).all(...params) };
 }
 
-function reindexDocs(db, repoId, mode, ignoreGlob) {
+async function reindexDocs(db, repoId, mode, ignoreGlob) {
   const guard = _requireNativeDb(db);
   if (guard) {return guard;}
   const repo = db.prepare('SELECT id, name, path FROM doc_repos WHERE id = ?').get(repoId);
