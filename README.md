@@ -4,7 +4,7 @@
 > 🪨 *lapis* — stone, precious gem
 > 🧠 La**Pi**s — memory for Pi
 
-Persistent memory for the [Pi coding agent](https://github.com/mariozechner/pi-coding-agent). One SQLite database, zero cloud dependencies, zero API keys.
+Persistent memory for the [Pi coding agent](https://github.com/earendil-works/pi-coding-agent). One SQLite database, zero cloud dependencies, zero API keys.
 
 ## Architecture
 
@@ -13,10 +13,10 @@ Persistent memory for the [Pi coding agent](https://github.com/mariozechner/pi-c
 ## One-command install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/genegulanesjr/PiMemoryExtension/main/install.sh | bash
+pi install git:github.com/GeneGulanesJr/LaPis
 ```
 
-Restart Pi and memory auto-wires on session start.
+Restart Pi and memory auto-wires on session start. Use `pi update --extensions` to keep it up to date.
 
 ## What it does
 

@@ -14,7 +14,7 @@
  *   - SQLite (node:sqlite, better-sqlite3, or sqlite3 CLI)
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { execFile } from "node:child_process";
 import path from "node:path";
