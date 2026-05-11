@@ -10,7 +10,7 @@
  * No AGENTS.md text needed — this extension enforces memory usage via code.
  *
  * Requirements:
- *   - memory-store.js at ~/.pi/agent/skills/memory-layer/memory-store.js
+ *   - memory-store.js in the same directory as this extension
  *   - SQLite (node:sqlite, better-sqlite3, or sqlite3 CLI)
  */
 
@@ -20,10 +20,14 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 
 // ── Config ──────────────────────────────────────────────────
-const MEMORY_SCRIPT = path.join(
-  process.env.HOME || "/root",
-  ".pi/agent/skills/memory-layer/memory-store.js",
+// Resolve memory-store.js relative to the package root.
+// Works whether installed as a pi package or cloned to ~/.pi/agent/skills/.
+const PKG_ROOT = path.resolve(
+  typeof __dirname !== "undefined"
+    ? __dirname
+    : (import.meta as any).dirname ?? process.cwd(),
 );
+const MEMORY_SCRIPT = path.join(PKG_ROOT, "memory-store.js");
 
 // ── Helpers ─────────────────────────────────────────────────
 
