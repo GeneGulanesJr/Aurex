@@ -3,7 +3,32 @@
  */
 
 const path = require('path');
+const fs = require('fs');
 const { execSync } = require('child_process');
+
+// ══════════════════════════════════════════════════════════
+// LAPIS ROOT DETECTION
+// ══════════════════════════════════════════════════════════
+
+function findLapisRoot() {
+  const candidates = [
+    path.resolve(__dirname, '..'),
+    process.env.LAPIS_PATH,
+    path.join(process.env.HOME || process.env.USERPROFILE || '', '.pi', 'agent', 'git', 'github.com', 'GeneGulanesJr', 'LaPis'),
+    path.join(process.env.HOME || process.env.USERPROFILE || '', '.pi', 'agent', 'skills', 'memory-layer'),
+  ];
+  for (const dir of candidates) {
+    if (!dir) continue;
+    const msPath = path.join(dir, 'memory-store.js');
+    if (fs.existsSync(msPath)) {
+      return dir;
+    }
+  }
+  console.error('ERROR: Cannot find LaPis root (memory-store.js). Set LAPIS_PATH or run from the LaPis directory.');
+  process.exit(1);
+}
+
+const LAPIS_ROOT = findLapisRoot();
 
 // ══════════════════════════════════════════════════════════
 // BENCHMARK MATRIX
@@ -25,46 +50,32 @@ const BENCHMARK_TOOLS = [
 // UTILITIES
 // ══════════════════════════════════════════════════════════
 
-/**
- * Estimate token count from byte size (4 chars ≈ 1 token heuristic).
- */
 function estimateTokens(bytesOrObj) {
   const str = typeof bytesOrObj === 'string' ? bytesOrObj : JSON.stringify(bytesOrObj);
   return Math.ceil(str.length / 3.5);
 }
 
-/**
- * Format bytes as human-readable string.
- */
 function formatBytes(n) {
   if (n < 1024) {return `${n}B`;}
   if (n < 1024 * 1024) {return `${(n / 1024).toFixed(1)}KB`;}
   return `${(n / (1024 * 1024)).toFixed(1)}MB`;
 }
 
-/**
- * Format percentage.
- */
 function pct(savings) {
   const sign = savings >= 0 ? '-' : '+';
   return `${sign}${Math.abs(Math.round(savings * 100))}%`;
 }
 
-/**
- * Pad string to width.
- */
 function pad(str, width) {
   return String(str).padEnd(width);
 }
 
-/**
- * Run a CLI command against memory-store.js and return parsed JSON.
- */
 function runCli(repo, subcommand, extraFlags = '') {
-  const cmd = `node memory-store.js ${subcommand} --repo ${repo} ${extraFlags}`;
+  const msPath = path.join(LAPIS_ROOT, 'memory-store.js');
+  const cmd = `node "${msPath}" ${subcommand} --repo ${repo} ${extraFlags}`;
   try {
     const stdout = execSync(cmd, {
-      cwd: path.resolve(__dirname, '..'),
+      cwd: LAPIS_ROOT,
       encoding: 'utf-8',
       timeout: 30000,
     }).trim();
@@ -74,13 +85,11 @@ function runCli(repo, subcommand, extraFlags = '') {
   }
 }
 
-/**
- * Check if a repo is already indexed.
- */
 function isRepoIndexed(repo) {
   try {
-    const stdout = execSync('node memory-store.js list-code-repos', {
-      cwd: path.resolve(__dirname, '..'),
+    const msPath = path.join(LAPIS_ROOT, 'memory-store.js');
+    const stdout = execSync(`node "${msPath}" list-code-repos`, {
+      cwd: LAPIS_ROOT,
       encoding: 'utf-8',
       timeout: 5000,
     }).trim();
@@ -91,9 +100,6 @@ function isRepoIndexed(repo) {
   }
 }
 
-/**
- * Find a symbol with callers for call-hierarchy/blast-radius benchmarks.
- */
 function findSymbolWithCallers(repo) {
   try {
     const hotFile = _pickHotFile(repo);
@@ -105,8 +111,9 @@ function findSymbolWithCallers(repo) {
 }
 
 function _pickHotFile(repo) {
-  const stdout = execSync(`node memory-store.js hotspots --repo ${repo} --top 1`, {
-    cwd: path.resolve(__dirname, '..'),
+  const msPath = path.join(LAPIS_ROOT, 'memory-store.js');
+  const stdout = execSync(`node "${msPath}" hotspots --repo ${repo} --top 1`, {
+    cwd: LAPIS_ROOT,
     encoding: 'utf-8',
     timeout: 10000,
   }).trim();
@@ -118,8 +125,9 @@ function _pickHotFile(repo) {
 }
 
 function _pickCallSymbolFromOutline(repo, hotFile) {
-  const outlineOut = execSync(`node memory-store.js outline --repo ${repo} --file "${hotFile}"`, {
-    cwd: path.resolve(__dirname, '..'),
+  const msPath = path.join(LAPIS_ROOT, 'memory-store.js');
+  const outlineOut = execSync(`node "${msPath}" outline --repo ${repo} --file "${hotFile}"`, {
+    cwd: LAPIS_ROOT,
     encoding: 'utf-8',
     timeout: 10000,
   }).trim();

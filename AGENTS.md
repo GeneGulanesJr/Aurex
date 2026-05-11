@@ -52,3 +52,28 @@ Use **What/Why/Where/Learned** in the content field:
 The extension handles session start, context loading, and session shutdown automatically. No bash calls to memory-store.js needed during sessions.
 
 Full feature docs: `~/.pi/agent/skills/memory-layer/SKILL.md`
+
+## 3. Benchmark Usage
+
+The token efficiency benchmark (`bench/bench-tokens.js`) now supports any indexed repo:
+
+```bash
+# Benchmark the current LaPis repo (default)
+node bench/bench-tokens.js
+
+# Benchmark a different repo
+node bench/bench-tokens.js --repo-path /path/to/other/repo --repo-name my-repo
+
+# Force re-index before benchmarking
+node bench/bench-tokens.js --repo-path /path/to/repo --repo-name my-repo --reindex
+```
+
+The LaPis root is auto-detected (searches: cwd, `$LAPIS_PATH`, `~/.pi/agent/git/.../LaPis`, `~/.pi/agent/skills/memory-layer`).
+Set `LAPIS_PATH` env var if running from outside the LaPis directory.
+
+### Known issues
+- **SQLite disk I/O**: better-sqlite3 may throw "disk I/O error" on some queries (dead-code, blast-radius, call-hierarchy).
+  The remaining queries will still produce results (~30% token savings).
+- **OOM on index**: If `index-repo` crashes with heap allocation error, ensure you `cd` into the LaPis directory first
+  so web-tree-sitter ESM and better-sqlite3 native modules resolve correctly.
+- **Windows**: Use `--repo-path` with forward or backslashes; Node's `path.resolve` handles both.

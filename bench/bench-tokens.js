@@ -1,14 +1,7 @@
 #!/usr/bin/env node
-/**
- * Bench-tokens.js — Token efficiency benchmark
- *
- * Measures actual byte/token savings of compact format across all analysis tools.
- * Uses the real compactResponse function — no hardcoded estimates.
- *
- * Usage: node bench/bench-tokens.js [--reindex]
- */
 
 const path = require('path');
+const fs = require('fs');
 const { execSync } = require('child_process');
 const {
   BENCHMARK_TOOLS, formatBytes, pad,
@@ -16,8 +9,34 @@ const {
 } = require('./bench-helper');
 const wf = require('../wire-format');
 
-const REPO_NAME = 'PiMemoryExtension';
-const REPO_PATH = path.resolve(__dirname, '..');
+// ══════════════════════════════════════════════════════════
+// CLI ARGS
+// ══════════════════════════════════════════════════════════
+
+function parseArgs() {
+  const args = process.argv.slice(2);
+  let repoPath = null;
+  let repoName = null;
+  let forceReindex = false;
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--repo-path' && i + 1 < args.length) {
+      repoPath = path.resolve(args[++i]);
+    } else if (args[i] === '--repo-name' && i + 1 < args.length) {
+      repoName = args[++i];
+    } else if (args[i] === '--reindex') {
+      forceReindex = true;
+    }
+  }
+  if (!repoPath) {
+    repoPath = path.resolve(__dirname, '..');
+    repoName = repoName || path.basename(repoPath);
+    console.log(`  No --repo-path given, defaulting to: ${repoPath}`);
+  } else if (!repoName) {
+    repoName = path.basename(repoPath);
+  }
+  return { repoPath, repoName, forceReindex };
+}
 
 // ══════════════════════════════════════════════════════════
 // HELPERS
@@ -53,47 +72,43 @@ function estimateRowCount(data, toolName) {
 // ══════════════════════════════════════════════════════════
 
 async function main() {
-  const { forceReindex } = parseArgs();
-  printHeader();
-  ensureRepoIndexed(forceReindex);
-  const callSymbol = findCallSymbol();
-  const results = runBenchmarks(callSymbol);
+  const { repoPath, repoName, forceReindex } = parseArgs();
+  printHeader(repoName, repoPath);
+  ensureRepoIndexed(repoPath, repoName, forceReindex);
+  const callSymbol = findCallSymbol(repoName);
+  const results = runBenchmarks(repoName, callSymbol);
   printResults(results);
 }
 
-function parseArgs() {
-  const args = process.argv.slice(2);
-  return { forceReindex: args.includes('--reindex') };
-}
-
-function printHeader() {
+function printHeader(repoName, repoPath) {
   console.log('╔══════════════════════════════════════════════════════╗');
-  console.log('║     PiMemoryExtension — Token Efficiency Benchmark   ║');
+  console.log(`║     Token Efficiency Benchmark                       ║`);
+  console.log(`║     Repo: ${repoName.padEnd(37)}║`);
   console.log('╚══════════════════════════════════════════════════════╝\n');
 }
 
-function ensureRepoIndexed(forceReindex) {
-  const indexed = isRepoIndexed(REPO_NAME);
+function ensureRepoIndexed(repoPath, repoName, forceReindex) {
+  const indexed = isRepoIndexed(repoName);
   if (indexed && !forceReindex) {
     console.log('[1/3] Repo already indexed — skipping (use --reindex to force)');
     return;
   }
-  console.log(`[1/3] Indexing ${REPO_NAME}...`);
+  console.log(`[1/3] Indexing ${repoName} (${repoPath})...`);
   if (forceReindex && indexed) {
-    _removeExistingRepo(REPO_NAME);
+    _removeExistingRepo(repoName);
   }
-  _doIndexRepo();
+  _doIndexRepo(repoPath, repoName);
 }
 
 function _removeExistingRepo(repoName) {
   execSync(`node memory-store.js remove-code-repo --repo "${repoName}"`, {
-    cwd: REPO_PATH, encoding: 'utf-8', timeout: 10000,
+    cwd: path.resolve(__dirname, '..'), encoding: 'utf-8', timeout: 10000,
   });
 }
 
-function _doIndexRepo() {
-  const indexResult = execSync(`node memory-store.js index-repo --path "${REPO_PATH}" --name "${REPO_NAME}"`, {
-    cwd: REPO_PATH, encoding: 'utf-8', timeout: 120000,
+function _doIndexRepo(repoPath, repoName) {
+  const indexResult = execSync(`node memory-store.js index-repo --path "${repoPath}" --name "${repoName}"`, {
+    cwd: path.resolve(__dirname, '..'), encoding: 'utf-8', timeout: 120000,
   });
   const idx = JSON.parse(indexResult.trim());
   if (idx.error) {
@@ -103,9 +118,9 @@ function _doIndexRepo() {
   console.log(`  Done: ${idx.symbols_extracted} symbols, ${idx.files_indexed} files`);
 }
 
-function findCallSymbol() {
+function findCallSymbol(repoName) {
   console.log('\n[2/3] Finding representative symbol for call analysis...');
-  const callSymbol = findSymbolWithCallers(REPO_NAME);
+  const callSymbol = findSymbolWithCallers(repoName);
   if (callSymbol) {
     console.log(`  Using symbol: "${callSymbol}"`);
   } else {
@@ -114,30 +129,30 @@ function findCallSymbol() {
   return callSymbol;
 }
 
-function runBenchmarks(callSymbol) {
+function runBenchmarks(repoName, callSymbol) {
   console.log('\n[3/3] Running benchmarks...\n');
   const results = [];
   for (const tool of BENCHMARK_TOOLS) {
-    const result = benchmarkTool(tool, callSymbol);
+    const result = benchmarkTool(repoName, tool, callSymbol);
     results.push(result);
   }
   return results;
 }
 
-function benchmarkTool(tool, callSymbol) {
+function benchmarkTool(repoName, tool, callSymbol) {
   let extraFlags = '';
   if (tool.cli === 'call-hierarchy' || tool.cli === 'blast-radius') {
     if (!callSymbol) {return { tool: tool.name, error: 'No symbol available' };}
     extraFlags = `--symbol "${callSymbol}"`;
   }
-  const toolData = _runToolCli(tool, extraFlags);
+  const toolData = _runToolCli(repoName, tool, extraFlags);
   if (toolData.error) {return { tool: tool.name, error: toolData.error };}
   return { ..._computeCompactStats(toolData, tool), rows: estimateRowCount(toolData, tool.toolName) };
 }
 
-function _runToolCli(tool, extraFlags) {
+function _runToolCli(repoName, tool, extraFlags) {
   try {
-    return runCli(REPO_NAME, tool.cli, extraFlags);
+    return runCli(repoName, tool.cli, extraFlags);
   } catch (e) {
     return { error: e.message.slice(0, 60) };
   }
