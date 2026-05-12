@@ -368,8 +368,10 @@ describe('code-analysis: pr-risk (v6)', () => {
   it('should report changed files and symbols count', () => {
     const r = run(`pr-risk --repo ${REPO}`);
     expect(r.error).toBeUndefined();
-    // May be 0 or undefined if no changes detected
-    expect(r.changed_files !== undefined || r.note !== undefined).toBe(true);
+    // pr-risk returns { signals: { changed_files }, risk_level, composite }
+    // changed_files may be nested inside signals
+    const changedFiles = r.changed_files ?? r.signals?.changed_files;
+    expect(changedFiles !== undefined || r.note !== undefined).toBe(true);
   });
 
   it('should guard against missing db', () => {
