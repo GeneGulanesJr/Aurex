@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 const path = require('path');
-const fs = require('fs');
 const { execSync } = require('child_process');
 const {
   BENCHMARK_TOOLS, formatBytes, pad,
@@ -30,7 +29,7 @@ function parseArgs() {
   }
   if (!repoPath) {
     repoPath = path.resolve(__dirname, '..');
-    repoName = repoName || path.basename(repoPath);
+    repoName ||= path.basename(repoPath);
     console.log(`  No --repo-path given, defaulting to: ${repoPath}`);
   } else if (!repoName) {
     repoName = path.basename(repoPath);
@@ -80,7 +79,7 @@ async function main() {
   printResults(results);
 }
 
-function printHeader(repoName, repoPath) {
+function printHeader(repoName, _repoPath) {
   console.log('╔══════════════════════════════════════════════════════╗');
   console.log(`║     Token Efficiency Benchmark                       ║`);
   console.log(`║     Repo: ${repoName.padEnd(37)}║`);

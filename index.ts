@@ -62,13 +62,19 @@ function getTimeout(cmd: string): number {
   return TIMEOUT_DEFAULTS[cmd] ?? TIMEOUT_DEFAULTS._default;
 }
 
+function trustIcon(score: number): string {
+  if (score < 0.5) {return " ⚠️";}
+  if (score < 0.7) {return " 🔎";}
+  return "";
+}
+
 async function mem(
   cmd: string,
   args: Record<string, string | number | boolean>,
 ): Promise<MemResult | null> {
   const argList: string[] = [cmd];
   for (const [k, v] of Object.entries(args)) {
-    if (v === undefined || v === null || v === "") continue;
+    if (v === undefined || v === null || v === "") {continue;}
     argList.push(`--${k}`);
     argList.push(String(v));
   }
@@ -81,8 +87,8 @@ async function mem(
         maxBuffer: 10 * 1024 * 1024, // 10MB for large analyses
         stdio: ["pipe", "pipe", "pipe"],
       }, (err, stdout) => {
-        if (err) reject(err);
-        else resolve(stdout.trim());
+        if (err) {reject(err);}
+        else {resolve(stdout.trim());}
       });
       // Ensure child is killed if orphaned
       child.on("error", reject);
@@ -109,8 +115,8 @@ async function memCmd(cmd: string): Promise<MemResult | null> {
         maxBuffer: 10 * 1024 * 1024,
         stdio: ["pipe", "pipe", "pipe"],
       }, (err, stdout) => {
-        if (err) reject(err);
-        else resolve(stdout.trim());
+        if (err) {reject(err);}
+        else {resolve(stdout.trim());}
       });
     });
     return out ? JSON.parse(out) : null;
@@ -135,8 +141,8 @@ async function detectProject(cwd: string): Promise<string> {
 
   // First pass: match against indexed code repos by path (most specific wins)
   // This is more reliable than directory-name matching because it checks
-  // the actual file paths stored in the code index, avoiding false matches
-  // when a parent directory name coincidentally matches a memory project name.
+  // The actual file paths stored in the code index, avoiding false matches
+  // When a parent directory name coincidentally matches a memory project name.
   try {
     const codeRepos = await getKnownRepos();
     if (codeRepos.length > 0) {
@@ -154,9 +160,9 @@ async function detectProject(cwd: string): Promise<string> {
         }
         dir = path.dirname(dir);
       }
-      if (bestRepo) return bestRepo.repo.name;
+      if (bestRepo) {return bestRepo.repo.name;}
     }
-  } catch (_) { /* code repos may not be available */ }
+  } catch (_) { /* Code repos may not be available */ }
 
   // Second pass: walk up directory tree looking for known projects (case-insensitive)
   let dir = resolved;
@@ -165,7 +171,7 @@ async function detectProject(cwd: string): Promise<string> {
     const name = path.basename(dir);
     // Case-insensitive match against known project names
     const match = knownProjects.find(p => p && p.toLowerCase() === name.toLowerCase());
-    if (match) return match; // return the canonical name from DB, not the filesystem one
+    if (match) {return match;} // Return the canonical name from DB, not the filesystem one
     dir = path.dirname(dir);
   }
 
@@ -189,9 +195,9 @@ const REPO_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 async function getKnownRepos(): Promise<RepoInfo[]> {
   const now = Date.now();
-  if (cachedRepos && now - repoCacheTime < REPO_CACHE_TTL) return cachedRepos;
+  if (cachedRepos && now - repoCacheTime < REPO_CACHE_TTL) {return cachedRepos;}
   const result = await memCmd("list-code-repos");
-  if (!result || !(result as any).repos) return cachedRepos || [];
+  if (!result || !(result as any).repos) {return cachedRepos || [];}
   cachedRepos = (result as any).repos as RepoInfo[];
   repoCacheTime = now;
   return cachedRepos;
@@ -229,18 +235,18 @@ let currentProject: string | null = null;
 let memoriesSavedThisSession = 0;
 let nudgeCountThisSession = 0;
 const MAX_NUDGES_PER_SESSION = 8;
-let exploredFiles = new Set<string>(); // files explored via memory-code → allowed for read
+let exploredFiles = new Set<string>(); // Files explored via memory-code → allowed for read
 
 // ── Reliability state ────────────────────────────────────
 let turnCount = 0;
 let llmCallCount = 0;
-let lastMemoryToolCall = 0;         // timestamp of last memory tool usage
-let lastAutoDecisionSave = 0;       // timestamp of last auto-detected decision save
-let hasInjectedContext = false;      // whether before_agent_start context was injected this turn
-let editedFiles = new Set<string>(); // files edited this session
+let lastMemoryToolCall = 0;         // Timestamp of last memory tool usage
+let lastAutoDecisionSave = 0;       // Timestamp of last auto-detected decision save
+let hasInjectedContext = false;      // Whether before_agent_start context was injected this turn
+let editedFiles = new Set<string>(); // Files edited this session
 const AUTO_DECISION_COOLDOWN = 60000; // 1 min between auto-decision saves
-const MEMORY_REMINDER_INTERVAL = 8;   // inject reminder every Nth LLM call
-const CHECKPOINT_INTERVAL = 10;       // save progress checkpoint every N turns
+const MEMORY_REMINDER_INTERVAL = 8;   // Inject reminder every Nth LLM call
+const CHECKPOINT_INTERVAL = 10;       // Save progress checkpoint every N turns
 
 // ── Extension ───────────────────────────────────────────────
 
@@ -272,7 +278,7 @@ export default function (pi: ExtensionAPI) {
     // Auto-recover only the current project's orphaned session
     // (session-start already recovers the most recent incomplete session for this project)
     // We do NOT call recover-orphans here — it creates one observation per orphan,
-    // which pollutes the observation pool with low-value session_summary entries.
+    // Which pollutes the observation pool with low-value session_summary entries.
     // Cross-project orphans are cleaned up lazily during compact/maintenance.
     if (result.recoveredSession) {
       ctx.ui.notify(
@@ -284,8 +290,8 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.setStatus("memory", `🧠 session ${sessionId}`);
 
     // ── Auto-dream: every 10th session, run the Dream Cycle ──
-    // dream() targets STALENESS (superseded, zero-recall, stale corrections),
-    // not age. A 6-month-old valid decision stays. A 1-day-old superseded one goes.
+    // Dream() targets STALENESS (superseded, zero-recall, stale corrections),
+    // Not age. A 6-month-old valid decision stays. A 1-day-old superseded one goes.
     if (sessionId % 10 === 0) {
       try {
         const dreamResult = await memCmd("dream");
@@ -304,10 +310,10 @@ export default function (pi: ExtensionAPI) {
   // ────────────────────────────────────────────────────────
   // Fix #6: COMPACTION RECOVERY — re-inject memory context after /compact
   // Without this, compaction destroys the initial context injection and
-  // the LLM completely loses awareness of memory tools and project context.
+  // The LLM completely loses awareness of memory tools and project context.
   // ────────────────────────────────────────────────────────
   pi.on("session_compact", async (_event, ctx) => {
-    if (!currentProject) return;
+    if (!currentProject) {return;}
 
     const contextResult = await mem("context", {
       project: currentProject,
@@ -324,7 +330,7 @@ export default function (pi: ExtensionAPI) {
       });
     }
 
-    if (!contextResult && !crossProjectResult) return;
+    if (!contextResult && !crossProjectResult) {return;}
 
     const isNewProject = crossProjectResult !== null;
     const effectiveObservations = isNewProject
@@ -383,10 +389,10 @@ export default function (pi: ExtensionAPI) {
   // BEFORE AGENT START — inject smart context automatically
   // ────────────────────────────────────────────────────────
   pi.on("before_agent_start", async (event, ctx) => {
-    if (!currentProject) return;
+    if (!currentProject) {return;}
 
     // Load smart context (project-scoped)
-    let contextResult = await mem("context", {
+    const contextResult = await mem("context", {
       project: currentProject,
       limit: "15",
       ...(sessionId ? { "session-id": String(sessionId) } : {}),
@@ -403,7 +409,7 @@ export default function (pi: ExtensionAPI) {
       });
     }
 
-    if (!contextResult) return;
+    if (!contextResult) {return;}
 
     const observations = (contextResult.observations as Array<{
       id: number; title: string; type: string; scope: string;
@@ -417,7 +423,7 @@ export default function (pi: ExtensionAPI) {
     const stats = contextResult.stats as { total_memories: number; total_personal: number };
     const topic = contextResult.topic as string | null;
 
-    if (observations.length === 0 && personal.length === 0 && !crossProjectResult) return;
+    if (observations.length === 0 && personal.length === 0 && !crossProjectResult) {return;}
 
     const isNewProject = crossProjectResult !== null;
     const effectiveObservations = isNewProject
@@ -443,7 +449,7 @@ export default function (pi: ExtensionAPI) {
       const byProject = new Map<string, any[]>();
       for (const o of effectiveObservations) {
         const proj = o.project || "unknown";
-        if (!byProject.has(proj)) byProject.set(proj, []);
+        if (!byProject.has(proj)) {byProject.set(proj, []);}
         byProject.get(proj)!.push(o);
       }
 
@@ -527,11 +533,11 @@ export default function (pi: ExtensionAPI) {
         exploredFiles.add(file.toLowerCase());
         exploredFiles.add(path.basename(file).toLowerCase());
       }
-      return; // always allow memory-code
+      return; // Always allow memory-code
     }
     if (toolName.startsWith("memory-")) {
       lastMemoryToolCall = Date.now();
-      return; // always allow other memory tools
+      return; // Always allow other memory tools
     }
 
     // ── Hard block: bash grep/rg/find on source code in indexed repos ───
@@ -562,7 +568,7 @@ export default function (pi: ExtensionAPI) {
             "info",
           );
         }
-        return; // allow if not indexed
+        return; // Allow if not indexed
       }
     }
 
@@ -571,13 +577,13 @@ export default function (pi: ExtensionAPI) {
       const filePath = input.path as string;
 
       // Allow non-code files (configs, markdown, JSON, etc.)
-      if (!isCodeFile(filePath)) return;
+      if (!isCodeFile(filePath)) {return;}
 
       // Allow node_modules
-      if (filePath.includes("node_modules")) return;
+      if (filePath.includes("node_modules")) {return;}
 
       // Allow partial/targeted reads (offset or limit) — agent is editing
-      if (input.offset || input.limit) return;
+      if (input.offset || input.limit) {return;}
 
       // Resolve to absolute path for matching
       const absPath = path.resolve(filePath);
@@ -585,7 +591,7 @@ export default function (pi: ExtensionAPI) {
       // Find which indexed repo this file belongs to
       const repos = await getKnownRepos();
       const matchedRepo = repos.find(r =>
-        absPath.toLowerCase().startsWith(r.path.toLowerCase() + "/") ||
+        absPath.toLowerCase().startsWith(`${r.path.toLowerCase()  }/`) ||
         absPath.toLowerCase() === r.path.toLowerCase()
       );
 
@@ -598,14 +604,14 @@ export default function (pi: ExtensionAPI) {
             "info",
           );
         }
-        return; // allow
+        return; // Allow
       }
 
       // Check if file has been explored via memory-code
       const basename = path.basename(filePath).toLowerCase();
       const relPath = path.relative(matchedRepo.path, absPath).toLowerCase();
       if (exploredFiles.has(basename) || exploredFiles.has(relPath) || exploredFiles.has(absPath.toLowerCase())) {
-        return; // already explored — allow read for editing
+        return; // Already explored — allow read for editing
       }
 
       // HARD BLOCK: code file in indexed repo, not yet explored
@@ -623,8 +629,8 @@ export default function (pi: ExtensionAPI) {
   // ────────────────────────────────────────────────────────
   // Fix #7: CONTEXT EVENT — lightweight persistent memory reminder
   // After compaction or in long sessions, the LLM may forget memory tools
-  // exist. This injects a minimal reminder every Nth LLM call, but only
-  // if no memory tool was used recently (to avoid redundancy).
+  // Exist. This injects a minimal reminder every Nth LLM call, but only
+  // If no memory tool was used recently (to avoid redundancy).
   // ────────────────────────────────────────────────────────
   pi.on("context", async (event, _ctx) => {
     llmCallCount++;
@@ -637,10 +643,10 @@ export default function (pi: ExtensionAPI) {
     }
 
     // Only inject every Nth call
-    if (llmCallCount % MEMORY_REMINDER_INTERVAL !== 0) return;
+    if (llmCallCount % MEMORY_REMINDER_INTERVAL !== 0) {return;}
 
     // Don't inject if memory tool was used recently (within 3 min)
-    if (Date.now() - lastMemoryToolCall < 180000) return;
+    if (Date.now() - lastMemoryToolCall < 180000) {return;}
 
     // Inject a lightweight reminder
     return {
@@ -661,17 +667,17 @@ export default function (pi: ExtensionAPI) {
     // Auto-save when files are edited — record what changed
     if (event.toolName === "edit" || event.toolName === "write") {
       const input = event.input as { path?: string };
-      if (!input?.path || !currentProject) return;
+      if (!input?.path || !currentProject) {return;}
 
       // Don't auto-save edits to the memory layer itself
-      if (input.path.includes("memory-store.js") || input.path.includes("memory-layer")) return;
+      if (input.path.includes("memory-store.js") || input.path.includes("memory-layer")) {return;}
 
       // Track edited files for session summary
       editedFiles.add(input.path);
 
       // Only auto-save occasionally to avoid noise — every 5th file edit
       memoriesSavedThisSession++;
-      if (memoriesSavedThisSession % 5 !== 0) return;
+      if (memoriesSavedThisSession % 5 !== 0) {return;}
 
       await mem("save", {
         title: `Edited ${path.basename(input.path)}`,
@@ -684,7 +690,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     // Fix #7: Git-triggered trust sync — after git pull/checkout/merge/rebase,
-    // code symbols may have changed. Auto-sync trust scores.
+    // Code symbols may have changed. Auto-sync trust scores.
     if (event.toolName === "bash") {
       const input = event.input as { command?: string };
       const cmd = input?.command || "";
@@ -707,7 +713,7 @@ export default function (pi: ExtensionAPI) {
 
   // ────────────────────────────────────────────────────────
   // Fix #2: DECISION AUTO-DETECTION — detect decision/bugfix/architecture
-  // patterns in assistant messages and auto-save them as memories.
+  // Patterns in assistant messages and auto-save them as memories.
   // ────────────────────────────────────────────────────────
   const DECISION_PATTERNS: Array<{ regex: RegExp; type: string; label: string }> = [
     // Architecture/design decisions
@@ -723,8 +729,8 @@ export default function (pi: ExtensionAPI) {
 
   // Extract text content from a message (handles both string and content array)
   function extractMessageText(msg: any): string {
-    if (!msg) return "";
-    if (typeof msg.content === "string") return msg.content;
+    if (!msg) {return "";}
+    if (typeof msg.content === "string") {return msg.content;}
     if (Array.isArray(msg.content)) {
       return msg.content
         .filter((c: any) => c.type === "text")
@@ -735,15 +741,15 @@ export default function (pi: ExtensionAPI) {
   }
 
   pi.on("message_end", async (event, _ctx) => {
-    if (event.message?.role !== "assistant") return;
+    if (event.message?.role !== "assistant") {return;}
     const text = extractMessageText(event.message);
-    if (!text || text.length < 50) return; // skip very short messages
+    if (!text || text.length < 50) {return;} // Skip very short messages
 
     // Don't auto-save if already saved a decision recently (cooldown)
-    if (Date.now() - lastAutoDecisionSave < AUTO_DECISION_COOLDOWN) return;
+    if (Date.now() - lastAutoDecisionSave < AUTO_DECISION_COOLDOWN) {return;}
 
     // Skip messages that already involve memory tools
-    if (text.includes("memory-save") || text.includes("memory-search") || text.includes("memory-get")) return;
+    if (text.includes("memory-save") || text.includes("memory-search") || text.includes("memory-get")) {return;}
 
     // Check for decision patterns
     for (const pattern of DECISION_PATTERNS) {
@@ -766,19 +772,19 @@ export default function (pi: ExtensionAPI) {
             `**Learned**: ${text.slice(0, 300)}`,
           ].join("\n"),
         });
-        break; // only save once per message
+        break; // Only save once per message
       }
     }
   });
 
   // ────────────────────────────────────────────────────────
   // Fix #4: PERIODIC PROGRESS CHECKPOINT — save a checkpoint every N turns
-  // so long sessions don't lose all progress if interrupted.
+  // So long sessions don't lose all progress if interrupted.
   // ────────────────────────────────────────────────────────
   pi.on("turn_end", async (_event, _ctx) => {
     turnCount++;
-    if (turnCount % CHECKPOINT_INTERVAL !== 0 || turnCount === 0) return;
-    if (!currentProject) return;
+    if (turnCount % CHECKPOINT_INTERVAL !== 0 || turnCount === 0) {return;}
+    if (!currentProject) {return;}
 
     const summaryFiles = [...editedFiles].slice(0, 10).map(f =>
       `- ${path.basename(f)}`).join("\n");
@@ -802,7 +808,7 @@ export default function (pi: ExtensionAPI) {
   // SESSION SHUTDOWN — auto-save rich summary + close
   // ────────────────────────────────────────────────────────
   pi.on("session_shutdown", async (_event, ctx) => {
-    if (!sessionId || !currentProject) return;
+    if (!sessionId || !currentProject) {return;}
 
     // Build a rich summary from the session content
     const entries = ctx.sessionManager.getEntries();
@@ -926,61 +932,61 @@ export default function (pi: ExtensionAPI) {
         const outline = result;
         if (outline.classes) {
           const lines = outline.classes.map((c: any) => {
-            const methods = c.methods.map((m: any) => `    ${(m.assessment ? `[${m.assessment}] ` : '')}${m.kind} ${m.name}${m.signature ? ': ' + m.signature.slice(0, 60) : ''}`).join("\n");
+            const methods = c.methods.map((m: any) => `    ${(m.assessment ? `[${m.assessment}] ` : '')}${m.kind} ${m.name}${m.signature ? `: ${  m.signature.slice(0, 60)}` : ''}`).join("\n");
             return `  📦 ${c.name}\n${methods}`;
           });
-          const standalone = (outline.standalone || []).map((s: any) => `  ${(s.assessment ? `[${s.assessment}] ` : '')}${s.kind} ${s.name}${s.signature ? ': ' + s.signature.slice(0, 60) : ''}`);
+          const standalone = (outline.standalone || []).map((s: any) => `  ${(s.assessment ? `[${s.assessment}] ` : '')}${s.kind} ${s.name}${s.signature ? `: ${  s.signature.slice(0, 60)}` : ''}`);
           return `**File outline**\n${[...lines, ...standalone].join("\n")}`;
         }
         return JSON.stringify(outline, null, 2);
       }
       case "churn": {
-        if (result.error) return `Error: ${result.error}`;
+        if (result.error) {return `Error: ${result.error}`;}
         if (result.repo) {
           return `**${result.repo}** churn (${result.window_days}d): ${result.total_files_changed} files changed\n${(result.top_files || []).slice(0, 10).map((f: any) => `  ${f.file}: ${f.commits} commits (${f.churn_per_week}/wk)`).join("\n")}`;
         }
         return `**Churn:** ${result.commits} commits, ${result.unique_authors} authors (${result.churn_per_week}/wk)\n  First: ${result.first_seen} | Last: ${result.last_modified}`;
       }
       case "hotspots": {
-        if (!result.hotspots?.length) return "No hotspots found" + (result.note ? ` (${result.note})` : ".");
+        if (!result.hotspots?.length) {return "No hotspots found" + (result.note ? ` (${result.note})` : ".");}
         return result.hotspots.map((h: any, i: number) =>
           `${i+1}. **${h.name}** (${h.kind}) — ${h.file_path.split("/").pop()}\n   Risk: ${h.risk} | Score: ${h.hotspot_score} | Complexity: ${h.cyclomatic} | Commits: ${h.commits} | Churn: ${h.churn_per_week}/wk`
         ).join("\n\n");
       }
       case "cycles": {
-        if (!result.cycles?.length) return "No dependency cycles found — import graph is acyclic.";
+        if (!result.cycles?.length) {return "No dependency cycles found — import graph is acyclic.";}
         return result.cycles.map((c: any, i: number) =>
           `${i+1}. **Cycle ${i+1}** (${c.size} files)\n   Files: ${c.files.map((f: string) => f.split("/").pop()).join(" → ")}\n   Edges: ${c.edges.map((e: any) => `${e.from.split("/").pop()} → ${e.to.split("/").pop()}`).join(", ")}`
         ).join("\n\n");
       }
       case "importance": {
-        if (!result.importance?.length) return "No symbols found.";
-        return `Top ${result.importance.length} of ${result.total_symbols} symbols by PageRank:\n\n` +
+        if (!result.importance?.length) {return "No symbols found.";}
+        return `Top ${result.importance.length} of ${result.total_symbols} symbols by PageRank:\n\n${ 
           result.importance.map((s: any, i: number) =>
             `${i+1}. **${s.name}** (${s.kind}) — ${s.file_path.split("/").pop()} — PageRank: ${s.pagerank}`
-          ).join("\n");
+          ).join("\n")}`;
       }
       case "coupling": {
-        if (!result.metrics?.length) return "No coupling data found.";
+        if (!result.metrics?.length) {return "No coupling data found.";}
         return result.metrics.map((m: any) => {
           const short = m.file_path.split("/").pop();
           return `**${short}** (${m.category})\n   Ca=${m.afferent} Ce=${m.efferent} I=${m.instability}`;
         }).join("\n\n");
       }
       case "extractable": {
-        if (!result.candidates?.length) return "No extraction candidates found. Try lowering --min-complexity or --min-callers.";
+        if (!result.candidates?.length) {return "No extraction candidates found. Try lowering --min-complexity or --min-callers.";}
         return result.candidates.map((c: any, i: number) =>
           `${i+1}. **${c.name}** (${c.kind}) — ${c.file_path.split("/").pop()}\n   Score: ${c.extraction_score} | Complexity: ${c.cyclomatic} | Callers: ${c.caller_file_count} files\n   Called from: ${c.caller_files.map((f: string) => f.split("/").pop()).join(", ")}`
         ).join("\n\n");
       }
       case "hierarchy": {
-        if (result.error) return `Error: ${result.error}`;
+        if (result.error) {return `Error: ${result.error}`;}
         let out = `**${result.name}** (${result.kind}) — ${result.file_path.split("/").pop()}`;
         if (result.ancestors?.length) {
-          out += `\n\nAncestors: ` + result.ancestors.map((a: any) => `${a.name} (${a.kind})`).join(" → ");
+          out += `\n\nAncestors: ${  result.ancestors.map((a: any) => `${a.name} (${a.kind})`).join(" → ")}`;
         }
         if (result.descendants?.length) {
-          out += `\n\nMembers: ` + result.descendants.map((d: any) => `${d.name} (${d.kind})`).join(", ");
+          out += `\n\nMembers: ${  result.descendants.map((d: any) => `${d.name} (${d.kind})`).join(", ")}`;
         }
         if (!result.ancestors?.length && !result.descendants?.length) {
           out += `\n\n(No parent classes or child members found)`;
@@ -988,36 +994,36 @@ export default function (pi: ExtensionAPI) {
         return out;
       }
       case "signal-chains": {
-        if (!result.chains?.length) return result.note || "No signal chains found.";
+        if (!result.chains?.length) {return result.note || "No signal chains found.";}
         return result.chains.map((c: any) => {
           const gw = c.gateway || c;
           const label = gw.method ? `${gw.method} ${gw.path}` : gw.name;
-          return `▶ **${label}** (${gw.kind})\n` +
-            c.chain.map((s: any, i: number) => `${'  '.repeat(i + 1)}→ ${s.name} (${s.kind || 'fn'})`).join("\n");
+          return `▶ **${label}** (${gw.kind})\n${ 
+            c.chain.map((s: any, i: number) => `${'  '.repeat(i + 1)}→ ${s.name} (${s.kind || 'fn'})`).join("\n")}`;
         }).join("\n\n");
       }
       case "layer-violations": {
-        if (result.error) return `Error: ${result.error}`;
-        if (result.note) return result.note;
-        if (!result.violations?.length) return "No layer violations found.";
+        if (result.error) {return `Error: ${result.error}`;}
+        if (result.note) {return result.note;}
+        if (!result.violations?.length) {return "No layer violations found.";}
         return result.violations.map((v: any) =>
           `❌ **${v.source_layer}** → **${v.target_layer}**: ${v.source.split("/").pop()} imports ${v.target.split("/").pop()}\n   Rule: ${v.rule}`
         ).join("\n\n");
       }
       case "index-repo": {
-        if (result.error) return `Error: ${result.error}`;
+        if (result.error) {return `Error: ${result.error}`;}
         return `✅ Repo "${result.name || result.repo}" indexed: ${result.file_count || 0} files, ${result.symbol_count || 0} symbols`;
       }
       case "reindex-repo": {
-        if (result.error) return `Error: ${result.error}`;
+        if (result.error) {return `Error: ${result.error}`;}
         return `✅ Repo "${result.name || result.repo}" reindexed: ${result.file_count || 0} files, ${result.symbol_count || 0} symbols (${result.mode || 'incremental'})`;
       }
       case "index-docs": {
-        if (result.error) return `Error: ${result.error}`;
+        if (result.error) {return `Error: ${result.error}`;}
         return `✅ Doc repo "${result.name || params.name}" indexed: ${result.section_count || 0} sections in ${result.file_count || 0} files`;
       }
       case "reindex-docs": {
-        if (result.error) return `Error: ${result.error}`;
+        if (result.error) {return `Error: ${result.error}`;}
         return `✅ Doc repo "${result.name || params.repo}" reindexed: ${result.section_count || 0} sections (${result.mode || 'full'})`;
       }
       default:
@@ -1049,7 +1055,7 @@ export default function (pi: ExtensionAPI) {
         return `**Broken links:** ${bad.length}\n${bad.slice(0, 20).map((l: any) => `  ${l.source_file}: "${l.link_text}" → ${l.target_path}`).join("\n")}`;
       }
       case "glossary": {
-        if (result.error) return result.error;
+        if (result.error) {return result.error;}
         if (Array.isArray(result)) {
           return `**Glossary:** ${result.length} terms\n${result.slice(0, 20).map((t: any) => `  **${t.term}** — ${t.definition.slice(0, 80)}`).join("\n")}`;
         }
@@ -1064,40 +1070,40 @@ export default function (pi: ExtensionAPI) {
         return `**Code examples:** ${examples.length}\n${examples.map((e: any) => `  ${e.section_title} (${e.file_path}) [${e.lang}]:\n${e.content.slice(0, 150)}...`).join("\n\n")}`;
       }
       case "orphans": {
-        if (!result.orphans?.length) return "No orphan sections found — all sections have inbound links.";
-        return `Found ${result.total} orphan sections:\n\n` +
+        if (!result.orphans?.length) {return "No orphan sections found — all sections have inbound links.";}
+        return `Found ${result.total} orphan sections:\n\n${ 
           result.orphans.map((s: any) =>
             `- **${s.title}** (L${s.level}) — ${s.file_path.split("/").pop()} [${s.role || "other"}]`
-          ).join("\n");
+          ).join("\n")}`;
       }
       case "coverage": {
         return `Doc coverage: ${result.coverage_pct}% (${result.documented}/${result.total_symbols} symbols documented)\n\n` +
-          `**Documented** (showing up to 20):\n` +
-          result.documented_list.map((s: any) => `  ✅ ${s.name} (${s.kind}) — ${s.file_path.split("/").pop()}`).join("\n") +
-          `\n\n**Undocumented** (showing up to 20):\n` +
-          result.undocumented_list.map((s: any) => `  ❌ ${s.name} (${s.kind}) — ${s.file_path.split("/").pop()}`).join("\n");
+          `**Documented** (showing up to 20):\n${ 
+          result.documented_list.map((s: any) => `  ✅ ${s.name} (${s.kind}) — ${s.file_path.split("/").pop()}`).join("\n") 
+          }\n\n**Undocumented** (showing up to 20):\n${ 
+          result.undocumented_list.map((s: any) => `  ❌ ${s.name} (${s.kind}) — ${s.file_path.split("/").pop()}`).join("\n")}`;
       }
       case "stale-pages": {
-        if (!result.stale?.length && !result.missing?.length) return "No stale or missing pages found. Docs are up to date.";
+        if (!result.stale?.length && !result.missing?.length) {return "No stale or missing pages found. Docs are up to date.";}
         let out = "";
         if (result.stale?.length) {
-          out += `**Stale pages** (${result.stale.length} modified since index):\n` +
-            result.stale.map((s: any) => `  📝 ${s.path} (indexed: ${new Date(s.indexed_mtime).toISOString().slice(0,19)}, current: ${new Date(s.current_mtime).toISOString().slice(0,19)})`).join("\n");
+          out += `**Stale pages** (${result.stale.length} modified since index):\n${ 
+            result.stale.map((s: any) => `  📝 ${s.path} (indexed: ${new Date(s.indexed_mtime).toISOString().slice(0,19)}, current: ${new Date(s.current_mtime).toISOString().slice(0,19)})`).join("\n")}`;
         }
         if (result.missing?.length) {
-          if (out) out += "\n";
-          out += `**Missing pages** (${result.missing.length} deleted since index):\n` +
-            result.missing.map((s: any) => `  🗑️ ${s.path}`).join("\n");
+          if (out) {out += "\n";}
+          out += `**Missing pages** (${result.missing.length} deleted since index):\n${ 
+            result.missing.map((s: any) => `  🗑️ ${s.path}`).join("\n")}`;
         }
         return out;
       }
       case "duplicates": {
-        if (!result.duplicates?.length) return "No duplicate sections found.";
-        return `Found ${result.total_duplicate_groups} duplicate groups:\n\n` +
+        if (!result.duplicates?.length) {return "No duplicate sections found.";}
+        return `Found ${result.total_duplicate_groups} duplicate groups:\n\n${ 
           result.duplicates.map((d: any) =>
             `**Hash ${d.content_hash.slice(0, 8)}...** (${d.count} copies)\n` +
             d.sections.map((s: any) => `  - "${s.title}" in ${s.file_path.split("/").pop()}`).join("\n")
-          ).join("\n\n");
+          ).join("\n\n")}`;
       }
       default:
         return JSON.stringify(result, null, 2).slice(0, 2000);
@@ -1260,11 +1266,11 @@ export default function (pi: ExtensionAPI) {
     }),
     async execute(_id, params, _signal, _onUpdate, _ctx) {
       const args: Record<string, string> = { id: String(params.id) };
-      if (params.title) args.title = params.title;
-      if (params.content) args.content = params.content;
-      if (params.type) args.type = params.type;
-      if (params.scope) args.scope = params.scope;
-      if (params.topic_key) args["topic-key"] = params.topic_key;
+      if (params.title) {args.title = params.title;}
+      if (params.content) {args.content = params.content;}
+      if (params.type) {args.type = params.type;}
+      if (params.scope) {args.scope = params.scope;}
+      if (params.topic_key) {args["topic-key"] = params.topic_key;}
 
       const result = await mem("update", args);
       if (!result || result.error) {
@@ -1361,7 +1367,7 @@ export default function (pi: ExtensionAPI) {
       }
 
       const lines = observations.map((o: any) => {
-        const trust = o.trust_score < 0.5 ? " ⚠️" : o.trust_score < 0.7 ? " 🔎" : "";
+        const trust = trustIcon(o.trust_score);
         return `- [#${o.id}] [${o.type}] ${o.title}${trust}`;
       });
 
@@ -1482,34 +1488,34 @@ export default function (pi: ExtensionAPI) {
         "reindex-repo": "reindex-repo",
       };
       const cmd = cmdMap[params.mode];
-      if (!cmd) return { content: [{ type: "text", text: `Unknown mode: ${params.mode}` }], details: {}, isError: true };
+      if (!cmd) {return { content: [{ type: "text", text: `Unknown mode: ${params.mode}` }], details: {}, isError: true };}
 
       const args: Record<string, string> = { repo: params.repo };
-      if (params.symbol) args.symbol = params.symbol;
-      if (params.file) args.file = params.file;
-      if (params.depth) args.depth = String(params.depth);
-      if (params.direction) args.direction = params.direction;
-      if (cmd === "call-hierarchy") args.direction = params.mode === "callers" ? "callers" : "callees";
-      if (params.min_confidence) args["min-confidence"] = String(params.min_confidence);
-      if (params.days) args.days = String(params.days);
-      if (params.refresh) args.refresh = "true";
-      if (params.top) args.top = String(params.top);
-      if (params.scope) args.scope = params.scope;
-      if (params.sort_by) args["sort-by"] = params.sort_by;
-      if (params.min_complexity) args["min-complexity"] = String(params.min_complexity);
-      if (params.min_callers) args["min-callers"] = String(params.min_callers);
-      if (params.direction_hier) args.direction = params.direction_hier;
-      if (params.kind) args.kind = params.kind;
-      if (params.symbol_chain) args.symbol = String(params.symbol_chain);
-      if (params.path) args.path = params.path;
-      if (params.name) args.name = params.name;
-      if (params.rules) args.rules = typeof params.rules === "string" ? params.rules : JSON.stringify(params.rules);
+      if (params.symbol) {args.symbol = params.symbol;}
+      if (params.file) {args.file = params.file;}
+      if (params.depth) {args.depth = String(params.depth);}
+      if (params.direction) {args.direction = params.direction;}
+      if (cmd === "call-hierarchy") {args.direction = params.mode === "callers" ? "callers" : "callees";}
+      if (params.min_confidence) {args["min-confidence"] = String(params.min_confidence);}
+      if (params.days) {args.days = String(params.days);}
+      if (params.refresh) {args.refresh = "true";}
+      if (params.top) {args.top = String(params.top);}
+      if (params.scope) {args.scope = params.scope;}
+      if (params.sort_by) {args["sort-by"] = params.sort_by;}
+      if (params.min_complexity) {args["min-complexity"] = String(params.min_complexity);}
+      if (params.min_callers) {args["min-callers"] = String(params.min_callers);}
+      if (params.direction_hier) {args.direction = params.direction_hier;}
+      if (params.kind) {args.kind = params.kind;}
+      if (params.symbol_chain) {args.symbol = String(params.symbol_chain);}
+      if (params.path) {args.path = params.path;}
+      if (params.name) {args.name = params.name;}
+      if (params.rules) {args.rules = typeof params.rules === "string" ? params.rules : JSON.stringify(params.rules);}
 
       // Skip repo check for indexing modes — they CREATE the repo entry
       if (params.mode === "index-repo" || params.mode === "reindex-repo") {
         const result = await mem(cmd, args);
-        if (!result) return { content: [{ type: "text", text: "Indexing failed or timed out." }], details: {}, isError: true };
-        if (result.error) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result, isError: true };
+        if (!result) {return { content: [{ type: "text", text: "Indexing failed or timed out." }], details: {}, isError: true };}
+        if (result.error) {return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result, isError: true };}
         const fmt = formatCodeResult(params.mode, result);
         return { content: [{ type: "text", text: fmt }], details: result };
       }
@@ -1534,7 +1540,7 @@ export default function (pi: ExtensionAPI) {
         }
         return { content: [{ type: "text", text: "Analysis failed." }], details: {}, isError: true };
       }
-      if (result.error) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result, isError: true };
+      if (result.error) {return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result, isError: true };}
 
       // Format based on mode
       const fmt = formatCodeResult(params.mode, result);
@@ -1557,7 +1563,7 @@ export default function (pi: ExtensionAPI) {
       repo: Type.String({ description: "Indexed doc repo name" }),
       query: Type.Optional(Type.String({ description: "Search query (required for search, code-examples)" })),
       file: Type.Optional(Type.String({ description: "Doc file path (optional for outline)" })),
-      path: Type.Optional(Type.String({ description: "Doc file path (for backlinks, required)" })),
+      doc_path: Type.Optional(Type.String({ description: "Doc file path (for backlinks, required)" })),
       term: Type.Optional(Type.String({ description: "Glossary term to look up (optional)" })),
       section: Type.Optional(Type.Number({ description: "Section ID for tutorial-path" })),
       level: Type.Optional(Type.Number({ description: "Heading level filter for search" })),
@@ -1586,28 +1592,28 @@ export default function (pi: ExtensionAPI) {
         "reindex-docs": "reindex-docs",
       };
       const cmd = cmdMap[params.mode];
-      if (!cmd) return { content: [{ type: "text", text: `Unknown mode: ${params.mode}` }], details: {}, isError: true };
+      if (!cmd) {return { content: [{ type: "text", text: `Unknown mode: ${params.mode}` }], details: {}, isError: true };}
 
       const args: Record<string, string> = { repo: params.repo };
-      if (params.query) args.query = params.query;
-      if (params.file) args.file = params.file;
-      if (params.path) args.path = params.path;
-      if (params.term) args.term = params.term;
-      if (params.section) args.section = String(params.section);
-      if (params.level) args.level = String(params.level);
-      if (params.role) args.role = params.role;
-      if (params.lang) args.lang = params.lang;
-      if (params.include_same_doc) args["include-same-doc"] = "true";
-      if (params.doc_repo) args["doc-repo"] = params.doc_repo;
-      if (params.path) args.path = params.path;
-      if (params.name) args.name = params.name;
-      if (params.ignore) args.ignore = params.ignore;
+      if (params.query) {args.query = params.query;}
+      if (params.file) {args.file = params.file;}
+      if (params.doc_path) {args.path = params.doc_path;}
+      if (params.term) {args.term = params.term;}
+      if (params.section) {args.section = String(params.section);}
+      if (params.level) {args.level = String(params.level);}
+      if (params.role) {args.role = params.role;}
+      if (params.lang) {args.lang = params.lang;}
+      if (params.include_same_doc) {args["include-same-doc"] = "true";}
+      if (params.doc_repo) {args["doc-repo"] = params.doc_repo;}
+      if (params.path) {args.path = params.path;}
+      if (params.name) {args.name = params.name;}
+      if (params.ignore) {args.ignore = params.ignore;}
 
       // Skip doc repo check for indexing modes — they CREATE the repo entry
       if (params.mode === "index-docs" || params.mode === "reindex-docs") {
         const result = await mem(cmd, args);
-        if (!result) return { content: [{ type: "text", text: "Doc indexing failed or timed out." }], details: {}, isError: true };
-        if (result.error) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result, isError: true };
+        if (!result) {return { content: [{ type: "text", text: "Doc indexing failed or timed out." }], details: {}, isError: true };}
+        if (result.error) {return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result, isError: true };}
         const fmt = formatDocResult(params.mode, result);
         return { content: [{ type: "text", text: fmt }], details: result };
       }
@@ -1626,8 +1632,8 @@ export default function (pi: ExtensionAPI) {
       }
 
       const result = await mem(cmd, args);
-      if (!result) return { content: [{ type: "text", text: "Doc query failed." }], details: {}, isError: true };
-      if (result.error) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result, isError: true };
+      if (!result) {return { content: [{ type: "text", text: "Doc query failed." }], details: {}, isError: true };}
+      if (result.error) {return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result, isError: true };}
 
       const fmt = formatDocResult(params.mode, result);
       return { content: [{ type: "text", text: fmt }], details: result };

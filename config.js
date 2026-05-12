@@ -45,16 +45,16 @@ function stripJsoncComments(raw) {
     if (raw[i] === '"') {
       let j = i + 1;
       while (j < raw.length && raw[j] !== '"') {
-        if (raw[j] === '\\') j++;
+        if (raw[j] === '\\') {j++;}
         j++;
       }
       result += raw.slice(i, j + 1);
       i = j + 1;
     } else if (raw[i] === '/' && raw[i + 1] === '/') {
-      while (i < raw.length && raw[i] !== '\n') i++;
+      while (i < raw.length && raw[i] !== '\n') {i++;}
     } else if (raw[i] === '/' && raw[i + 1] === '*') {
       i += 2;
-      while (i < raw.length && !(raw[i] === '*' && raw[i + 1] === '/')) i++;
+      while (i < raw.length && !(raw[i] === '*' && raw[i + 1] === '/')) {i++;}
       i += 2;
     } else {
       result += raw[i];

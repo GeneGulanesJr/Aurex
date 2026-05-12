@@ -132,10 +132,10 @@ describe('db.js (database layer)', () => {
   describe('resetDb and createDb', () => {
     it('resetDb should null out the db handle', () => {
       const db = dbModule.getDb();
-      expect(db).toBeTruthy(); // ensure db is initialized
+      expect(db).toBeTruthy(); // Ensure db is initialized
       dbModule.resetDb();
       expect(dbModule.getDb()).toBeNull();
-      dbModule.ensureDb(); // restore for subsequent tests
+      dbModule.ensureDb(); // Restore for subsequent tests
     });
 
     it('createDb should open a database at custom path', () => {
