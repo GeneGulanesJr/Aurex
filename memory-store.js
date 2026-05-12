@@ -2825,7 +2825,7 @@ const _ANALYSIS_TOOLS = new Set([
     jsonOut(result);
   } else {
     console.error(
-      `Usage: <subcommand> [--option value ...]\n` +
+      `Usage: memory-store <subcommand> [--option value ...]\n` +
         `Subcommands: ${Object.keys(commands).join(', ')}`,
     );
     process.exit(1);
