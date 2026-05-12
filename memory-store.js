@@ -5,7 +5,7 @@
  * Database operations via db.js. Code parsing via parse-code.js (WASM).
  * Code analysis via code-analysis.js. Doc indexing via doc-indexer.js.
  *
- * Usage: node memory-store.js <subcommand> [options]
+ * Usage: <subcommand> [options]
  */
 
 const path = require('path');
@@ -238,7 +238,7 @@ function save(args) {
         status: 'potential_duplicate',
         message: 'Similar observations exist. Use --force to save anyway.',
         matches: dupes.potential_duplicates.slice(0, 3),
-        hint: 'node memory-store.js save --force ...',
+        hint: 'save --force ...',
       };
     }
   }
@@ -2445,7 +2445,7 @@ const commands = {
   'index-repo': (args) => {
     const repoPath = args.path;
     if (!repoPath) {
-      return jsonErrNoExit('Usage: node memory-store.js index-repo --path <path> [--name NAME]');
+      return jsonErrNoExit('Usage: index-repo --path <path> [--name NAME]');
     }
     const repoName = args.name || path.basename(repoPath);
     return indexRepoInternal(repoPath, repoName);
@@ -2453,7 +2453,7 @@ const commands = {
   'reindex-repo': (args) => {
     const repo = args.repo;
     if (!repo) {
-      return jsonErrNoExit('Usage: node memory-store.js reindex-repo --repo <repo-name> [--mode full|incremental]');
+      return jsonErrNoExit('Usage: reindex-repo --repo <repo-name> [--mode full|incremental]');
     }
     return reindexRepoInternal(repo, args.mode || 'incremental');
   },
@@ -2461,7 +2461,7 @@ const commands = {
     const query = args.query;
     if (!query) {
       return jsonErrNoExit(
-        'Usage: node memory-store.js search-code --query <text> [--repo NAME] [--kind TYPE] [--max-results N]',
+        'Usage: search-code --query <text> [--repo NAME] [--kind TYPE] [--max-results N]',
       );
     }
     return searchCode(query, args.repo || null, args.kind || null, parseInt(args['max-results'] || '20', 10));
@@ -2471,7 +2471,7 @@ const commands = {
     const file = args.file;
     const name = args.name;
     if (!repo || !file || !name) {
-      return jsonErrNoExit('Usage: node memory-store.js get-code-source --repo NAME --file PATH --name SYMBOL');
+      return jsonErrNoExit('Usage: get-code-source --repo NAME --file PATH --name SYMBOL');
     }
     return getCodeSource(repo, file, name);
   },
@@ -2479,7 +2479,7 @@ const commands = {
   'remove-code-repo': (args) => {
     const repo = args.repo;
     if (!repo) {
-      return jsonErrNoExit('Usage: node memory-store.js remove-code-repo --repo <repo-name>');
+      return jsonErrNoExit('Usage: remove-code-repo --repo <repo-name>');
     }
     return removeCodeRepoInternal(repo);
   },
@@ -2702,7 +2702,7 @@ const commands = {
     const docPath = args.path;
     const name = args.name;
     if (!docPath || !name) {
-      return jsonErrNoExit('Usage: node memory-store.js index-docs --path P --name X [--ignore GLOB]');
+      return jsonErrNoExit('Usage: index-docs --path P --name X [--ignore GLOB]');
     }
     return docIndexer.indexDocs(db, path.resolve(docPath), name, args.ignore || null);
   },
@@ -2825,7 +2825,7 @@ const _ANALYSIS_TOOLS = new Set([
     jsonOut(result);
   } else {
     console.error(
-      `Usage: node memory-store.js <subcommand> [--option value ...]\n` +
+      `Usage: <subcommand> [--option value ...]\n` +
         `Subcommands: ${Object.keys(commands).join(', ')}`,
     );
     process.exit(1);

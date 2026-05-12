@@ -5,9 +5,9 @@
 The `memory-layer` extension **enforces** structured retrieval over raw file reads:
 
 - **Code** → `memory-code` tool
-  - Modes: callers, callees, blast-radius, dead-code, complexity, deps, outline, churn, hotspots, cycles, importance, coupling, extractable, hierarchy, signal-chains, layer-violations
+  - Modes: callers, callees, blast-radius, dead-code, complexity, deps, outline, churn, hotspots, cycles, importance, coupling, extractable, hierarchy, signal-chains, layer-violations, index-repo, reindex-repo
 - **Docs** → `memory-doc` tool
-  - Modes: search, outline, backlinks, broken-links, glossary, tutorial-path, code-examples, orphans, coverage, stale-pages, duplicates
+  - Modes: search, outline, backlinks, broken-links, glossary, tutorial-path, code-examples, orphans, coverage, stale-pages, duplicates, index-docs, reindex-docs
 
 If a repo isn't indexed yet, the tool will tell you exactly how to index it.
 

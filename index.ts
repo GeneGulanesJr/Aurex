@@ -493,10 +493,10 @@ export default function (pi: ExtensionAPI) {
       repos.find(r => r.name.toLowerCase() === currentProject?.toLowerCase());
     if (!cwdRepo) {
       lines.push("");
-      lines.push(`⚠️ **Code not indexed:** Project \"${currentProject}\" has no code index yet. Run \`memory-store.js index-repo --path ${ctx.cwd} --name ${currentProject}\` to enable memory-code analysis.`);
+      lines.push(`⚠️ **Code not indexed:** Project \"${currentProject}\" has no code index yet. Run \`memory-code index-repo --path ${ctx.cwd} --name ${currentProject}\` to enable memory-code analysis.`);
     } else if (isRepoStale(cwdRepo)) {
       lines.push("");
-      lines.push(`📝 **Code index may be stale:** \"${cwdRepo.name}\" was indexed at ${cwdRepo.indexed_at}. Source files have been modified since. Run \`memory-store.js reindex-repo --repo ${cwdRepo.name}\` to update.`);
+      lines.push(`📝 **Code index may be stale:** \"${cwdRepo.name}\" was indexed at ${cwdRepo.indexed_at}. Source files have been modified since. Run \`memory-code reindex-repo --repo ${cwdRepo.name}\` to update.`);
     }
 
     return {
@@ -558,7 +558,7 @@ export default function (pi: ExtensionAPI) {
         if (nudgeCountThisSession < MAX_NUDGES_PER_SESSION) {
           nudgeCountThisSession++;
           ctx.ui.notify(
-            `💡 Use \`memory-code\` for structured analysis. Index this repo first: \`memory-store.js index-repo\``,
+            `💡 Use \`memory-code\` for structured analysis. Index this repo first: \`memory-code index-repo\``,
             "info",
           );
         }
@@ -594,7 +594,7 @@ export default function (pi: ExtensionAPI) {
         if (nudgeCountThisSession < MAX_NUDGES_PER_SESSION) {
           nudgeCountThisSession++;
           ctx.ui.notify(
-            `💡 This code file isn't in an indexed repo. Index it: \`memory-store.js index-repo\``,
+            `💡 This code file isn't in an indexed repo. Index it: \`memory-code index-repo\``,
             "info",
           );
         }
@@ -1003,6 +1003,22 @@ export default function (pi: ExtensionAPI) {
         return result.violations.map((v: any) =>
           `❌ **${v.source_layer}** → **${v.target_layer}**: ${v.source.split("/").pop()} imports ${v.target.split("/").pop()}\n   Rule: ${v.rule}`
         ).join("\n\n");
+      }
+      case "index-repo": {
+        if (result.error) return `Error: ${result.error}`;
+        return `✅ Repo "${result.name || result.repo}" indexed: ${result.file_count || 0} files, ${result.symbol_count || 0} symbols`;
+      }
+      case "reindex-repo": {
+        if (result.error) return `Error: ${result.error}`;
+        return `✅ Repo "${result.name || result.repo}" reindexed: ${result.file_count || 0} files, ${result.symbol_count || 0} symbols (${result.mode || 'incremental'})`;
+      }
+      case "index-docs": {
+        if (result.error) return `Error: ${result.error}`;
+        return `✅ Doc repo "${result.name || params.name}" indexed: ${result.section_count || 0} sections in ${result.file_count || 0} files`;
+      }
+      case "reindex-docs": {
+        if (result.error) return `Error: ${result.error}`;
+        return `✅ Doc repo "${result.name || params.repo}" reindexed: ${result.section_count || 0} sections (${result.mode || 'full'})`;
       }
       default:
         return JSON.stringify(result, null, 2).slice(0, 2000);
@@ -1417,12 +1433,12 @@ export default function (pi: ExtensionAPI) {
     description:
       "Analyze code in indexed repos — import graphs, call hierarchies, blast radius, dead code, complexity, hotspots, cycles, " +
       "importance, coupling, extraction candidates, class hierarchy, file outlines, churn, and signal chains. " +
-      "Requires the repo to be indexed first (use `memory-store.js index-repo`). " +
-      "Modes: callers, callees, blast-radius, dead-code, complexity, deps, outline, churn, hotspots, cycles, importance, coupling, extractable, hierarchy, signal-chains, layer-violations.",
+      "Requires the repo to be indexed first (use mode `index-repo`). " +
+      "Modes: callers, callees, blast-radius, dead-code, complexity, deps, outline, churn, hotspots, cycles, importance, coupling, extractable, hierarchy, signal-chains, layer-violations, index-repo, reindex-repo.",
     parameters: Type.Object({
       mode: Type.String({
-        description: "Analysis mode: callers|callees|blast-radius|dead-code|complexity|deps|outline|churn|hotspots|cycles|importance|coupling|extractable|hierarchy|signal-chains|layer-violations",
-        enum: ["callers", "callees", "blast-radius", "dead-code", "complexity", "deps", "outline", "churn", "hotspots", "cycles", "importance", "coupling", "extractable", "hierarchy", "signal-chains", "layer-violations"],
+        description: "Analysis mode: callers|callees|blast-radius|dead-code|complexity|deps|outline|churn|hotspots|cycles|importance|coupling|extractable|hierarchy|signal-chains|layer-violations|index-repo|reindex-repo",
+        enum: ["callers", "callees", "blast-radius", "dead-code", "complexity", "deps", "outline", "churn", "hotspots", "cycles", "importance", "coupling", "extractable", "hierarchy", "signal-chains", "layer-violations", "index-repo", "reindex-repo"],
       }),
       repo: Type.String({ description: "Indexed repo name" }),
       symbol: Type.Optional(Type.String({ description: "Symbol name (required for callers, callees, blast-radius, complexity)" })),
@@ -1440,6 +1456,8 @@ export default function (pi: ExtensionAPI) {
       direction_hier: Type.Optional(Type.String({ description: "Hierarchy direction: both|ancestors|descendants", default: "both" })),
       kind: Type.Optional(Type.String({ description: "Gateway kind: http, cli, or omit for all" })),
       symbol_chain: Type.Optional(Type.String({ description: "Trace which signal chain a symbol participates in" })),
+      path: Type.Optional(Type.String({ description: "Local path to repo directory (required for index-repo mode)" })),
+      name: Type.Optional(Type.String({ description: "Repo name for indexing (defaults to directory basename)" })),
       rules: Type.Optional(Type.String({ description: "JSON layer rules config (or use .pimemory-layers.jsonc file)" })),
     }),
     async execute(_id, params, _signal, _onUpdate, _ctx) {
@@ -1460,6 +1478,8 @@ export default function (pi: ExtensionAPI) {
         hierarchy: "hierarchy",
         "signal-chains": "signal-chains",
         "layer-violations": "layer-violations",
+        "index-repo": "index-repo",
+        "reindex-repo": "reindex-repo",
       };
       const cmd = cmdMap[params.mode];
       if (!cmd) return { content: [{ type: "text", text: `Unknown mode: ${params.mode}` }], details: {}, isError: true };
@@ -1481,7 +1501,18 @@ export default function (pi: ExtensionAPI) {
       if (params.direction_hier) args.direction = params.direction_hier;
       if (params.kind) args.kind = params.kind;
       if (params.symbol_chain) args.symbol = String(params.symbol_chain);
+      if (params.path) args.path = params.path;
+      if (params.name) args.name = params.name;
       if (params.rules) args.rules = typeof params.rules === "string" ? params.rules : JSON.stringify(params.rules);
+
+      // Skip repo check for indexing modes — they CREATE the repo entry
+      if (params.mode === "index-repo" || params.mode === "reindex-repo") {
+        const result = await mem(cmd, args);
+        if (!result) return { content: [{ type: "text", text: "Indexing failed or timed out." }], details: {}, isError: true };
+        if (result.error) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result, isError: true };
+        const fmt = formatCodeResult(params.mode, result);
+        return { content: [{ type: "text", text: fmt }], details: result };
+      }
 
       // Fix #1: Check if repo is indexed before running analysis
       const codeRepos = await getKnownRepos();
@@ -1490,7 +1521,7 @@ export default function (pi: ExtensionAPI) {
         const available = codeRepos.map(r => r.name).join(", ") || "none";
         const cwd = process.cwd();
         return {
-          content: [{ type: "text", text: `❌ Repo \"${params.repo}\" is not indexed. Available repos: ${available}\n\nTo index this repo, run:\n\`memory-store.js index-repo --path ${cwd} --name ${params.repo}\`` }],
+          content: [{ type: "text", text: `❌ Repo \"${params.repo}\" is not indexed. Available repos: ${available}\n\nTo index this repo, run:\n\`memory-code index-repo --path ${cwd} --name ${params.repo}\`` }],
           details: {},
           isError: true,
         };
@@ -1516,12 +1547,12 @@ export default function (pi: ExtensionAPI) {
     label: "Doc Index",
     description:
       "Search and query indexed documentation — full-text search, outlines, backlinks, broken links, glossary terms, tutorial paths, code examples, and stale page detection. " +
-      "Requires docs to be indexed first (use `memory-store.js index-docs`). " +
-      "Modes: search, outline, backlinks, broken-links, glossary, tutorial-path, code-examples, orphans, coverage, stale-pages, duplicates.",
+      "Requires docs to be indexed first (use mode `index-docs`). " +
+      "Modes: search, outline, backlinks, broken-links, glossary, tutorial-path, code-examples, orphans, coverage, stale-pages, duplicates, index-docs, reindex-docs.",
     parameters: Type.Object({
       mode: Type.String({
-        description: "Query mode: search|outline|backlinks|broken-links|glossary|tutorial-path|code-examples|orphans|coverage|stale-pages|duplicates",
-        enum: ["search", "outline", "backlinks", "broken-links", "glossary", "tutorial-path", "code-examples", "orphans", "coverage", "stale-pages", "duplicates"],
+        description: "Query mode: search|outline|backlinks|broken-links|glossary|tutorial-path|code-examples|orphans|coverage|stale-pages|duplicates|index-docs|reindex-docs",
+        enum: ["search", "outline", "backlinks", "broken-links", "glossary", "tutorial-path", "code-examples", "orphans", "coverage", "stale-pages", "duplicates", "index-docs", "reindex-docs"],
       }),
       repo: Type.String({ description: "Indexed doc repo name" }),
       query: Type.Optional(Type.String({ description: "Search query (required for search, code-examples)" })),
@@ -1534,6 +1565,9 @@ export default function (pi: ExtensionAPI) {
       lang: Type.Optional(Type.String({ description: "Language filter for code-examples (e.g. 'js', 'python')" })),
       include_same_doc: Type.Optional(Type.Boolean({ description: "Include intra-document links when finding orphans (default: false)" })),
       doc_repo: Type.Optional(Type.String({ description: "Code repo name for coverage mode. Defaults to repo." })),
+      path: Type.Optional(Type.String({ description: "Local path to docs directory (required for index-docs mode)" })),
+      name: Type.Optional(Type.String({ description: "Doc repo name (required for index-docs mode)" })),
+      ignore: Type.Optional(Type.String({ description: "Glob pattern to ignore during doc indexing" })),
     }),
     async execute(_id, params, _signal, _onUpdate, _ctx) {
       const cmdMap: Record<string, string> = {
@@ -1548,6 +1582,8 @@ export default function (pi: ExtensionAPI) {
         coverage: "doc-coverage",
         "stale-pages": "stale-pages",
         "duplicates": "doc-duplicates",
+        "index-docs": "index-docs",
+        "reindex-docs": "reindex-docs",
       };
       const cmd = cmdMap[params.mode];
       if (!cmd) return { content: [{ type: "text", text: `Unknown mode: ${params.mode}` }], details: {}, isError: true };
@@ -1563,6 +1599,18 @@ export default function (pi: ExtensionAPI) {
       if (params.lang) args.lang = params.lang;
       if (params.include_same_doc) args["include-same-doc"] = "true";
       if (params.doc_repo) args["doc-repo"] = params.doc_repo;
+      if (params.path) args.path = params.path;
+      if (params.name) args.name = params.name;
+      if (params.ignore) args.ignore = params.ignore;
+
+      // Skip doc repo check for indexing modes — they CREATE the repo entry
+      if (params.mode === "index-docs" || params.mode === "reindex-docs") {
+        const result = await mem(cmd, args);
+        if (!result) return { content: [{ type: "text", text: "Doc indexing failed or timed out." }], details: {}, isError: true };
+        if (result.error) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result, isError: true };
+        const fmt = formatDocResult(params.mode, result);
+        return { content: [{ type: "text", text: fmt }], details: result };
+      }
 
       // Fix #1: Check if doc repo is indexed before running doc query
       const docRepos = await getKnownRepos();
@@ -1571,7 +1619,7 @@ export default function (pi: ExtensionAPI) {
         const available = docRepos.map(r => r.name).join(", ") || "none";
         const cwd = process.cwd();
         return {
-          content: [{ type: "text", text: `❌ Doc repo \"${params.repo}\" is not indexed. Available repos: ${available}\n\nTo index these docs, run:\n\`memory-store.js index-docs --path ${cwd} --name ${params.repo}\`` }],
+          content: [{ type: "text", text: `❌ Doc repo \"${params.repo}\" is not indexed. Available repos: ${available}\n\nTo index these docs, run:\n\`memory-doc index-docs --path ${cwd} --name ${params.repo}\`` }],
           details: {},
           isError: true,
         };
