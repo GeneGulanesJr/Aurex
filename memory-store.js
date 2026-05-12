@@ -441,7 +441,7 @@ function context(args) {
 
   // Relevance-weighted context: recent recall + trust + recency + type priority
   // This ensures memories for the current project are ranked highest,
-  // with recall history surfacing what's been actively useful.
+  // With recall history surfacing what's been actively useful.
   const RELEVANCE_WEIGHTS = {
     recall: 0.35,    // Frequently recalled = actively relevant
     trust: 0.25,    // High trust = verified and still accurate
@@ -1203,7 +1203,7 @@ function autoRecoverInternal(sessionId) {
   for (const [type, titles] of Object.entries(types)) {
     lines.push(`### ${type}`);
     for (const t of titles) {
-      lines.push('- ' + t);
+      lines.push(`- ${  t}`);
     }
     lines.push('');
   }
@@ -1256,7 +1256,7 @@ function recoverOrphans() {
   }
 
   // If multiple orphans were recovered, consolidate into a single summary
-  // instead of leaving N individual session_summary observations
+  // Instead of leaving N individual session_summary observations
   if (recovered.length > 1) {
     // Collect all auto-recovered session_summary observations created just now
     const recentSummaries = sqlJson(
@@ -1459,7 +1459,7 @@ function compact() {
 /* ── dreaming: Dream Cycle ───────────────────────────── */
 
 /**
- * dream() — Dream Cycle: clean stale (not just old) memories.
+ * Dream() — Dream Cycle: clean stale (not just old) memories.
  *
  * Unlike compact (housekeeping: vacuum, FTS optimize, purge soft-deleted),
  * dream targets STALENESS — information that is no longer accurate or useful:
@@ -1569,7 +1569,7 @@ function dream() {
 
   // ── Phase 5: Obsolete setup/config states ──
   // Find memories about replaced tools/setups by looking for "replacing" or "replaced"
-  // in content where a newer memory on the same topic exists
+  // In content where a newer memory on the same topic exists
   const obsoleteConfigs = sqlJson(`
     SELECT o1.id, o1.title, o1.project, o1.type,
            o2.id AS newer_id, o2.title AS newer_title
@@ -1598,7 +1598,7 @@ function dream() {
   // ── Phase 6: Low-value titled decisions (noise cleanup) ──
   // Auto-saved decisions with vague/generic titles provide no retrieval value.
   // Pattern: starts with "Architecture choice:", "Constraint identified:", etc.
-  // followed by conversational filler ("Done!", "OK", "Now I'll", "Here's what I changed:")
+  // Followed by conversational filler ("Done!", "OK", "Now I'll", "Here's what I changed:")
   // These are session progress notes, not real decisions.
   const noiseTitlePatterns = [
     /^Architecture choice:\s*(Done!|OK|Now I|Here's what|All \d+ |The complex|The symlink|Good concern|You're right|Approved)/i,
@@ -1646,7 +1646,7 @@ function dream() {
       ids
     );
 
-    if (entries.length < 3) continue; // Safety check
+    if (entries.length < 3) {continue;} // Safety check
 
     // Build consolidated content
     const mergedContent = entries.map(e => `**${e.title}** (${e.created_at}):\n${e.content}`).join('\n\n---\n\n');

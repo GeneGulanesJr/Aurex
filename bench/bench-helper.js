@@ -18,7 +18,7 @@ function findLapisRoot() {
     path.join(process.env.HOME || process.env.USERPROFILE || '', '.pi', 'agent', 'skills', 'memory-layer'),
   ];
   for (const dir of candidates) {
-    if (!dir) continue;
+    if (!dir) {continue;}
     const msPath = path.join(dir, 'memory-store.js');
     if (fs.existsSync(msPath)) {
       return dir;
