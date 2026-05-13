@@ -24,6 +24,7 @@ crosshash-parser = { path = "../crosshash-parser" }
 indicatif.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tokio.workspace = true
 tree-sitter.workspace = true
 uuid.workspace = true
 

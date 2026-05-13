@@ -23,6 +23,44 @@ impl PromptBuilder {
         exporter: &ApiSurface,
         consumer: &ApiSurface,
     ) -> String {
-        format!("Infer only cross-repo dependencies from public API surfaces. Do not use internal code. Languages: {}. Feedback examples: {}. Repo A exports: {}. Repo B consumes: {}. Return JSON only.", self.language_context.join(", "), self.feedback.len(), exporter.to_prompt_json(), consumer.to_prompt_json())
+        let languages = if self.language_context.is_empty() {
+            "unknown".into()
+        } else {
+            self.language_context.join(", ")
+        };
+        let feedback_section = if self.feedback.is_empty() {
+            String::new()
+        } else {
+            let examples: Vec<String> = self
+                .feedback
+                .iter()
+                .map(|f| {
+                    format!(
+                        "- edge_type={:?} confidence={:.2} decision={:?}",
+                        f.edge_type, f.confidence, f.decision
+                    )
+                })
+                .collect();
+            format!(
+                "\nPrevious feedback (learn from corrections): {}",
+                examples.join("; ")
+            )
+        };
+        let exporter_json = exporter.to_prompt_json();
+        let consumer_json = consumer.to_prompt_json();
+        let exporter_count = exporter.entities.len();
+        let consumer_count = consumer.entities.len();
+        format!(
+            "You are a cross-repo dependency analyzer. Languages: {languages}. \
+             Infer ONLY cross-repo dependencies from public API surfaces. Do NOT use internal/private code. \
+             Look for: API contracts (function calls, type references), shared types (struct/class reuse), \
+             data flow (parameter passing, return types), event contracts (pub/sub patterns).\
+             {feedback_section}\n\
+             Repo A exports ({exporter_count} public entities): {exporter_json}\n\
+             Repo B consumes ({consumer_count} public entities): {consumer_json}\n\
+             Return JSON only: {{\"edges\":[{{\"entity_a\":\"uuid\",\"entity_b\":\"uuid\",\
+             \"edge_type\":\"APIContract|SharedType|DataFlow|EventContract\",\
+             \"reasoning\":\"...\",\"confidence\":0.0}}]}}"
+        )
     }
 }

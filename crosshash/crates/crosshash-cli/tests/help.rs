@@ -247,3 +247,80 @@ fn multi_repo_index_and_cross_repo_graph_queries_work() {
         .success()
         .stdout(contains("stale edges: 0"));
 }
+
+#[test]
+fn ai_stats_returns_zero_without_ai_calls() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("crosshash.db");
+
+    Command::cargo_bin("crosshash")
+        .unwrap()
+        .args(["--db", db.to_str().unwrap(), "ai-stats"])
+        .assert()
+        .success()
+        .stdout(contains("AI invocations: 0"));
+}
+
+#[test]
+fn feedback_stats_returns_defaults_without_data() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("crosshash.db");
+
+    Command::cargo_bin("crosshash")
+        .unwrap()
+        .args(["--db", db.to_str().unwrap(), "feedback", "stats"])
+        .assert()
+        .success()
+        .stdout(contains("total=0"));
+}
+
+#[test]
+fn discover_edges_static_only_skips_ai() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().join("repo");
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::write(
+        repo.join("src/lib.rs"),
+        "pub fn hello() -> String { \"hi\".into() }\n",
+    )
+    .unwrap();
+    let db = dir.path().join("crosshash.db");
+
+    Command::cargo_bin("crosshash")
+        .unwrap()
+        .args([
+            "--db",
+            db.to_str().unwrap(),
+            "repo",
+            "add",
+            repo.to_str().unwrap(),
+            "--name",
+            "test-svc",
+        ])
+        .assert()
+        .success();
+
+    Command::cargo_bin("crosshash")
+        .unwrap()
+        .args([
+            "--db",
+            db.to_str().unwrap(),
+            "index",
+            "--repo",
+            "test-svc",
+        ])
+        .assert()
+        .success();
+
+    Command::cargo_bin("crosshash")
+        .unwrap()
+        .args([
+            "--db",
+            db.to_str().unwrap(),
+            "discover-edges",
+            "--static-only",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("gate_run_ai=false"));
+}

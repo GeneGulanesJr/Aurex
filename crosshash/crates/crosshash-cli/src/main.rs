@@ -3,9 +3,10 @@ mod output;
 mod progress;
 
 use clap::Parser;
-use commands::{Cli, Execute};
+use commands::Cli;
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    cli.execute()
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(cli.execute_async())
 }

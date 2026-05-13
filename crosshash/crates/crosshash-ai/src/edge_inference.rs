@@ -1,4 +1,4 @@
-use crate::{ApiSurface, LlmClient, LlmRequest};
+use crate::{ApiSurface, FeedbackEvent, LlmClient, LlmRequest, PromptBuilder};
 use anyhow::Result;
 use chrono::Utc;
 use crosshash_core::{Edge, EdgeKind, EdgeSource};
@@ -32,12 +32,16 @@ pub struct AiEdgeSuggestion {
 
 pub struct EdgeInferenceEngine {
     pub auto_accept_threshold: f64,
+    pub languages: Vec<String>,
+    pub feedback: Vec<FeedbackEvent>,
 }
 
 impl Default for EdgeInferenceEngine {
     fn default() -> Self {
         Self {
             auto_accept_threshold: 0.95,
+            languages: Vec::new(),
+            feedback: Vec::new(),
         }
     }
 }
@@ -50,8 +54,12 @@ impl EdgeInferenceEngine {
         exporter: &ApiSurface,
         consumer: &ApiSurface,
     ) -> Result<Vec<AiEdgeSuggestion>> {
+        let prompt = PromptBuilder::new()
+            .with_language_context(self.languages.join(", "))
+            .with_feedback(self.feedback.clone())
+            .build_edge_inference_prompt(exporter, consumer);
         let mut request = req.clone();
-        request.prompt = format!("Which symbols in repo B consume or depend on APIs exported by repo A? Return JSON {{\"edges\":[{{\"entity_a\":\"uuid\",\"entity_b\":\"uuid\",\"edge_type\":\"APIContract\",\"reasoning\":\"...\",\"confidence\":0.0}}]}}.\nRepo A: {}\nRepo B: {}", exporter.to_prompt_json(), consumer.to_prompt_json());
+        request.prompt = prompt;
         let response = client.complete_json(&request).await?;
         Ok(parse_suggestions(&response.json))
     }

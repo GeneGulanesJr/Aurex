@@ -595,6 +595,253 @@ impl GraphStorage {
 
         Ok(versions)
     }
+
+    pub fn insert_ai_inference_log(
+        &self,
+        id: &Uuid,
+        trigger_reason: &str,
+        gate_decision: &str,
+        repo_a: Option<&Uuid>,
+        repo_b: Option<&Uuid>,
+        input_tokens: u64,
+        output_tokens: u64,
+        estimated_cost_usd: f64,
+        edges_suggested: usize,
+        edges_auto_accepted: usize,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO ai_inference_log \
+                 (id, created_at, trigger_reason, gate_decision, repo_a, repo_b, \
+                  input_tokens, output_tokens, estimated_cost_usd, edges_suggested, edges_auto_accepted) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                params![
+                    id.to_string(),
+                    chrono::Utc::now().to_rfc3339(),
+                    trigger_reason,
+                    gate_decision,
+                    repo_a.map(|u| u.to_string()),
+                    repo_b.map(|u| u.to_string()),
+                    input_tokens as i64,
+                    output_tokens as i64,
+                    estimated_cost_usd,
+                    edges_suggested as i64,
+                    edges_auto_accepted as i64,
+                ],
+            )
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn get_ai_inference_logs(&self, limit: usize) -> Result<Vec<serde_json::Value>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, created_at, trigger_reason, gate_decision, repo_a, repo_b, \
+                 input_tokens, output_tokens, estimated_cost_usd, edges_suggested, edges_auto_accepted \
+                 FROM ai_inference_log ORDER BY created_at DESC LIMIT ?1",
+            )
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        let rows = stmt
+            .query_map(params![limit as i64], |row| {
+                let id: String = row.get(0)?;
+                let created_at: String = row.get(1)?;
+                let trigger_reason: String = row.get(2)?;
+                let gate_decision: String = row.get(3)?;
+                let repo_a: Option<String> = row.get(4)?;
+                let repo_b: Option<String> = row.get(5)?;
+                let input_tokens: i64 = row.get(6)?;
+                let output_tokens: i64 = row.get(7)?;
+                let estimated_cost_usd: f64 = row.get(8)?;
+                let edges_suggested: i64 = row.get(9)?;
+                let edges_auto_accepted: i64 = row.get(10)?;
+                Ok(serde_json::json!({
+                    "id": id,
+                    "created_at": created_at,
+                    "trigger_reason": trigger_reason,
+                    "gate_decision": gate_decision,
+                    "repo_a": repo_a,
+                    "repo_b": repo_b,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "estimated_cost_usd": estimated_cost_usd,
+                    "edges_suggested": edges_suggested,
+                    "edges_auto_accepted": edges_auto_accepted,
+                }))
+            })
+            .map_err(|e| CoreError::StorageError(e.to_string()))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        Ok(rows)
+    }
+
+    pub fn insert_ai_edge_suggestion(
+        &self,
+        id: &Uuid,
+        exporter_entity_id: &Uuid,
+        consumer_entity_id: &Uuid,
+        edge_type: &str,
+        reasoning: &str,
+        confidence: f64,
+        status: &str,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO ai_edge_suggestions \
+                 (id, exporter_entity_id, consumer_entity_id, edge_type, reasoning, confidence, status, created_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    id.to_string(),
+                    exporter_entity_id.to_string(),
+                    consumer_entity_id.to_string(),
+                    edge_type,
+                    reasoning,
+                    confidence,
+                    status,
+                    chrono::Utc::now().to_rfc3339(),
+                ],
+            )
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn get_pending_suggestions(&self) -> Result<Vec<serde_json::Value>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, exporter_entity_id, consumer_entity_id, edge_type, reasoning, confidence, status, created_at \
+                 FROM ai_edge_suggestions WHERE status = 'pending' ORDER BY created_at DESC",
+            )
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        let rows = stmt
+            .query_map([], |row| {
+                let id: String = row.get(0)?;
+                let exporter_entity_id: String = row.get(1)?;
+                let consumer_entity_id: String = row.get(2)?;
+                let edge_type: String = row.get(3)?;
+                let reasoning: String = row.get(4)?;
+                let confidence: f64 = row.get(5)?;
+                let status: String = row.get(6)?;
+                let created_at: String = row.get(7)?;
+                Ok(serde_json::json!({
+                    "id": id,
+                    "exporter_entity_id": exporter_entity_id,
+                    "consumer_entity_id": consumer_entity_id,
+                    "edge_type": edge_type,
+                    "reasoning": reasoning,
+                    "confidence": confidence,
+                    "status": status,
+                    "created_at": created_at,
+                }))
+            })
+            .map_err(|e| CoreError::StorageError(e.to_string()))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        Ok(rows)
+    }
+
+    pub fn get_suggestion_by_id(&self, id: &Uuid) -> Result<Option<serde_json::Value>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, exporter_entity_id, consumer_entity_id, edge_type, reasoning, confidence, status, created_at \
+                 FROM ai_edge_suggestions WHERE id = ?1",
+            )
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        let result = stmt
+            .query_row(params![id.to_string()], |row| {
+                let id: String = row.get(0)?;
+                let exporter_entity_id: String = row.get(1)?;
+                let consumer_entity_id: String = row.get(2)?;
+                let edge_type: String = row.get(3)?;
+                let reasoning: String = row.get(4)?;
+                let confidence: f64 = row.get(5)?;
+                let status: String = row.get(6)?;
+                let created_at: String = row.get(7)?;
+                Ok(serde_json::json!({
+                    "id": id,
+                    "exporter_entity_id": exporter_entity_id,
+                    "consumer_entity_id": consumer_entity_id,
+                    "edge_type": edge_type,
+                    "reasoning": reasoning,
+                    "confidence": confidence,
+                    "status": status,
+                    "created_at": created_at,
+                }))
+            })
+            .optional()
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        Ok(result)
+    }
+
+    pub fn update_suggestion_status(&self, id: &Uuid, status: &str) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE ai_edge_suggestions SET status = ?1 WHERE id = ?2",
+                params![status, id.to_string()],
+            )
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn insert_feedback(
+        &self,
+        id: &Uuid,
+        suggestion_id: &Uuid,
+        decision: &str,
+        reason: Option<&str>,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO feedback (id, suggestion_id, decision, reason, created_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    id.to_string(),
+                    suggestion_id.to_string(),
+                    decision,
+                    reason,
+                    chrono::Utc::now().to_rfc3339(),
+                ],
+            )
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn get_feedback_events(&self) -> Result<Vec<serde_json::Value>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT f.id, f.suggestion_id, f.decision, f.reason, f.created_at, \
+                 s.edge_type, s.confidence \
+                 FROM feedback f \
+                 LEFT JOIN ai_edge_suggestions s ON f.suggestion_id = s.id \
+                 ORDER BY f.created_at DESC",
+            )
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        let rows = stmt
+            .query_map([], |row| {
+                let id: String = row.get(0)?;
+                let suggestion_id: String = row.get(1)?;
+                let decision: String = row.get(2)?;
+                let reason: Option<String> = row.get(3)?;
+                let created_at: String = row.get(4)?;
+                let edge_type: Option<String> = row.get(5)?;
+                let confidence: Option<f64> = row.get(6)?;
+                Ok(serde_json::json!({
+                    "id": id,
+                    "suggestion_id": suggestion_id,
+                    "decision": decision,
+                    "reason": reason,
+                    "created_at": created_at,
+                    "edge_type": edge_type,
+                    "confidence": confidence,
+                }))
+            })
+            .map_err(|e| CoreError::StorageError(e.to_string()))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        Ok(rows)
+    }
 }
 
 fn safe_hash_from_slice(v: &[u8]) -> [u8; 32] {
@@ -838,5 +1085,67 @@ mod tests {
         let storage = GraphStorage::open_in_memory().unwrap();
         let mut storage2 = storage;
         storage2.run_migrations().unwrap();
+    }
+
+    #[test]
+    fn test_ai_inference_log_crud() {
+        let storage = GraphStorage::open_in_memory().unwrap();
+        let id = Uuid::now_v7();
+        let repo_a = Uuid::now_v7();
+        storage
+            .insert_ai_inference_log(
+                &id,
+                "NewExports",
+                "run-ai",
+                Some(&repo_a),
+                None,
+                100,
+                50,
+                0.003,
+                3,
+                2,
+            )
+            .unwrap();
+        let logs = storage.get_ai_inference_logs(10).unwrap();
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0]["trigger_reason"], "NewExports");
+        assert_eq!(logs[0]["edges_suggested"], 3);
+    }
+
+    #[test]
+    fn test_ai_edge_suggestion_lifecycle() {
+        let storage = GraphStorage::open_in_memory().unwrap();
+        let id = Uuid::now_v7();
+        let exporter = Uuid::now_v7();
+        let consumer = Uuid::now_v7();
+        storage
+            .insert_ai_edge_suggestion(&id, &exporter, &consumer, "APIContract", "test", 0.9, "pending")
+            .unwrap();
+        let pending = storage.get_pending_suggestions().unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0]["status"], "pending");
+        storage.update_suggestion_status(&id, "accepted").unwrap();
+        let found = storage.get_suggestion_by_id(&id).unwrap().unwrap();
+        assert_eq!(found["status"], "accepted");
+        let pending_after = storage.get_pending_suggestions().unwrap();
+        assert!(pending_after.is_empty());
+    }
+
+    #[test]
+    fn test_feedback_crud() {
+        let storage = GraphStorage::open_in_memory().unwrap();
+        let suggestion_id = Uuid::now_v7();
+        let exporter = Uuid::now_v7();
+        let consumer = Uuid::now_v7();
+        storage
+            .insert_ai_edge_suggestion(&suggestion_id, &exporter, &consumer, "DataFlow", "reasoning", 0.88, "pending")
+            .unwrap();
+        let fb_id = Uuid::now_v7();
+        storage
+            .insert_feedback(&fb_id, &suggestion_id, "accept", Some("correct"))
+            .unwrap();
+        let events = storage.get_feedback_events().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0]["decision"], "accept");
     }
 }
