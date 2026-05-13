@@ -151,4 +151,110 @@ mod tests {
             ChangeKind::SignatureChanged
         );
     }
+
+    #[test]
+    fn unchanged_entities_are_excluded_from_output() {
+        let id = Uuid::now_v7();
+        let old = v(id);
+        let new = v(id);
+        let result = diff_entities(&[old], &[new]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn classifies_deleted() {
+        let id = Uuid::now_v7();
+        let old = v(id);
+        let result = diff_entities(&[old], &[]);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].change_kind, ChangeKind::Deleted);
+        assert_eq!(result[0].old_name, Some("f".into()));
+        assert!(result[0].new_name.is_none());
+        assert_eq!(result[0].diff_summary, "entity deleted");
+    }
+
+    #[test]
+    fn classifies_added() {
+        let id = Uuid::now_v7();
+        let new = v(id);
+        let result = diff_entities(&[], &[new]);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].change_kind, ChangeKind::Added);
+        assert!(result[0].old_name.is_none());
+        assert_eq!(result[0].new_name, Some("f".into()));
+        assert_eq!(result[0].diff_summary, "entity added");
+    }
+
+    #[test]
+    fn classifies_renamed() {
+        let id = Uuid::now_v7();
+        let old = v(id);
+        let mut new = v(id);
+        new.name = "g".into();
+        let result = diff_entities(&[old], &[new]);
+        assert_eq!(result[0].change_kind, ChangeKind::Renamed);
+        assert!(result[0].diff_summary.contains("identity_hash same"));
+        assert!(result[0].diff_summary.contains("'f' -> 'g'"));
+    }
+
+    #[test]
+    fn classifies_moved() {
+        let id = Uuid::now_v7();
+        let old = v(id);
+        let mut new = v(id);
+        new.context_hash = [99; 32];
+        let result = diff_entities(&[old], &[new]);
+        assert_eq!(result[0].change_kind, ChangeKind::Moved);
+        assert!(result[0].diff_summary.contains("context_hash changed"));
+    }
+
+    #[test]
+    fn classifies_modified_when_structural_and_content_differ() {
+        let id = Uuid::now_v7();
+        let old = v(id);
+        let mut new = v(id);
+        new.structural_hash = [88; 32];
+        new.content_hash = [77; 32];
+        let result = diff_entities(&[old], &[new]);
+        assert_eq!(result[0].change_kind, ChangeKind::Modified);
+    }
+
+    #[test]
+    fn handles_multiple_entities_mixed_changes() {
+        let id_a = Uuid::now_v7();
+        let id_b = Uuid::now_v7();
+        let id_c = Uuid::now_v7();
+        let old_a = v(id_a);
+        let old_b = v(id_b);
+        let old_c = v(id_c);
+        let mut new_a = v(id_a);
+        new_a.content_hash = [9; 32];
+        let new_b = v(id_b);
+        let mut new_c = v(id_c);
+        new_c.name = "renamed_fn".into();
+        let result = diff_entities(&[old_a, old_b, old_c], &[new_a, new_b, new_c]);
+        assert_eq!(result.len(), 2);
+        let kinds: Vec<ChangeKind> = result.iter().map(|e| e.change_kind).collect();
+        assert!(kinds.contains(&ChangeKind::BodyOnly));
+        assert!(kinds.contains(&ChangeKind::Renamed));
+    }
+
+    #[test]
+    fn diff_summary_for_signature_change_includes_signatures() {
+        let id = Uuid::now_v7();
+        let old = v(id);
+        let mut new = v(id);
+        new.signature_hash = [9; 32];
+        new.signature = "fn f(x: i32)".into();
+        let result = diff_entities(&[old], &[new]);
+        assert!(result[0].diff_summary.contains("signature_hash changed"));
+        assert!(result[0].diff_summary.contains("fn f()"));
+        assert!(result[0].diff_summary.contains("fn f(x: i32)"));
+    }
+
+    #[test]
+    fn both_none_produces_no_output() {
+        let result = diff_entities(&[], &[]);
+        assert!(result.is_empty());
+    }
 }
