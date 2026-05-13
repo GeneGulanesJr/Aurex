@@ -5,7 +5,7 @@ use crosshash_core::{
     Edge, EdgeKind, EdgeSource, Entity, EntityKind, EntityVersion, Language, Repo, WorkspaceType,
 };
 use crosshash_git::get_head_commit;
-use crosshash_graph::{GraphBuilder, GraphStorage, GraphTraversal};
+use crosshash_graph::{GraphBuilder, GraphStorage, GraphTraversal, StaticEdgeExtractor};
 use crosshash_hash::hash_file_content;
 use crosshash_parser::languages::python::PythonExtractor;
 use crosshash_parser::languages::rust::RustExtractor;
@@ -187,6 +187,12 @@ pub enum GraphAction {
     ValidateEdges {
         #[arg(long)]
         repo: String,
+    },
+    PathBetween {
+        source: String,
+        target: String,
+        #[arg(long)]
+        repo: Option<String>,
     },
 }
 #[derive(Debug, Clone, Args)]
@@ -398,7 +404,7 @@ fn index_one_repo(storage: &GraphStorage, repo: &Repo, incremental: bool) -> Res
         .collect::<Vec<_>>();
     storage.mark_entities_deleted(repo.id, &deleted, &commit_hash)?;
     storage.remove_edges_for_repo(repo.id)?;
-    let edges = infer_static_edges(repo.id, &all_entities, &source_by_file);
+    let edges = infer_static_edges(repo.id, &root, &all_entities, &source_by_file);
     for edge in &edges {
         storage.insert_edge(edge)?;
     }
@@ -571,6 +577,27 @@ fn execute_graph(format: OutputFormat, db: Option<PathBuf>, cmd: GraphCommand) -
                 json!({"valid_edges": report.valid_edges, "stale_edges": report.stale_edges}),
             )
         }
+        GraphAction::PathBetween { source, target, repo } => {
+            let repo_name = repo.ok_or_else(|| anyhow!("--repo is required"))?;
+            let repo = storage
+                .get_repo_by_name(&repo_name)?
+                .ok_or_else(|| anyhow!("repo not found: {repo_name}"))?;
+            let source_entity = resolve_entity(&storage, &source, repo.id)?;
+            let target_entity = resolve_entity(&storage, &target, repo.id)?;
+            let graph = GraphBuilder::from_storage(&storage, repo.id)?;
+            let path = GraphTraversal::new(&graph).path_between(source_entity.id, target_entity.id);
+            match path {
+                Some(steps) => {
+                    let text = steps
+                        .iter()
+                        .map(|step| format!("{} -> {}", step.source_entity_id, step.target_entity_id))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    print(format, &text, json!({"path": steps}))
+                }
+                None => print(format, "no path found", json!({"path": null})),
+            }
+        }
     }
 }
 
@@ -739,70 +766,19 @@ fn extract_for_language(
 
 fn infer_static_edges(
     repo_id: Uuid,
+    repo_root: &Path,
     entities: &[Entity],
     source_by_file: &HashMap<String, String>,
 ) -> Vec<Edge> {
-    let mut edges = Vec::new();
-    let mut seen = HashSet::new();
-
-    for parent in entities.iter().filter(|e| is_container_kind(e.kind)) {
-        let prefix = format!("{}::", parent.qualified_name);
-        for child in entities
-            .iter()
-            .filter(|e| e.qualified_name.starts_with(&prefix))
-        {
-            push_edge(
-                repo_id,
-                parent.id,
-                child.id,
-                EdgeKind::Contains,
-                &mut seen,
-                &mut edges,
-            );
-        }
-    }
-
-    for source in entities {
-        let Some(file_source) = source_by_file.get(&source.file_path) else {
-            continue;
-        };
-        let body = slice_entity_source(file_source, source);
-        for target in entities.iter().filter(|target| target.id != source.id) {
-            if body.contains(&format!("{}(", target.name)) {
-                push_edge(
-                    repo_id,
-                    source.id,
-                    target.id,
-                    EdgeKind::Calls,
-                    &mut seen,
-                    &mut edges,
-                );
-            }
-            if source.file_path != target.file_path && import_mentions(body, &target.name) {
-                push_edge(
-                    repo_id,
-                    source.id,
-                    target.id,
-                    EdgeKind::Imports,
-                    &mut seen,
-                    &mut edges,
-                );
-            }
-        }
-    }
-
+    let (edges, _reexports) =
+        StaticEdgeExtractor::extract(repo_id, repo_root, entities, source_by_file);
     edges
 }
 
-fn is_container_kind(kind: EntityKind) -> bool {
-    matches!(
-        kind,
-        EntityKind::Class
-            | EntityKind::Struct
-            | EntityKind::Trait
-            | EntityKind::Impl
-            | EntityKind::Module
-    )
+fn slice_entity_source<'a>(source: &'a str, entity: &Entity) -> &'a str {
+    source
+        .get(entity.start_byte as usize..entity.end_byte as usize)
+        .unwrap_or(source)
 }
 
 fn import_mentions(source: &str, target_name: &str) -> bool {
@@ -814,12 +790,6 @@ fn import_mentions(source: &str, target_name: &str) -> bool {
             || trimmed.starts_with("export "))
             && trimmed.contains(target_name)
     })
-}
-
-fn slice_entity_source<'a>(source: &'a str, entity: &Entity) -> &'a str {
-    source
-        .get(entity.start_byte as usize..entity.end_byte as usize)
-        .unwrap_or(source)
 }
 
 fn push_edge(

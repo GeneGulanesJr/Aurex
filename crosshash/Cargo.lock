@@ -488,11 +488,13 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "crosshash-core",
+ "log",
  "num_cpus",
  "petgraph",
  "rayon",
  "refinery",
  "rusqlite",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",

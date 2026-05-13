@@ -5,7 +5,9 @@ use petgraph::visit::EdgeRef;
 use std::collections::{HashMap, HashSet, VecDeque};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, PartialEq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EdgeStep {
     pub source_entity_id: Uuid,
     pub target_entity_id: Uuid,
@@ -75,16 +77,21 @@ impl<'a> GraphTraversal<'a> {
     }
 
     pub fn detect_cycles(&self) -> Vec<Vec<Entity>> {
-        kosaraju_scc(&self.dependency_graph.graph)
+        let sccs = kosaraju_scc(&self.dependency_graph.graph)
             .into_iter()
             .filter(|component| component.len() > 1)
             .map(|component| {
                 component
                     .into_iter()
                     .map(|n| self.dependency_graph.graph[n].clone())
-                    .collect()
+                    .collect::<Vec<_>>()
             })
-            .collect()
+            .collect::<Vec<_>>();
+        for cycle in &sccs {
+            let names: Vec<String> = cycle.iter().map(|e| e.qualified_name.clone()).collect();
+            log::warn!("cycle detected: {}", names.join(" -> "));
+        }
+        sccs
     }
 
     fn bfs(&self, entity_id: Uuid, max_depth: usize, direction: Direction) -> Vec<TraversalHit> {

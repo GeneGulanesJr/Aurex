@@ -55,6 +55,7 @@ pub enum EdgeKind {
     Contains,
     Extends,
     Implements,
+    Reexport,
     TypeReferences,
     Uses,
     PackageDep,
