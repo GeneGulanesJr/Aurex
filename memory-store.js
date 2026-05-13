@@ -1794,11 +1794,18 @@ async function indexRepoInternal(repoPath, repoName) {
   let fileCount = 0;
   const skipped = [];
 
-  // Upsert repo
-  const existing = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repoName]);
+  // Upsert repo — handle cases where name OR path already exists
+  const existingByName = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repoName]);
+  const existingByPath = sqlJson('SELECT id FROM code_repos WHERE path = ?', [absPath]);
   let repoId;
-  if (existing.length > 0) {
-    repoId = existing[0].id;
+  if (existingByName.length > 0) {
+    repoId = existingByName[0].id;
+    sqlRun('UPDATE code_repos SET path = ? WHERE id = ?', [absPath, repoId]);
+    sqlRun('DELETE FROM code_symbols WHERE repo_id = ?', [repoId]);
+    sqlRun('DELETE FROM code_files WHERE repo_id = ?', [repoId]);
+  } else if (existingByPath.length > 0) {
+    repoId = existingByPath[0].id;
+    sqlRun('UPDATE code_repos SET name = ? WHERE id = ?', [repoName, repoId]);
     sqlRun('DELETE FROM code_symbols WHERE repo_id = ?', [repoId]);
     sqlRun('DELETE FROM code_files WHERE repo_id = ?', [repoId]);
   } else {
