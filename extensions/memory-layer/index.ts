@@ -1442,7 +1442,7 @@ export default function (pi: ExtensionAPI) {
         description: "Analysis mode: callers|callees|blast-radius|dead-code|complexity|deps|outline|churn|hotspots|cycles|importance|coupling|extractable|hierarchy|signal-chains|layer-violations|index-repo|reindex-repo",
         enum: ["callers", "callees", "blast-radius", "dead-code", "complexity", "deps", "outline", "churn", "hotspots", "cycles", "importance", "coupling", "extractable", "hierarchy", "signal-chains", "layer-violations", "index-repo", "reindex-repo"],
       }),
-      repo: Type.String({ description: "Indexed repo name" }),
+      repo: Type.Optional(Type.String({ description: "Indexed repo name (required for analysis modes, optional for index-repo)" })),
       symbol: Type.Optional(Type.String({ description: "Symbol name (required for callers, callees, blast-radius, complexity)" })),
       file: Type.Optional(Type.String({ description: "File path (required for outline, churn; optional for deps)" })),
       depth: Type.Optional(Type.Number({ description: "Graph traversal depth 1-5 (default 3)", default: 3 })),
