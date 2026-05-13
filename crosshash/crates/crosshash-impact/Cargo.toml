@@ -1,0 +1,13 @@
+[package]
+name = "crosshash-impact"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+chrono.workspace = true
+crosshash-core = { path = "../crosshash-core" }
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true

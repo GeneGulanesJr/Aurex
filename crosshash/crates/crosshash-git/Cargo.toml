@@ -1,0 +1,13 @@
+[package]
+name = "crosshash-git"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+crosshash-core = { path = "../crosshash-core" }
+git2.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

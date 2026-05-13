@@ -1,0 +1,13 @@
+[package]
+name = "crosshash-hash"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+blake3.workspace = true
+crosshash-core = { path = "../crosshash-core" }
+
+[dev-dependencies]
+proptest.workspace = true

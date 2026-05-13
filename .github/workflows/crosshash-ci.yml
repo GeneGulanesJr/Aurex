@@ -1,0 +1,30 @@
+name: CrossHash CI
+
+on:
+  push:
+    paths:
+      - 'crosshash/**'
+      - '.github/workflows/crosshash-ci.yml'
+  pull_request:
+    paths:
+      - 'crosshash/**'
+      - '.github/workflows/crosshash-ci.yml'
+
+jobs:
+  build-test-clippy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crosshash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crosshash
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - run: cargo build --workspace

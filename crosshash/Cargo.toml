@@ -1,0 +1,52 @@
+[workspace]
+members = [
+  "crates/crosshash-core",
+  "crates/crosshash-parser",
+  "crates/crosshash-hash",
+  "crates/crosshash-graph",
+  "crates/crosshash-git",
+  "crates/crosshash-cli",
+  "crates/crosshash-ai",
+  "crates/crosshash-impact",
+  "crates/crosshash-api",
+  "crates/crosshash-mcp",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "MIT"
+repository = "https://github.com/GeneGulanesJr/LaPis"
+
+[workspace.dependencies]
+anyhow = "1"
+async-trait = "0.1"
+assert_cmd = "2"
+axum = "0.7"
+blake3 = "1"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive", "env"] }
+git2 = "0.18"
+ignore = "0.4"
+indicatif = "0.17"
+num_cpus = "1"
+petgraph = "0.6"
+predicates = "3"
+proptest = "1"
+rayon = "1"
+refinery = { version = "0.8", features = ["rusqlite"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+thiserror = "1"
+tower = "0.5"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tree-sitter = "0.22"
+tree-sitter-python = "0.21"
+tree-sitter-rust = "0.21"
+tree-sitter-typescript = "0.21"
+uuid = { version = "1", features = ["v7", "v5", "serde"] }
+walkdir = "2"

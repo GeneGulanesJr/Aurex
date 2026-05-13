@@ -1,13 +1,11 @@
-use crosshash_core::{
-    CoreError, Edge, Entity, EntityVersion, Repo, Result, WorkspaceType,
-};
+use crosshash_core::{CoreError, Edge, Entity, EntityVersion, Repo, Result, WorkspaceType};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use uuid::Uuid;
 
 mod embedded {
     use refinery::embed_migrations;
-    embed_migrations!("../../db/migrations");
+    embed_migrations!("db/migrations");
 }
 
 pub struct GraphStorage {
@@ -16,8 +14,7 @@ pub struct GraphStorage {
 
 impl GraphStorage {
     pub fn open(path: &Path) -> Result<Self> {
-        let conn = Connection::open(path)
-            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        let conn = Connection::open(path).map_err(|e| CoreError::StorageError(e.to_string()))?;
 
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
             .map_err(|e| CoreError::StorageError(e.to_string()))?;
@@ -28,8 +25,8 @@ impl GraphStorage {
     }
 
     pub fn open_in_memory() -> Result<Self> {
-        let conn = Connection::open_in_memory()
-            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        let conn =
+            Connection::open_in_memory().map_err(|e| CoreError::StorageError(e.to_string()))?;
 
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
             .map_err(|e| CoreError::StorageError(e.to_string()))?;
@@ -233,7 +230,12 @@ impl GraphStorage {
         Ok(())
     }
 
-    pub fn upsert_file_hash(&self, repo_id: Uuid, file_path: &str, content_hash: &[u8]) -> Result<()> {
+    pub fn upsert_file_hash(
+        &self,
+        repo_id: Uuid,
+        file_path: &str,
+        content_hash: &[u8],
+    ) -> Result<()> {
         self.conn
             .execute(
                 "INSERT OR REPLACE INTO file_hashes (repo_id, file_path, content_hash) VALUES (?1, ?2, ?3)",
@@ -308,9 +310,7 @@ impl GraphStorage {
             .map_err(|e| CoreError::StorageError(e.to_string()))?;
 
         let entities = stmt
-            .query_map(params![repo_id.to_string()], |row| {
-                Ok(row_to_entity(row))
-            })
+            .query_map(params![repo_id.to_string()], |row| Ok(row_to_entity(row)))
             .map_err(|e| CoreError::StorageError(e.to_string()))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| CoreError::StorageError(e.to_string()))?;
@@ -318,7 +318,12 @@ impl GraphStorage {
         Ok(entities)
     }
 
-    pub fn mark_entities_deleted(&self, repo_id: Uuid, entity_ids: &[Uuid], commit_hash: &str) -> Result<()> {
+    pub fn mark_entities_deleted(
+        &self,
+        repo_id: Uuid,
+        entity_ids: &[Uuid],
+        commit_hash: &str,
+    ) -> Result<()> {
         for id in entity_ids {
             self.conn
                 .execute(
@@ -355,7 +360,10 @@ impl GraphStorage {
             )
             .map_err(|e| CoreError::StorageError(e.to_string()))?;
         self.conn
-            .execute("DELETE FROM repos WHERE id = ?1", params![repo.id.to_string()])
+            .execute(
+                "DELETE FROM repos WHERE id = ?1",
+                params![repo.id.to_string()],
+            )
             .map_err(|e| CoreError::StorageError(e.to_string()))?;
         Ok(())
     }
@@ -434,6 +442,54 @@ impl GraphStorage {
         Ok(entities)
     }
 
+    pub fn get_edges_all(&self) -> Result<Vec<Edge>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, source_entity_id, target_entity_id, kind, confidence, \
+                 source, metadata, created_at, validated_at FROM edges",
+            )
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        let edges = stmt
+            .query_map([], |row| Ok(row_to_edge(row)))
+            .map_err(|e| CoreError::StorageError(e.to_string()))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        Ok(edges)
+    }
+
+    pub fn get_entities_all(&self) -> Result<Vec<Entity>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, repo_id, file_path, language, kind, name, qualified_name, signature, \
+                 start_line, end_line, start_byte, end_byte, \
+                 signature_hash, content_hash, structural_hash, identity_hash, context_hash, \
+                 visibility, is_exported, is_async, is_test, \
+                 first_seen_commit, last_seen_commit, deleted_at_commit \
+                 FROM entities WHERE deleted_at_commit IS NULL",
+            )
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        let entities = stmt
+            .query_map([], |row| Ok(row_to_entity(row)))
+            .map_err(|e| CoreError::StorageError(e.to_string()))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        Ok(entities)
+    }
+
+    pub fn get_public_api_surface(&self, repo_id: Uuid) -> Result<Vec<Entity>> {
+        Ok(self
+            .get_entities_by_repo(repo_id)?
+            .into_iter()
+            .filter(|e| e.is_exported && matches!(e.visibility, crosshash_core::Visibility::Public))
+            .collect())
+    }
+
     pub fn get_edges_by_repo(&self, repo_id: Uuid) -> Result<Vec<Edge>> {
         let mut stmt = self
             .conn
@@ -448,9 +504,7 @@ impl GraphStorage {
             .map_err(|e| CoreError::StorageError(e.to_string()))?;
 
         let edges = stmt
-            .query_map(params![repo_id.to_string()], |row| {
-                Ok(row_to_edge(row))
-            })
+            .query_map(params![repo_id.to_string()], |row| Ok(row_to_edge(row)))
             .map_err(|e| CoreError::StorageError(e.to_string()))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| CoreError::StorageError(e.to_string()))?;
@@ -469,9 +523,7 @@ impl GraphStorage {
             .map_err(|e| CoreError::StorageError(e.to_string()))?;
 
         let edges = stmt
-            .query_map(params![entity_id.to_string()], |row| {
-                Ok(row_to_edge(row))
-            })
+            .query_map(params![entity_id.to_string()], |row| Ok(row_to_edge(row)))
             .map_err(|e| CoreError::StorageError(e.to_string()))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| CoreError::StorageError(e.to_string()))?;
@@ -519,9 +571,7 @@ impl GraphStorage {
                 let ctx_hash: Vec<u8> = row.get(9).unwrap();
                 let snapshot_str: String = row.get(10).unwrap();
 
-                let mut to_arr = |v: Vec<u8>| -> [u8; 32] {
-                    safe_hash_from_slice(&v)
-                };
+                let to_arr = |v: Vec<u8>| -> [u8; 32] { safe_hash_from_slice(&v) };
 
                 Ok(EntityVersion {
                     entity_id: Uuid::parse_str(&row.get::<_, String>(0).unwrap()).unwrap(),
@@ -564,8 +614,10 @@ fn row_to_edge(row: &rusqlite::Row) -> Edge {
 
     Edge {
         id: Uuid::parse_str(&row.get::<_, String>("id").unwrap()).unwrap(),
-        source_entity_id: Uuid::parse_str(&row.get::<_, String>("source_entity_id").unwrap()).unwrap(),
-        target_entity_id: Uuid::parse_str(&row.get::<_, String>("target_entity_id").unwrap()).unwrap(),
+        source_entity_id: Uuid::parse_str(&row.get::<_, String>("source_entity_id").unwrap())
+            .unwrap(),
+        target_entity_id: Uuid::parse_str(&row.get::<_, String>("target_entity_id").unwrap())
+            .unwrap(),
         kind: serde_json::from_str(&kind_str).unwrap_or(EdgeKind::Calls),
         confidence: row.get("confidence").unwrap_or(1.0),
         source: serde_json::from_str(&source_str).unwrap_or(EdgeSource::Static),
@@ -574,7 +626,9 @@ fn row_to_edge(row: &rusqlite::Row) -> Edge {
             .unwrap()
             .to_utc(),
         validated_at: validated_at_str.and_then(|s| {
-            chrono::DateTime::parse_from_rfc3339(&s).map(|d| d.to_utc()).ok()
+            chrono::DateTime::parse_from_rfc3339(&s)
+                .map(|d| d.to_utc())
+                .ok()
         }),
     }
 }
@@ -586,9 +640,7 @@ fn row_to_entity(row: &rusqlite::Row) -> Entity {
     let ident_hash: Vec<u8> = row.get("identity_hash").unwrap();
     let ctx_hash: Vec<u8> = row.get("context_hash").unwrap();
 
-    let mut to_arr = |v: Vec<u8>| -> [u8; 32] {
-        safe_hash_from_slice(&v)
-    };
+    let to_arr = |v: Vec<u8>| -> [u8; 32] { safe_hash_from_slice(&v) };
 
     Entity {
         id: Uuid::parse_str(&row.get::<_, String>("id").unwrap()).unwrap(),
@@ -621,10 +673,7 @@ fn row_to_entity(row: &rusqlite::Row) -> Entity {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crosshash_core::{
-        ChangeType, EdgeKind, EdgeSource, EntityKind, ImpactReport, ImpactType, Language,
-        RiskLevel, Visibility,
-    };
+    use crosshash_core::{EdgeKind, EdgeSource, EntityKind, Language, Visibility};
 
     fn test_repo() -> Repo {
         Repo {
@@ -768,7 +817,9 @@ mod tests {
         storage.insert_repo(&repo).unwrap();
         let hash = [42u8; 32];
 
-        storage.upsert_file_hash(repo.id, "src/lib.rs", &hash).unwrap();
+        storage
+            .upsert_file_hash(repo.id, "src/lib.rs", &hash)
+            .unwrap();
 
         let retrieved = storage.get_file_hash(repo.id, "src/lib.rs").unwrap();
         assert!(retrieved.is_some());
