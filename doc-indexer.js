@@ -318,11 +318,27 @@ function walkDir(dirPath, ignoreGlob) {
 async function indexDocs(db, rootPath, repoName, ignoreGlob) {
   if (!fs.existsSync(rootPath)) {return { error: `Path not found: ${rootPath}` };}
 
-  // Upsert repo
+  // Upsert repo — handle cases where name OR path already exists
   let repoId;
-  const existing = db.prepare('SELECT id FROM doc_repos WHERE name = ?').get(repoName);
-  if (existing) {
-    repoId = existing.id;
+  const existingByName = db.prepare('SELECT id FROM doc_repos WHERE name = ?').get(repoName);
+  const existingByPath = db.prepare('SELECT id FROM doc_repos WHERE path = ?').get(rootPath);
+  if (existingByName) {
+    repoId = existingByName.id;
+    if (existingByName.id !== existingByPath?.id) {
+      db.prepare('UPDATE doc_repos SET path = ? WHERE id = ?').run(rootPath, repoId);
+    }
+    db.prepare('DELETE FROM doc_code_blocks WHERE section_id IN (SELECT id FROM doc_sections WHERE repo_id = ?)').run(
+      repoId,
+    );
+    db.prepare('DELETE FROM doc_links WHERE source_section_id IN (SELECT id FROM doc_sections WHERE repo_id = ?)').run(
+      repoId,
+    );
+    db.prepare('DELETE FROM doc_terms WHERE repo_id = ?').run(repoId);
+    db.prepare('DELETE FROM doc_sections WHERE repo_id = ?').run(repoId);
+    db.prepare('DELETE FROM doc_files WHERE repo_id = ?').run(repoId);
+  } else if (existingByPath) {
+    repoId = existingByPath.id;
+    db.prepare('UPDATE doc_repos SET name = ? WHERE id = ?').run(repoName, repoId);
     db.prepare('DELETE FROM doc_code_blocks WHERE section_id IN (SELECT id FROM doc_sections WHERE repo_id = ?)').run(
       repoId,
     );
