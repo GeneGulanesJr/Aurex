@@ -87,6 +87,7 @@ function tryNodeSqlite() {
     d.exec('PRAGMA journal_mode=WAL;');
     d.exec(`PRAGMA busy_timeout=${safeInt(cfg.busy_timeout_ms, 5000)};`);
     d.exec(`PRAGMA wal_autocheckpoint=${safeInt(cfg.wal_autocheckpoint, 1000)};`);
+    d.exec('PRAGMA foreign_keys=ON;');
     return d;
   } catch (_) { return null; }
 }
@@ -99,6 +100,7 @@ function tryBetterSqlite3() {
     d.pragma('journal_mode = WAL');
     d.pragma(`busy_timeout = ${safeInt(cfg.busy_timeout_ms, 5000)}`);
     d.pragma(`wal_autocheckpoint = ${safeInt(cfg.wal_autocheckpoint, 1000)}`);
+    d.pragma('foreign_keys = ON');
     return d;
   } catch (e) {
     console.error(`[db] better-sqlite3 failed: ${e.message}`);

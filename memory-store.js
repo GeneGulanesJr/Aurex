@@ -1812,11 +1812,13 @@ async function indexRepoInternal(repoPath, repoName) {
     sqlRun('UPDATE code_repos SET path = ? WHERE id = ?', [absPath, repoId]);
     sqlRun('DELETE FROM code_symbols WHERE repo_id = ?', [repoId]);
     sqlRun('DELETE FROM code_files WHERE repo_id = ?', [repoId]);
+    sqlRun('DELETE FROM churn_metrics WHERE repo_id = ?', [repoId]);
   } else if (existingByPath.length > 0) {
     repoId = existingByPath[0].id;
     sqlRun('UPDATE code_repos SET name = ? WHERE id = ?', [repoName, repoId]);
     sqlRun('DELETE FROM code_symbols WHERE repo_id = ?', [repoId]);
     sqlRun('DELETE FROM code_files WHERE repo_id = ?', [repoId]);
+    sqlRun('DELETE FROM churn_metrics WHERE repo_id = ?', [repoId]);
   } else {
     sqlRun('INSERT INTO code_repos (name, path) VALUES (?, ?)', [repoName, absPath]);
     repoId = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repoName])[0].id;
@@ -1909,8 +1911,8 @@ async function indexRepoInternal(repoPath, repoName) {
   }
 
   sqlRun(
-    "UPDATE code_repos SET file_count = ?, symbol_count = ?, head_commit = ?, updated_at = datetime('now') WHERE id = ?",
-    [fileCount, symbolCount, headCommit || null, repoId],
+    "UPDATE code_repos SET file_count = (SELECT count(*) FROM code_files WHERE repo_id = ?), symbol_count = (SELECT count(*) FROM code_symbols WHERE repo_id = ?), head_commit = ?, updated_at = datetime('now') WHERE id = ?",
+    [repoId, repoId, headCommit || null, repoId],
   );
 
   // Build import graph, call graph, and complexity
@@ -1960,6 +1962,7 @@ async function reindexRepoInternal(repo, mode) {
   if (mode === 'full') {
     sqlRun('DELETE FROM code_symbols WHERE repo_id = ?', [repoId]);
     sqlRun('DELETE FROM code_files WHERE repo_id = ?', [repoId]);
+    sqlRun('DELETE FROM churn_metrics WHERE repo_id = ?', [repoId]);
     return indexRepoInternal(repoPath, repo);
   }
 
@@ -2048,6 +2051,15 @@ async function reindexRepoInternal(repo, mode) {
     } catch (_) {}
   }
 
+  // Remove DB entries for files that no longer exist on disk
+  const currentFilesSet = new Set(files);
+  const staleFiles = Object.entries(existingFiles).filter(([fp]) => !currentFilesSet.has(fp));
+  for (const [filePath, fileInfo] of staleFiles) {
+    sqlRun('DELETE FROM code_symbols WHERE file_id = ?', [fileInfo.id]);
+    sqlRun('DELETE FROM code_files WHERE id = ?', [fileInfo.id]);
+  }
+  let staleCount = staleFiles.length;
+
   sqlRun(
     "UPDATE code_repos SET file_count = (SELECT count(*) FROM code_files WHERE repo_id = ?), symbol_count = (SELECT count(*) FROM code_symbols WHERE repo_id = ?), updated_at = datetime('now') WHERE id = ?",
     [repoId, repoId, repoId],
@@ -2081,6 +2093,7 @@ async function reindexRepoInternal(repo, mode) {
     mode,
     files_reindexed: reindexed,
     files_unchanged: unchanged,
+    files_removed: staleCount,
     symbols_extracted: symbolCount,
     import_edges: importEdges,
     call_edges: callEdges,
