@@ -85,7 +85,7 @@
   <text x="454" y="188" fill="#0b0d0b" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Trust &amp; Workspaces</text>
   <text x="454" y="204" fill="#52534e" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Symbol-to-Memory Anchoring</text>
   <text x="454" y="220" fill="#52534e" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Trust Score Management</text>
-  <text x="454" y="236" fill="#52534e" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">jCodeMunch Integration</text>
+  <text x="454" y="236" fill="#52534e" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Code Indexing (WASM)</text>
   <text x="454" y="252" fill="#52534e" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Workspace Isolation</text>
   <text x="454" y="268" fill="#52534e" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Session Logging</text>
 
@@ -116,7 +116,7 @@
   <rect x="48" y="428" width="824" height="132" rx="6" fill="rgba(11,13,11,0.03)" stroke="rgba(11,13,11,0.15)" stroke-width="1"/>
   <rect x="52" y="432" width="36" height="12" rx="2" fill="transparent" stroke="rgba(11,13,11,0.30)" stroke-width="0.8"/>
   <text x="70" y="441" fill="rgba(11,13,11,0.60)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">PERSIST</text>
-  <text x="460" y="444" fill="#52534e" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">~/.pi/memory/memory.db · WAL mode · FTS5</text>
+  <text x="460" y="444" fill="#52534e" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">~/.pi/memory/memory.db · WAL mode · FTS5 · Schema v6</text>
 
   <!-- DB tables row -->
   <rect x="64"  y="456" width="188" height="48" rx="4" fill="#f5f4ed"/>
@@ -132,12 +132,12 @@
   <rect x="472" y="456" width="188" height="48" rx="4" fill="#f5f4ed"/>
   <rect x="472" y="456" width="188" height="48" rx="4" fill="none" stroke="rgba(11,13,11,0.15)" stroke-width="0.8"/>
   <text x="566" y="476" fill="#0b0d0b" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">code_symbols</text>
-  <text x="566" y="492" fill="#52534e" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">name · kind · signature · file_path</text>
+  <text x="566" y="492" fill="#52534e" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">name · kind · signature · file · lang</text>
 
   <rect x="676" y="456" width="180" height="48" rx="4" fill="#f5f4ed"/>
   <rect x="676" y="456" width="180" height="48" rx="4" fill="none" stroke="rgba(11,13,11,0.15)" stroke-width="0.8"/>
-  <text x="766" y="476" fill="#0b0d0b" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">bridge tables</text>
-  <text x="766" y="492" fill="#52534e" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">symbol_links · recall_log</text>
+  <text x="766" y="476" fill="#0b0d0b" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">doc tables</text>
+  <text x="766" y="492" fill="#52534e" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">repos · files · sections</text>
 
   <!-- Bridge row -->
   <rect x="64"  y="512" width="260" height="36" rx="4" fill="#f5f4ed"/>
@@ -177,7 +177,7 @@
 
   <!-- Version badge -->
   <rect x="32" y="600" width="80" height="20" rx="4" fill="rgba(139,92,246,0.08)" stroke="rgba(139,92,246,0.30)" stroke-width="0.8"/>
-  <text x="72" y="614" fill="#8b5cf6" font-size="9" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">v6.1</text>
+  <text x="72" y="614" fill="#8b5cf6" font-size="9" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">v7</text>
 
   <text x="828" y="614" fill="#52534e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="end" letter-spacing="0.04em">NOT BASED ON AGE · BASED ON OUTDATEDNESS</text>
 
