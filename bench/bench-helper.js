@@ -50,10 +50,7 @@ const BENCHMARK_TOOLS = [
 // UTILITIES
 // ══════════════════════════════════════════════════════════
 
-function estimateTokens(bytesOrObj) {
-  const str = typeof bytesOrObj === 'string' ? bytesOrObj : JSON.stringify(bytesOrObj);
-  return Math.ceil(str.length / 3.5);
-}
+const { estimateTokens } = require(path.join(LAPIS_ROOT, 'utils'));
 
 function formatBytes(n) {
   if (n < 1024) {return `${n}B`;}

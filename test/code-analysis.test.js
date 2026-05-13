@@ -82,7 +82,7 @@ describe('code-analysis: blast-radius', () => {
     if (r.error) {
       expect(typeof r.error).toBe('string');
     } else {
-      expect(Array.isArray(r.edges)).toBe(true);
+      expect(Array.isArray(r.affected_files)).toBe(true);
       expect(r.symbol).toBeTruthy();
     }
   });

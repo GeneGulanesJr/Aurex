@@ -12,6 +12,8 @@
  * Lossless round-trip: decode(encode(obj)) === obj
  */
 
+const { estimateTokens } = require('./utils');
+
 // ══════════════════════════════════════════════════════════
 // ESCAPE/UNESCAPE FOR PIPE DELIMITER
 // ══════════════════════════════════════════════════════════
@@ -366,12 +368,6 @@ function autoFormat(data) {
   return ratio <= 0.8 ? 'compact' : 'json';
 }
 
-/**
- * Estimate token count from byte size (4 chars ≈ 1 token heuristic).
- */
-function estimateTokens(obj) {
-  return Math.ceil(JSON.stringify(obj).length / 3.5);
-}
 
 // ══════════════════════════════════════════════════════════
 // EXPORTS

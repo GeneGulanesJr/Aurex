@@ -15,6 +15,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const { SKIP_CALLEE_NAMES } = require('./utils');
 const _wtsPath = path.resolve(__dirname, 'node_modules', 'web-tree-sitter', 'web-tree-sitter.cjs');
 
 const GRAMMAR_DIR = path.resolve(__dirname, 'grammars');
@@ -941,13 +942,7 @@ function extractCallees(filePath) {
   const langConfig = LANGUAGE_MAP[ext];
   if (!langConfig || langConfig.languageName === 'sql') {return [];}
 
-  const _SKIP = new Set([
-    'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'try', 'catch', 'finally',
-    'class', 'function', 'return', 'throw', 'new', 'typeof', 'instanceof', 'void',
-    'delete', 'in', 'of', 'yield', 'await', 'async', 'export', 'import', 'from',
-    'const', 'let', 'var', 'true', 'false', 'null', 'undefined', 'this', 'super',
-    'constructor', 'extends', 'static', 'get', 'set',
-  ]);
+  const _SKIP = SKIP_CALLEE_NAMES;
 
   const parser = _parsers[langConfig.parserKey];
   if (!parser) {return [];}

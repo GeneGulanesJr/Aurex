@@ -11,62 +11,7 @@ const {
   PAGERANK, HOTSPOT_THRESHOLDS, DEAD_CODE, COMPLEXITY, COUPLING,
   RESULT_LIMITS, UNTETECTED_CONFIDENCE, PR_RISK,
 } = require('./constants');
-
-// Guard: reject calls when db handle is not available (CLI fallback mode)
-function _requireNativeDb(db) {
-  if (!db || typeof db.prepare !== 'function') {
-    return {
-      error:
-        'This operation requires a native SQLite backend (node:sqlite or better-sqlite3). The CLI fallback does not support code analysis.',
-    };
-  }
-  return null;
-}
-
-// Names to skip in call extraction
-const _SKIP_CALLEE_NAMES = new Set([
-  'if',
-  'else',
-  'for',
-  'while',
-  'do',
-  'switch',
-  'case',
-  'try',
-  'catch',
-  'finally',
-  'class',
-  'function',
-  'return',
-  'throw',
-  'new',
-  'typeof',
-  'instanceof',
-  'void',
-  'delete',
-  'in',
-  'of',
-  'yield',
-  'await',
-  'async',
-  'export',
-  'import',
-  'from',
-  'const',
-  'let',
-  'var',
-  'true',
-  'false',
-  'null',
-  'undefined',
-  'this',
-  'super',
-  'constructor',
-  'extends',
-  'static',
-  'get',
-  'set',
-]);
+const { requireNativeDb: _requireNativeDb, SKIP_CALLEE_NAMES: _SKIP_CALLEE_NAMES } = require('./utils');
 
 // ══════════════════════════════════════════════════════════
 // IMPORT GRAPH

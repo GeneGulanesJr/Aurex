@@ -6,41 +6,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const { RESULT_LIMITS } = require('./constants');
-
-// Guard: reject calls when db handle is not available (CLI fallback mode)
-const _DB_ERROR = Object.freeze({
-  error:
-    'This operation requires a native SQLite backend (node:sqlite or better-sqlite3). The CLI fallback does not support doc indexing.',
-});
-
-function _withDb(fn) {
-  return function _guarded(db, ...args) {
-    if (!db || typeof db.prepare !== 'function') {return _DB_ERROR;}
-    return fn(db, ...args);
-  };
-}
-
-const _MD_EXTENSIONS = new Set(['.md', '.mdx']);
-const _IGNORE_DIRS = new Set([
-  'node_modules',
-  '.git',
-  '.svn',
-  '.hg',
-  '__pycache__',
-  '.next',
-  '.nuxt',
-  'dist',
-  'build',
-  '.cache',
-  '.pi',
-  'vendor',
-]);
-
-function hashContent(content) {
-  return crypto.createHash('sha256').update(content).digest('hex').slice(0, 16);
-}
+const { withDb: _withDb, MD_EXTENSIONS: _MD_EXTENSIONS, IGNORE_DIRS_DOCS: _IGNORE_DIRS, hashContent, walkDirForDocs: walkDir } = require('./utils');
 
 function slugify(text) {
   return text
@@ -288,31 +255,6 @@ function extractCodeBlocks(content, sectionByteStart) {
     if (inBlock) {blockContent.push(line);}
   }
   return blocks;
-}
-
-// ── Directory walker ──
-function walkDir(dirPath, ignoreGlob) {
-  const results = [];
-  const ignoreRe = ignoreGlob ? new RegExp(ignoreGlob.replace(/\*/g, '.*').replace(/\?/g, '.')) : null;
-
-  function walk(dir) {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.name.startsWith('.')) {continue;}
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (_IGNORE_DIRS.has(entry.name)) {continue;}
-        if (ignoreRe && ignoreRe.test(fullPath)) {continue;}
-        walk(fullPath);
-      } else if (entry.isFile() && _MD_EXTENSIONS.has(path.extname(entry.name))) {
-        if (ignoreRe && ignoreRe.test(fullPath)) {continue;}
-        results.push(fullPath);
-      }
-    }
-  }
-
-  walk(dirPath);
-  return results;
 }
 
 // ── Main indexing function ──

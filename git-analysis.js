@@ -6,17 +6,7 @@
 
 const { execFileSync } = require('child_process');
 const path = require('path');
-
-// Guard: reject calls when db handle is not available (CLI fallback mode)
-function _requireNativeDb(db) {
-  if (!db || typeof db.prepare !== 'function') {
-    return {
-      error:
-        'This operation requires a native SQLite backend (node:sqlite or better-sqlite3). The CLI fallback does not support churn analysis.',
-    };
-  }
-  return null;
-}
+const { requireNativeDb: _requireNativeDb } = require('./utils');
 
 function isGitAvailable() {
   try {

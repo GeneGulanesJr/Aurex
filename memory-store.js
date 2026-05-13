@@ -10,7 +10,6 @@
 
 const path = require('path');
 const fs = require('fs');
-const crypto = require('crypto');
 
 const {
   DB_PATH,
@@ -31,6 +30,12 @@ const { getConfig } = require('./config');
 const {
   TRUST_DELTA, DEDUP, TIME_WINDOWS, RESULT_LIMITS, RANKING, CONTEXT,
 } = require('./constants');
+const {
+  IGNORE_DIRS_CODE: _IGNORE_DIRS,
+  CODE_EXTENSIONS: _CODE_EXTS,
+  walkDirForCode: walkDir,
+  hashContent,
+} = require('./utils');
 
 // Lazily resolve db handle (available after ensureDb())
 let db = null;
@@ -1735,40 +1740,7 @@ async function ensureParserAvailable() {
   return codeParser.isReady();
 }
 
-const _IGNORE_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.venv', 'coverage', '.next', '.nuxt']);
-const _CODE_EXTS = new Set(['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts', '.tsx', '.go', '.rs', '.py', '.pyw']);
 
-function isCodeFile(filePath) {
-  return _CODE_EXTS.has(path.extname(filePath).toLowerCase());
-}
-
-function walkDir(dirPath) {
-  const results = [];
-  function walk(dir) {
-    try {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.name.startsWith('.')) {
-          continue;
-        }
-        const fullPath = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          if (!_IGNORE_DIRS.has(entry.name)) {
-            walk(fullPath);
-          }
-        } else if (entry.isFile() && isCodeFile(entry.name)) {
-          results.push(fullPath);
-        }
-      }
-    } catch (_) {}
-  }
-  walk(dirPath);
-  return results;
-}
-
-function hashContent(content) {
-  return crypto.createHash('sha256').update(content).digest('hex').slice(0, 16);
-}
 
 function _emitProgress(phase, detail, stats) {
   if (!args || !args.progress) {return;}
