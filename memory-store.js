@@ -1788,6 +1788,17 @@ function hashContent(content) {
   return crypto.createHash('sha256').update(content).digest('hex').slice(0, 16);
 }
 
+function _emitProgress(phase, detail, stats) {
+  if (!args || !args.progress) {return;}
+  const payload = { progress: true, phase, ...detail };
+  if (stats) {
+    payload.files_total = stats.files_total;
+    payload.files_done = stats.files_done;
+    payload.symbols = stats.symbols;
+  }
+  process.stderr.write(JSON.stringify(payload) + '\n');
+}
+
 async function indexRepoInternal(repoPath, repoName) {
   if (!(await ensureParserAvailable())) {
     return { error: `WASM tree-sitter parser not available. Run: cd ${__dirname} && npm install web-tree-sitter` };
@@ -1798,10 +1809,14 @@ async function indexRepoInternal(repoPath, repoName) {
     return { error: `Path not found: ${absPath}` };
   }
 
+  _emitProgress('init', { message: 'Initializing parser and walking files...' });
+
   const files = walkDir(absPath);
   let symbolCount = 0;
   let fileCount = 0;
   const skipped = [];
+
+  _emitProgress('discovery', { message: `Found ${files.length} code files to index`, files_total: files.length });
 
   // Upsert repo — handle cases where name OR path already exists
   const existingByName = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repoName]);
@@ -1839,8 +1854,13 @@ async function indexRepoInternal(repoPath, repoName) {
   }
 
   const BATCH_SIZE = 50;
+  const totalFiles = files.length;
   for (let i = 0; i < files.length; i += BATCH_SIZE) {
     const batch = files.slice(i, i + BATCH_SIZE);
+    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+    const totalBatches = Math.ceil(totalFiles / BATCH_SIZE);
+    _emitProgress('parsing', { message: `Parsing files batch ${batchNum}/${totalBatches}...` }, { files_total: totalFiles, files_done: fileCount, symbols: symbolCount });
+
     const reads = await Promise.all(batch.map(async (fp) => {
       try {
         const [content, stats] = await Promise.all([
@@ -1910,6 +1930,8 @@ async function indexRepoInternal(repoPath, repoName) {
     }
   }
 
+  _emitProgress('analysis', { message: 'Building import graph...' }, { files_total: totalFiles, files_done: fileCount, symbols: symbolCount });
+
   sqlRun(
     "UPDATE code_repos SET file_count = (SELECT count(*) FROM code_files WHERE repo_id = ?), symbol_count = (SELECT count(*) FROM code_symbols WHERE repo_id = ?), head_commit = ?, updated_at = datetime('now') WHERE id = ?",
     [repoId, repoId, headCommit || null, repoId],
@@ -1925,12 +1947,14 @@ async function indexRepoInternal(repoPath, repoName) {
       importEdges = ig.edges;
     }
   } catch (_) {}
+  _emitProgress('analysis', { message: 'Building call graph...' }, { files_total: totalFiles, files_done: fileCount, symbols: symbolCount });
   try {
     const cg = codeAnalysis.buildCallGraph(db, repoId);
     if (cg.success) {
       callEdges = cg.calls;
     }
   } catch (_) {}
+  _emitProgress('analysis', { message: 'Computing complexity...' }, { files_total: totalFiles, files_done: fileCount, symbols: symbolCount });
   try {
     const cc = codeAnalysis.buildComplexity(db, repoId);
     if (cc.success) {
@@ -1938,7 +1962,7 @@ async function indexRepoInternal(repoPath, repoName) {
     }
   } catch (_) {}
 
-  return {
+  const result = {
     success: true,
     repo: repoName,
     path: absPath,
@@ -1948,8 +1972,15 @@ async function indexRepoInternal(repoPath, repoName) {
     import_edges: importEdges,
     call_edges: callEdges,
     complexity_symbols: complexityCount,
+    name: repoName,
+    file_count: fileCount,
+    symbol_count: symbolCount,
     skipped,
   };
+
+  _emitProgress('done', { message: `Indexed ${fileCount} files, ${symbolCount} symbols` }, { files_total: totalFiles, files_done: fileCount, symbols: symbolCount });
+
+  return result;
 }
 
 async function reindexRepoInternal(repo, mode) {
@@ -1971,10 +2002,14 @@ async function reindexRepoInternal(repo, mode) {
     return { error: 'WASM tree-sitter parser not available' };
   }
 
+  _emitProgress('init', { message: `Reindexing "${repo}" (incremental)...` });
+
   const files = walkDir(repoPath);
   let reindexed = 0;
   let unchanged = 0;
   let symbolCount = 0;
+
+  _emitProgress('discovery', { message: `Found ${files.length} code files to check`, files_total: files.length });
 
   const existingFiles = {};
   const efRows = sqlJson('SELECT path, mtime, id FROM code_files WHERE repo_id = ?', [repoId]);
@@ -1982,7 +2017,12 @@ async function reindexRepoInternal(repo, mode) {
     existingFiles[row.path] = { mtime: row.mtime, id: row.id };
   }
 
-  for (const filePath of files) {
+  const totalFiles = files.length;
+  for (let i = 0; i < files.length; i++) {
+    const filePath = files[i];
+    if (i % 50 === 0) {
+      _emitProgress('parsing', { message: `Reindexing file ${i + 1}/${totalFiles}...` }, { files_total: totalFiles, files_done: i, symbols: symbolCount });
+    }
     try {
       const stats = fs.statSync(filePath);
       const prev = existingFiles[filePath];
@@ -2065,6 +2105,8 @@ async function reindexRepoInternal(repo, mode) {
     [repoId, repoId, repoId],
   );
 
+  _emitProgress('analysis', { message: 'Building import graph...' }, { files_total: totalFiles, files_done: totalFiles, symbols: symbolCount });
+
   // Build import graph, call graph, and complexity
   let importEdges = 0,
     callEdges = 0,
@@ -2075,22 +2117,30 @@ async function reindexRepoInternal(repo, mode) {
       importEdges = ig.edges;
     }
   } catch (_) {}
+  _emitProgress('analysis', { message: 'Building call graph...' }, { files_total: totalFiles, files_done: totalFiles, symbols: symbolCount });
   try {
     const cg = codeAnalysis.buildCallGraph(db, repoId);
     if (cg.success) {
       callEdges = cg.calls;
     }
   } catch (_) {}
+  _emitProgress('analysis', { message: 'Computing complexity...' }, { files_total: totalFiles, files_done: totalFiles, symbols: symbolCount });
   try {
     const cc = codeAnalysis.buildComplexity(db, repoId);
     if (cc.success) {
       complexityCount = cc.symbols;
     }
   } catch (_) {}
+
+  _emitProgress('done', { message: `Reindexed: ${reindexed} files, ${symbolCount} symbols` }, { files_total: totalFiles, files_done: totalFiles, symbols: symbolCount });
+
   return {
     success: true,
     repo,
     mode,
+    name: repo,
+    file_count: reindexed + unchanged,
+    symbol_count: symbolCount,
     files_reindexed: reindexed,
     files_unchanged: unchanged,
     files_removed: staleCount,

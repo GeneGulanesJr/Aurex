@@ -16,7 +16,8 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { createInterface } from "node:readline";
 import path from "node:path";
 
 // ── Config ──────────────────────────────────────────────────
@@ -120,6 +121,86 @@ async function memCmd(cmd: string): Promise<MemResult | null> {
     const msg = e instanceof Error ? e.message : String(e);
     console.error(`[memory-layer] ${cmd} failed:`, msg);
     return null;
+  }
+}
+
+type ProgressCallback = (msg: string) => void;
+
+async function memStreaming(
+  cmd: string,
+  args: Record<string, string | number | boolean>,
+  onProgress?: ProgressCallback,
+): Promise<MemResult | null> {
+  const argList: string[] = [cmd, "--progress"];
+  for (const [k, v] of Object.entries(args)) {
+    if (v === undefined || v === null || v === "") {continue;}
+    argList.push(`--${k}`);
+    argList.push(String(v));
+  }
+  const timeout = getTimeout(cmd);
+
+  try {
+    return await new Promise<MemResult | null>((resolve, reject) => {
+      const child = spawn("node", [MEMORY_SCRIPT, ...argList], {
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+
+      let stdout = "";
+
+      child.stdout.on("data", (chunk: Buffer) => {
+        stdout += chunk.toString("utf8");
+      });
+
+      if (onProgress) {
+        const rl = createInterface({ input: child.stderr! });
+        rl.on("line", (line: string) => {
+          try {
+            const parsed = JSON.parse(line);
+            if (parsed.progress) {
+              const phase = parsed.phase || "";
+              const message = parsed.message || phase;
+              const filesDone = parsed.files_done ?? "";
+              const filesTotal = parsed.files_total ?? "";
+              const symbols = parsed.symbols ?? "";
+              let statusText = message;
+              if (filesTotal) {
+                statusText = `${message} (${filesDone}/${filesTotal} files, ${symbols} symbols)`;
+              }
+              onProgress(statusText);
+            }
+          } catch {
+            // Not JSON progress — ignore
+          }
+        });
+      }
+
+      const timer = setTimeout(() => {
+        child.kill();
+        reject(new Error(`${cmd} timed out after ${timeout}ms`));
+      }, timeout + 5000);
+
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        if (code !== 0 && !stdout.trim()) {
+          reject(new Error(`${cmd} exited with code ${code}`));
+          return;
+        }
+        try {
+          const result = stdout.trim() ? JSON.parse(stdout.trim()) : null;
+          resolve(result);
+        } catch {
+          reject(new Error(`${cmd} returned invalid JSON`));
+        }
+      });
+
+      child.on("error", (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+    });
+  } catch {
+    // Fall back to non-streaming approach
+    return mem(cmd, args);
   }
 }
 
@@ -1462,7 +1543,7 @@ export default function (pi: ExtensionAPI) {
       name: Type.Optional(Type.String({ description: "Repo name for indexing (defaults to directory basename)" })),
       rules: Type.Optional(Type.String({ description: "JSON layer rules config (or use .pimemory-layers.jsonc file)" })),
     }),
-    async execute(_id, params, _signal, _onUpdate, _ctx) {
+    async execute(_id, params, _signal, onUpdate, _ctx) {
       const cmdMap: Record<string, string> = {
         callers: "call-hierarchy",
         callees: "call-hierarchy",
@@ -1510,7 +1591,9 @@ export default function (pi: ExtensionAPI) {
 
       // Skip repo check for indexing modes — they CREATE the repo entry
       if (params.mode === "index-repo" || params.mode === "reindex-repo") {
-        const result = await mem(cmd, args);
+        const result = await memStreaming(cmd, args, (msg: string) => {
+          try { onUpdate({ type: "progress", message: msg }); } catch { /* ignore if onUpdate not supported */ }
+        });
         if (!result) {return { content: [{ type: "text", text: "Indexing failed or timed out." }], details: {}, isError: true };}
         if (result.error) {return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result, isError: true };}
         const fmt = formatCodeResult(params.mode, result);
