@@ -222,7 +222,7 @@ function save(args) {
           'INSERT OR IGNORE INTO observation_relations (source_id, target_id, relation, confidence) VALUES (?, ?, ?, ?)',
           [newId, keptId, 'duplicate', bestMatch.similarity],
         );
-        sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [keptId]);
+        softDeleteObservation(keptId);
         return {
           id: newId,
           title,
@@ -391,8 +391,9 @@ function search(args) {
 
   // Wire recall tracking: batch insert for ranking feedback
   if (sessionId && ranked.length > 0) {
-    const values = ranked.map((r) => `(${r.id}, ${sessionId}, '${query.replace(/'/g, "''")}')`).join(',');
-    sqlRun(`INSERT OR IGNORE INTO recall_log (memory_id, session_id, query) VALUES ${values}`);
+    const placeholders = ranked.map(() => '(?, ?, ?)').join(',');
+    const params = ranked.flatMap((r) => [r.id, sessionId, query]);
+    sqlRun(`INSERT OR IGNORE INTO recall_log (memory_id, session_id, query) VALUES ${placeholders}`, params);
   }
 
   // If --include-code, also search code symbols
@@ -541,8 +542,9 @@ function context(args) {
   // Wire recall tracking: batch insert
   if (sessionId && observations.length > 0) {
     const recallQuery = topicQuery || topicKey || 'context-auto';
-    const values = observations.map((o) => `(${o.id}, ${sessionId}, '${recallQuery.replace(/'/g, "''")}')`).join(',');
-    sqlRun(`INSERT OR IGNORE INTO recall_log (memory_id, session_id, query) VALUES ${values}`);
+    const placeholders = observations.map(() => '(?, ?, ?)').join(',');
+    const params = observations.flatMap((o) => [o.id, sessionId, recallQuery]);
+    sqlRun(`INSERT OR IGNORE INTO recall_log (memory_id, session_id, query) VALUES ${placeholders}`, params);
   }
 
   // Calculate stats: total across all projects vs current
@@ -651,6 +653,13 @@ function update(args) {
   return rows.length > 0 ? rows[0] : { error: 'Observation not found' };
 }
 
+function softDeleteObservation(id) {
+  sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [parseInt(id, 10)]);
+  try {
+    sqlRun("INSERT INTO observations_fts(observations_fts, rowid, title, content, type, project, topic_key) VALUES ('delete', ?, '', '', '', '', '')", [parseInt(id, 10)]);
+  } catch (_) {}
+}
+
 function del(args) {
   const id = args.id;
   const hard = args.hard === 'true' || args.hard === true;
@@ -662,7 +671,7 @@ function del(args) {
     sqlRun('DELETE FROM observations WHERE id = ?', [parseInt(id, 10)]);
     return { ok: true, hardDeleted: true };
   }
-  sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [parseInt(id, 10)]);
+  softDeleteObservation(id);
   return { ok: true, hardDeleted: false };
 }
 
@@ -847,7 +856,7 @@ function adjustTrust(args) {
     return jsonErrNoExit('Missing --memory, --reason, --delta');
   }
 
-  sqlRun('UPDATE symbol_links SET trust_score = MAX(0.0, trust_score + ?) WHERE memory_id = ?', [delta, memoryId]);
+  sqlRun('UPDATE symbol_links SET trust_score = MIN(1.0, MAX(0.0, trust_score + ?)) WHERE memory_id = ?', [delta, memoryId]);
   sqlRun('INSERT INTO trust_adjustments (memory_id, reason, delta) VALUES (?, ?, ?)', [memoryId, reason, delta]);
 
   const updated = sqlJson('SELECT trust_score FROM symbol_links WHERE memory_id = ? LIMIT 1', [memoryId]);
@@ -1158,7 +1167,7 @@ function markDuplicate(args) {
     'INSERT OR REPLACE INTO observation_relations (source_id, target_id, relation, confidence) VALUES (?, ?, ?, ?)',
     [source, target, 'duplicate', confidence],
   );
-  sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [target]);
+  softDeleteObservation(target);
   return { ok: true, merged: { kept: source, removed: target } };
 }
 
@@ -1281,7 +1290,7 @@ function recoverOrphans() {
 
       // Soft-delete the individual summaries
       for (const s of recentSummaries) {
-        sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [s.id]);
+        softDeleteObservation(s.id);
       }
 
       // Insert the consolidated summary
@@ -1491,7 +1500,7 @@ function dream() {
       AND r.confidence >= 0.6
   `);
   for (const row of superseded) {
-    sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [row.id]);
+    softDeleteObservation(row.id);
     cleanedIds.push({ id: row.id, title: row.title, reason: `superseded by #${row.newer_id} (${row.relation}, ${Math.round(row.confidence * 100)}%)` });
   }
   report.phases.superseded = { count: superseded.length };
@@ -1512,7 +1521,7 @@ function dream() {
         AND (rl.recall_count IS NULL OR rl.recall_count = 0)
     `, [type]);
     for (const row of rows) {
-      sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [row.id]);
+      softDeleteObservation(row.id);
       cleanedIds.push({ id: row.id, title: row.title, reason: `${type} type, never recalled` });
     }
     report.phases[`stale_${type}`] = { count: rows.length };
@@ -1541,7 +1550,7 @@ function dream() {
         AND o.created_at < datetime('now', '-7 days')
     `, [type]);
     for (const row of rows) {
-      sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [row.id]);
+      softDeleteObservation(row.id);
       cleanedIds.push({ id: row.id, title: row.title, reason: `auto-detected ${type}, never recalled in 7+ days` });
     }
     report.phases[`staleAuto_${type}`] = { count: rows.length };
@@ -1561,7 +1570,7 @@ function dream() {
     // Extract referenced memory ID from content (e.g., "Memory #1331 was wrong")
     const refMatch = row.content.match(/#(\d+)/);
     const refNote = refMatch ? ` (referenced #${refMatch[1]} — ensure it was updated)` : '';
-    sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [row.id]);
+    softDeleteObservation(row.id);
     cleanedIds.push({ id: row.id, title: row.title, reason: `correction entry${refNote} — should use memory-update instead` });
   }
   report.phases.staleCorrections = { count: corrections.length };
@@ -1589,7 +1598,7 @@ function dream() {
       AND o1.created_at < o2.created_at
   `);
   for (const row of obsoleteConfigs) {
-    sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [row.id]);
+    softDeleteObservation(row.id);
     cleanedIds.push({ id: row.id, title: row.title, reason: `replaced config — superseded by #${row.newer_id} "${row.newer_title}"` });
   }
   report.phases.replacedConfigs = { count: obsoleteConfigs.length };
@@ -1613,7 +1622,7 @@ function dream() {
   let noiseCleaned = 0;
   for (const row of allDecisions) {
     if (noiseTitlePatterns.some(p => p.test(row.title))) {
-      sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [row.id]);
+      softDeleteObservation(row.id);
       cleanedIds.push({ id: row.id, title: row.title, reason: 'low-value noise title — session progress, not a real decision' });
       noiseCleaned++;
     }
@@ -1660,7 +1669,7 @@ function dream() {
 
     // Soft-delete the others
     for (const otherId of otherIds) {
-      sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [otherId]);
+      softDeleteObservation(otherId);
       cleanedIds.push({ id: otherId, title: entries.find(e => e.id === otherId)?.title || '', reason: `consolidated into #${keepId} (topic: ${group.topic_key})` });
     }
     consolidated += otherIds.length;
@@ -2040,8 +2049,8 @@ async function reindexRepoInternal(repo, mode) {
   }
 
   sqlRun(
-    "UPDATE code_repos SET file_count = (SELECT count(*) FROM code_files WHERE repo_id = ?), symbol_count = ?, updated_at = datetime('now') WHERE id = ?",
-    [repoId, symbolCount, repoId],
+    "UPDATE code_repos SET file_count = (SELECT count(*) FROM code_files WHERE repo_id = ?), symbol_count = (SELECT count(*) FROM code_symbols WHERE repo_id = ?), updated_at = datetime('now') WHERE id = ?",
+    [repoId, repoId, repoId],
   );
 
   // Build import graph, call graph, and complexity
