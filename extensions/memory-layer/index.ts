@@ -1486,7 +1486,8 @@ export default function (pi: ExtensionAPI) {
       const cmd = cmdMap[params.mode];
       if (!cmd) {return { content: [{ type: "text", text: `Unknown mode: ${params.mode}` }], details: {}, isError: true };}
 
-      const args: Record<string, string> = { repo: params.repo };
+      const args: Record<string, string> = {};
+      if (params.repo) {args.repo = params.repo;}
       if (params.symbol) {args.symbol = params.symbol;}
       if (params.file) {args.file = params.file;}
       if (params.depth) {args.depth = String(params.depth);}
@@ -1556,7 +1557,7 @@ export default function (pi: ExtensionAPI) {
         description: "Query mode: search|outline|backlinks|broken-links|glossary|tutorial-path|code-examples|orphans|coverage|stale-pages|duplicates|index-docs|reindex-docs",
         enum: ["search", "outline", "backlinks", "broken-links", "glossary", "tutorial-path", "code-examples", "orphans", "coverage", "stale-pages", "duplicates", "index-docs", "reindex-docs"],
       }),
-      repo: Type.String({ description: "Indexed doc repo name" }),
+      repo: Type.Optional(Type.String({ description: "Indexed doc repo name (required for query modes, optional for index-docs)" })),
       query: Type.Optional(Type.String({ description: "Search query (required for search, code-examples)" })),
       file: Type.Optional(Type.String({ description: "Doc file path (optional for outline)" })),
       doc_path: Type.Optional(Type.String({ description: "Doc file path (for backlinks, required)" })),
@@ -1590,7 +1591,8 @@ export default function (pi: ExtensionAPI) {
       const cmd = cmdMap[params.mode];
       if (!cmd) {return { content: [{ type: "text", text: `Unknown mode: ${params.mode}` }], details: {}, isError: true };}
 
-      const args: Record<string, string> = { repo: params.repo };
+      const args: Record<string, string> = {};
+      if (params.repo) {args.repo = params.repo;}
       if (params.query) {args.query = params.query;}
       if (params.file) {args.file = params.file;}
       if (params.doc_path) {args.path = params.doc_path;}
