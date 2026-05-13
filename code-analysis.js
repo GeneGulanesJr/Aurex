@@ -7,6 +7,10 @@
 
 const path = require('path');
 const codeParser = require('./parse-code');
+const {
+  PAGERANK, HOTSPOT_THRESHOLDS, DEAD_CODE, COMPLEXITY, COUPLING,
+  RESULT_LIMITS, UNTETECTED_CONFIDENCE, PR_RISK,
+} = require('./constants');
 
 // Guard: reject calls when db handle is not available (CLI fallback mode)
 function _requireNativeDb(db) {
@@ -294,7 +298,7 @@ function getImportGraph(db, repoId, opts) {
     .prepare(`
     SELECT ci.import_type, ci.target_module, sf.path as source_file, tf.path as target_file
     FROM code_imports ci JOIN code_files sf ON sf.id = ci.source_file_id LEFT JOIN code_files tf ON tf.id = ci.target_file_id
-    WHERE ci.repo_id = ? LIMIT 500
+    WHERE ci.repo_id = ? LIMIT ${RESULT_LIMITS.IMPORT_GRAPH_MAX}
   `)
     .all(repoId);
 
@@ -682,7 +686,7 @@ function getBlastRadius(db, repoId, opts) {
 function getDeadCode(db, repoId, opts) {
   const guard = _requireNativeDb(db);
   if (guard) {return guard;}
-  const minConfidence = opts.minConfidence || 0.5;
+  const minConfidence = opts.minConfidence || DEAD_CODE.DEFAULT_MIN_CONFIDENCE;
   const includeTests = opts.includeTests || false;
 
   // ── Gather entry points ──
@@ -800,15 +804,15 @@ function getDeadCode(db, repoId, opts) {
     let confidence = 0;
     const signals = [];
     if (!isReExported && !isNameReExported) {
-      confidence += 0.33;
+      confidence += DEAD_CODE.NO_CALLERS_WEIGHT;
       signals.push('no_callers');
     }
     if (isFileDead) {
-      confidence += 0.34;
+      confidence += DEAD_CODE.UNREACHABLE_FILE_WEIGHT;
       signals.push('unreachable_file');
     }
     if (isNameReExported) {
-      confidence -= 0.34;
+      confidence -= DEAD_CODE.RE_EXPORTED_PENALTY;
       signals.push('re_exported');
     }
 
@@ -936,7 +940,7 @@ function buildComplexity(db, repoId) {
     const paramCount = sigMatch ? sigMatch[1].split(',').filter((p) => p.trim()).length : 0;
     const lines = body.split('\n');
     const codeLines = lines.filter((l) => l.trim() && !l.trim().startsWith('//')).length;
-    const assessment = cyclomatic <= 4 ? 'low' : cyclomatic <= 10 ? 'medium' : 'high';
+    const assessment = cyclomatic <= COMPLEXITY.LOW_THRESHOLD ? 'low' : cyclomatic <= COMPLEXITY.MEDIUM_THRESHOLD ? 'medium' : 'high';
 
     insertStmt.run(sym.id, cyclomatic, maxDepth, paramCount, codeLines, assessment);
     count++;
@@ -1039,10 +1043,9 @@ function getFileOutline(db, repoId, filePath) {
 function getHotspots(db, repoId, opts = {}) {
   const guard = _requireNativeDb(db);
   if (guard) {return guard;}
-  const topN = opts.top || 20;
+  const topN = opts.top || RESULT_LIMITS.HOTSPOTS_DEFAULT_TOP;
   const days = opts.days || 90;
 
-  // Ensure churn data exists for this repo
   const churnCount = db
     .prepare('SELECT count(*) as c FROM churn_metrics WHERE repo_id = ? AND window_days = ?')
     .get(repoId, days);
@@ -1063,9 +1066,9 @@ function getHotspots(db, repoId, opts = {}) {
       cm.unique_authors,
       ROUND(sc.cyclomatic * LOG(1 + cm.commits), 2) as hotspot_score,
       CASE
-        WHEN sc.cyclomatic * LOG(1 + cm.commits) >= 20 THEN 'critical'
-        WHEN sc.cyclomatic * LOG(1 + cm.commits) >= 10 THEN 'high'
-        WHEN sc.cyclomatic * LOG(1 + cm.commits) >= 5 THEN 'medium'
+        WHEN sc.cyclomatic * LOG(1 + cm.commits) >= ${HOTSPOT_THRESHOLDS.CRITICAL} THEN 'critical'
+        WHEN sc.cyclomatic * LOG(1 + cm.commits) >= ${HOTSPOT_THRESHOLDS.HIGH} THEN 'high'
+        WHEN sc.cyclomatic * LOG(1 + cm.commits) >= ${HOTSPOT_THRESHOLDS.MEDIUM} THEN 'medium'
         ELSE 'low'
       END as risk
     FROM symbol_complexity sc
@@ -1170,7 +1173,7 @@ function getDependencyCycles(db, repoId) {
 // PageRank cache — shared between getSymbolImportance and winnow
 // Key: repoId, auto-invalidates on reindex via head_commit change
 // Bounded LRU: evicts oldest entry when MAX_CACHE_SIZE is exceeded
-const MAX_PAGE_RANK_CACHE_SIZE = 8;
+const MAX_PAGE_RANK_CACHE_SIZE = PAGERANK.MAX_CACHE_SIZE;
 const _pageRankCache = new Map(); // RepoId → { ranks: Map, symbolMap: Map, n: number }
 
 function _prCacheGet(repoId) {
@@ -1223,12 +1226,12 @@ function buildPageRank(db, repoId) {
   }
 
   // PageRank computation
-  const d = 0.85;
+  const d = PAGERANK.DAMPING_FACTOR;
   const n = symbolSet.size;
   let ranks = new Map();
   for (const id of symbolSet) {ranks.set(id, 1 / n);}
 
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < PAGERANK.ITERATIONS; i++) {
     const newRanks = new Map();
     for (const id of symbolSet) {newRanks.set(id, (1 - d) / n);}
 
@@ -1478,7 +1481,7 @@ function getCouplingMetrics(db, repoId, opts = {}) {
     const ce = efferentMap.get(f.path) || 0;
     const total = ca + ce;
     const instability = total === 0 ? 0 : Math.round((ce / total) * 100) / 100;
-    const category = instability <= 0.3 ? 'stable' : instability >= 0.7 ? 'unstable' : 'balanced';
+    const category = instability <= COUPLING.STABLE_THRESHOLD ? 'stable' : instability >= COUPLING.UNSTABLE_THRESHOLD ? 'unstable' : 'balanced';
 
     if (ca < minCa) {continue;}
     results.push({ file_path: f.path, afferent: ca, efferent: ce, instability, category });
@@ -1929,11 +1932,11 @@ function getUntestedSymbols(db, repoId, opts = {}) {
 
     let confidence;
     if (indirectlyTested.has(sym.id)) {
-      confidence = 0.4;
+      confidence = UNTETECTED_CONFIDENCE.INDIRECTLY_TESTED;
     } else if (testImportedFiles.has(sym.file_id)) {
-      confidence = 0.7;
+      confidence = UNTETECTED_CONFIDENCE.TEST_IMPORTED_FILE;
     } else {
-      confidence = 1.0;
+      confidence = UNTETECTED_CONFIDENCE.NO_TEST_SIGNAL;
     }
 
     if (confidence >= minConfidence) {
@@ -1994,7 +1997,7 @@ function getPrRiskProfile(db, repoId, opts = {}) {
   }
 
   if (changedSymbolIds.size === 0) {
-    return { signals: { changed_files: changedFiles.length }, risk_level: 'low', composite: 0.1 };
+    return { signals: {}, risk_level: 'low', composite: 0.1, changed_files: changedFiles.length };
   }
 
   // Signal 1: Blast radius (30%) — batch computation for >20 symbols
@@ -2019,7 +2022,7 @@ function getPrRiskProfile(db, repoId, opts = {}) {
       `).all(repoId, ...changedIdsArr);
 
       const maxCallers = Math.max(...rows.map(r => r.affected_callers), 1);
-      blastRadiusScore = Math.min(1.0, maxCallers / 50);
+      blastRadiusScore = Math.min(1.0, maxCallers / PR_RISK.BLAST_RADIUS_NORMALIZER);
     } else {
       // Per-symbol blast radius for small PRs
       let maxCallers = 0;
@@ -2030,7 +2033,7 @@ function getPrRiskProfile(db, repoId, opts = {}) {
         const edgeCount = (br.edges || []).length;
         if (edgeCount > maxCallers) {maxCallers = edgeCount;}
       }
-      blastRadiusScore = Math.min(1.0, maxCallers / 50);
+      blastRadiusScore = Math.min(1.0, maxCallers / PR_RISK.BLAST_RADIUS_NORMALIZER);
     }
   } catch (_) {}
 
@@ -2044,7 +2047,7 @@ function getPrRiskProfile(db, repoId, opts = {}) {
        WHERE sc.symbol_id IN (${placeholders})`
     ).all(...changedIdsArr);
     const maxCc = rows[0]?.max_cc || 0;
-    complexityScore = Math.min(1.0, maxCc / 30);
+    complexityScore = Math.min(1.0, maxCc / PR_RISK.COMPLEXITY_NORMALIZER);
   } catch (_) {}
 
   // Signal 3: Churn (20%)
@@ -2057,7 +2060,7 @@ function getPrRiskProfile(db, repoId, opts = {}) {
       ).get(repoId, filePath);
       if (row && row.commits > maxChurn) {maxChurn = row.commits;}
     }
-    churnScore = Math.min(1.0, maxChurn / 20);
+    churnScore = Math.min(1.0, maxChurn / PR_RISK.CHURN_NORMALIZER);
   } catch (_) {}
 
   // Signal 4: Test coverage (20%) — from untested detection
@@ -2082,12 +2085,12 @@ function getPrRiskProfile(db, repoId, opts = {}) {
     const totalMatch = diffStat.match(/(\d+) insertions?.*?(\d+) deletions?/);
     if (totalMatch) {
       const totalLines = parseInt(totalMatch[1]) + (parseInt(totalMatch[2]) || 0);
-      changeVolumeScore = Math.min(1.0, totalLines / 500);
+      changeVolumeScore = Math.min(1.0, totalLines / PR_RISK.CHANGE_VOLUME_NORMALIZER);
     }
   } catch (_) {}
 
   // Composite score with weights
-  const weights = { blast_radius: 0.30, complexity: 0.20, churn: 0.20, test_coverage: 0.20, change_volume: 0.10 };
+  const weights = PR_RISK.WEIGHTS;
 
   // If test coverage unavailable, redistribute weight
   let wBlastRadius = weights.blast_radius;
@@ -2111,9 +2114,9 @@ function getPrRiskProfile(db, repoId, opts = {}) {
     changeVolumeScore * wChangeVolume;
 
   const riskLevel =
-    composite <= 0.3 ? 'low' :
-    composite <= 0.6 ? 'medium' :
-    composite <= 0.8 ? 'high' : 'critical';
+    composite <= PR_RISK.RISK_LEVELS.LOW ? 'low' :
+    composite <= PR_RISK.RISK_LEVELS.MEDIUM ? 'medium' :
+    composite <= PR_RISK.RISK_LEVELS.HIGH ? 'high' : 'critical';
 
   return {
     signals: {

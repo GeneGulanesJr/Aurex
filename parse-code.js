@@ -15,6 +15,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const _wtsPath = path.resolve(__dirname, 'node_modules', 'web-tree-sitter', 'web-tree-sitter.cjs');
 
 const GRAMMAR_DIR = path.resolve(__dirname, 'grammars');
 
@@ -53,7 +54,7 @@ async function init() {
 
   _initPromise = (async () => {
     try {
-      const mod = require('web-tree-sitter');
+      const mod = require(_wtsPath);
       _ParserClass = mod.Parser;
       _LanguageClass = mod.Language;
       await _ParserClass.init();
@@ -892,7 +893,7 @@ function _extractSqlSymbols(filePath, sourceStr, parser) {
 
       const fullText = node.text;
       let sig = fullText.split('\n')[0].trim();
-      if (sig.length > 200) {sig = sig.slice(0, 197) + '...';}
+      if (sig.length > 200) {sig = `${sig.slice(0, 197)  }...`;}
 
       const bodyLines = fullText
         .split('\n')
@@ -1001,8 +1002,8 @@ function extractCallees(filePath) {
                   callee: name,
                   line: node.startPosition.row + 1,
                   is_method: true,
-                  receiver: receiver,
-                  full_path: full_path,
+                  receiver,
+                  full_path,
                 });
               }
             }

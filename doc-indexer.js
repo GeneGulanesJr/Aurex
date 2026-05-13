@@ -7,16 +7,19 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { RESULT_LIMITS } = require('./constants');
 
 // Guard: reject calls when db handle is not available (CLI fallback mode)
-function _requireNativeDb(db) {
-  if (!db || typeof db.prepare !== 'function') {
-    return {
-      error:
-        'This operation requires a native SQLite backend (node:sqlite or better-sqlite3). The CLI fallback does not support doc indexing.',
-    };
-  }
-  return null;
+const _DB_ERROR = Object.freeze({
+  error:
+    'This operation requires a native SQLite backend (node:sqlite or better-sqlite3). The CLI fallback does not support doc indexing.',
+});
+
+function _withDb(fn) {
+  return function _guarded(db, ...args) {
+    if (!db || typeof db.prepare !== 'function') {return _DB_ERROR;}
+    return fn(db, ...args);
+  };
 }
 
 const _MD_EXTENSIONS = new Set(['.md', '.mdx']);
@@ -314,8 +317,6 @@ function walkDir(dirPath, ignoreGlob) {
 
 // ── Main indexing function ──
 async function indexDocs(db, rootPath, repoName, ignoreGlob) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
   if (!fs.existsSync(rootPath)) {return { error: `Path not found: ${rootPath}` };}
 
   // Upsert repo
@@ -359,7 +360,7 @@ async function indexDocs(db, rootPath, repoName, ignoreGlob) {
     'INSERT INTO doc_code_blocks (section_id, lang, content, byte_start, byte_end) VALUES (?, ?, ?, ?, ?)',
   );
 
-  const BATCH_SIZE = 50;
+  const BATCH_SIZE = RESULT_LIMITS.DOC_BATCH_SIZE;
   for (let i = 0; i < files.length; i += BATCH_SIZE) {
     const batch = files.slice(i, i + BATCH_SIZE);
     const reads = await Promise.all(batch.map(async (fp) => {
@@ -560,8 +561,6 @@ function resolveLinks(db, repoId) {
 // ── Query functions ──
 
 function searchDocs(db, repoId, query, opts) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
   opts = opts || {};
   let sql = `SELECT ds.id, ds.title, ds.level, ds.role, ds.tags, ds.content_hash, df.path as file_path,
     length(ds.content) as content_length
@@ -578,7 +577,7 @@ function searchDocs(db, repoId, query, opts) {
     sql += ' AND ds.role = ?';
     params.push(opts.role);
   }
-  sql += ' ORDER BY rank LIMIT 20';
+  sql += ` ORDER BY rank LIMIT ${RESULT_LIMITS.DOC_SEARCH_LIMIT}`;
   try {
     const results = db.prepare(sql).all(...params);
     // V5.1: Compute answerability heuristic (shorter, code-rich sections score higher)
@@ -611,8 +610,6 @@ function searchDocs(db, repoId, query, opts) {
 }
 
 function getDocOutline(db, repoId, filePath) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
   if (filePath) {
     const file = db.prepare('SELECT id FROM doc_files WHERE repo_id = ? AND path LIKE ?').get(repoId, `%${filePath}%`);
     if (!file) {return { error: `Doc file not found: ${filePath}` };}
@@ -643,8 +640,6 @@ function buildOutlineTree(sections) {
 }
 
 function getBacklinks(db, repoId, docPath) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
   const targetFile = db
     .prepare('SELECT id FROM doc_files WHERE repo_id = ? AND path LIKE ?')
     .get(repoId, `%${docPath}%`);
@@ -665,8 +660,6 @@ function getBacklinks(db, repoId, docPath) {
 }
 
 function getBrokenLinks(db, repoId) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
   return db
     .prepare(`
     SELECT dl.target_path, dl.link_text, ds.title as source_title, df.path as source_file
@@ -677,8 +670,6 @@ function getBrokenLinks(db, repoId) {
 }
 
 function lookupTerm(db, repoId, term) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
   if (term) {
     return (
       db.prepare('SELECT * FROM doc_terms WHERE repo_id = ? AND term = ?').get(repoId, term.toLowerCase()) || {
@@ -690,8 +681,6 @@ function lookupTerm(db, repoId, term) {
 }
 
 function getTutorialPath(db, repoId, sectionId) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
   const section = db.prepare('SELECT id, title, file_id, content FROM doc_sections WHERE id = ?').get(sectionId);
   if (!section) {return { error: `Section ${sectionId} not found` };}
 
@@ -735,8 +724,6 @@ function getTutorialPath(db, repoId, sectionId) {
 }
 
 function findCodeExamples(db, repoId, query, lang) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
   let sql = `SELECT dcb.id, dcb.lang, dcb.content, ds.title as section_title, df.path as file_path
     FROM doc_code_blocks dcb JOIN doc_sections ds ON ds.id = dcb.section_id JOIN doc_files df ON df.id = ds.file_id
     WHERE ds.repo_id = ? AND dcb.content LIKE ?`;
@@ -745,13 +732,11 @@ function findCodeExamples(db, repoId, query, lang) {
     sql += ' AND dcb.lang = ?';
     params.push(lang);
   }
-  sql += ' LIMIT 10';
+  sql += ` LIMIT ${RESULT_LIMITS.DOC_CODE_EXAMPLES_LIMIT}`;
   return { results: db.prepare(sql).all(...params) };
 }
 
 async function reindexDocs(db, repoId, mode, ignoreGlob) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
   const repo = db.prepare('SELECT id, name, path FROM doc_repos WHERE id = ?').get(repoId);
   if (!repo) {return { error: `Repo ${repoId} not found` };}
   return indexDocs(db, repo.path, repo.name, ignoreGlob);
@@ -762,8 +747,6 @@ async function reindexDocs(db, repoId, mode, ignoreGlob) {
 // ══════════════════════════════════════════════════════════
 
 function getOrphanSections(db, repoId, opts = {}) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
   const includeSameDoc = opts.includeSameDoc || false;
 
   let query, params;
@@ -804,8 +787,6 @@ function getOrphanSections(db, repoId, opts = {}) {
 // ══════════════════════════════════════════════════════════
 
 function getDocCoverage(db, repoId, docRepoId, opts = {}) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
   // Get all function/constant/method symbols from the code repo
   const symbols = db
     .prepare(`
@@ -857,8 +838,8 @@ function getDocCoverage(db, repoId, docRepoId, opts = {}) {
     documented,
     undocumented: undocumented_list.length,
     coverage_pct: coveragePct,
-    documented_list: documented_list.slice(0, 20),
-    undocumented_list: undocumented_list.slice(0, 20),
+    documented_list: documented_list.slice(0, RESULT_LIMITS.DOC_COVERAGE_LIST_LIMIT),
+    undocumented_list: undocumented_list.slice(0, RESULT_LIMITS.DOC_COVERAGE_LIST_LIMIT),
   };
 }
 
@@ -871,8 +852,6 @@ function getDocCoverage(db, repoId, docRepoId, opts = {}) {
 // ══════════════════════════════════════════════════════════
 
 function getDuplicateSections(db, repoId) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
   // Find sections with identical content_hash
   const duplicates = db
     .prepare(`
@@ -919,8 +898,6 @@ function getDuplicateSections(db, repoId) {
 }
 
 function getStalePages(db, repoId) {
-  const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
 
   const repo = db.prepare('SELECT path FROM doc_repos WHERE id = ?').get(repoId);
   if (!repo) {return { error: 'Repo not found' };}
@@ -955,20 +932,20 @@ function getStalePages(db, repoId) {
 }
 
 module.exports = {
-  indexDocs,
-  reindexDocs,
-  searchDocs,
-  getDocOutline,
-  getBacklinks,
-  getBrokenLinks,
-  lookupTerm,
-  getTutorialPath,
-  findCodeExamples,
-  resolveLinks,
-  getOrphanSections,
-  getDocCoverage,
-  getStalePages,
-  getDuplicateSections,
+  indexDocs: _withDb(indexDocs),
+  reindexDocs: _withDb(reindexDocs),
+  searchDocs: _withDb(searchDocs),
+  getDocOutline: _withDb(getDocOutline),
+  getBacklinks: _withDb(getBacklinks),
+  getBrokenLinks: _withDb(getBrokenLinks),
+  lookupTerm: _withDb(lookupTerm),
+  getTutorialPath: _withDb(getTutorialPath),
+  findCodeExamples: _withDb(findCodeExamples),
+  resolveLinks: _withDb(resolveLinks),
+  getOrphanSections: _withDb(getOrphanSections),
+  getDocCoverage: _withDb(getDocCoverage),
+  getStalePages: _withDb(getStalePages),
+  getDuplicateSections: _withDb(getDuplicateSections),
   _parseMarkdownSections: parseMarkdownSections,
   _slugify: slugify,
 };
