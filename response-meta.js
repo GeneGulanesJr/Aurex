@@ -9,6 +9,7 @@
 const { execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const { FRESHNESS_CACHE_TTL_MS, CONFIDENCE_DEFAULTS } = require('./constants');
 
 // ══════════════════════════════════════════════════════════
 // FRESHNESS CACHE  (module-level, 60s TTL)
@@ -19,7 +20,7 @@ const _freshnessCache = new Map(); // RepoId → { value, ts }
 function _cacheGet(key) {
   const entry = _freshnessCache.get(key);
   if (!entry) {return null;}
-  if (Date.now() - entry.ts > 60_000) {
+  if (Date.now() - entry.ts > FRESHNESS_CACHE_TTL_MS) {
     _freshnessCache.delete(key);
     return null;
   }
@@ -116,7 +117,7 @@ function getFreshness(db, repoId, repoPath, storedHeadCommit) {
 function computeConfidence(toolName, data) {
   const calc = _confidenceCalculators[toolName];
   if (calc) {return calc(data);}
-  return 0.5;
+  return CONFIDENCE_DEFAULTS.UNKNOWN_TOOL;
 }
 
 const _confidenceCalculators = {

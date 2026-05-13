@@ -1,0 +1,791 @@
+use crosshash_core::{
+    CoreError, Edge, Entity, EntityVersion, Repo, Result, WorkspaceType,
+};
+use rusqlite::{params, Connection, OptionalExtension};
+use std::path::Path;
+use uuid::Uuid;
+
+mod embedded {
+    use refinery::embed_migrations;
+    embed_migrations!("../../db/migrations");
+}
+
+pub struct GraphStorage {
+    conn: Connection,
+}
+
+impl GraphStorage {
+    pub fn open(path: &Path) -> Result<Self> {
+        let conn = Connection::open(path)
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        let mut storage = Self { conn };
+        storage.run_migrations()?;
+        Ok(storage)
+    }
+
+    pub fn open_in_memory() -> Result<Self> {
+        let conn = Connection::open_in_memory()
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        let mut storage = Self { conn };
+        storage.run_migrations()?;
+        Ok(storage)
+    }
+
+    fn run_migrations(&mut self) -> Result<()> {
+        embedded::migrations::runner()
+            .run(&mut self.conn)
+            .map_err(|e| CoreError::MigrationError(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn insert_repo(&self, repo: &Repo) -> Result<()> {
+        let languages_json = serde_json::to_string(&repo.languages)
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        let ws_type = serde_json::to_string(&repo.workspace_type)
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO repos (id, name, root_path, git_remote, default_branch, languages, workspace_type, last_indexed_at, commit_hash)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    repo.id.to_string(),
+                    repo.name,
+                    repo.root_path,
+                    repo.git_remote,
+                    repo.default_branch,
+                    languages_json,
+                    ws_type,
+                    repo.last_indexed_at.to_rfc3339(),
+                    repo.commit_hash,
+                ],
+            )
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn get_repo(&self, id: Uuid) -> Result<Option<Repo>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT * FROM repos WHERE id = ?1")
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        let result = stmt
+            .query_row(params![id.to_string()], |row| {
+                let languages_str: String = row.get("languages")?;
+                let ws_type_str: String = row.get("workspace_type")?;
+                let last_indexed_str: String = row.get("last_indexed_at")?;
+
+                Ok(Repo {
+                    id: Uuid::parse_str(&row.get::<_, String>("id")?).unwrap(),
+                    name: row.get("name")?,
+                    root_path: row.get("root_path")?,
+                    git_remote: row.get("git_remote")?,
+                    default_branch: row.get("default_branch")?,
+                    languages: serde_json::from_str(&languages_str).unwrap_or_default(),
+                    workspace_type: serde_json::from_str(&ws_type_str)
+                        .unwrap_or(WorkspaceType::None),
+                    last_indexed_at: chrono::DateTime::parse_from_rfc3339(&last_indexed_str)
+                        .unwrap()
+                        .to_utc(),
+                    commit_hash: row.get("commit_hash")?,
+                })
+            })
+            .optional()
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        Ok(result)
+    }
+
+    pub fn list_repos(&self) -> Result<Vec<Repo>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT * FROM repos ORDER BY name")
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        let repos = stmt
+            .query_map([], |row| {
+                let languages_str: String = row.get("languages")?;
+                let ws_type_str: String = row.get("workspace_type")?;
+                let last_indexed_str: String = row.get("last_indexed_at")?;
+
+                Ok(Repo {
+                    id: Uuid::parse_str(&row.get::<_, String>("id")?).unwrap(),
+                    name: row.get("name")?,
+                    root_path: row.get("root_path")?,
+                    git_remote: row.get("git_remote")?,
+                    default_branch: row.get("default_branch")?,
+                    languages: serde_json::from_str(&languages_str).unwrap_or_default(),
+                    workspace_type: serde_json::from_str(&ws_type_str)
+                        .unwrap_or(WorkspaceType::None),
+                    last_indexed_at: chrono::DateTime::parse_from_rfc3339(&last_indexed_str)
+                        .unwrap()
+                        .to_utc(),
+                    commit_hash: row.get("commit_hash")?,
+                })
+            })
+            .map_err(|e| CoreError::StorageError(e.to_string()))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        Ok(repos)
+    }
+
+    pub fn insert_entity(&self, entity: &Entity) -> Result<()> {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO entities (
+                    id, repo_id, file_path, language, kind, name, qualified_name, signature,
+                    start_line, end_line, start_byte, end_byte,
+                    signature_hash, content_hash, structural_hash, identity_hash, context_hash,
+                    visibility, is_exported, is_async, is_test,
+                    first_seen_commit, last_seen_commit, deleted_at_commit
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
+                params![
+                    entity.id.to_string(),
+                    entity.repo_id.to_string(),
+                    entity.file_path,
+                    serde_json::to_string(&entity.language).unwrap(),
+                    serde_json::to_string(&entity.kind).unwrap(),
+                    entity.name,
+                    entity.qualified_name,
+                    entity.signature,
+                    entity.start_line,
+                    entity.end_line,
+                    entity.start_byte,
+                    entity.end_byte,
+                    entity.signature_hash.as_slice(),
+                    entity.content_hash.as_slice(),
+                    entity.structural_hash.as_slice(),
+                    entity.identity_hash.as_slice(),
+                    entity.context_hash.as_slice(),
+                    serde_json::to_string(&entity.visibility).unwrap(),
+                    entity.is_exported,
+                    entity.is_async,
+                    entity.is_test,
+                    entity.first_seen_commit,
+                    entity.last_seen_commit,
+                    entity.deleted_at_commit,
+                ],
+            )
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn insert_edge(&self, edge: &Edge) -> Result<()> {
+        let metadata_json = edge
+            .metadata
+            .as_ref()
+            .map(|v| v.to_string())
+            .unwrap_or_default();
+
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO edges (id, source_entity_id, target_entity_id, kind, confidence, source, metadata, created_at, validated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    edge.id.to_string(),
+                    edge.source_entity_id.to_string(),
+                    edge.target_entity_id.to_string(),
+                    serde_json::to_string(&edge.kind).unwrap(),
+                    edge.confidence,
+                    serde_json::to_string(&edge.source).unwrap(),
+                    metadata_json,
+                    edge.created_at.to_rfc3339(),
+                    edge.validated_at.map(|v| v.to_rfc3339()),
+                ],
+            )
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn insert_entity_version(&self, version: &EntityVersion) -> Result<()> {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO entity_versions (
+                    entity_id, commit_hash, name, qualified_name, signature,
+                    signature_hash, content_hash, structural_hash, identity_hash, context_hash,
+                    snapshot_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                params![
+                    version.entity_id.to_string(),
+                    version.commit_hash,
+                    version.name,
+                    version.qualified_name,
+                    version.signature,
+                    version.signature_hash.as_slice(),
+                    version.content_hash.as_slice(),
+                    version.structural_hash.as_slice(),
+                    version.identity_hash.as_slice(),
+                    version.context_hash.as_slice(),
+                    version.snapshot_at.to_rfc3339(),
+                ],
+            )
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn upsert_file_hash(&self, repo_id: Uuid, file_path: &str, content_hash: &[u8]) -> Result<()> {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO file_hashes (repo_id, file_path, content_hash) VALUES (?1, ?2, ?3)",
+                params![repo_id.to_string(), file_path, content_hash],
+            )
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn get_file_hash(&self, repo_id: Uuid, file_path: &str) -> Result<Option<[u8; 32]>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT content_hash FROM file_hashes WHERE repo_id = ?1 AND file_path = ?2")
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        let result = stmt
+            .query_row(params![repo_id.to_string(), file_path], |row| {
+                let hash: Vec<u8> = row.get(0)?;
+                let arr = safe_hash_from_slice(&hash);
+                Ok(arr)
+            })
+            .optional()
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        Ok(result)
+    }
+
+    pub fn get_repo_by_name(&self, name: &str) -> Result<Option<Repo>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT * FROM repos WHERE name = ?1")
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        let result = stmt
+            .query_row(params![name], |row| {
+                let languages_str: String = row.get("languages")?;
+                let ws_type_str: String = row.get("workspace_type")?;
+                let last_indexed_str: String = row.get("last_indexed_at")?;
+
+                Ok(Repo {
+                    id: Uuid::parse_str(&row.get::<_, String>("id")?).unwrap(),
+                    name: row.get("name")?,
+                    root_path: row.get("root_path")?,
+                    git_remote: row.get("git_remote")?,
+                    default_branch: row.get("default_branch")?,
+                    languages: serde_json::from_str(&languages_str).unwrap_or_default(),
+                    workspace_type: serde_json::from_str(&ws_type_str)
+                        .unwrap_or(WorkspaceType::None),
+                    last_indexed_at: chrono::DateTime::parse_from_rfc3339(&last_indexed_str)
+                        .unwrap()
+                        .to_utc(),
+                    commit_hash: row.get("commit_hash")?,
+                })
+            })
+            .optional()
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        Ok(result)
+    }
+
+    pub fn get_entities_by_repo(&self, repo_id: Uuid) -> Result<Vec<Entity>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, repo_id, file_path, language, kind, name, qualified_name, signature, \
+                 start_line, end_line, start_byte, end_byte, \
+                 signature_hash, content_hash, structural_hash, identity_hash, context_hash, \
+                 visibility, is_exported, is_async, is_test, \
+                 first_seen_commit, last_seen_commit, deleted_at_commit \
+                 FROM entities WHERE repo_id = ?1 AND deleted_at_commit IS NULL",
+            )
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        let entities = stmt
+            .query_map(params![repo_id.to_string()], |row| {
+                Ok(row_to_entity(row))
+            })
+            .map_err(|e| CoreError::StorageError(e.to_string()))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        Ok(entities)
+    }
+
+    pub fn mark_entities_deleted(&self, repo_id: Uuid, entity_ids: &[Uuid], commit_hash: &str) -> Result<()> {
+        for id in entity_ids {
+            self.conn
+                .execute(
+                    "UPDATE entities SET deleted_at_commit = ?1 WHERE id = ?2 AND repo_id = ?3",
+                    params![commit_hash, id.to_string(), repo_id.to_string()],
+                )
+                .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+    pub fn remove_repo(&self, name: &str) -> Result<()> {
+        let repo = match self.get_repo_by_name(name)? {
+            Some(r) => r,
+            None => return Ok(()),
+        };
+        self.remove_edges_for_repo(repo.id)?;
+        self.conn
+            .execute(
+                "DELETE FROM entity_versions WHERE entity_id IN (SELECT id FROM entities WHERE repo_id = ?1)",
+                params![repo.id.to_string()],
+            )
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        self.conn
+            .execute(
+                "DELETE FROM entities WHERE repo_id = ?1",
+                params![repo.id.to_string()],
+            )
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        self.conn
+            .execute(
+                "DELETE FROM file_hashes WHERE repo_id = ?1",
+                params![repo.id.to_string()],
+            )
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        self.conn
+            .execute("DELETE FROM repos WHERE id = ?1", params![repo.id.to_string()])
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn remove_file_hashes_for_repo(&self, repo_id: Uuid, file_paths: &[&str]) -> Result<()> {
+        for path in file_paths {
+            self.conn
+                .execute(
+                    "DELETE FROM file_hashes WHERE repo_id = ?1 AND file_path = ?2",
+                    params![repo_id.to_string(), path],
+                )
+                .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+    pub fn get_entity_by_id(&self, id: Uuid) -> Result<Option<Entity>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, repo_id, file_path, language, kind, name, qualified_name, signature, \
+                 start_line, end_line, start_byte, end_byte, \
+                 signature_hash, content_hash, structural_hash, identity_hash, context_hash, \
+                 visibility, is_exported, is_async, is_test, \
+                 first_seen_commit, last_seen_commit, deleted_at_commit \
+                 FROM entities WHERE id = ?1 AND deleted_at_commit IS NULL",
+            )
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        let result = stmt
+            .query_row(params![id.to_string()], |row| Ok(row_to_entity(row)))
+            .optional()
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        Ok(result)
+    }
+
+    pub fn get_entities_by_name(&self, name: &str, repo_id: Option<Uuid>) -> Result<Vec<Entity>> {
+        let sql = match repo_id {
+            Some(_) => {
+                "SELECT id, repo_id, file_path, language, kind, name, qualified_name, signature, \
+                 start_line, end_line, start_byte, end_byte, \
+                 signature_hash, content_hash, structural_hash, identity_hash, context_hash, \
+                 visibility, is_exported, is_async, is_test, \
+                 first_seen_commit, last_seen_commit, deleted_at_commit \
+                 FROM entities WHERE name = ?1 AND repo_id = ?2 AND deleted_at_commit IS NULL"
+            }
+            None => {
+                "SELECT id, repo_id, file_path, language, kind, name, qualified_name, signature, \
+                 start_line, end_line, start_byte, end_byte, \
+                 signature_hash, content_hash, structural_hash, identity_hash, context_hash, \
+                 visibility, is_exported, is_async, is_test, \
+                 first_seen_commit, last_seen_commit, deleted_at_commit \
+                 FROM entities WHERE name = ?1 AND deleted_at_commit IS NULL"
+            }
+        };
+
+        let mut stmt = self
+            .conn
+            .prepare(sql)
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        let entities = match repo_id {
+            Some(rid) => stmt
+                .query_map(params![name, rid.to_string()], |row| Ok(row_to_entity(row)))
+                .map_err(|e| CoreError::StorageError(e.to_string()))?
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(|e| CoreError::StorageError(e.to_string()))?,
+            None => stmt
+                .query_map(params![name], |row| Ok(row_to_entity(row)))
+                .map_err(|e| CoreError::StorageError(e.to_string()))?
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(|e| CoreError::StorageError(e.to_string()))?,
+        };
+
+        Ok(entities)
+    }
+
+    pub fn get_edges_by_repo(&self, repo_id: Uuid) -> Result<Vec<Edge>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT e.id, e.source_entity_id, e.target_entity_id, e.kind, e.confidence, \
+                 e.source, e.metadata, e.created_at, e.validated_at \
+                 FROM edges e \
+                 INNER JOIN entities e1 ON e.source_entity_id = e1.id \
+                 INNER JOIN entities e2 ON e.target_entity_id = e2.id \
+                 WHERE e1.repo_id = ?1 OR e2.repo_id = ?1",
+            )
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        let edges = stmt
+            .query_map(params![repo_id.to_string()], |row| {
+                Ok(row_to_edge(row))
+            })
+            .map_err(|e| CoreError::StorageError(e.to_string()))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        Ok(edges)
+    }
+
+    pub fn get_edges_for_entity(&self, entity_id: Uuid) -> Result<Vec<Edge>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, source_entity_id, target_entity_id, kind, confidence, \
+                 source, metadata, created_at, validated_at \
+                 FROM edges WHERE source_entity_id = ?1 OR target_entity_id = ?1",
+            )
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        let edges = stmt
+            .query_map(params![entity_id.to_string()], |row| {
+                Ok(row_to_edge(row))
+            })
+            .map_err(|e| CoreError::StorageError(e.to_string()))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        Ok(edges)
+    }
+
+    pub fn remove_edges_for_repo(&self, repo_id: Uuid) -> Result<()> {
+        self.conn
+            .execute(
+                "DELETE FROM edges WHERE source_entity_id IN (SELECT id FROM entities WHERE repo_id = ?1) \
+                 OR target_entity_id IN (SELECT id FROM entities WHERE repo_id = ?1)",
+                params![repo_id.to_string()],
+            )
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn get_stale_entities(&self, repo_id: Uuid, since_commit: &str) -> Result<Vec<Entity>> {
+        let entities = self.get_entities_by_repo(repo_id)?;
+        let stale: Vec<Entity> = entities
+            .into_iter()
+            .filter(|e| e.last_seen_commit != since_commit)
+            .collect();
+        Ok(stale)
+    }
+
+    pub fn get_entity_versions(&self, entity_id: Uuid) -> Result<Vec<EntityVersion>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT entity_id, commit_hash, name, qualified_name, signature, \
+                 signature_hash, content_hash, structural_hash, identity_hash, context_hash, \
+                 snapshot_at \
+                 FROM entity_versions WHERE entity_id = ?1 ORDER BY snapshot_at DESC",
+            )
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        let versions = stmt
+            .query_map(params![entity_id.to_string()], |row| {
+                let sig_hash: Vec<u8> = row.get(5).unwrap();
+                let cont_hash: Vec<u8> = row.get(6).unwrap();
+                let struct_hash: Vec<u8> = row.get(7).unwrap();
+                let ident_hash: Vec<u8> = row.get(8).unwrap();
+                let ctx_hash: Vec<u8> = row.get(9).unwrap();
+                let snapshot_str: String = row.get(10).unwrap();
+
+                let mut to_arr = |v: Vec<u8>| -> [u8; 32] {
+                    safe_hash_from_slice(&v)
+                };
+
+                Ok(EntityVersion {
+                    entity_id: Uuid::parse_str(&row.get::<_, String>(0).unwrap()).unwrap(),
+                    commit_hash: row.get(1).unwrap(),
+                    name: row.get(2).unwrap(),
+                    qualified_name: row.get(3).unwrap(),
+                    signature: row.get(4).unwrap(),
+                    signature_hash: to_arr(sig_hash),
+                    content_hash: to_arr(cont_hash),
+                    structural_hash: to_arr(struct_hash),
+                    identity_hash: to_arr(ident_hash),
+                    context_hash: to_arr(ctx_hash),
+                    snapshot_at: chrono::DateTime::parse_from_rfc3339(&snapshot_str)
+                        .unwrap()
+                        .to_utc(),
+                })
+            })
+            .map_err(|e| CoreError::StorageError(e.to_string()))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| CoreError::StorageError(e.to_string()))?;
+
+        Ok(versions)
+    }
+}
+
+fn safe_hash_from_slice(v: &[u8]) -> [u8; 32] {
+    let mut arr = [0u8; 32];
+    let len = v.len().min(32);
+    arr[..len].copy_from_slice(&v[..len]);
+    arr
+}
+
+fn row_to_edge(row: &rusqlite::Row) -> Edge {
+    use crosshash_core::{EdgeKind, EdgeSource};
+    let kind_str: String = row.get("kind").unwrap();
+    let source_str: String = row.get("source").unwrap();
+    let metadata_str: Option<String> = row.get("metadata").unwrap_or(None);
+    let created_at_str: String = row.get("created_at").unwrap();
+    let validated_at_str: Option<String> = row.get("validated_at").unwrap_or(None);
+
+    Edge {
+        id: Uuid::parse_str(&row.get::<_, String>("id").unwrap()).unwrap(),
+        source_entity_id: Uuid::parse_str(&row.get::<_, String>("source_entity_id").unwrap()).unwrap(),
+        target_entity_id: Uuid::parse_str(&row.get::<_, String>("target_entity_id").unwrap()).unwrap(),
+        kind: serde_json::from_str(&kind_str).unwrap_or(EdgeKind::Calls),
+        confidence: row.get("confidence").unwrap_or(1.0),
+        source: serde_json::from_str(&source_str).unwrap_or(EdgeSource::Static),
+        metadata: metadata_str.and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
+        created_at: chrono::DateTime::parse_from_rfc3339(&created_at_str)
+            .unwrap()
+            .to_utc(),
+        validated_at: validated_at_str.and_then(|s| {
+            chrono::DateTime::parse_from_rfc3339(&s).map(|d| d.to_utc()).ok()
+        }),
+    }
+}
+
+fn row_to_entity(row: &rusqlite::Row) -> Entity {
+    let sig_hash: Vec<u8> = row.get("signature_hash").unwrap();
+    let cont_hash: Vec<u8> = row.get("content_hash").unwrap();
+    let struct_hash: Vec<u8> = row.get("structural_hash").unwrap();
+    let ident_hash: Vec<u8> = row.get("identity_hash").unwrap();
+    let ctx_hash: Vec<u8> = row.get("context_hash").unwrap();
+
+    let mut to_arr = |v: Vec<u8>| -> [u8; 32] {
+        safe_hash_from_slice(&v)
+    };
+
+    Entity {
+        id: Uuid::parse_str(&row.get::<_, String>("id").unwrap()).unwrap(),
+        repo_id: Uuid::parse_str(&row.get::<_, String>("repo_id").unwrap()).unwrap(),
+        file_path: row.get("file_path").unwrap(),
+        language: serde_json::from_str(&row.get::<_, String>("language").unwrap()).unwrap(),
+        kind: serde_json::from_str(&row.get::<_, String>("kind").unwrap()).unwrap(),
+        name: row.get("name").unwrap(),
+        qualified_name: row.get("qualified_name").unwrap(),
+        signature: row.get("signature").unwrap(),
+        start_line: row.get("start_line").unwrap(),
+        end_line: row.get("end_line").unwrap(),
+        start_byte: row.get("start_byte").unwrap(),
+        end_byte: row.get("end_byte").unwrap(),
+        signature_hash: to_arr(sig_hash),
+        content_hash: to_arr(cont_hash),
+        structural_hash: to_arr(struct_hash),
+        identity_hash: to_arr(ident_hash),
+        context_hash: to_arr(ctx_hash),
+        visibility: serde_json::from_str(&row.get::<_, String>("visibility").unwrap()).unwrap(),
+        is_exported: row.get("is_exported").unwrap(),
+        is_async: row.get("is_async").unwrap(),
+        is_test: row.get("is_test").unwrap(),
+        first_seen_commit: row.get("first_seen_commit").unwrap(),
+        last_seen_commit: row.get("last_seen_commit").unwrap(),
+        deleted_at_commit: row.get("deleted_at_commit").unwrap(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crosshash_core::{
+        ChangeType, EdgeKind, EdgeSource, EntityKind, ImpactReport, ImpactType, Language,
+        RiskLevel, Visibility,
+    };
+
+    fn test_repo() -> Repo {
+        Repo {
+            id: Uuid::now_v7(),
+            name: "test-repo".to_string(),
+            root_path: "/tmp/test-repo".to_string(),
+            git_remote: Some("https://github.com/example/test-repo".to_string()),
+            default_branch: "main".to_string(),
+            languages: vec![Language::Rust],
+            workspace_type: WorkspaceType::None,
+            last_indexed_at: chrono::Utc::now(),
+            commit_hash: "abc123".to_string(),
+        }
+    }
+
+    fn test_entity(repo_id: Uuid) -> Entity {
+        Entity {
+            id: Uuid::now_v7(),
+            repo_id,
+            file_path: "src/lib.rs".to_string(),
+            language: Language::Rust,
+            kind: EntityKind::Function,
+            name: "hello".to_string(),
+            qualified_name: "myapp::hello".to_string(),
+            signature: "fn hello() -> String".to_string(),
+            start_line: 1,
+            end_line: 3,
+            start_byte: 0,
+            end_byte: 30,
+            signature_hash: [1u8; 32],
+            content_hash: [2u8; 32],
+            structural_hash: [3u8; 32],
+            identity_hash: [4u8; 32],
+            context_hash: [5u8; 32],
+            visibility: Visibility::Public,
+            is_exported: true,
+            is_async: false,
+            is_test: false,
+            first_seen_commit: "abc123".to_string(),
+            last_seen_commit: "abc123".to_string(),
+            deleted_at_commit: None,
+        }
+    }
+
+    #[test]
+    fn test_open_in_memory() {
+        let storage = GraphStorage::open_in_memory();
+        assert!(storage.is_ok());
+    }
+
+    #[test]
+    fn test_insert_and_get_repo() {
+        let storage = GraphStorage::open_in_memory().unwrap();
+        let repo = test_repo();
+        storage.insert_repo(&repo).unwrap();
+
+        let retrieved = storage.get_repo(repo.id).unwrap();
+        assert!(retrieved.is_some());
+        let retrieved = retrieved.unwrap();
+        assert_eq!(retrieved.name, "test-repo");
+        assert_eq!(retrieved.root_path, "/tmp/test-repo");
+    }
+
+    #[test]
+    fn test_list_repos() {
+        let storage = GraphStorage::open_in_memory().unwrap();
+        let repo = test_repo();
+        storage.insert_repo(&repo).unwrap();
+
+        let repos = storage.list_repos().unwrap();
+        assert_eq!(repos.len(), 1);
+        assert_eq!(repos[0].name, "test-repo");
+    }
+
+    #[test]
+    fn test_insert_entity() {
+        let storage = GraphStorage::open_in_memory().unwrap();
+        let repo = test_repo();
+        storage.insert_repo(&repo).unwrap();
+
+        let entity = test_entity(repo.id);
+        storage.insert_entity(&entity).unwrap();
+    }
+
+    #[test]
+    fn test_insert_edge() {
+        let storage = GraphStorage::open_in_memory().unwrap();
+        let repo = test_repo();
+        storage.insert_repo(&repo).unwrap();
+
+        let entity_a = test_entity(repo.id);
+        let mut entity_b = test_entity(repo.id);
+        entity_b.id = Uuid::now_v7();
+        entity_b.name = "world".to_string();
+        storage.insert_entity(&entity_a).unwrap();
+        storage.insert_entity(&entity_b).unwrap();
+
+        let edge = Edge {
+            id: Uuid::now_v7(),
+            source_entity_id: entity_a.id,
+            target_entity_id: entity_b.id,
+            kind: EdgeKind::Calls,
+            confidence: 1.0,
+            source: EdgeSource::Static,
+            metadata: None,
+            created_at: chrono::Utc::now(),
+            validated_at: None,
+        };
+        storage.insert_edge(&edge).unwrap();
+    }
+
+    #[test]
+    fn test_insert_entity_version() {
+        let storage = GraphStorage::open_in_memory().unwrap();
+        let repo = test_repo();
+        storage.insert_repo(&repo).unwrap();
+
+        let entity = test_entity(repo.id);
+        storage.insert_entity(&entity).unwrap();
+
+        let version = EntityVersion {
+            entity_id: entity.id,
+            commit_hash: "abc123".to_string(),
+            name: entity.name.clone(),
+            qualified_name: entity.qualified_name.clone(),
+            signature: entity.signature.clone(),
+            signature_hash: entity.signature_hash,
+            content_hash: entity.content_hash,
+            structural_hash: entity.structural_hash,
+            identity_hash: entity.identity_hash,
+            context_hash: entity.context_hash,
+            snapshot_at: chrono::Utc::now(),
+        };
+        storage.insert_entity_version(&version).unwrap();
+    }
+
+    #[test]
+    fn test_file_hash_crud() {
+        let storage = GraphStorage::open_in_memory().unwrap();
+        let repo = test_repo();
+        storage.insert_repo(&repo).unwrap();
+        let hash = [42u8; 32];
+
+        storage.upsert_file_hash(repo.id, "src/lib.rs", &hash).unwrap();
+
+        let retrieved = storage.get_file_hash(repo.id, "src/lib.rs").unwrap();
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap(), hash);
+    }
+
+    #[test]
+    fn test_get_nonexistent_repo() {
+        let storage = GraphStorage::open_in_memory().unwrap();
+        let result = storage.get_repo(Uuid::now_v7()).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_migration_idempotent() {
+        let storage = GraphStorage::open_in_memory().unwrap();
+        let mut storage2 = storage;
+        storage2.run_migrations().unwrap();
+    }
+}
