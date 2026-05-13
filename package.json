@@ -23,6 +23,7 @@
     "skills": ["./skills"]
   },
   "scripts": {
+    "postinstall": "node -e \"try{require('better-sqlite3')}catch{require('child_process').execSync('npm rebuild better-sqlite3',{stdio:'inherit'})}\"",
     "test": "vitest run",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",

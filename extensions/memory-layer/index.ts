@@ -16,7 +16,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { execFile, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import path from "node:path";
 
@@ -25,6 +25,35 @@ import path from "node:path";
 // Works whether installed as a pi package or cloned to ~/.pi/agent/skills/.
 const PKG_ROOT = path.resolve(__dirname, "..", "..");
 const MEMORY_SCRIPT = path.join(PKG_ROOT, "memory-store.js");
+
+// ── Lazy native module rebuild ──────────────────────────────
+// If better-sqlite3 wasn't compiled (e.g. pi install ran npm install
+// on a system without build tools, or node_modules was restored from
+// a different arch), auto-rebuild on first use.
+let nativeChecked = false;
+async function ensureNativeModules(): Promise<void> {
+  if (nativeChecked) {return;}
+  nativeChecked = true;
+  try {
+    require.resolve("better-sqlite3");
+    const mod = require("better-sqlite3");
+    if (typeof mod !== "function") {throw new Error("not a function");}
+  } catch {
+    console.error("[memory-layer] better-sqlite3 not compiled, attempting rebuild...");
+    try {
+      execFileSync("npm", ["rebuild", "better-sqlite3"], {
+        cwd: PKG_ROOT,
+        encoding: "utf8",
+        timeout: 120000,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      console.error("[memory-layer] better-sqlite3 rebuilt successfully");
+    } catch (rebuildErr) {
+      console.error("[memory-layer] Failed to rebuild better-sqlite3:", rebuildErr instanceof Error ? rebuildErr.message : String(rebuildErr));
+      console.error("[memory-layer] Install build tools (build-essential / Xcode CLI tools) and run: npm rebuild better-sqlite3");
+    }
+  }
+}
 
 // ── Helpers ─────────────────────────────────────────────────
 
@@ -332,6 +361,7 @@ export default function (pi: ExtensionAPI) {
   // SESSION START — initialize memory session
   // ────────────────────────────────────────────────────────
   pi.on("session_start", async (event, ctx) => {
+    await ensureNativeModules();
     currentProject = await detectProject(ctx.cwd);
     nudgeCountThisSession = 0;
     turnCount = 0;
