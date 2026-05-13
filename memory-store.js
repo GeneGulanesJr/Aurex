@@ -28,6 +28,9 @@ const {
 } = require('./db');
 
 const { getConfig } = require('./config');
+const {
+  TRUST_DELTA, DEDUP, TIME_WINDOWS, RESULT_LIMITS, RANKING, CONTEXT,
+} = require('./constants');
 
 // Lazily resolve db handle (available after ensureDb())
 let db = null;
@@ -112,7 +115,7 @@ function sessionStart(args) {
     FROM session_log
     WHERE project != ?
     GROUP BY project
-    HAVING last_active < datetime('now', '-90 days')
+    HAVING last_active < datetime('now', '-${TIME_WINDOWS.ARCHIVE_INACTIVE_DAYS} days')
   `,
     [project],
   );
@@ -278,22 +281,10 @@ function rankObservations(rows, query = '') {
         ftsScore = queryWords.length > 0 ? (hits / queryWords.length) * 2 : 0;
       }
       const ageMs = now - new Date(`${row.created_at}Z`).getTime();
-      const recencyScore = Math.exp(-ageMs / (7 * 24 * 60 * 60 * 1000));
-      const trustScore = row.trust_score !== undefined && row.trust_score !== null ? row.trust_score : 0.7;
-      const recallScore = Math.log(1 + (row.recall_count || 0)) * 0.2;
-      const typeBoost =
-        {
-          decision: 1.3,
-          architecture: 1.3,
-          bugfix: 1.2,
-          pattern: 1.2,
-          preference: 1.2,
-          config: 1.1,
-          discovery: 1.0,
-          learning: 1.0,
-          session_summary: 0.7,
-          skill: 0.5,
-        }[row.type] || 1.0;
+      const recencyScore = Math.exp(-ageMs / TIME_WINDOWS.RECENCY_HALF_LIFE_MS);
+      const trustScore = row.trust_score !== undefined && row.trust_score !== null ? row.trust_score : RANKING.DEFAULT_TRUST_SCORE;
+      const recallScore = Math.log(1 + (row.recall_count || 0)) * RANKING.RECALL_LOG_MULTIPLIER;
+      const typeBoost = RANKING.TYPE_BOOST[row.type] || 1.0;
       const ranking = getConfig().ranking;
       const composite =
         (ftsScore * ranking.fts_relevance +
@@ -350,7 +341,7 @@ function search(args) {
         params.push(scope);
       }
       q += ' ORDER BY rank LIMIT ?';
-      params.push(Math.min(limit * 3, 50));
+      params.push(Math.min(limit * RESULT_LIMITS.SEARCH_MULTIPLIER, RESULT_LIMITS.SEARCH_MAX_ROWS));
       rows = sqlJson(q, params);
     } catch (e) {
       rows = null;
@@ -383,7 +374,7 @@ function search(args) {
       params.push(scope);
     }
     q += ' ORDER BY o.created_at DESC LIMIT ?';
-    params.push(Math.min(limit * 3, 50));
+    params.push(Math.min(limit * RESULT_LIMITS.SEARCH_MULTIPLIER, RESULT_LIMITS.SEARCH_MAX_ROWS));
     rows = sqlJson(q, params);
   }
 
@@ -424,38 +415,29 @@ function context(args) {
     FROM session_log
     WHERE project = ?
     ORDER BY started_at DESC
-    LIMIT 5
+    LIMIT ${RESULT_LIMITS.RECENT_SESSIONS}
   `,
         [project],
       )
     : [];
 
-  // Personal-scope observations (cross-project preferences) — limit to 3 for compact context
   const personal = sqlJson(`
     SELECT id, title, type, scope, topic_key, created_at
     FROM observations
     WHERE scope = 'personal' AND deleted_at IS NULL
     ORDER BY created_at DESC
-    LIMIT 3
+    LIMIT ${RESULT_LIMITS.PERSONAL_OBSERVATIONS}
   `);
 
-  // Relevance-weighted context: recent recall + trust + recency + type priority
-  // This ensures memories for the current project are ranked highest,
-  // With recall history surfacing what's been actively useful.
-  const RELEVANCE_WEIGHTS = {
-    recall: 0.35,    // Frequently recalled = actively relevant
-    trust: 0.25,    // High trust = verified and still accurate
-    recency: 0.25,  // Recent = likely still applicable
-    typePriority: 0.15, // Decisions/architecture > trivial types
-  };
+  const RELEVANCE_WEIGHTS = CONTEXT.RELEVANCE_WEIGHTS;
 
   // Topic-aware, cross-project, or standard observations
   let obsQuery, obsParams;
   if (crossProject) {
-    const crossLimit = deep ? Math.min(limit * 2, 30) : limit;
+    const crossLimit = deep ? Math.min(limit * CONTEXT.CROSS_PROJECT_DEEP_MULTIPLIER, CONTEXT.CROSS_PROJECT_DEEP_MAX) : limit;
     obsQuery = `
       SELECT o.id, o.title, o.type, o.scope, o.topic_key, o.project, o.created_at,
-             COALESCE(sl.trust_score, 0.7) as trust_score,
+             COALESCE(sl.trust_score, ${RANKING.DEFAULT_TRUST_SCORE}) as trust_score,
              COALESCE(rl.recall_count, 0) as recall_count,
              ${TYPE_PRIORITY_CASE} as type_priority
       FROM observations o
@@ -466,7 +448,7 @@ function context(args) {
     `;
     obsParams = [crossLimit];
   } else if (topicKey || topicQuery) {
-    const topicLimit = deep ? Math.min(limit * 2, 30) : limit;
+    const topicLimit = deep ? Math.min(limit * CONTEXT.CROSS_PROJECT_DEEP_MULTIPLIER, CONTEXT.CROSS_PROJECT_DEEP_MAX) : limit;
     if (topicQuery) {
       obsQuery = `
         WITH topic_matches AS (
@@ -477,7 +459,7 @@ function context(args) {
           LIMIT ?
         )
         SELECT o.id, o.title, o.type, o.scope, o.topic_key, o.created_at,
-               COALESCE(sl.trust_score, 0.7) as trust_score,
+               COALESCE(sl.trust_score, ${RANKING.DEFAULT_TRUST_SCORE}) as trust_score,
                COALESCE(rl.recall_count, 0) as recall_count,
                ${TYPE_PRIORITY_CASE} as type_priority
         FROM observations o
@@ -490,20 +472,20 @@ function context(args) {
     } else {
       obsQuery = `
         SELECT o.id, o.title, o.type, o.scope, o.topic_key, o.created_at,
-               COALESCE(sl.trust_score, 0.7) as trust_score,
+               COALESCE(sl.trust_score, ${RANKING.DEFAULT_TRUST_SCORE}) as trust_score,
                COALESCE(rl.recall_count, 0) as recall_count,
-               CASE
-                 WHEN o.topic_key = ? THEN 5
-                 WHEN o.type = 'decision' THEN 3 WHEN o.type = 'architecture' THEN 3
-                 WHEN o.type = 'bugfix' THEN 2 WHEN o.type = 'pattern' THEN 2
-                 WHEN o.type = 'preference' THEN 2 WHEN o.type = 'config' THEN 1
-                 WHEN o.type = 'discovery' THEN 1 WHEN o.type = 'learning' THEN 1
-                 ELSE 0
-               END as type_priority
+                CASE
+                  WHEN o.topic_key = ? THEN ${CONTEXT.TOPIC_MATCH_BOOST}
+                  WHEN o.type = 'decision' THEN ${RANKING.TYPE_PRIORITY.decision} WHEN o.type = 'architecture' THEN ${RANKING.TYPE_PRIORITY.architecture}
+                  WHEN o.type = 'bugfix' THEN ${RANKING.TYPE_PRIORITY.bugfix} WHEN o.type = 'pattern' THEN ${RANKING.TYPE_PRIORITY.pattern}
+                  WHEN o.type = 'preference' THEN ${RANKING.TYPE_PRIORITY.preference} WHEN o.type = 'config' THEN ${RANKING.TYPE_PRIORITY.config}
+                  WHEN o.type = 'discovery' THEN ${RANKING.TYPE_PRIORITY.discovery} WHEN o.type = 'learning' THEN ${RANKING.TYPE_PRIORITY.learning}
+                  ELSE 0
+                END as type_priority
         FROM observations o
         ${TRUST_RECALL_JOINS}
         WHERE o.project = ? AND o.deleted_at IS NULL AND o.type != 'skill'
-        ORDER BY recall_count DESC, CASE WHEN o.topic_key = ? THEN 5 ELSE type_priority END DESC, trust_score DESC, o.created_at DESC
+        ORDER BY recall_count DESC, CASE WHEN o.topic_key = ? THEN ${CONTEXT.TOPIC_MATCH_BOOST} ELSE type_priority END DESC, trust_score DESC, o.created_at DESC
         LIMIT ?
       `;
       obsParams = [topicKey, project, topicKey, topicLimit];
@@ -511,7 +493,7 @@ function context(args) {
   } else {
     obsQuery = `
       SELECT o.id, o.title, o.type, o.scope, o.topic_key, o.created_at,
-             COALESCE(sl.trust_score, 0.7) as trust_score,
+             COALESCE(sl.trust_score, ${RANKING.DEFAULT_TRUST_SCORE}) as trust_score,
              COALESCE(rl.recall_count, 0) as recall_count,
              ${TYPE_PRIORITY_CASE} as type_priority
       FROM observations o
@@ -532,7 +514,7 @@ function context(args) {
     FROM procedural_memory
     WHERE (project = ? OR project IS NULL) AND status = 'active'
     ORDER BY updated_at DESC
-    LIMIT 5
+    LIMIT ${RESULT_LIMITS.RECENT_SESSIONS}
   `,
         [project],
       )
@@ -742,7 +724,7 @@ function capturePassive(args) {
   let inserted = 0;
   const sessionId = findLatestSession(null);
   for (const item of items) {
-    const summary = item.length > 80 ? `${item.slice(0, 77)}…` : item;
+    const summary = item.length > CAPTURE_PASSIVE.SUMMARY_MAX_LENGTH ? `${item.slice(0, CAPTURE_PASSIVE.SUMMARY_MAX_LENGTH - 3)}…` : item;
     sqlJson('INSERT INTO observations (session_id, type, title, content, scope) VALUES (?, ?, ?, ?, ?)', [
       String(sessionId),
       'learning',
@@ -795,7 +777,7 @@ function linkSymbol(args) {
   const memoryId = args.memory;
   const symbolId = args.symbol;
   const repo = args.repo;
-  const trust = parseFloat(args.trust || (symbolId ? '1.0' : '0.7'));
+  const trust = parseFloat(args.trust || (symbolId ? '1.0' : String(TRUST_DELTA.DEFAULT_INITIAL)));
 
   if (!memoryId || !repo) {
     return jsonErrNoExit('Missing --memory and --repo');
@@ -832,7 +814,7 @@ function autoLink(args) {
       String(row.memory_id),
       '__unlinked__',
       project,
-      0.7,
+      TRUST_DELTA.DEFAULT_INITIAL,
     ]);
     linked++;
   }
@@ -963,8 +945,8 @@ function syncCodeTrust(args) {
     );
 
     if (isChanged) {
-      const delta = -0.3;
-      const newTrust = Math.max(0.0, link.trust_score + delta);
+      const delta = TRUST_DELTA.SYMBOL_CHANGED;
+      const newTrust = Math.max(TRUST_DELTA.TRUST_FLOOR, link.trust_score + delta);
       sqlRun(
         "UPDATE symbol_links SET trust_score = ?, last_verified = datetime('now') WHERE memory_id = ? AND symbol_id = ?",
         [newTrust, link.memory_id, link.symbol_id],
@@ -980,9 +962,9 @@ function syncCodeTrust(args) {
         old_trust: link.trust_score,
         new_trust: newTrust,
       });
-    } else if (link.trust_score < 0.95) {
-      const delta = 0.05;
-      const newTrust = Math.min(1.0, link.trust_score + delta);
+    } else if (link.trust_score < TRUST_DELTA.MAX_SURVIVED) {
+      const delta = TRUST_DELTA.SURVIVED_UNCHANGED;
+      const newTrust = Math.min(TRUST_DELTA.TRUST_CEILING, link.trust_score + delta);
       sqlRun(
         "UPDATE symbol_links SET trust_score = ?, last_verified = datetime('now') WHERE memory_id = ? AND symbol_id = ?",
         [newTrust, link.memory_id, link.symbol_id],
@@ -1067,7 +1049,7 @@ function related(args) {
     const grouped = new Map();
     for (const row of clusters) {
       if (!grouped.has(row.symbol_id)) {grouped.set(row.symbol_id, []);}
-      if (grouped.get(row.symbol_id).length < 5) {
+      if (grouped.get(row.symbol_id).length < RESULT_LIMITS.RELATED_PER_SYMBOL) {
         grouped.get(row.symbol_id).push(row);
       }
     }
@@ -1127,7 +1109,7 @@ function checkDuplicate(title, type, project, topicKey) {
   } else {
     q += ' ORDER BY created_at DESC';
   }
-  q += ' LIMIT 20';
+  q += ` LIMIT ${RESULT_LIMITS.DEDUP_CANDIDATES}`;
   const candidates = sqlJson(q, params);
 
   const duplicates = [];
@@ -1149,7 +1131,7 @@ function checkDuplicate(title, type, project, topicKey) {
 function markDuplicate(args) {
   const source = parseInt(args.source);
   const target = parseInt(args.target);
-  const confidence = parseFloat(args.confidence || '0.9');
+  const confidence = parseFloat(args.confidence || String(DEDUP.MARK_DUP_DEFAULT_CONFIDENCE));
   if (!source || !target) {
     return jsonErrNoExit('Missing --source and --target');
   }
@@ -1263,7 +1245,7 @@ function recoverOrphans() {
       `SELECT id, content FROM observations
        WHERE type = 'session_summary'
        AND title = 'Auto-Recovered Session Summary'
-       AND created_at > datetime('now', '-5 minutes')
+        AND created_at > datetime('now', '-${TIME_WINDOWS.RECOVERY_RECENT_MINUTES} minutes')
        AND deleted_at IS NULL
        ORDER BY id ASC`,
     );
@@ -1353,12 +1335,12 @@ function stepOutcome(args) {
 
   if (success) {
     sqlRun(
-      'UPDATE procedural_steps SET success = MIN(1.0, success + 0.1), attempts = attempts + 1 WHERE workflow = ? AND step_num = ?',
+      `UPDATE procedural_steps SET success = MIN(1.0, success + ${TRUST_DELTA.STEP_SUCCESS}), attempts = attempts + 1 WHERE workflow = ? AND step_num = ?`,
       [workflow, step],
     );
   } else {
     sqlRun(
-      'UPDATE procedural_steps SET success = MAX(0.0, success - 0.2), attempts = attempts + 1, fail_workaround = ? WHERE workflow = ? AND step_num = ?',
+      `UPDATE procedural_steps SET success = MAX(0.0, success - ${Math.abs(TRUST_DELTA.STEP_FAILURE)}), attempts = attempts + 1, fail_workaround = ? WHERE workflow = ? AND step_num = ?`,
       [workaround || null, workflow, step],
     );
   }
@@ -1394,14 +1376,14 @@ function runCompact() {
     );
     report.steps.deadLinksCleaned = true;
 
-    sqlRun("DELETE FROM observations WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now', '-30 days')");
+    sqlRun(`DELETE FROM observations WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now', '-${TIME_WINDOWS.PURGE_SOFT_DELETED_DAYS} days')`);
     report.steps.purgedSoftDeleted = true;
 
     sqlRun(`DELETE FROM observations WHERE id IN (
       SELECT id FROM (
         SELECT id, ROW_NUMBER() OVER (PARTITION BY project ORDER BY created_at DESC) AS rn
         FROM observations WHERE type = 'session_summary' AND deleted_at IS NULL
-      ) WHERE rn > 3
+      ) WHERE rn > ${RESULT_LIMITS.SUMMARIES_PER_PROJECT}
     )`);
     report.steps.oldSummariesPruned = true;
 
@@ -1409,7 +1391,7 @@ function runCompact() {
       SELECT id FROM (
         SELECT id, ROW_NUMBER() OVER (PARTITION BY project ORDER BY created_at DESC) AS rn
         FROM user_prompts
-      ) WHERE rn > 10
+      ) WHERE rn > ${RESULT_LIMITS.PROMPTS_PER_PROJECT}
     )`);
     report.steps.oldPromptsPruned = true;
 
@@ -1417,23 +1399,23 @@ function runCompact() {
       SELECT id FROM (
         SELECT id, ROW_NUMBER() OVER (PARTITION BY project ORDER BY started_at DESC) AS rn
         FROM session_log
-      ) WHERE rn <= 5
+      ) WHERE rn <= ${RESULT_LIMITS.SESSIONS_PER_PROJECT}
     )`);
     report.steps.sessionLogPruned = true;
 
-    sqlRun("DELETE FROM trust_adjustments WHERE timestamp < datetime('now', '-90 days')");
+    sqlRun(`DELETE FROM trust_adjustments WHERE timestamp < datetime('now', '-${TIME_WINDOWS.TRUST_ADJUSTMENTS_RETENTION_DAYS} days')`);
     report.steps.trustAdjustmentsPruned = true;
 
     sqlRun('DELETE FROM session_recalls WHERE session_id NOT IN (SELECT id FROM session_log)');
     report.steps.recallsPruned = true;
 
-    sqlRun("DELETE FROM procedural_memory WHERE updated_at < datetime('now', '-90 days')");
+    sqlRun(`DELETE FROM procedural_memory WHERE updated_at < datetime('now', '-${TIME_WINDOWS.WORKFLOW_RETENTION_DAYS} days')`);
     report.steps.oldWorkflowsPruned = true;
 
-    sqlRun(`UPDATE symbol_links SET trust_score = MAX(0.0, trust_score - 0.05)
+    sqlRun(`UPDATE symbol_links SET trust_score = MAX(${TRUST_DELTA.TRUST_FLOOR}, trust_score - ${Math.abs(TRUST_DELTA.STALE_TRUST_DECAY)})
       WHERE memory_id IN (
-        SELECT CAST(id AS TEXT) FROM observations WHERE updated_at < datetime('now', '-90 days')
-      ) AND trust_score > 0.0`);
+        SELECT CAST(id AS TEXT) FROM observations WHERE updated_at < datetime('now', '-${TIME_WINDOWS.ARCHIVE_INACTIVE_DAYS} days')
+      ) AND trust_score > ${TRUST_DELTA.TRUST_FLOOR}`);
     report.steps.staleTrustDecayed = true;
 
     sqlRaw('VACUUM;');
@@ -1488,7 +1470,7 @@ function dream() {
     JOIN observation_relations r ON r.target_id = o.id
     WHERE r.relation IN ('duplicate', 'supersedes')
       AND o.deleted_at IS NULL
-      AND r.confidence >= 0.6
+      AND r.confidence >= ${DEDUP.DREAM_SUPERSEDED_CONFIDENCE}
   `);
   for (const row of superseded) {
     sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [row.id]);
@@ -1537,8 +1519,8 @@ function dream() {
       WHERE o.type = ? AND o.deleted_at IS NULL
         AND (rl.recall_count IS NULL OR rl.recall_count = 0)
         AND o.content LIKE '%Auto-detected%'
-        AND (sl.trust_score IS NULL OR sl.trust_score < 0.3)
-        AND o.created_at < datetime('now', '-7 days')
+        AND (sl.trust_score IS NULL OR sl.trust_score < ${DEDUP.DREAM_LOW_TRUST_THRESHOLD})
+        AND o.created_at < datetime('now', '-${TIME_WINDOWS.DREAM_AUTO_DETECTED_MIN_AGE_DAYS} days')
     `, [type]);
     for (const row of rows) {
       sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [row.id]);
@@ -1695,13 +1677,13 @@ function trustRecovery(args) {
   const recalled = sqlJson('SELECT memory_id FROM session_recalls WHERE session_id = ?', [sessionId]);
   let recovered = 0;
   for (const row of recalled) {
-    sqlRun('UPDATE symbol_links SET trust_score = MIN(1.0, trust_score + 0.1) WHERE memory_id = ?', [
+    sqlRun(`UPDATE symbol_links SET trust_score = MIN(${TRUST_DELTA.TRUST_CEILING}, trust_score + ${TRUST_DELTA.PASSIVE_SURVIVAL}) WHERE memory_id = ?`, [
       String(row.memory_id),
     ]);
     sqlRun('INSERT INTO trust_adjustments (memory_id, reason, delta) VALUES (?, ?, ?)', [
       String(row.memory_id),
       'passive_survival',
-      0.1,
+      TRUST_DELTA.PASSIVE_SURVIVAL,
     ]);
     recovered++;
   }
@@ -1820,7 +1802,7 @@ async function indexRepoInternal(repoPath, repoName) {
     /* Non-git repo or git error */
   }
 
-  const BATCH_SIZE = 50;
+  const BATCH_SIZE = RESULT_LIMITS.INDEX_BATCH_SIZE;
   for (let i = 0; i < files.length; i += BATCH_SIZE) {
     const batch = files.slice(i, i + BATCH_SIZE);
     const reads = await Promise.all(batch.map(async (fp) => {

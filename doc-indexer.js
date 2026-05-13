@@ -7,6 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { RESULT_LIMITS } = require('./constants');
 
 // Guard: reject calls when db handle is not available (CLI fallback mode)
 const _DB_ERROR = Object.freeze({
@@ -359,7 +360,7 @@ async function indexDocs(db, rootPath, repoName, ignoreGlob) {
     'INSERT INTO doc_code_blocks (section_id, lang, content, byte_start, byte_end) VALUES (?, ?, ?, ?, ?)',
   );
 
-  const BATCH_SIZE = 50;
+  const BATCH_SIZE = RESULT_LIMITS.DOC_BATCH_SIZE;
   for (let i = 0; i < files.length; i += BATCH_SIZE) {
     const batch = files.slice(i, i + BATCH_SIZE);
     const reads = await Promise.all(batch.map(async (fp) => {
@@ -576,7 +577,7 @@ function searchDocs(db, repoId, query, opts) {
     sql += ' AND ds.role = ?';
     params.push(opts.role);
   }
-  sql += ' ORDER BY rank LIMIT 20';
+  sql += ` ORDER BY rank LIMIT ${RESULT_LIMITS.DOC_SEARCH_LIMIT}`;
   try {
     const results = db.prepare(sql).all(...params);
     // V5.1: Compute answerability heuristic (shorter, code-rich sections score higher)
@@ -731,7 +732,7 @@ function findCodeExamples(db, repoId, query, lang) {
     sql += ' AND dcb.lang = ?';
     params.push(lang);
   }
-  sql += ' LIMIT 10';
+  sql += ` LIMIT ${RESULT_LIMITS.DOC_CODE_EXAMPLES_LIMIT}`;
   return { results: db.prepare(sql).all(...params) };
 }
 
@@ -837,8 +838,8 @@ function getDocCoverage(db, repoId, docRepoId, opts = {}) {
     documented,
     undocumented: undocumented_list.length,
     coverage_pct: coveragePct,
-    documented_list: documented_list.slice(0, 20),
-    undocumented_list: undocumented_list.slice(0, 20),
+    documented_list: documented_list.slice(0, RESULT_LIMITS.DOC_COVERAGE_LIST_LIMIT),
+    undocumented_list: undocumented_list.slice(0, RESULT_LIMITS.DOC_COVERAGE_LIST_LIMIT),
   };
 }
 
