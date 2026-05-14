@@ -53,10 +53,7 @@ pub fn api_router_with_storage(config: ApiConfig, storage: GraphStorage) -> Rout
 
 fn authorized(headers: &HeaderMap, config: &ApiConfig) -> bool {
     match &config.api_key {
-        Some(key) => headers
-            .get("x-api-key")
-            .and_then(|v| v.to_str().ok())
-            == Some(key.as_str()),
+        Some(key) => headers.get("x-api-key").and_then(|v| v.to_str().ok()) == Some(key.as_str()),
         None => true,
     }
 }
@@ -79,10 +76,7 @@ fn err_json(e: crosshash_core::CoreError) -> (StatusCode, Json<serde_json::Value
     )
 }
 
-async fn list_repos(
-    headers: HeaderMap,
-    State(state): State<Arc<ApiState>>,
-) -> impl IntoResponse {
+async fn list_repos(headers: HeaderMap, State(state): State<Arc<ApiState>>) -> impl IntoResponse {
     if !authorized(&headers, &state.config) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
@@ -112,19 +106,19 @@ async fn register_repo(
     if !authorized(&headers, &state.config) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    let root = match PathBuf::from(&body.path).canonicalize() {
-        Ok(p) => p,
-        Err(e) => {
-            return (
+    let root =
+        match PathBuf::from(&body.path).canonicalize() {
+            Ok(p) => p,
+            Err(e) => return (
                 StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"status": "error", "message": format!("invalid path: {e}")})),
+                Json(
+                    serde_json::json!({"status": "error", "message": format!("invalid path: {e}")}),
+                ),
             )
-                .into_response()
-        }
-    };
+                .into_response(),
+        };
     let ws_type = detect_workspace_type(&root, body.workspace_aware);
-    let commit_hash =
-        crosshash_git::get_head_commit(&root).unwrap_or_else(|_| "WORKTREE".into());
+    let commit_hash = crosshash_git::get_head_commit(&root).unwrap_or_else(|_| "WORKTREE".into());
     let repo = Repo {
         id: Uuid::now_v7(),
         name: body.name.clone(),
@@ -363,10 +357,7 @@ async fn feedback(
     Json(serde_json::json!({"status": "recorded"})).into_response()
 }
 
-async fn ai_stats(
-    headers: HeaderMap,
-    State(state): State<Arc<ApiState>>,
-) -> impl IntoResponse {
+async fn ai_stats(headers: HeaderMap, State(state): State<Arc<ApiState>>) -> impl IntoResponse {
     if !authorized(&headers, &state.config) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
@@ -377,10 +368,8 @@ async fn ai_stats(
     match storage.get_ai_inference_logs(1000) {
         Ok(logs) => {
             let invocations = logs.len();
-            let total_input_tokens: u64 = logs
-                .iter()
-                .filter_map(|l| l["input_tokens"].as_u64())
-                .sum();
+            let total_input_tokens: u64 =
+                logs.iter().filter_map(|l| l["input_tokens"].as_u64()).sum();
             let total_output_tokens: u64 = logs
                 .iter()
                 .filter_map(|l| l["output_tokens"].as_u64())
@@ -476,8 +465,7 @@ mod tests {
     ) -> (StatusCode, serde_json::Value) {
         let mut req = Request::builder().uri(path).body(Body::empty()).unwrap();
         if let Some(key) = api_key {
-            req.headers_mut()
-                .insert("x-api-key", key.parse().unwrap());
+            req.headers_mut().insert("x-api-key", key.parse().unwrap());
         }
         let resp = app.oneshot(req).await.unwrap();
         let status = resp.status();
@@ -495,17 +483,14 @@ mod tests {
         body: Option<&str>,
         api_key: Option<&str>,
     ) -> (StatusCode, serde_json::Value) {
-        let body_bytes = body
-            .map(|b| b.as_bytes().to_vec())
-            .unwrap_or_default();
+        let body_bytes = body.map(|b| b.as_bytes().to_vec()).unwrap_or_default();
         let mut req = Request::builder()
             .method("POST")
             .uri(path)
             .body(Body::from(body_bytes))
             .unwrap();
         if let Some(key) = api_key {
-            req.headers_mut()
-                .insert("x-api-key", key.parse().unwrap());
+            req.headers_mut().insert("x-api-key", key.parse().unwrap());
         }
         if body.is_some() {
             req.headers_mut()
@@ -537,9 +522,13 @@ mod tests {
     #[tokio::test]
     async fn register_repo_no_auth_returns_error_for_invalid_path() {
         let app = test_app(no_auth_config());
-        let (status, body) =
-            send_post(app, "/v1/repos", Some(r#"{"path":"/nonexistent","name":"test"}"#), None)
-                .await;
+        let (status, body) = send_post(
+            app,
+            "/v1/repos",
+            Some(r#"{"path":"/nonexistent","name":"test"}"#),
+            None,
+        )
+        .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["status"], "error");
     }
@@ -567,10 +556,7 @@ mod tests {
         let (status, body) = send_post(
             app,
             "/v1/feedback",
-            Some(&format!(
-                r#"{{"edge_id":"{}","decision":"accept"}}"#,
-                id
-            )),
+            Some(&format!(r#"{{"edge_id":"{}","decision":"accept"}}"#, id)),
             None,
         )
         .await;
@@ -611,10 +597,7 @@ mod tests {
         let (status, _body) = send_post(
             app,
             "/v1/feedback",
-            Some(&format!(
-                r#"{{"edge_id":"{}","decision":"maybe"}}"#,
-                sug_id
-            )),
+            Some(&format!(r#"{{"edge_id":"{}","decision":"maybe"}}"#, sug_id)),
             None,
         )
         .await;

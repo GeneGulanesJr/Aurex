@@ -302,13 +302,7 @@ fn discover_edges_static_only_skips_ai() {
 
     Command::cargo_bin("crosshash")
         .unwrap()
-        .args([
-            "--db",
-            db.to_str().unwrap(),
-            "index",
-            "--repo",
-            "test-svc",
-        ])
+        .args(["--db", db.to_str().unwrap(), "index", "--repo", "test-svc"])
         .assert()
         .success();
 
@@ -384,11 +378,7 @@ fn impact_command_markdown_output() {
     let dir = tempfile::tempdir().unwrap();
     let repo = dir.path().join("repo");
     fs::create_dir_all(repo.join("src")).unwrap();
-    fs::write(
-        repo.join("src/lib.rs"),
-        "pub fn my_func() -> u32 { 1 }\n",
-    )
-    .unwrap();
+    fs::write(repo.join("src/lib.rs"), "pub fn my_func() -> u32 { 1 }\n").unwrap();
     let db = dir.path().join("crosshash.db");
 
     Command::cargo_bin("crosshash")
@@ -407,13 +397,7 @@ fn impact_command_markdown_output() {
 
     Command::cargo_bin("crosshash")
         .unwrap()
-        .args([
-            "--db",
-            db.to_str().unwrap(),
-            "index",
-            "--repo",
-            "md-svc",
-        ])
+        .args(["--db", db.to_str().unwrap(), "index", "--repo", "md-svc"])
         .assert()
         .success();
 
@@ -440,11 +424,7 @@ fn impact_source_all_with_multi_repo() {
     let worker = dir.path().join("worker");
     fs::create_dir_all(api.join("src")).unwrap();
     fs::create_dir_all(worker.join("src")).unwrap();
-    fs::write(
-        api.join("src/lib.rs"),
-        "pub fn shared_fn() -> u32 { 1 }\n",
-    )
-    .unwrap();
+    fs::write(api.join("src/lib.rs"), "pub fn shared_fn() -> u32 { 1 }\n").unwrap();
     fs::write(
         worker.join("src/lib.rs"),
         "pub fn do_work() -> u32 { shared_fn() }\n",
@@ -495,11 +475,7 @@ fn impact_command_sarif_output() {
     let dir = tempfile::tempdir().unwrap();
     let repo = dir.path().join("repo");
     fs::create_dir_all(repo.join("src")).unwrap();
-    fs::write(
-        repo.join("src/lib.rs"),
-        "pub fn sarif_fn() -> u32 { 1 }\n",
-    )
-    .unwrap();
+    fs::write(repo.join("src/lib.rs"), "pub fn sarif_fn() -> u32 { 1 }\n").unwrap();
     let db = dir.path().join("crosshash.db");
 
     Command::cargo_bin("crosshash")
@@ -518,13 +494,7 @@ fn impact_command_sarif_output() {
 
     Command::cargo_bin("crosshash")
         .unwrap()
-        .args([
-            "--db",
-            db.to_str().unwrap(),
-            "index",
-            "--repo",
-            "sarif-svc",
-        ])
+        .args(["--db", db.to_str().unwrap(), "index", "--repo", "sarif-svc"])
         .assert()
         .success();
 
@@ -548,11 +518,7 @@ fn impact_command_reports_zero_ai_calls() {
     let dir = tempfile::tempdir().unwrap();
     let repo = dir.path().join("repo");
     fs::create_dir_all(repo.join("src")).unwrap();
-    fs::write(
-        repo.join("src/lib.rs"),
-        "pub fn no_ai_fn() -> u32 { 1 }\n",
-    )
-    .unwrap();
+    fs::write(repo.join("src/lib.rs"), "pub fn no_ai_fn() -> u32 { 1 }\n").unwrap();
     let db = dir.path().join("crosshash.db");
 
     Command::cargo_bin("crosshash")
@@ -571,13 +537,7 @@ fn impact_command_reports_zero_ai_calls() {
 
     Command::cargo_bin("crosshash")
         .unwrap()
-        .args([
-            "--db",
-            db.to_str().unwrap(),
-            "index",
-            "--repo",
-            "no-ai-svc",
-        ])
+        .args(["--db", db.to_str().unwrap(), "index", "--repo", "no-ai-svc"])
         .assert()
         .success();
 

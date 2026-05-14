@@ -1119,7 +1119,15 @@ mod tests {
         let exporter = Uuid::now_v7();
         let consumer = Uuid::now_v7();
         storage
-            .insert_ai_edge_suggestion(&id, &exporter, &consumer, "APIContract", "test", 0.9, "pending")
+            .insert_ai_edge_suggestion(
+                &id,
+                &exporter,
+                &consumer,
+                "APIContract",
+                "test",
+                0.9,
+                "pending",
+            )
             .unwrap();
         let pending = storage.get_pending_suggestions().unwrap();
         assert_eq!(pending.len(), 1);
@@ -1138,7 +1146,15 @@ mod tests {
         let exporter = Uuid::now_v7();
         let consumer = Uuid::now_v7();
         storage
-            .insert_ai_edge_suggestion(&suggestion_id, &exporter, &consumer, "DataFlow", "reasoning", 0.88, "pending")
+            .insert_ai_edge_suggestion(
+                &suggestion_id,
+                &exporter,
+                &consumer,
+                "DataFlow",
+                "reasoning",
+                0.88,
+                "pending",
+            )
             .unwrap();
         let fb_id = Uuid::now_v7();
         storage
@@ -1156,7 +1172,15 @@ mod tests {
         let exporter = Uuid::now_v7();
         let consumer = Uuid::now_v7();
         storage
-            .insert_ai_edge_suggestion(&id, &exporter, &consumer, "APIContract", "test", 0.88, "pending")
+            .insert_ai_edge_suggestion(
+                &id,
+                &exporter,
+                &consumer,
+                "APIContract",
+                "test",
+                0.88,
+                "pending",
+            )
             .unwrap();
         storage.update_suggestion_status(&id, "rejected").unwrap();
         let found = storage.get_suggestion_by_id(&id).unwrap().unwrap();

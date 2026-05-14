@@ -83,10 +83,8 @@ mod tests {
 
     #[test]
     fn signature_changed_via_imports_is_breaking() {
-        let result = ImpactClassifier::classify(
-            ChangeKind::SignatureChanged,
-            &affected("Imports", 0.9),
-        );
+        let result =
+            ImpactClassifier::classify(ChangeKind::SignatureChanged, &affected("Imports", 0.9));
         assert_eq!(result.classification, "Breaking");
         assert!((result.risk_score - 0.9).abs() < f64::EPSILON);
         assert_eq!(result.risk_level, RiskLevel::High);
@@ -94,19 +92,14 @@ mod tests {
 
     #[test]
     fn signature_changed_via_package_dep_is_breaking() {
-        let result = ImpactClassifier::classify(
-            ChangeKind::SignatureChanged,
-            &affected("PackageDep", 0.8),
-        );
+        let result =
+            ImpactClassifier::classify(ChangeKind::SignatureChanged, &affected("PackageDep", 0.8));
         assert_eq!(result.classification, "Breaking");
     }
 
     #[test]
     fn body_only_via_package_dep_needs_update() {
-        let result = ImpactClassifier::classify(
-            ChangeKind::BodyOnly,
-            &affected("PackageDep", 0.7),
-        );
+        let result = ImpactClassifier::classify(ChangeKind::BodyOnly, &affected("PackageDep", 0.7));
         assert_eq!(result.classification, "NeedsUpdate");
         assert!((result.risk_score - 0.7).abs() < f64::EPSILON);
         assert_eq!(result.risk_level, RiskLevel::High);
@@ -114,8 +107,7 @@ mod tests {
 
     #[test]
     fn body_only_via_calls_needs_update() {
-        let result =
-            ImpactClassifier::classify(ChangeKind::BodyOnly, &affected("Calls", 0.8));
+        let result = ImpactClassifier::classify(ChangeKind::BodyOnly, &affected("Calls", 0.8));
         assert_eq!(result.classification, "NeedsUpdate");
         assert!((result.risk_score - 0.6).abs() < f64::EPSILON);
         assert_eq!(result.risk_level, RiskLevel::Medium);
@@ -136,16 +128,14 @@ mod tests {
 
     #[test]
     fn low_confidence_is_investigate() {
-        let result =
-            ImpactClassifier::classify(ChangeKind::Modified, &affected("Calls", 0.5));
+        let result = ImpactClassifier::classify(ChangeKind::Modified, &affected("Calls", 0.5));
         assert_eq!(result.classification, "Investigate");
         assert!((result.risk_score - 0.5).abs() < f64::EPSILON);
     }
 
     #[test]
     fn modified_high_confidence_default_edge_is_safe() {
-        let result =
-            ImpactClassifier::classify(ChangeKind::Modified, &affected("Contains", 0.9));
+        let result = ImpactClassifier::classify(ChangeKind::Modified, &affected("Contains", 0.9));
         assert_eq!(result.classification, "Safe");
         assert!((result.risk_score - 0.1).abs() < f64::EPSILON);
         assert_eq!(result.risk_level, RiskLevel::Low);

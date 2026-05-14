@@ -26,9 +26,7 @@ fn index_repo(cmd_db: &str, name: &str) {
         .success();
 }
 
-fn setup_two_repos(
-    dir: &std::path::Path,
-) -> (String, String) {
+fn setup_two_repos(dir: &std::path::Path) -> (String, String) {
     let api = dir.join("aaa-core");
     let app = dir.join("bbb-app");
     fs::create_dir_all(api.join("src")).unwrap();
@@ -51,9 +49,7 @@ fn setup_two_repos(
     )
 }
 
-fn setup_three_repos(
-    dir: &std::path::Path,
-) -> (String, String, String) {
+fn setup_three_repos(dir: &std::path::Path) -> (String, String, String) {
     let core = dir.join("aaa-core");
     let mid = dir.join("bbb-mid");
     let app = dir.join("ccc-app");
@@ -214,7 +210,14 @@ mod subphase_31_repo_registry {
 
         Command::cargo_bin("crosshash")
             .unwrap()
-            .args(["--db", db.to_str().unwrap(), "entity", "lookup", "a", "--all"])
+            .args([
+                "--db",
+                db.to_str().unwrap(),
+                "entity",
+                "lookup",
+                "a",
+                "--all",
+            ])
             .assert()
             .success()
             .stdout(contains("no entities"));
@@ -398,11 +401,7 @@ mod subphase_32_workspace_detection {
         let dir = tempfile::tempdir().unwrap();
         let repo = dir.path().join("go-proj");
         fs::create_dir_all(repo.join("src")).unwrap();
-        fs::write(
-            repo.join("go.mod"),
-            "module example.com/test\n\ngo 1.21\n",
-        )
-        .unwrap();
+        fs::write(repo.join("go.mod"), "module example.com/test\n\ngo 1.21\n").unwrap();
         fs::write(repo.join("src/lib.rs"), "pub fn go_fn() -> u32 { 1 }\n").unwrap();
         let db = dir.path().join("test.db");
 
@@ -796,7 +795,14 @@ mod subphase_38_indexing_pipeline {
 
         Command::cargo_bin("crosshash")
             .unwrap()
-            .args(["--db", db.to_str().unwrap(), "index", "--repo", "aaa-core", "--no-ai"])
+            .args([
+                "--db",
+                db.to_str().unwrap(),
+                "index",
+                "--repo",
+                "aaa-core",
+                "--no-ai",
+            ])
             .assert()
             .success()
             .stdout(contains("entities extracted"));
@@ -821,11 +827,7 @@ mod subphase_38_indexing_pipeline {
         let dir = tempfile::tempdir().unwrap();
         let repo = dir.path().join("svc");
         fs::create_dir_all(repo.join("src")).unwrap();
-        fs::write(
-            repo.join("src/lib.rs"),
-            "pub fn inc_fn() -> u32 { 1 }\n",
-        )
-        .unwrap();
+        fs::write(repo.join("src/lib.rs"), "pub fn inc_fn() -> u32 { 1 }\n").unwrap();
         let db = dir.path().join("test.db");
 
         add_repo(db.to_str().unwrap(), "svc", repo.to_str().unwrap());

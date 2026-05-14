@@ -1,7 +1,7 @@
 use anyhow::Result;
 use crosshash_core::Repo;
 use crosshash_graph::{GraphBuilder, GraphStorage, GraphTraversal};
-use crosshash_impact::{ImpactAnalyzer, ImpactClassifier, ChangeKind};
+use crosshash_impact::{ChangeKind, ImpactAnalyzer, ImpactClassifier};
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, Read, Write};
 use std::sync::{Arc, Mutex};
@@ -185,11 +185,7 @@ impl McpServer {
                     let request: serde_json::Value = serde_json::from_slice(&buf)?;
                     let response = self.handle_request(request);
                     let response_bytes = serde_json::to_vec(&response)?;
-                    write!(
-                        stdout,
-                        "Content-Length: {}\r\n\r\n",
-                        response_bytes.len()
-                    )?;
+                    write!(stdout, "Content-Length: {}\r\n\r\n", response_bytes.len())?;
                     stdout.write_all(&response_bytes)?;
                     stdout.flush()?;
                     break;
@@ -200,11 +196,11 @@ impl McpServer {
 
     fn handle_request(&self, request: serde_json::Value) -> serde_json::Value {
         let id = request.get("id").cloned();
-        let method = request
-            .get("method")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let params = request.get("params").cloned().unwrap_or(serde_json::json!({}));
+        let method = request.get("method").and_then(|v| v.as_str()).unwrap_or("");
+        let params = request
+            .get("params")
+            .cloned()
+            .unwrap_or(serde_json::json!({}));
 
         if request.get("method").is_some() && request.get("id").is_none() {
             return serde_json::json!({});
@@ -258,10 +254,7 @@ impl McpServer {
     }
 
     fn handle_tools_call(&self, params: serde_json::Value) -> Result<serde_json::Value> {
-        let tool_name = params
-            .get("name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let tool_name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
         let arguments = params
             .get("arguments")
             .cloned()
@@ -292,7 +285,9 @@ impl McpServer {
     }
 
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, GraphStorage>> {
-        self.storage.lock().map_err(|e| anyhow::anyhow!("storage lock: {e}"))
+        self.storage
+            .lock()
+            .map_err(|e| anyhow::anyhow!("storage lock: {e}"))
     }
 
     fn tool_list_repos(&self) -> Result<String> {
@@ -365,20 +360,14 @@ impl McpServer {
         let callers = traversal.callers(entity.id, depth);
         let callees = traversal.callees(entity.id, depth);
         let mut result = format!("Entity: {} ({:?})\n", entity.qualified_name, entity.kind);
-        result.push_str(&format!(
-            "Callers ({}):\n",
-            callers.len()
-        ));
+        result.push_str(&format!("Callers ({}):\n", callers.len()));
         for hit in &callers {
             result.push_str(&format!(
                 "  {} (depth={})\n",
                 hit.entity.qualified_name, hit.distance
             ));
         }
-        result.push_str(&format!(
-            "Callees ({}):\n",
-            callees.len()
-        ));
+        result.push_str(&format!("Callees ({}):\n", callees.len()));
         for hit in &callees {
             result.push_str(&format!(
                 "  {} (depth={})\n",
@@ -505,7 +494,11 @@ impl McpServer {
                 .take(20)
                 .map(|e| format!("{}\t{:?}\t{}", e.name, e.kind, e.last_seen_commit))
                 .collect();
-            return Ok(format!("Entities in {} (showing up to 20):\n{}", repo_name, summary.join("\n")));
+            return Ok(format!(
+                "Entities in {} (showing up to 20):\n{}",
+                repo_name,
+                summary.join("\n")
+            ));
         }
         let old_versions: Vec<_> = entities
             .iter()
@@ -829,9 +822,7 @@ mod tests {
     #[test]
     fn tool_discover_edges_empty() {
         let server = McpServer::default();
-        let result = server
-            .tool_discover_edges(&serde_json::json!({}))
-            .unwrap();
+        let result = server.tool_discover_edges(&serde_json::json!({})).unwrap();
         assert!(result.contains("No repos"));
     }
 }

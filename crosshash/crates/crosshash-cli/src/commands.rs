@@ -241,9 +241,7 @@ impl Cli {
             Command::Index(cmd) => execute_index(self.format, self.db, cmd).await,
             Command::Entity(cmd) => execute_entity(self.format, self.db, cmd),
             Command::Graph(cmd) => execute_graph(self.format, self.db, cmd),
-            Command::DiscoverEdges(cmd) => {
-                execute_discover_edges(self.format, self.db, cmd).await
-            }
+            Command::DiscoverEdges(cmd) => execute_discover_edges(self.format, self.db, cmd).await,
             Command::Impact(cmd) => execute_impact(self.format, self.db, cmd),
             Command::Feedback(cmd) => execute_feedback(self.format, self.db, cmd),
             Command::AiStats(cmd) => execute_ai_stats(self.format, self.db, cmd),
@@ -366,7 +364,12 @@ struct IndexSummary {
     text: String,
 }
 
-async fn index_one_repo(storage: &GraphStorage, repo: &Repo, incremental: bool, cmd: &IndexCommand) -> Result<IndexSummary> {
+async fn index_one_repo(
+    storage: &GraphStorage,
+    repo: &Repo,
+    incremental: bool,
+    cmd: &IndexCommand,
+) -> Result<IndexSummary> {
     let root = PathBuf::from(&repo.root_path);
     let commit_hash = get_head_commit(&root).unwrap_or_else(|_| repo.commit_hash.clone());
     let files = collect_source_files(&root, &repo.languages)?;
@@ -374,7 +377,11 @@ async fn index_one_repo(storage: &GraphStorage, repo: &Repo, incremental: bool, 
         languages: repo.languages.clone(),
     });
     let existing = storage.get_entities_by_repo(repo.id)?;
-    let existing_exported: HashSet<Uuid> = existing.iter().filter(|e| e.is_exported).map(|e| e.id).collect();
+    let existing_exported: HashSet<Uuid> = existing
+        .iter()
+        .filter(|e| e.is_exported)
+        .map(|e| e.id)
+        .collect();
     let is_new_repo = existing.is_empty();
     let mut seen_ids = HashSet::new();
     let mut parsed_files = 0usize;
@@ -438,7 +445,10 @@ async fn index_one_repo(storage: &GraphStorage, repo: &Repo, incremental: bool, 
         .filter(|e| !seen_ids.contains(&e.id))
         .map(|e| e.id)
         .collect();
-    let exported_deleted = deleted_ids.iter().filter(|id| existing_exported.contains(id)).count();
+    let exported_deleted = deleted_ids
+        .iter()
+        .filter(|id| existing_exported.contains(id))
+        .count();
     storage.mark_entities_deleted(repo.id, &deleted_ids, &commit_hash)?;
     storage.remove_edges_for_repo(repo.id)?;
     let edges = infer_static_edges(repo.id, &root, &all_entities, &source_by_file);
@@ -473,9 +483,19 @@ async fn index_one_repo(storage: &GraphStorage, repo: &Repo, incremental: bool, 
             commits_since_validation: 0,
             days_since_validation: 0,
         });
-        gate_decision_str = Some(format!("{:?}", decision.reasons.first().unwrap_or(&crosshash_ai::GateReason::NoApiSurfaceChange)));
+        gate_decision_str = Some(format!(
+            "{:?}",
+            decision
+                .reasons
+                .first()
+                .unwrap_or(&crosshash_ai::GateReason::NoApiSurfaceChange)
+        ));
         if decision.should_run_ai && ai_config.enabled {
-            let other_repos = storage.list_repos()?.into_iter().filter(|r| r.id != repo.id).collect::<Vec<_>>();
+            let other_repos = storage
+                .list_repos()?
+                .into_iter()
+                .filter(|r| r.id != repo.id)
+                .collect::<Vec<_>>();
             if !other_repos.is_empty() {
                 let client = crosshash_ai::LlmClient::default();
                 let llm_request = crosshash_ai::LlmRequest {
@@ -511,7 +531,10 @@ async fn index_one_repo(storage: &GraphStorage, repo: &Repo, incremental: bool, 
                             "reject" => crosshash_ai::FeedbackDecision::Reject,
                             _ => crosshash_ai::FeedbackDecision::Accept,
                         };
-                        let confidence = row.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.5);
+                        let confidence = row
+                            .get("confidence")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.5);
                         let suggestion_id = row
                             .get("suggestion_id")
                             .and_then(|v| v.as_str())
@@ -526,19 +549,24 @@ async fn index_one_repo(storage: &GraphStorage, repo: &Repo, incremental: bool, 
                     })
                     .collect();
                 let current_exports = storage.get_public_api_surface(repo.id)?;
-                let current_surface = crosshash_ai::ApiSurface::from_exported_entities(repo.id, current_exports);
+                let current_surface =
+                    crosshash_ai::ApiSurface::from_exported_entities(repo.id, current_exports);
                 for other in &other_repos {
                     let other_exports = storage.get_public_api_surface(other.id)?;
                     if other_exports.is_empty() {
                         continue;
                     }
-                    let other_surface = crosshash_ai::ApiSurface::from_exported_entities(other.id, other_exports);
+                    let other_surface =
+                        crosshash_ai::ApiSurface::from_exported_entities(other.id, other_exports);
                     let (exporter, consumer, surface_a, surface_b) = if is_new_repo {
                         (&other.id, &repo.id, &other_surface, &current_surface)
                     } else {
                         (&repo.id, &other.id, &current_surface, &other_surface)
                     };
-                    match engine.infer(&client, &llm_request, surface_a, surface_b).await {
+                    match engine
+                        .infer(&client, &llm_request, surface_a, surface_b)
+                        .await
+                    {
                         Ok(suggestions) => {
                             let suggested = suggestions.len();
                             let auto_accepted = engine.accept_high_confidence(&suggestions);
@@ -547,11 +575,12 @@ async fn index_one_repo(storage: &GraphStorage, repo: &Repo, incremental: bool, 
                                 let _ = storage.insert_edge(edge);
                             }
                             for suggestion in &suggestions {
-                                let status = if suggestion.confidence >= engine.auto_accept_threshold {
-                                    "accepted"
-                                } else {
-                                    "pending"
-                                };
+                                let status =
+                                    if suggestion.confidence >= engine.auto_accept_threshold {
+                                        "accepted"
+                                    } else {
+                                        "pending"
+                                    };
                                 let _ = storage.insert_ai_edge_suggestion(
                                     &suggestion.id,
                                     &suggestion.exporter_entity_id,
@@ -566,7 +595,13 @@ async fn index_one_repo(storage: &GraphStorage, repo: &Repo, incremental: bool, 
                             let output_est = suggested as u64 * 20;
                             let cost = (input_est + output_est) as f64 * 0.00001;
                             let log_id = Uuid::now_v7();
-                            let reason_str = format!("{:?}", decision.reasons.first().unwrap_or(&crosshash_ai::GateReason::Forced));
+                            let reason_str = format!(
+                                "{:?}",
+                                decision
+                                    .reasons
+                                    .first()
+                                    .unwrap_or(&crosshash_ai::GateReason::Forced)
+                            );
                             let _ = storage.insert_ai_inference_log(
                                 &log_id,
                                 &reason_str,
@@ -584,7 +619,10 @@ async fn index_one_repo(storage: &GraphStorage, repo: &Repo, incremental: bool, 
                             ai_cost += cost;
                         }
                         Err(e) => {
-                            eprintln!("AI inference failed for {} vs {}: {}", repo.name, other.name, e);
+                            eprintln!(
+                                "AI inference failed for {} vs {}: {}",
+                                repo.name, other.name, e
+                            );
                         }
                     }
                 }
@@ -597,7 +635,10 @@ async fn index_one_repo(storage: &GraphStorage, repo: &Repo, incremental: bool, 
         text.push_str(&format!(", AI edges: {ai_edges_suggested} suggested, {ai_edges_auto_accepted} auto-accepted, ${ai_cost:.4} cost"));
     }
     if let Some(ref gate) = gate_decision_str {
-        text.push_str(&format!(", gate={}", if cmd.no_ai { "skipped (--no-ai)" } else { gate }));
+        text.push_str(&format!(
+            ", gate={}",
+            if cmd.no_ai { "skipped (--no-ai)" } else { gate }
+        ));
     }
     Ok(IndexSummary {
         status: "ok",
@@ -764,7 +805,11 @@ fn execute_graph(format: OutputFormat, db: Option<PathBuf>, cmd: GraphCommand) -
                 json!({"valid_edges": report.valid_edges, "stale_edges": report.stale_edges}),
             )
         }
-        GraphAction::PathBetween { source, target, repo } => {
+        GraphAction::PathBetween {
+            source,
+            target,
+            repo,
+        } => {
             let repo_name = repo.ok_or_else(|| anyhow!("--repo is required"))?;
             let repo = storage
                 .get_repo_by_name(&repo_name)?
@@ -777,7 +822,9 @@ fn execute_graph(format: OutputFormat, db: Option<PathBuf>, cmd: GraphCommand) -
                 Some(steps) => {
                     let text = steps
                         .iter()
-                        .map(|step| format!("{} -> {}", step.source_entity_id, step.target_entity_id))
+                        .map(|step| {
+                            format!("{} -> {}", step.source_entity_id, step.target_entity_id)
+                        })
                         .collect::<Vec<_>>()
                         .join("\n");
                     print(format, &text, json!({"path": steps}))
@@ -818,8 +865,15 @@ async fn execute_discover_edges(
         return print(format, &text, json!({"pending_suggestions": pending}));
     }
     if cmd.dry_run {
-        let text = format!("public surfaces: {total_entities} entities across {} repos", filtered_repos.len());
-        return print(format, &text, json!({"surfaces": surfaces.iter().map(|s| s.2.to_prompt_json()).collect::<Vec<_>>(), "repo_count": filtered_repos.len()}));
+        let text = format!(
+            "public surfaces: {total_entities} entities across {} repos",
+            filtered_repos.len()
+        );
+        return print(
+            format,
+            &text,
+            json!({"surfaces": surfaces.iter().map(|s| s.2.to_prompt_json()).collect::<Vec<_>>(), "repo_count": filtered_repos.len()}),
+        );
     }
     let ai_config = load_ai_config();
     let decision = crosshash_ai::AiGate::decide(&crosshash_ai::GateInput {
@@ -870,7 +924,10 @@ async fn execute_discover_edges(
                     "reject" => crosshash_ai::FeedbackDecision::Reject,
                     _ => crosshash_ai::FeedbackDecision::Accept,
                 };
-                let confidence = row.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.5);
+                let confidence = row
+                    .get("confidence")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.5);
                 let suggestion_id = row
                     .get("suggestion_id")
                     .and_then(|v| v.as_str())
@@ -894,19 +951,19 @@ async fn execute_discover_edges(
                 if surface_a.entities.is_empty() || surface_b.entities.is_empty() {
                     continue;
                 }
-                match engine.infer(&client, &llm_request, surface_a, surface_b).await {
+                match engine
+                    .infer(&client, &llm_request, surface_a, surface_b)
+                    .await
+                {
                     Ok(suggestions) => {
                         let suggested = suggestions.len();
-                        let auto_accepted =
-                            engine.accept_high_confidence(&suggestions);
+                        let auto_accepted = engine.accept_high_confidence(&suggestions);
                         let auto_count = auto_accepted.len();
                         for edge in &auto_accepted {
                             let _ = storage.insert_edge(edge);
                         }
                         for suggestion in &suggestions {
-                            let status = if suggestion.confidence
-                                >= engine.auto_accept_threshold
-                            {
+                            let status = if suggestion.confidence >= engine.auto_accept_threshold {
                                 "accepted"
                             } else {
                                 "pending"
@@ -925,7 +982,13 @@ async fn execute_discover_edges(
                         let output_est = suggested as u64 * 20;
                         let cost = (input_est + output_est) as f64 * 0.00001;
                         let log_id = Uuid::now_v7();
-                        let reason_str = format!("{:?}", decision.reasons.first().unwrap_or(&crosshash_ai::GateReason::Forced));
+                        let reason_str = format!(
+                            "{:?}",
+                            decision
+                                .reasons
+                                .first()
+                                .unwrap_or(&crosshash_ai::GateReason::Forced)
+                        );
                         let _ = storage.insert_ai_inference_log(
                             &log_id,
                             &reason_str,
@@ -1031,30 +1094,21 @@ fn execute_impact(format: OutputFormat, db: Option<PathBuf>, cmd: ImpactCommand)
     )
 }
 
-fn execute_feedback(
-    format: OutputFormat,
-    db: Option<PathBuf>,
-    cmd: FeedbackCommand,
-) -> Result<()> {
+fn execute_feedback(format: OutputFormat, db: Option<PathBuf>, cmd: FeedbackCommand) -> Result<()> {
     let storage = open_storage(db)?;
     let text = match cmd.action {
         Some(FeedbackAction::Accept { edge_id }) => {
-            let id = Uuid::parse_str(&edge_id)
-                .map_err(|_| anyhow!("invalid UUID: {edge_id}"))?;
+            let id = Uuid::parse_str(&edge_id).map_err(|_| anyhow!("invalid UUID: {edge_id}"))?;
             let suggestion = storage
                 .get_suggestion_by_id(&id)?
                 .ok_or_else(|| anyhow!("suggestion not found: {edge_id}"))?;
             storage.update_suggestion_status(&id, "accepted")?;
             let fb_id = Uuid::now_v7();
             storage.insert_feedback(&fb_id, &id, "accept", None)?;
-            let exporter = Uuid::parse_str(
-                suggestion["exporter_entity_id"].as_str().unwrap_or(""),
-            )
-            .ok();
-            let consumer = Uuid::parse_str(
-                suggestion["consumer_entity_id"].as_str().unwrap_or(""),
-            )
-            .ok();
+            let exporter =
+                Uuid::parse_str(suggestion["exporter_entity_id"].as_str().unwrap_or("")).ok();
+            let consumer =
+                Uuid::parse_str(suggestion["consumer_entity_id"].as_str().unwrap_or("")).ok();
             if let (Some(exporter_id), Some(consumer_id)) = (exporter, consumer) {
                 let edge = Edge {
                     id: Uuid::now_v7(),
@@ -1075,8 +1129,7 @@ fn execute_feedback(
             format!("accepted AI edge suggestion {edge_id}")
         }
         Some(FeedbackAction::Reject { edge_id }) => {
-            let id = Uuid::parse_str(&edge_id)
-                .map_err(|_| anyhow!("invalid UUID: {edge_id}"))?;
+            let id = Uuid::parse_str(&edge_id).map_err(|_| anyhow!("invalid UUID: {edge_id}"))?;
             storage
                 .get_suggestion_by_id(&id)?
                 .ok_or_else(|| anyhow!("suggestion not found: {edge_id}"))?;
@@ -1104,25 +1157,37 @@ fn execute_feedback(
         }
         Some(FeedbackAction::Export) => {
             let events = storage.get_feedback_events()?;
-            return print(format, &format!("{} feedback events", events.len()), json!(events));
+            return print(
+                format,
+                &format!("{} feedback events", events.len()),
+                json!(events),
+            );
         }
     };
     print(format, &text, json!({"status": "ok"}))
 }
 
-fn execute_ai_stats(
-    format: OutputFormat,
-    db: Option<PathBuf>,
-    _cmd: AiStatsCommand,
-) -> Result<()> {
+fn execute_ai_stats(format: OutputFormat, db: Option<PathBuf>, _cmd: AiStatsCommand) -> Result<()> {
     let storage = open_storage(db)?;
     let logs = storage.get_ai_inference_logs(1000)?;
     let invocations = logs.len();
     let total_input_tokens: u64 = logs.iter().filter_map(|l| l["input_tokens"].as_u64()).sum();
-    let total_output_tokens: u64 = logs.iter().filter_map(|l| l["output_tokens"].as_u64()).sum();
-    let total_cost: f64 = logs.iter().filter_map(|l| l["estimated_cost_usd"].as_f64()).sum();
-    let edges_suggested: usize = logs.iter().filter_map(|l| l["edges_suggested"].as_u64()).sum::<u64>() as usize;
-    let edges_auto_accepted: usize = logs.iter().filter_map(|l| l["edges_auto_accepted"].as_u64()).sum::<u64>() as usize;
+    let total_output_tokens: u64 = logs
+        .iter()
+        .filter_map(|l| l["output_tokens"].as_u64())
+        .sum();
+    let total_cost: f64 = logs
+        .iter()
+        .filter_map(|l| l["estimated_cost_usd"].as_f64())
+        .sum();
+    let edges_suggested: usize = logs
+        .iter()
+        .filter_map(|l| l["edges_suggested"].as_u64())
+        .sum::<u64>() as usize;
+    let edges_auto_accepted: usize = logs
+        .iter()
+        .filter_map(|l| l["edges_auto_accepted"].as_u64())
+        .sum::<u64>() as usize;
     let stats = crosshash_ai::AiStats {
         invocations,
         total_input_tokens,
@@ -1399,11 +1464,7 @@ fn load_ai_config() -> crosshash_ai::AiConfig {
     crosshash_ai::AiConfig::load(&config_path).unwrap_or_default()
 }
 
-async fn execute_serve(
-    format: OutputFormat,
-    db: Option<PathBuf>,
-    cmd: ServeCommand,
-) -> Result<()> {
+async fn execute_serve(format: OutputFormat, db: Option<PathBuf>, cmd: ServeCommand) -> Result<()> {
     let storage = open_storage(db)?;
     let config = crosshash_api::ApiConfig {
         api_key: cmd.api_key,
@@ -1417,11 +1478,7 @@ async fn execute_serve(
     Ok(())
 }
 
-async fn execute_watch(
-    format: OutputFormat,
-    db: Option<PathBuf>,
-    cmd: WatchCommand,
-) -> Result<()> {
+async fn execute_watch(format: OutputFormat, db: Option<PathBuf>, cmd: WatchCommand) -> Result<()> {
     let storage = open_storage(db.clone())?;
     let repos = if let Some(name) = &cmd.repo {
         vec![storage
@@ -1452,10 +1509,7 @@ async fn execute_watch(
             notify::Config::default(),
         )?;
         for (_, path) in &watch_roots {
-            watcher.watch(
-                std::path::Path::new(path),
-                notify::RecursiveMode::Recursive,
-            )?;
+            watcher.watch(std::path::Path::new(path), notify::RecursiveMode::Recursive)?;
         }
         for event in notify_rx.iter() {
             if matches!(
@@ -1506,7 +1560,9 @@ async fn execute_watch(
 
             for name in &pending {
                 eprintln!("[watch] re-indexing {name}...");
-                let idx_db = db.clone().unwrap_or_else(|| PathBuf::from(".crosshash/crosshash.db"));
+                let idx_db = db
+                    .clone()
+                    .unwrap_or_else(|| PathBuf::from(".crosshash/crosshash.db"));
                 match open_storage(Some(idx_db)) {
                     Ok(idx_storage) => {
                         if let Some(repo) = idx_storage.get_repo_by_name(name)? {
@@ -1545,7 +1601,7 @@ fn print(format: OutputFormat, text: &str, payload: serde_json::Value) -> Result
 mod tests {
     use super::*;
     use clap::CommandFactory;
-    use crosshash_core::{Visibility, EntityKind, Language};
+    use crosshash_core::{EntityKind, Language, Visibility};
 
     #[test]
     fn cli_exposes_phase_one_index_flags_and_commands() {
@@ -1637,7 +1693,9 @@ mod tests {
             .unwrap();
         let pending = storage.get_pending_suggestions().unwrap();
         assert_eq!(pending.len(), 1);
-        storage.update_suggestion_status(&sug_id, "accepted").unwrap();
+        storage
+            .update_suggestion_status(&sug_id, "accepted")
+            .unwrap();
         let fb_id = Uuid::now_v7();
         storage
             .insert_feedback(&fb_id, &sug_id, "accept", None)

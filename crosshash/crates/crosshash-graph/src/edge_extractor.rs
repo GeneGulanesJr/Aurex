@@ -107,10 +107,7 @@ fn parse_ts_import_names(line: &str) -> Option<Vec<String>> {
     // import Foo from '...' (default import)
     if stmt.starts_with("import ") {
         let rest = &stmt[7..];
-        if !rest.is_empty()
-            && !rest.starts_with('{')
-            && !rest.starts_with('*')
-        {
+        if !rest.is_empty() && !rest.starts_with('{') && !rest.starts_with('*') {
             return Some(vec![rest.trim().to_string()]);
         }
     }
@@ -153,12 +150,7 @@ impl ImportResolver for RustResolver {
                     let inner = path[brace_pos + 1..end_brace].trim();
                     for item in inner.split(',') {
                         let item = item.trim();
-                        let name = item
-                            .split(" as ")
-                            .next()
-                            .unwrap_or(item)
-                            .trim()
-                            .to_string();
+                        let name = item.split(" as ").next().unwrap_or(item).trim().to_string();
                         if !name.is_empty() {
                             imports.push(ImportInfo {
                                 imported_name: name,
@@ -304,10 +296,7 @@ fn extract_inheritance_edges(
     for entity in entities.iter().filter(|e| {
         matches!(
             e.kind,
-            EntityKind::Class
-                | EntityKind::Struct
-                | EntityKind::Interface
-                | EntityKind::Trait
+            EntityKind::Class | EntityKind::Struct | EntityKind::Interface | EntityKind::Trait
         )
     }) {
         if !source_set.contains(&entity.file_path) {
@@ -328,8 +317,7 @@ fn extract_inheritance_edges(
             {
                 results.push((entity.id, target.id, EdgeKind::Extends));
             }
-            if entity.language == Language::TypeScript || entity.language == Language::JavaScript
-            {
+            if entity.language == Language::TypeScript || entity.language == Language::JavaScript {
                 if body_lower.contains(&format!("implements {}", target.name.to_lowercase()))
                     || body_lower.contains(&format!(": {}", target.name.to_lowercase()))
                 {
@@ -342,7 +330,10 @@ fn extract_inheritance_edges(
 }
 
 /// Extract call edges from entity bodies.
-fn extract_call_edges(entities: &[Entity], source_by_file: &HashMap<String, String>) -> Vec<(Uuid, Uuid)> {
+fn extract_call_edges(
+    entities: &[Entity],
+    source_by_file: &HashMap<String, String>,
+) -> Vec<(Uuid, Uuid)> {
     let mut results = Vec::new();
     for entity in entities {
         let Some(file_source) = source_by_file.get(&entity.file_path) else {
@@ -537,11 +528,15 @@ impl StaticEdgeExtractor {
                                 .or_else(|| parse_rust_module_path(&info._raw_line))
                                 .or_else(|| parse_python_module_path(&info._raw_line))
                             {
-                                let resolved =
-                                    resolve_relative_import(&entity.file_path, &module_path, repo_root);
+                                let resolved = resolve_relative_import(
+                                    &entity.file_path,
+                                    &module_path,
+                                    repo_root,
+                                );
                                 let file_resolved = resolved.as_ref().map_or(false, |r| {
                                     let r_str = r.to_string_lossy();
-                                    let r_file_name = r.file_name()
+                                    let r_file_name = r
+                                        .file_name()
                                         .map(|n| n.to_string_lossy().to_string())
                                         .unwrap_or_default();
                                     let target_file_name = Path::new(&target.file_path)
@@ -603,8 +598,7 @@ impl StaticEdgeExtractor {
                 // Extract names from re-export
                 let reexported_names: Vec<String> = if trimmed.contains('*') {
                     // export * from './y' — all entities from that file are re-exported
-                    let resolved =
-                        resolve_relative_import(file_path, &module_path, repo_root);
+                    let resolved = resolve_relative_import(file_path, &module_path, repo_root);
                     if let Some(ref resolved_path) = resolved {
                         let resolved_str = resolved_path.to_string_lossy().to_string();
                         entities
@@ -612,9 +606,7 @@ impl StaticEdgeExtractor {
                             .filter(|e| {
                                 e.file_path == resolved_str
                                     || e.file_path
-                                        == resolved_path
-                                            .with_extension("")
-                                            .to_string_lossy()
+                                        == resolved_path.with_extension("").to_string_lossy()
                             })
                             .map(|e| e.name.clone())
                             .collect()
@@ -761,7 +753,10 @@ mod tests {
             &[parent.clone(), child.clone()],
             &HashMap::new(),
         );
-        let contains: Vec<_> = edges.iter().filter(|e| e.kind == EdgeKind::Contains).collect();
+        let contains: Vec<_> = edges
+            .iter()
+            .filter(|e| e.kind == EdgeKind::Contains)
+            .collect();
         assert_eq!(contains.len(), 1);
         assert_eq!(contains[0].source_entity_id, parent.id);
         assert_eq!(contains[0].target_entity_id, child.id);
@@ -770,7 +765,15 @@ mod tests {
     #[test]
     fn call_edges_detected_in_body() {
         let src = "function caller() { callee(); }";
-        let caller = entity_with_span("caller", "src/a.ts", Language::TypeScript, 1, 1, 0, src.len() as u32);
+        let caller = entity_with_span(
+            "caller",
+            "src/a.ts",
+            Language::TypeScript,
+            1,
+            1,
+            0,
+            src.len() as u32,
+        );
         let callee = entity("callee", "src/a.ts", Language::TypeScript);
         let mut sources = HashMap::new();
         sources.insert("src/a.ts".to_string(), src.to_string());
@@ -791,7 +794,10 @@ mod tests {
         let importer = entity("bar", "src/b.ts", Language::TypeScript);
         let importee = entity("foo", "src/a.ts", Language::TypeScript);
         let mut sources = HashMap::new();
-        sources.insert("src/a.ts".to_string(), "export function foo() {}".to_string());
+        sources.insert(
+            "src/a.ts".to_string(),
+            "export function foo() {}".to_string(),
+        );
         sources.insert(
             "src/b.ts".to_string(),
             "import { foo } from './a'; function bar() { foo(); }".to_string(),
@@ -819,7 +825,10 @@ mod tests {
         let user = entity("User", "src/models.rs", Language::Rust);
         let api = entity("api", "src/main.rs", Language::Rust);
         let mut sources = HashMap::new();
-        sources.insert("src/models.rs".to_string(), "pub struct User {}".to_string());
+        sources.insert(
+            "src/models.rs".to_string(),
+            "pub struct User {}".to_string(),
+        );
         sources.insert(
             "src/main.rs".to_string(),
             "use crate::models::User; fn api() {}".to_string(),
@@ -874,9 +883,25 @@ mod tests {
     fn extends_edge_extracted_for_class_hierarchy() {
         let base_src = "export class Animal {}";
         let derived_src = "export class Dog extends Animal {}";
-        let mut base = entity_with_span("Animal", "src/a.ts", Language::TypeScript, 1, 1, 0, base_src.len() as u32);
+        let mut base = entity_with_span(
+            "Animal",
+            "src/a.ts",
+            Language::TypeScript,
+            1,
+            1,
+            0,
+            base_src.len() as u32,
+        );
         base.kind = EntityKind::Class;
-        let mut derived = entity_with_span("Dog", "src/b.ts", Language::TypeScript, 1, 1, 0, derived_src.len() as u32);
+        let mut derived = entity_with_span(
+            "Dog",
+            "src/b.ts",
+            Language::TypeScript,
+            1,
+            1,
+            0,
+            derived_src.len() as u32,
+        );
         derived.kind = EntityKind::Class;
         let mut sources = HashMap::new();
         sources.insert("src/a.ts".to_string(), base_src.to_string());
@@ -987,18 +1012,13 @@ mod tests {
             .iter()
             .filter(|e| e.kind == EdgeKind::Imports)
             .collect();
-        assert!(
-            !imports.is_empty(),
-            "aliased import should produce edge"
-        );
+        assert!(!imports.is_empty(), "aliased import should produce edge");
     }
 
     #[test]
     fn rust_as_import_uses_alias() {
-        let imports = RustResolver::extract_imports(
-            "use std::collections::HashMap as Map;",
-            "src/lib.rs",
-        );
+        let imports =
+            RustResolver::extract_imports("use std::collections::HashMap as Map;", "src/lib.rs");
         let names: Vec<_> = imports.iter().map(|i| i.imported_name.clone()).collect();
         assert!(
             names.contains(&"Map".to_string()),
@@ -1017,9 +1037,25 @@ mod tests {
     fn implements_edge_extracted_for_ts_class() {
         let iface_src = "export interface Serializable {}";
         let cls_src = "export class Model implements Serializable {}";
-        let mut iface = entity_with_span("Serializable", "src/a.ts", Language::TypeScript, 1, 1, 0, iface_src.len() as u32);
+        let mut iface = entity_with_span(
+            "Serializable",
+            "src/a.ts",
+            Language::TypeScript,
+            1,
+            1,
+            0,
+            iface_src.len() as u32,
+        );
         iface.kind = EntityKind::Interface;
-        let mut cls = entity_with_span("Model", "src/b.ts", Language::TypeScript, 1, 1, 0, cls_src.len() as u32);
+        let mut cls = entity_with_span(
+            "Model",
+            "src/b.ts",
+            Language::TypeScript,
+            1,
+            1,
+            0,
+            cls_src.len() as u32,
+        );
         cls.kind = EntityKind::Class;
         let mut sources = HashMap::new();
         sources.insert("src/a.ts".to_string(), iface_src.to_string());
@@ -1061,19 +1097,13 @@ mod tests {
         let resolved = resolve_relative_import("src/main.ts", "./utils", dir.path());
         assert!(resolved.is_some());
         let resolved_str = resolved.unwrap().to_string_lossy().to_string();
-        assert!(
-            resolved_str.ends_with("index.ts"),
-            "got: {resolved_str}"
-        );
+        assert!(resolved_str.ends_with("index.ts"), "got: {resolved_str}");
     }
 
     #[test]
     fn resolve_relative_import_non_relative_returns_none() {
         let resolved = resolve_relative_import("src/main.ts", "lodash", Path::new("/tmp"));
-        assert!(
-            resolved.is_none(),
-            "non-relative import should return None"
-        );
+        assert!(resolved.is_none(), "non-relative import should return None");
     }
 
     #[test]
@@ -1094,13 +1124,12 @@ mod tests {
         let src = dir.path().join("src");
         std::fs::create_dir_all(&src).unwrap();
         std::fs::write(src.join("a.ts"), "export function foo() {}").unwrap();
-        std::fs::write(
-            src.join("b.ts"),
-            "import { foo } from './a'; fn bar() {}",
-        )
-        .unwrap();
+        std::fs::write(src.join("b.ts"), "import { foo } from './a'; fn bar() {}").unwrap();
         let mut sources = HashMap::new();
-        sources.insert("src/a.ts".to_string(), "export function foo() {}".to_string());
+        sources.insert(
+            "src/a.ts".to_string(),
+            "export function foo() {}".to_string(),
+        );
         sources.insert(
             "src/b.ts".to_string(),
             "import { foo } from './a'; fn bar() {}".to_string(),

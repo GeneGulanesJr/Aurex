@@ -134,7 +134,11 @@ mod tests {
 
     #[test]
     fn classifies_grpc_service() {
-        let e = make_exported_entity("UserService", "grpc service UserService", EntityKind::Struct);
+        let e = make_exported_entity(
+            "UserService",
+            "grpc service UserService",
+            EntityKind::Struct,
+        );
         let repo_id = e.repo_id;
         let surface = ApiSurface::from_exported_entities(repo_id, vec![e]);
         assert_eq!(surface.entities[0].kind, SurfaceKind::GrpcService);
@@ -150,7 +154,11 @@ mod tests {
 
     #[test]
     fn classifies_library_api_for_function() {
-        let e = make_exported_entity("calculate", "fn calculate(x: i32) -> i32", EntityKind::Function);
+        let e = make_exported_entity(
+            "calculate",
+            "fn calculate(x: i32) -> i32",
+            EntityKind::Function,
+        );
         let repo_id = e.repo_id;
         let surface = ApiSurface::from_exported_entities(repo_id, vec![e]);
         assert_eq!(surface.entities[0].kind, SurfaceKind::LibraryApi);

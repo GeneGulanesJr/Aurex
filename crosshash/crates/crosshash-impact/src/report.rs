@@ -92,7 +92,11 @@ mod tests {
     #[test]
     fn risk_score_is_max_of_classification_scores() {
         let mut report = empty_report();
-        report.classifications = vec![classification(0.3), classification(0.9), classification(0.5)];
+        report.classifications = vec![
+            classification(0.3),
+            classification(0.9),
+            classification(0.5),
+        ];
         assert!((report.risk_score() - 0.9).abs() < f64::EPSILON);
     }
 

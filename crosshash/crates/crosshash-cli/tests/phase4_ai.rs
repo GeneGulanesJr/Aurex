@@ -23,7 +23,10 @@ fn setup_two_repos(dir: &std::path::Path) -> (String, String) {
         "pub fn use_api() -> String { fetch_data() }\nfn internal() -> u32 { process(\"x\") }\n",
     )
     .unwrap();
-    (api.to_string_lossy().to_string(), app.to_string_lossy().to_string())
+    (
+        api.to_string_lossy().to_string(),
+        app.to_string_lossy().to_string(),
+    )
 }
 
 #[test]
@@ -35,7 +38,15 @@ fn discover_edges_dry_run_shows_surfaces() {
     for (name, path) in [("api", &api), ("app", &app)] {
         Command::cargo_bin("crosshash")
             .unwrap()
-            .args(["--db", db.to_str().unwrap(), "repo", "add", path, "--name", name])
+            .args([
+                "--db",
+                db.to_str().unwrap(),
+                "repo",
+                "add",
+                path,
+                "--name",
+                name,
+            ])
             .assert()
             .success();
     }
@@ -82,7 +93,15 @@ fn feedback_accept_flow() {
 
     Command::cargo_bin("crosshash")
         .unwrap()
-        .args(["--db", db.to_str().unwrap(), "repo", "add", repo.to_str().unwrap(), "--name", "fb-test"])
+        .args([
+            "--db",
+            db.to_str().unwrap(),
+            "repo",
+            "add",
+            repo.to_str().unwrap(),
+            "--name",
+            "fb-test",
+        ])
         .assert()
         .success();
 
@@ -124,13 +143,28 @@ fn index_with_no_ai_flag_produces_zero_ai_cost() {
 
     Command::cargo_bin("crosshash")
         .unwrap()
-        .args(["--db", db.to_str().unwrap(), "repo", "add", repo.to_str().unwrap(), "--name", "no-ai-repo"])
+        .args([
+            "--db",
+            db.to_str().unwrap(),
+            "repo",
+            "add",
+            repo.to_str().unwrap(),
+            "--name",
+            "no-ai-repo",
+        ])
         .assert()
         .success();
 
     Command::cargo_bin("crosshash")
         .unwrap()
-        .args(["--db", db.to_str().unwrap(), "index", "--repo", "no-ai-repo", "--no-ai"])
+        .args([
+            "--db",
+            db.to_str().unwrap(),
+            "index",
+            "--repo",
+            "no-ai-repo",
+            "--no-ai",
+        ])
         .assert()
         .success()
         .stdout(contains("entities extracted"));
@@ -152,7 +186,15 @@ fn discover_edges_static_only_no_ai_cost() {
     for (name, path) in [("api", &api), ("app", &app)] {
         Command::cargo_bin("crosshash")
             .unwrap()
-            .args(["--db", db.to_str().unwrap(), "repo", "add", path, "--name", name])
+            .args([
+                "--db",
+                db.to_str().unwrap(),
+                "repo",
+                "add",
+                path,
+                "--name",
+                name,
+            ])
             .assert()
             .success();
     }
@@ -165,7 +207,12 @@ fn discover_edges_static_only_no_ai_cost() {
 
     Command::cargo_bin("crosshash")
         .unwrap()
-        .args(["--db", db.to_str().unwrap(), "discover-edges", "--static-only"])
+        .args([
+            "--db",
+            db.to_str().unwrap(),
+            "discover-edges",
+            "--static-only",
+        ])
         .assert()
         .success()
         .stdout(contains("gate_run_ai=false"));
@@ -178,7 +225,13 @@ fn feedback_reject_marks_status() {
 
     Command::cargo_bin("crosshash")
         .unwrap()
-        .args(["--db", db.to_str().unwrap(), "feedback", "reject", "00000000-0000-0000-0000-000000000001"])
+        .args([
+            "--db",
+            db.to_str().unwrap(),
+            "feedback",
+            "reject",
+            "00000000-0000-0000-0000-000000000001",
+        ])
         .assert()
         .stderr(contains("suggestion not found"));
 }
@@ -190,7 +243,13 @@ fn feedback_accept_nonexistent_returns_error() {
 
     Command::cargo_bin("crosshash")
         .unwrap()
-        .args(["--db", db.to_str().unwrap(), "feedback", "accept", "00000000-0000-0000-0000-000000000002"])
+        .args([
+            "--db",
+            db.to_str().unwrap(),
+            "feedback",
+            "accept",
+            "00000000-0000-0000-0000-000000000002",
+        ])
         .assert()
         .stderr(contains("suggestion not found"));
 }
@@ -217,7 +276,15 @@ fn multi_repo_index_with_no_ai_and_then_discover() {
     for (name, path) in [("api", &api), ("app", &app)] {
         Command::cargo_bin("crosshash")
             .unwrap()
-            .args(["--db", db.to_str().unwrap(), "repo", "add", path, "--name", name])
+            .args([
+                "--db",
+                db.to_str().unwrap(),
+                "repo",
+                "add",
+                path,
+                "--name",
+                name,
+            ])
             .assert()
             .success();
     }

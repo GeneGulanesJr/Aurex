@@ -202,11 +202,7 @@ mod subphase_72_performance_optimization {
         let dir = tempfile::tempdir().unwrap();
         let repo = dir.path().join("inc-svc");
         fs::create_dir_all(repo.join("src")).unwrap();
-        fs::write(
-            repo.join("src/lib.rs"),
-            "pub fn stable_fn() -> u32 { 1 }\n",
-        )
-        .unwrap();
+        fs::write(repo.join("src/lib.rs"), "pub fn stable_fn() -> u32 { 1 }\n").unwrap();
         let db = dir.path().join("test.db");
 
         add_repo(db.to_str().unwrap(), "inc-svc", repo.to_str().unwrap());
@@ -233,11 +229,7 @@ mod subphase_72_performance_optimization {
         let dir = tempfile::tempdir().unwrap();
         let repo = dir.path().join("mod-svc");
         fs::create_dir_all(repo.join("src")).unwrap();
-        fs::write(
-            repo.join("src/lib.rs"),
-            "pub fn original() -> u32 { 1 }\n",
-        )
-        .unwrap();
+        fs::write(repo.join("src/lib.rs"), "pub fn original() -> u32 { 1 }\n").unwrap();
         let db = dir.path().join("test.db");
 
         add_repo(db.to_str().unwrap(), "mod-svc", repo.to_str().unwrap());
@@ -320,11 +312,7 @@ mod subphase_72_performance_optimization {
         let dir = tempfile::tempdir().unwrap();
         let repo = dir.path().join("wal-svc");
         fs::create_dir_all(repo.join("src")).unwrap();
-        fs::write(
-            repo.join("src/lib.rs"),
-            "pub fn wal_fn() -> u32 { 1 }\n",
-        )
-        .unwrap();
+        fs::write(repo.join("src/lib.rs"), "pub fn wal_fn() -> u32 { 1 }\n").unwrap();
         let db = dir.path().join("test.db");
 
         add_repo(db.to_str().unwrap(), "wal-svc", repo.to_str().unwrap());
@@ -571,7 +559,11 @@ mod subphase_76_release_hardening {
         let db = dir.path().join("test.db");
 
         add_repo(db.to_str().unwrap(), "core-lib", core.to_str().unwrap());
-        add_repo(db.to_str().unwrap(), "consumer-app", consumer.to_str().unwrap());
+        add_repo(
+            db.to_str().unwrap(),
+            "consumer-app",
+            consumer.to_str().unwrap(),
+        );
 
         Command::cargo_bin("crosshash")
             .unwrap()
@@ -617,11 +609,7 @@ mod subphase_76_release_hardening {
         let dir = tempfile::tempdir().unwrap();
         let repo = dir.path().join("fmt-svc");
         fs::create_dir_all(repo.join("src")).unwrap();
-        fs::write(
-            repo.join("src/lib.rs"),
-            "pub fn fmt_fn() -> u32 { 42 }\n",
-        )
-        .unwrap();
+        fs::write(repo.join("src/lib.rs"), "pub fn fmt_fn() -> u32 { 42 }\n").unwrap();
         let db = dir.path().join("test.db");
 
         add_repo(db.to_str().unwrap(), "fmt-svc", repo.to_str().unwrap());
@@ -677,11 +665,7 @@ mod subphase_76_release_hardening {
         let dir = tempfile::tempdir().unwrap();
         let repo = dir.path().join("rm-svc");
         fs::create_dir_all(repo.join("src")).unwrap();
-        fs::write(
-            repo.join("src/lib.rs"),
-            "pub fn to_remove() -> u32 { 1 }\n",
-        )
-        .unwrap();
+        fs::write(repo.join("src/lib.rs"), "pub fn to_remove() -> u32 { 1 }\n").unwrap();
         let db = dir.path().join("test.db");
 
         add_repo(db.to_str().unwrap(), "rm-svc", repo.to_str().unwrap());
@@ -689,13 +673,7 @@ mod subphase_76_release_hardening {
 
         Command::cargo_bin("crosshash")
             .unwrap()
-            .args([
-                "--db",
-                db.to_str().unwrap(),
-                "repo",
-                "remove",
-                "rm-svc",
-            ])
+            .args(["--db", db.to_str().unwrap(), "repo", "remove", "rm-svc"])
             .assert()
             .success();
 
@@ -787,11 +765,7 @@ mod subphase_76_release_hardening {
         let dir = tempfile::tempdir().unwrap();
         let repo = dir.path().join("zero-ai");
         fs::create_dir_all(repo.join("src")).unwrap();
-        fs::write(
-            repo.join("src/lib.rs"),
-            "pub fn no_ai() -> u32 { 1 }\n",
-        )
-        .unwrap();
+        fs::write(repo.join("src/lib.rs"), "pub fn no_ai() -> u32 { 1 }\n").unwrap();
         let db = dir.path().join("test.db");
 
         add_repo(db.to_str().unwrap(), "zero-ai", repo.to_str().unwrap());
