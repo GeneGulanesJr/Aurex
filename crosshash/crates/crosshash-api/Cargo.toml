@@ -7,11 +7,17 @@ repository.workspace = true
 
 [dependencies]
 axum.workspace = true
+chrono.workspace = true
 crosshash-ai = { path = "../crosshash-ai" }
+crosshash-core = { path = "../crosshash-core" }
+crosshash-git = { path = "../crosshash-git" }
+crosshash-graph = { path = "../crosshash-graph" }
+crosshash-impact = { path = "../crosshash-impact" }
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tower.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 tower = { workspace = true, features = ["util"] }

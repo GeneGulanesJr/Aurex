@@ -16,9 +16,11 @@ use crosshash_parser::{
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use uuid::Uuid;
 
 use crate::output::render_message;
+use notify::Watcher;
 
 #[derive(Debug, Clone, Parser)]
 #[command(
@@ -51,6 +53,9 @@ pub enum Command {
     Graph(GraphCommand),
     Feedback(FeedbackCommand),
     AiStats(AiStatsCommand),
+    Serve(ServeCommand),
+    Watch(WatchCommand),
+    Mcp(McpCommand),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -210,6 +215,25 @@ pub enum FeedbackAction {
 #[derive(Debug, Clone, Args)]
 pub struct AiStatsCommand {}
 
+#[derive(Debug, Clone, Args)]
+pub struct ServeCommand {
+    #[arg(long, default_value = "127.0.0.1:3000")]
+    pub addr: String,
+    #[arg(long)]
+    pub api_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct WatchCommand {
+    #[arg(long)]
+    pub repo: Option<String>,
+    #[arg(long, default_value_t = 2000)]
+    pub debounce_ms: u64,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct McpCommand {}
+
 impl Cli {
     pub async fn execute_async(self) -> Result<()> {
         match self.command {
@@ -223,6 +247,9 @@ impl Cli {
             Command::Impact(cmd) => execute_impact(self.format, self.db, cmd),
             Command::Feedback(cmd) => execute_feedback(self.format, self.db, cmd),
             Command::AiStats(cmd) => execute_ai_stats(self.format, self.db, cmd),
+            Command::Serve(cmd) => execute_serve(self.format, self.db, cmd).await,
+            Command::Watch(cmd) => execute_watch(self.format, self.db, cmd).await,
+            Command::Mcp(cmd) => execute_mcp(self.format, self.db, cmd),
         }
     }
 }
@@ -1371,6 +1398,145 @@ fn load_ai_config() -> crosshash_ai::AiConfig {
     let config_path = PathBuf::from("config/default.toml");
     crosshash_ai::AiConfig::load(&config_path).unwrap_or_default()
 }
+
+async fn execute_serve(
+    format: OutputFormat,
+    db: Option<PathBuf>,
+    cmd: ServeCommand,
+) -> Result<()> {
+    let storage = open_storage(db)?;
+    let config = crosshash_api::ApiConfig {
+        api_key: cmd.api_key,
+        max_requests_per_minute: 60,
+    };
+    let app = crosshash_api::api_router_with_storage(config, storage);
+    let addr: std::net::SocketAddr = cmd.addr.parse()?;
+    eprintln!("crosshash API server listening on {addr}");
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listener, app).await?;
+    Ok(())
+}
+
+async fn execute_watch(
+    format: OutputFormat,
+    db: Option<PathBuf>,
+    cmd: WatchCommand,
+) -> Result<()> {
+    let storage = open_storage(db.clone())?;
+    let repos = if let Some(name) = &cmd.repo {
+        vec![storage
+            .get_repo_by_name(name)?
+            .ok_or_else(|| anyhow!("repo not found: {name}"))?]
+    } else {
+        storage.list_repos()?
+    };
+    if repos.is_empty() {
+        anyhow::bail!("no repos to watch. Add repos with `crosshash repo add`");
+    }
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(100);
+    let watch_roots: Vec<(String, String)> = repos
+        .iter()
+        .map(|r| (r.name.clone(), r.root_path.clone()))
+        .collect();
+
+    let root_names: Vec<String> = watch_roots.iter().map(|(n, _)| n.clone()).collect();
+    std::thread::spawn(move || -> Result<()> {
+        let (notify_tx, notify_rx) = std::sync::mpsc::channel::<notify::Event>();
+        let mut watcher = notify::RecommendedWatcher::new(
+            move |res: Result<notify::Event, notify::Error>| {
+                if let Ok(event) = res {
+                    let _ = notify_tx.send(event);
+                }
+            },
+            notify::Config::default(),
+        )?;
+        for (_, path) in &watch_roots {
+            watcher.watch(
+                std::path::Path::new(path),
+                notify::RecursiveMode::Recursive,
+            )?;
+        }
+        for event in notify_rx.iter() {
+            if matches!(
+                event.kind,
+                notify::EventKind::Create(_)
+                    | notify::EventKind::Modify(_)
+                    | notify::EventKind::Remove(_)
+            ) {
+                for path in &event.paths {
+                    for (name, root) in &watch_roots {
+                        if path.starts_with(root) {
+                            let _ = tx.blocking_send(name.clone());
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    });
+
+    for name in &root_names {
+        eprintln!("watching {name}");
+    }
+    eprintln!(
+        "watching {} repos for changes (debounce {}ms, Ctrl+C to stop)...",
+        repos.len(),
+        cmd.debounce_ms
+    );
+
+    let debounce = Duration::from_millis(cmd.debounce_ms);
+    loop {
+        if let Some(repo_name) = rx.recv().await {
+            let mut pending = HashSet::new();
+            pending.insert(repo_name);
+
+            let deadline = tokio::time::Instant::now() + debounce;
+            loop {
+                tokio::select! {
+                    Some(name) = rx.recv() => {
+                        pending.insert(name);
+                    }
+                    _ = tokio::time::sleep_until(deadline) => {
+                        break;
+                    }
+                }
+            }
+
+            for name in &pending {
+                eprintln!("[watch] re-indexing {name}...");
+                let idx_db = db.clone().unwrap_or_else(|| PathBuf::from(".crosshash/crosshash.db"));
+                match open_storage(Some(idx_db)) {
+                    Ok(idx_storage) => {
+                        if let Some(repo) = idx_storage.get_repo_by_name(name)? {
+                            let index_cmd = IndexCommand {
+                                repo: Some(name.clone()),
+                                incremental: true,
+                                no_ai: false,
+                                force_ai: false,
+                            };
+                            match index_one_repo(&idx_storage, &repo, true, &index_cmd).await {
+                                Ok(summary) => eprintln!(
+                                    "[watch] {}: {} entities, {} edges",
+                                    name, summary.entities_extracted, summary.edges
+                                ),
+                                Err(e) => eprintln!("[watch] error indexing {name}: {e}"),
+                            }
+                        }
+                    }
+                    Err(e) => eprintln!("[watch] error opening storage: {e}"),
+                }
+            }
+        }
+    }
+}
+
+fn execute_mcp(format: OutputFormat, db: Option<PathBuf>, _cmd: McpCommand) -> Result<()> {
+    let storage = open_storage(db)?;
+    let server = crosshash_mcp::McpServer::new(storage);
+    server.run()
+}
 fn print(format: OutputFormat, text: &str, payload: serde_json::Value) -> Result<()> {
     println!("{}", render_message(format, text, &payload)?);
     Ok(())
@@ -1395,6 +1561,9 @@ mod tests {
             "graph",
             "feedback",
             "ai-stats",
+            "serve",
+            "watch",
+            "mcp",
         ] {
             assert!(
                 help.contains(command),

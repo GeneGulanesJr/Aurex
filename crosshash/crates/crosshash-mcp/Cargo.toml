@@ -6,5 +6,11 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+crosshash-core = { path = "../crosshash-core" }
+crosshash-graph = { path = "../crosshash-graph" }
+crosshash-impact = { path = "../crosshash-impact" }
 serde.workspace = true
 serde_json.workspace = true
+uuid.workspace = true

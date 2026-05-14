@@ -11,17 +11,21 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
+axum.workspace = true
 chrono.workspace = true
 clap.workspace = true
 colored = "2"
 crosshash-ai = { path = "../crosshash-ai" }
+crosshash-api = { path = "../crosshash-api" }
 crosshash-core = { path = "../crosshash-core" }
 crosshash-git = { path = "../crosshash-git" }
 crosshash-graph = { path = "../crosshash-graph" }
 crosshash-hash = { path = "../crosshash-hash" }
 crosshash-impact = { path = "../crosshash-impact" }
+crosshash-mcp = { path = "../crosshash-mcp" }
 crosshash-parser = { path = "../crosshash-parser" }
 indicatif.workspace = true
+notify.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
