@@ -70,6 +70,9 @@ pub fn diff_entities(
 }
 
 fn classify_pair(o: &EntityVersion, n: &EntityVersion) -> Option<ChangeKind> {
+    if o.identity_hash == n.identity_hash && o.name != n.name {
+        return Some(ChangeKind::Renamed);
+    }
     if o.signature_hash == n.signature_hash
         && o.content_hash == n.content_hash
         && o.structural_hash == n.structural_hash
@@ -77,9 +80,6 @@ fn classify_pair(o: &EntityVersion, n: &EntityVersion) -> Option<ChangeKind> {
         && o.context_hash == n.context_hash
     {
         return None;
-    }
-    if o.identity_hash == n.identity_hash && o.name != n.name {
-        return Some(ChangeKind::Renamed);
     }
     if o.context_hash != n.context_hash && o.content_hash == n.content_hash {
         return Some(ChangeKind::Moved);

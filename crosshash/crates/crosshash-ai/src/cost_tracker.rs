@@ -83,7 +83,7 @@ mod tests {
     #[test]
     fn multiple_events_accumulate() {
         let mut tracker = CostTracker::default();
-        for i in 0..3 {
+        for _ in 0..3 {
             tracker.record(AiCostEvent {
                 at: chrono::Utc::now(),
                 repo_a: None,

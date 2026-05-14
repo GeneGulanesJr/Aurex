@@ -42,7 +42,6 @@ impl ImpactReportBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analyzer::ImpactPathStep;
     use crate::{ChangeKind, ChangedEntity};
     use chrono::Utc;
     use crosshash_core::RiskLevel;

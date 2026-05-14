@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use chrono::Utc;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use crosshash_core::{
-    Edge, EdgeKind, EdgeSource, Entity, EntityKind, EntityVersion, Language, Repo, WorkspaceType,
+    Edge, EdgeKind, EdgeSource, Entity, EntityVersion, Language, Repo, WorkspaceType,
 };
 use crosshash_git::get_head_commit;
 use crosshash_graph::{GraphBuilder, GraphStorage, GraphTraversal, StaticEdgeExtractor};
@@ -1464,7 +1464,11 @@ fn load_ai_config() -> crosshash_ai::AiConfig {
     crosshash_ai::AiConfig::load(&config_path).unwrap_or_default()
 }
 
-async fn execute_serve(format: OutputFormat, db: Option<PathBuf>, cmd: ServeCommand) -> Result<()> {
+async fn execute_serve(
+    _format: OutputFormat,
+    db: Option<PathBuf>,
+    cmd: ServeCommand,
+) -> Result<()> {
     let storage = open_storage(db)?;
     let config = crosshash_api::ApiConfig {
         api_key: cmd.api_key,
@@ -1478,7 +1482,11 @@ async fn execute_serve(format: OutputFormat, db: Option<PathBuf>, cmd: ServeComm
     Ok(())
 }
 
-async fn execute_watch(format: OutputFormat, db: Option<PathBuf>, cmd: WatchCommand) -> Result<()> {
+async fn execute_watch(
+    _format: OutputFormat,
+    db: Option<PathBuf>,
+    cmd: WatchCommand,
+) -> Result<()> {
     let storage = open_storage(db.clone())?;
     let repos = if let Some(name) = &cmd.repo {
         vec![storage
@@ -1588,7 +1596,7 @@ async fn execute_watch(format: OutputFormat, db: Option<PathBuf>, cmd: WatchComm
     }
 }
 
-fn execute_mcp(format: OutputFormat, db: Option<PathBuf>, _cmd: McpCommand) -> Result<()> {
+fn execute_mcp(_format: OutputFormat, db: Option<PathBuf>, _cmd: McpCommand) -> Result<()> {
     let storage = open_storage(db)?;
     let server = crosshash_mcp::McpServer::new(storage);
     server.run()

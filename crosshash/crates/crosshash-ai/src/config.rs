@@ -101,11 +101,16 @@ mod tests {
 
     #[test]
     fn parses_provider_correctly() {
-        let mut config = AiConfig::default();
-        config.provider = "openai".into();
+        let config = AiConfig {
+            provider: "openai".into(),
+            ..Default::default()
+        };
         assert_eq!(config.provider(), LlmProvider::OpenAi);
         assert!(config.endpoint().contains("openai.com"));
-        config.provider = "anthropic".into();
+        let config = AiConfig {
+            provider: "anthropic".into(),
+            ..Default::default()
+        };
         assert_eq!(config.provider(), LlmProvider::Anthropic);
         assert!(config.endpoint().contains("anthropic.com"));
     }

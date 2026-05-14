@@ -26,6 +26,7 @@ fn index_repo(cmd_db: &str, name: &str) {
         .success();
 }
 
+#[allow(dead_code)]
 fn setup_two_repos(dir: &std::path::Path) -> (String, String) {
     let api = dir.join("aaa-core");
     let app = dir.join("bbb-app");

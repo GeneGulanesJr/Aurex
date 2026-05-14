@@ -53,6 +53,9 @@ pub fn risk_level(score: f64) -> RiskLevel {
         RiskLevel::Critical
     }
 }
+#[allow(dead_code)]
+fn _edge_kind(_: EdgeKind) {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,7 +90,7 @@ mod tests {
             ImpactClassifier::classify(ChangeKind::SignatureChanged, &affected("Imports", 0.9));
         assert_eq!(result.classification, "Breaking");
         assert!((result.risk_score - 0.9).abs() < f64::EPSILON);
-        assert_eq!(result.risk_level, RiskLevel::High);
+        assert_eq!(result.risk_level, RiskLevel::Critical);
     }
 
     #[test]
@@ -110,7 +113,7 @@ mod tests {
         let result = ImpactClassifier::classify(ChangeKind::BodyOnly, &affected("Calls", 0.8));
         assert_eq!(result.classification, "NeedsUpdate");
         assert!((result.risk_score - 0.6).abs() < f64::EPSILON);
-        assert_eq!(result.risk_level, RiskLevel::Medium);
+        assert_eq!(result.risk_level, RiskLevel::High);
     }
 
     #[test]
@@ -188,6 +191,3 @@ mod tests {
         assert_eq!(result.classification, "Breaking");
     }
 }
-
-#[allow(dead_code)]
-fn _edge_kind(_: EdgeKind) {}

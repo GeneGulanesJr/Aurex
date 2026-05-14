@@ -6,13 +6,14 @@ use axum::{
     Json, Router,
 };
 use crosshash_ai::AiStats;
-use crosshash_core::{Edge, EdgeKind, EdgeSource, Language, Repo, WorkspaceType};
+#[cfg(test)]
+use crosshash_core::Language;
+use crosshash_core::{Edge, EdgeKind, EdgeSource, Repo, WorkspaceType};
 use crosshash_graph::GraphStorage;
 use crosshash_impact::{
     ChangeKind, ChangedEntity, ImpactAnalyzer, ImpactClassifier, ImpactReportBuilder,
 };
-use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use serde::Deserialize;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
@@ -217,6 +218,7 @@ async fn run_impact(
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct DiscoverEdgesRequest {
     repo: Option<String>,
     #[serde(default)]
@@ -553,7 +555,7 @@ mod tests {
     async fn feedback_no_auth_returns_error_for_missing_suggestion() {
         let app = test_app(no_auth_config());
         let id = uuid::Uuid::now_v7();
-        let (status, body) = send_post(
+        let (status, _body) = send_post(
             app,
             "/v1/feedback",
             Some(&format!(r#"{{"edge_id":"{}","decision":"accept"}}"#, id)),
@@ -566,7 +568,7 @@ mod tests {
     #[tokio::test]
     async fn feedback_rejects_invalid_uuid() {
         let app = test_app(no_auth_config());
-        let (status, body) = send_post(
+        let (status, _body) = send_post(
             app,
             "/v1/feedback",
             Some(r#"{"edge_id":"not-a-uuid","decision":"accept"}"#),
@@ -695,7 +697,7 @@ mod tests {
     #[tokio::test]
     async fn feedback_accept_flow() {
         let storage = GraphStorage::open_in_memory().unwrap();
-        let repo_id = uuid::Uuid::now_v7();
+        let _repo_id = uuid::Uuid::now_v7();
         let entity_a = uuid::Uuid::now_v7();
         let entity_b = uuid::Uuid::now_v7();
         storage

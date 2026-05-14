@@ -65,8 +65,7 @@ fn parse_ts_import_names(line: &str) -> Option<Vec<String>> {
         let names: Vec<String> = inner
             .split(',')
             .map(|s| {
-                s.trim()
-                    .split_whitespace()
+                s.split_whitespace()
                     .next()
                     .unwrap_or("")
                     .split(" as ")
@@ -90,8 +89,7 @@ fn parse_ts_import_names(line: &str) -> Option<Vec<String>> {
         let names: Vec<String> = inner
             .split(',')
             .map(|s| {
-                s.trim()
-                    .split_whitespace()
+                s.split_whitespace()
                     .next()
                     .unwrap_or("")
                     .split(" as ")
@@ -105,8 +103,7 @@ fn parse_ts_import_names(line: &str) -> Option<Vec<String>> {
         return if names.is_empty() { None } else { Some(names) };
     }
     // import Foo from '...' (default import)
-    if stmt.starts_with("import ") {
-        let rest = &stmt[7..];
+    if let Some(rest) = stmt.strip_prefix("import ") {
         if !rest.is_empty() && !rest.starts_with('{') && !rest.starts_with('*') {
             return Some(vec![rest.trim().to_string()]);
         }
@@ -201,7 +198,12 @@ impl ImportResolver for PythonResolver {
                         _raw_line: trimmed.to_string(),
                     });
                 } else {
-                    let name = rest.split('.').last().unwrap_or(rest).trim().to_string();
+                    let name = rest
+                        .split('.')
+                        .next_back()
+                        .unwrap_or(rest)
+                        .trim()
+                        .to_string();
                     imports.push(ImportInfo {
                         imported_name: name,
                         source_file: file_path.to_string(),
@@ -317,12 +319,11 @@ fn extract_inheritance_edges(
             {
                 results.push((entity.id, target.id, EdgeKind::Extends));
             }
-            if entity.language == Language::TypeScript || entity.language == Language::JavaScript {
-                if body_lower.contains(&format!("implements {}", target.name.to_lowercase()))
-                    || body_lower.contains(&format!(": {}", target.name.to_lowercase()))
-                {
-                    results.push((entity.id, target.id, EdgeKind::Implements));
-                }
+            if (entity.language == Language::TypeScript || entity.language == Language::JavaScript)
+                && (body_lower.contains(&format!("implements {}", target.name.to_lowercase()))
+                    || body_lower.contains(&format!(": {}", target.name.to_lowercase())))
+            {
+                results.push((entity.id, target.id, EdgeKind::Implements));
             }
         }
     }
@@ -533,7 +534,7 @@ impl StaticEdgeExtractor {
                                     &module_path,
                                     repo_root,
                                 );
-                                let file_resolved = resolved.as_ref().map_or(false, |r| {
+                                let file_resolved = resolved.as_ref().is_some_and(|r| {
                                     let r_str = r.to_string_lossy();
                                     let r_file_name = r
                                         .file_name()
@@ -613,10 +614,8 @@ impl StaticEdgeExtractor {
                     } else {
                         Vec::new()
                     }
-                } else if let Some(names) = parse_ts_import_names(trimmed) {
-                    names
                 } else {
-                    Vec::new()
+                    parse_ts_import_names(trimmed).unwrap_or_default()
                 };
 
                 for reexported_name in reexported_names {
@@ -684,11 +683,8 @@ fn parse_rust_module_path(line: &str) -> Option<String> {
 fn parse_python_module_path(line: &str) -> Option<String> {
     let trimmed = line.trim_start();
     if let Some(rest) = trimmed.strip_prefix("from ") {
-        if let Some(pos) = rest.find(" import ") {
-            Some(rest[..pos].trim().to_string())
-        } else {
-            None
-        }
+        rest.find(" import ")
+            .map(|pos| rest[..pos].trim().to_string())
     } else {
         None
     }
@@ -929,7 +925,7 @@ mod tests {
         let (edges, _) = StaticEdgeExtractor::extract(
             Uuid::NAMESPACE_DNS,
             Path::new("."),
-            &[ent.clone()],
+            std::slice::from_ref(&ent),
             &sources,
         );
         assert!(edges.is_empty(), "should not create self-edges");
