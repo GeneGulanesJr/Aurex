@@ -1,7 +1,7 @@
 const { TRUST_DELTA } = require('../constants');
 
 function saveWorkflow(deps, { id, name, project, stepsRaw }) {
-  const { sqlJson, sqlRun, jsonErrNoExit } = deps;
+  const { sqlRun, jsonErrNoExit } = deps;
   if (!id || !name) {
     return jsonErrNoExit('Missing --id and --name');
   }

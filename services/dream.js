@@ -74,14 +74,13 @@ function compact() {
 }
 
 function dream(deps) {
-  const { sqlJson, sqlRun, softDeleteObservation } = deps;
   const startedAt = new Date().toISOString();
   const report = { startedAt, phases: {} };
   let totalCleaned = 0;
   const cleanedIds = [];
 
   // Phase 1: Superseded memories
-  const superseded = sqlJson(`
+  const superseded = deps.sqlJson(`
     SELECT o.id, o.title, o.type, o.project,
            r.source_id AS newer_id, r.relation, r.confidence
     FROM observations o
@@ -91,7 +90,7 @@ function dream(deps) {
       AND r.confidence >= ${DEDUP.DREAM_SUPERSEDED_CONFIDENCE}
   `);
   for (const row of superseded) {
-    softDeleteObservation(row.id);
+    deps.softDeleteObservation(row.id);
     cleanedIds.push({ id: row.id, title: row.title, reason: `superseded by #${row.newer_id} (${row.relation}, ${Math.round(row.confidence * 100)}%)` });
   }
   report.phases.superseded = { count: superseded.length };
@@ -100,7 +99,7 @@ function dream(deps) {
   // Phase 2: Stale auto-progress memories
   const staleAutoTypes = ['progress', 'accomplished'];
   for (const type of staleAutoTypes) {
-    const rows = sqlJson(`
+    const rows = deps.sqlJson(`
       SELECT o.id, o.title, o.project
       FROM observations o
       LEFT JOIN (
@@ -111,7 +110,7 @@ function dream(deps) {
         AND (rl.recall_count IS NULL OR rl.recall_count = 0)
     `, [type]);
     for (const row of rows) {
-      softDeleteObservation(row.id);
+      deps.softDeleteObservation(row.id);
       cleanedIds.push({ id: row.id, title: row.title, reason: `${type} type, never recalled` });
     }
     report.phases[`stale_${type}`] = { count: rows.length };
@@ -121,7 +120,7 @@ function dream(deps) {
   // Phase 3: Never-recalled auto-detected decisions with low trust
   const autoDetectedTypes = ['decision', 'bugfix', 'discovery'];
   for (const type of autoDetectedTypes) {
-    const rows = sqlJson(`
+    const rows = deps.sqlJson(`
       SELECT o.id, o.title, o.project
       FROM observations o
       LEFT JOIN (
@@ -139,7 +138,7 @@ function dream(deps) {
         AND o.created_at < datetime('now', '-${TIME_WINDOWS.DREAM_AUTO_DETECTED_MIN_AGE_DAYS} days')
     `, [type]);
     for (const row of rows) {
-      softDeleteObservation(row.id);
+      deps.softDeleteObservation(row.id);
       cleanedIds.push({ id: row.id, title: row.title, reason: `auto-detected ${type}, never recalled in 7+ days` });
     }
     report.phases[`staleAuto_${type}`] = { count: rows.length };
@@ -147,7 +146,7 @@ function dream(deps) {
   }
 
   // Phase 4: Correction entry cleanup
-  const corrections = sqlJson(`
+  const corrections = deps.sqlJson(`
     SELECT id, title, content, project
     FROM observations
     WHERE (title LIKE 'CORRECTION:%' OR title LIKE 'Correction:%')
@@ -156,14 +155,14 @@ function dream(deps) {
   for (const row of corrections) {
     const refMatch = row.content.match(/#(\d+)/);
     const refNote = refMatch ? ` (referenced #${refMatch[1]} — ensure it was updated)` : '';
-    softDeleteObservation(row.id);
+    deps.softDeleteObservation(row.id);
     cleanedIds.push({ id: row.id, title: row.title, reason: `correction entry${refNote} — should use memory-update instead` });
   }
   report.phases.staleCorrections = { count: corrections.length };
   totalCleaned += corrections.length;
 
   // Phase 5: Obsolete setup/config states
-  const obsoleteConfigs = sqlJson(`
+  const obsoleteConfigs = deps.sqlJson(`
     SELECT o1.id, o1.title, o1.project, o1.type,
            o2.id AS newer_id, o2.title AS newer_title
     FROM observations o1
@@ -182,7 +181,7 @@ function dream(deps) {
       AND o1.created_at < o2.created_at
   `);
   for (const row of obsoleteConfigs) {
-    softDeleteObservation(row.id);
+    deps.softDeleteObservation(row.id);
     cleanedIds.push({ id: row.id, title: row.title, reason: `replaced config — superseded by #${row.newer_id} "${row.newer_title}"` });
   }
   report.phases.replacedConfigs = { count: obsoleteConfigs.length };
@@ -193,7 +192,7 @@ function dream(deps) {
     /^Architecture choice:\s*(Done!|OK|Now I|Here's what|All \d+ |The complex|The symlink|Good concern|You're right|Approved)/i,
     /^Constraint identified:\s*(Here's my review|Two issues|All errors)/i,
   ];
-  const allDecisions = sqlJson(`
+  const allDecisions = deps.sqlJson(`
     SELECT id, title, type, project, content, created_at
     FROM observations
     WHERE type = 'decision' AND deleted_at IS NULL
@@ -202,7 +201,7 @@ function dream(deps) {
   let noiseCleaned = 0;
   for (const row of allDecisions) {
     if (noiseTitlePatterns.some(p => p.test(row.title))) {
-      softDeleteObservation(row.id);
+      deps.softDeleteObservation(row.id);
       cleanedIds.push({ id: row.id, title: row.title, reason: 'low-value noise title — session progress, not a real decision' });
       noiseCleaned++;
     }
@@ -211,7 +210,7 @@ function dream(deps) {
   totalCleaned += noiseCleaned;
 
   // Phase 7: Consolidate related memories on the same topic
-  const topicGroups = sqlJson(`
+  const topicGroups = deps.sqlJson(`
     SELECT topic_key, project, COUNT(*) as cnt, MIN(id) as keep_id,
            GROUP_CONCAT(id) as ids, GROUP_CONCAT(title, '\n') as titles
     FROM observations
@@ -227,26 +226,26 @@ function dream(deps) {
     const keepId = Math.min(...ids);
     const otherIds = ids.filter(id => id !== keepId);
 
-    const entries = sqlJson(
+    const entries = deps.sqlJson(
       `SELECT id, title, content, type, created_at FROM observations WHERE id IN (${ids.map(() => '?').join(',')}) ORDER BY created_at ASC`,
       ids
     );
 
-    if (entries.length < 3) { continue; }
+    if (entries.length >= 3) {
+      const mergedContent = entries.map(e => `**${e.title}** (${e.created_at}):\n${e.content}`).join('\n\n---\n\n');
+      const mergedTitle = `${group.topic_key} — consolidated (${entries.length} entries)`;
 
-    const mergedContent = entries.map(e => `**${e.title}** (${e.created_at}):\n${e.content}`).join('\n\n---\n\n');
-    const mergedTitle = `${group.topic_key} — consolidated (${entries.length} entries)`;
+      deps.sqlRun(
+        'UPDATE observations SET content = ?, title = ?, type = ? WHERE id = ?',
+        [mergedContent, mergedTitle, 'decision', keepId]
+      );
 
-    sqlRun(
-      'UPDATE observations SET content = ?, title = ?, type = ? WHERE id = ?',
-      [mergedContent, mergedTitle, 'decision', keepId]
-    );
-
-    for (const otherId of otherIds) {
-      softDeleteObservation(otherId);
-      cleanedIds.push({ id: otherId, title: entries.find(e => e.id === otherId)?.title || '', reason: `consolidated into #${keepId} (topic: ${group.topic_key})` });
+      for (const otherId of otherIds) {
+        deps.softDeleteObservation(otherId);
+        cleanedIds.push({ id: otherId, title: entries.find(e => e.id === otherId)?.title || '', reason: `consolidated into #${keepId} (topic: ${group.topic_key})` });
+      }
+      consolidated += otherIds.length;
     }
-    consolidated += otherIds.length;
   }
   report.phases.consolidated = { count: consolidated };
   totalCleaned += consolidated;

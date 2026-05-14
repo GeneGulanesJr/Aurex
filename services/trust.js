@@ -1,7 +1,7 @@
 const { TRUST_DELTA } = require('../constants');
 
 function syncCodeTrust(deps, args) {
-  const { sqlJson, jsonErrNoExit, getAnchoredLinks, updateLinkTrust, insertTrustAdjustment } = deps;
+  const { jsonErrNoExit, getAnchoredLinks, updateLinkTrust, insertTrustAdjustment } = deps;
 
   const repo = args.repo;
   const changedJson = args['changed-symbols-json'] || args['changed-symbols'];
@@ -12,7 +12,7 @@ function syncCodeTrust(deps, args) {
   let changedData;
   try {
     changedData = JSON.parse(changedJson);
-  } catch (_) {
+  } catch {
     return jsonErrNoExit('Invalid JSON for --changed-symbols-json');
   }
 
@@ -30,16 +30,15 @@ function syncCodeTrust(deps, args) {
   } else if (changedData && typeof changedData === 'object') {
     for (const key of ['added', 'modified', 'removed', 'changed']) {
       const arr = changedData[key];
-      if (!Array.isArray(arr)) {
-        continue;
-      }
-      for (const s of arr) {
-        if (typeof s === 'string') {
-          changedSet.add(s);
-        } else if (s && s.symbol_id) {
-          changedSet.add(s.symbol_id);
-        } else if (s && s.name) {
-          changedSet.add(s.name);
+      if (Array.isArray(arr)) {
+        for (const s of arr) {
+          if (typeof s === 'string') {
+            changedSet.add(s);
+          } else if (s && s.symbol_id) {
+            changedSet.add(s.symbol_id);
+          } else if (s && s.name) {
+            changedSet.add(s.name);
+          }
         }
       }
     }

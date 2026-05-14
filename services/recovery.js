@@ -1,8 +1,7 @@
 const { TIME_WINDOWS } = require('../constants');
-const { getConfig } = require('../config');
 
 function autoRecoverInternal(deps, sessionId) {
-  const { sqlJson, sqlRun, softDeleteObservation } = deps;
+  const { sqlJson, sqlRun } = deps;
 
   const session = sqlJson('SELECT * FROM session_log WHERE id = ?', [parseInt(sessionId)]);
   if (session.length === 0) {

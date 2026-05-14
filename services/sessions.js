@@ -1,4 +1,4 @@
-const { sqlJson, sqlRun, jsonErrNoExit } = require('../db');
+const { sqlJson, jsonErrNoExit } = require('../db');
 const { TIME_WINDOWS } = require('../constants');
 const { getConfig } = require('../config');
 
@@ -11,21 +11,21 @@ function findLatestSession(project) {
 }
 
 function sessionStart(deps, args) {
-  const { sqlJson, sqlRun, autoRecoverInternal, runCompact } = deps;
+  const { autoRecoverInternal, runCompact } = deps;
   const project = args.project;
   if (!project) {
     return jsonErrNoExit('Missing --project');
   }
 
-  const sessionRows = sqlJson('INSERT INTO session_log (project) VALUES (?) RETURNING id, started_at', [project]);
+  const sessionRows = deps.sqlJson('INSERT INTO session_log (project) VALUES (?) RETURNING id, started_at', [project]);
   const sessionId = sessionRows[0].id;
 
-  const countRows = sqlJson('SELECT COUNT(*) as cnt FROM session_log WHERE project = ?', [project]);
+  const countRows = deps.sqlJson('SELECT COUNT(*) as cnt FROM session_log WHERE project = ?', [project]);
   const sessionCount = countRows[0].cnt;
   const compactInterval = getConfig().compact_every_n_sessions || 5;
   const consolidateDue = sessionCount > 0 && sessionCount % compactInterval === 0;
 
-  const archiveCandidates = sqlJson(
+  const archiveCandidates = deps.sqlJson(
     `
     SELECT project, MAX(started_at) as last_active
     FROM session_log
@@ -36,7 +36,7 @@ function sessionStart(deps, args) {
     [project],
   );
 
-  const incompleteSession = sqlJson(
+  const incompleteSession = deps.sqlJson(
     `
     SELECT id FROM session_log
     WHERE project = ? AND ended_at IS NULL AND id != ?
@@ -78,7 +78,6 @@ function sessionStart(deps, args) {
 }
 
 function sessionEnd(deps, args) {
-  const { sqlJson, sqlRun } = deps;
   const id = args.id;
   const memories = parseInt(args.memories || '0', 10);
   const auto = args.auto === 'true' || args.auto === true;
@@ -91,7 +90,7 @@ function sessionEnd(deps, args) {
     trustRecoveryResult = deps.trustRecovery({ session: id });
   }
 
-  sqlRun("UPDATE session_log SET ended_at = datetime('now'), memories_saved = ? WHERE id = ?", [
+  deps.sqlRun("UPDATE session_log SET ended_at = datetime('now'), memories_saved = ? WHERE id = ?", [
     memories,
     parseInt(id, 10),
   ]);
@@ -103,15 +102,14 @@ function sessionEnd(deps, args) {
 }
 
 function sessionSummary(deps, args) {
-  const { sqlJson, jsonErrNoExit } = deps;
   const content = args.content;
   const project = args.project || null;
   const sessionId = args['session-id'] || findLatestSession(project);
   if (!content) {
-    return jsonErrNoExit('Missing --content');
+    return deps.jsonErrNoExit('Missing --content');
   }
 
-  const rows = sqlJson(
+  const rows = deps.sqlJson(
     `
     INSERT INTO observations (session_id, type, title, content, project, scope)
     VALUES (?, ?, ?, ?, ?, ?)
