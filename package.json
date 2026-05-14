@@ -2,7 +2,7 @@
   "name": "lapis",
   "version": "1.0.0",
   "description": "💎 LaPis — Persistent memory for the Pi coding agent. One SQLite DB, zero cloud, zero API keys.",
-  "keywords": [],
+  "keywords": ["pi-package"],
   "homepage": "https://github.com/GeneGulanesJr/LaPis#readme",
   "bugs": {
     "url": "https://github.com/GeneGulanesJr/LaPis/issues"
