@@ -1,10 +1,10 @@
 # GitHub issue breakdown for modularization
 
-These issue drafts break `docs/ARCHITECTURE_MODULARIZATION.md` into implementation-sized GitHub issues. They are ordered so each issue can reduce coupling without requiring a full rewrite.
+These issue drafts break `docs/ARCHITECTURE_MODULARIZATION.md` into implementation-sized GitHub issues. They are ordered so each issue can reduce coupling without requiring a full rewrite, while keeping LaPis as **one installed Pi extension**.
 
 > Note: These are issue-ready drafts. In this environment, GitHub issue creation could not be completed because the GitHub CLI is not installed, there is no configured git remote, and no GitHub token is available in the environment.
 
-## Issue 1: Refactor Pi extension into thin host, hook adapters, and tool adapters
+## Issue 1: Refactor the single Pi extension into a thin composition root, hook adapters, and tool adapters
 
 **Labels**: `architecture`, `pi-extension`, `refactor`
 
@@ -29,16 +29,16 @@ These issue drafts break `docs/ARCHITECTURE_MODULARIZATION.md` into implementati
   - `extensions/memory-layer/tools/doc-tools.ts`
   - `extensions/memory-layer/tools/format-code-result.ts`
   - `extensions/memory-layer/tools/format-doc-result.ts`
-- Keep `extensions/memory-layer/index.ts` as the registration/composition root only.
+- Keep `extensions/memory-layer/index.ts` as the **single** Pi extension registration/composition root.
 - Preserve existing runtime behavior and public tool names.
 - Add unit tests for moved helpers where practical.
 
 ### Acceptance criteria
 
-- `index.ts` mainly registers hooks, tools, and commands.
+- `index.ts` remains the only LaPis `ExtensionAPI` entrypoint and mainly registers hooks, tools, and commands.
 - Hook modules can be tested without booting the whole Pi extension.
 - Tool formatters are pure functions with focused tests.
-- A failure in doc tooling does not prevent memory tools from registering.
+- A failure in a feature adapter, such as doc tooling, does not prevent unrelated memory tools from registering in the same extension.
 - Existing extension tool names and command names remain backward compatible.
 
 ---
@@ -136,7 +136,7 @@ Observation CRUD, search, context loading, sessions, prompt capture, dedupe, rec
 - Observation save/search/context/get/update/delete behavior is preserved.
 - Unit tests cover ranking, dedupe, recall, and context behavior.
 - Integration tests run against a temporary SQLite DB.
-- CLI and Pi tools become thin adapters over memory-domain services.
+- CLI commands and Pi tools become thin adapters over memory-domain services while still being registered by the main LaPis extension.
 
 ---
 
@@ -195,7 +195,7 @@ Repository scanning, parser selection, symbol extraction, import/call edge extra
 
 ### Acceptance criteria
 
-- Code indexing can run without loading memory-domain, doc-index, or trust-sync services.
+- Code indexing can run as an internal feature without loading memory-domain, doc-index, or trust-sync services.
 - Parser registry and symbol extraction have focused tests.
 - Incremental reindexing has tests for changed, added, and deleted files.
 - Source retrieval remains byte-accurate.
@@ -289,7 +289,7 @@ Documentation indexing has its own model: doc repos, files, sections, links, glo
 
 ### Acceptance criteria
 
-- Doc indexing can run without memory-domain or code-analysis.
+- Doc indexing can run as an internal feature without memory-domain or code-analysis.
 - Markdown parsing, links, glossary, examples, and analytics have focused tests.
 - Doc coverage does not directly mutate or depend on code-index internals.
 - Existing doc CLI/tool behavior is preserved.
@@ -370,7 +370,7 @@ The repo contains both the Node/Pi runtime and the Rust Crosshash workspace. Cro
 
 ### Scope
 
-- Decide whether Crosshash becomes the canonical code-intelligence backend or remains an experimental/parallel engine.
+- Decide whether Crosshash becomes the canonical internal code-intelligence backend behind the single LaPis extension or remains an experimental/parallel engine.
 - Document the integration boundary:
   - process boundary,
   - API boundary,
@@ -384,7 +384,7 @@ The repo contains both the Node/Pi runtime and the Rust Crosshash workspace. Cro
 - A decision record exists in docs.
 - Ownership between Node code-index/code-analysis and Crosshash is explicit.
 - Future issues know whether to enhance JS modules, migrate them, or wrap Crosshash.
-- Pi extension concerns are not pushed into Rust crates without a boundary decision.
+- Pi extension concerns stay in the main extension/adapters and are not pushed into Rust crates without a boundary decision.
 
 ---
 
@@ -412,4 +412,4 @@ The modularization goal is not only cleaner files; it is feature isolation. If o
 - Each major feature module has unit tests independent of the Pi extension.
 - Each major feature has at least one failure-mode test.
 - Tests enforce no forbidden cross-module imports where practical.
-- CI can run feature tests without requiring a full Pi session.
+- CI can run feature tests without requiring a full Pi session, while integration tests still verify registration through the single extension entrypoint.

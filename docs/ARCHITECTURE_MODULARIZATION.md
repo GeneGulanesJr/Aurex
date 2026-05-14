@@ -9,7 +9,32 @@ LaPis currently has two implementations moving in parallel:
 1. **Primary Pi extension + Node CLI/runtime** — `extensions/memory-layer/index.ts` registers Pi hooks, LLM tools, and commands, then shells into `memory-store.js`. `memory-store.js` owns command dispatch and coordinates SQLite, memory, code indexing, code analysis, git analysis, doc indexing, response envelopes, and AST pattern scans.
 2. **Crosshash Rust workspace** — `crosshash/` is already closer to the desired modular shape, with crates for core types, parsing, hashing, graph storage/traversal, git integration, AI inference, impact analysis, API, MCP, and CLI.
 
-The main modularization opportunity is the Node/Pi extension runtime: it exposes clear feature families, but several families are still coupled through a large extension file, a large CLI dispatcher, shared schema, shared process boundary, and shared module-level state.
+The main modularization opportunity is the Node/Pi extension runtime: it should remain **one installed Pi extension/package**, but internally it should be composed from feature modules that the main extension registers and orchestrates. Today those feature families are coupled through a large extension file, a large CLI dispatcher, shared schema, shared process boundary, and shared module-level state.
+
+
+## Pi extension packaging constraint
+
+This plan does **not** propose splitting LaPis into many Pi extensions. Pi extensions are TypeScript modules that export a factory receiving `ExtensionAPI`, then subscribe to lifecycle events and register tools/commands from that extension entrypoint. Pi also supports extension directories with an `index.ts` entrypoint and package installation through the Pi package system.
+
+For LaPis, the target shape is therefore:
+
+```text
+one installed Pi extension package
+  └─ extensions/memory-layer/index.ts  # single ExtensionAPI composition root
+       ├─ registers all LaPis tools and commands
+       ├─ wires lifecycle hooks
+       ├─ loads feature adapters
+       └─ calls backend feature services
+```
+
+“Standalone feature” in this document means **standalone inside the main extension**:
+
+- independently testable without booting a full Pi session,
+- independently disabled/degraded at the adapter boundary when possible,
+- independently replaceable behind a stable interface,
+- but still shipped and registered through the single LaPis extension entrypoint.
+
+“Sub-feature” means a smaller component inside a major feature. Sub-features should be unit-testable and replaceable, but they usually should not become separate Pi extension packages.
 
 ## Main feature groups and sub-features
 
@@ -393,7 +418,7 @@ Result envelopes, compact response stripping, and LLM-facing formatting are clos
 
 ## Proposed architecture boundaries
 
-The clean target architecture is a layered modular monolith with a single deployable package at first, but independently testable feature modules:
+The clean target architecture is a layered modular monolith with a **single Pi extension entrypoint** and independently testable feature modules behind it:
 
 ```text
 Pi Agent
@@ -435,7 +460,7 @@ Platform
 
 ### Dependency rules
 
-1. `extensions/*` may depend on the backend client and formatting adapters, but not raw SQL or parser internals.
+1. `extensions/memory-layer/index.ts` remains the single ExtensionAPI composition root; it may depend on hook/tool adapters and the backend client, but not raw SQL or parser internals.
 2. `memory-domain` may depend on storage, config, and ranking constants, but not code/doc parsers.
 3. `workflow-memory` may depend on storage and project identity only.
 4. `code-index` may depend on parser, filesystem, hashing, and storage, but not memory observation ranking.
@@ -443,7 +468,7 @@ Platform
 6. `doc-index` may depend on Markdown/doc storage; doc coverage may depend only on `CodeSymbolLookup`.
 7. `trust-sync` is the only module allowed to coordinate memory and code symbol tables.
 8. `platform/protocol` owns `_meta`, compact/auto output, and LLM-facing transformations.
-9. Crosshash should remain behind a command/API boundary until it fully replaces the JS code-intelligence path.
+9. Crosshash should remain behind a command/API boundary unless it becomes an internal implementation of the single LaPis extension's code-intelligence tools.
 
 ## GitHub issue breakdown
 
@@ -473,11 +498,11 @@ Each feature module should have:
 
 ## Deployment strategy
 
-Start as a **modular monolith**: one package, one SQLite DB, one Pi extension, but multiple internal modules with strict dependency rules. Once boundaries are stable, only then consider separate deployables:
+Keep LaPis as a **modular monolith**: one package, one SQLite DB, one Pi extension, but multiple internal modules with strict dependency rules. If any runtime separation is considered later, it should be an implementation detail behind the same Pi extension UI/API, not a split into multiple user-installed LaPis extensions:
 
-- Pi extension package.
-- Memory backend CLI/API.
-- Crosshash code-intelligence engine.
-- Optional docs indexer worker.
+- the single Pi extension package remains the user-facing installable unit;
+- the memory backend CLI/API remains an internal backend surface;
+- Crosshash can become an internal code-intelligence engine behind the same tools;
+- optional workers can run behind the same extension if long-running indexing needs isolation.
 
-This avoids premature distribution complexity while still making features independently testable and resilient.
+This avoids user-facing distribution complexity while still making features independently testable and resilient.
