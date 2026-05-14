@@ -161,13 +161,13 @@ mod tests {
 
     #[test]
     fn extracts_anthropic_json_content() {
-        let raw = serde_json::json!({"content":[{"type":"text","text":"{"found":true}"}]});
-        assert_eq!(extract_text(&raw).unwrap(), "{"found":true}");
+        let raw = serde_json::json!({"content":[{"type":"text","text":"{\"found\":true}"}]});
+        assert_eq!(extract_text(&raw).unwrap(), "{\"found\":true}");
     }
 
     #[test]
     fn extracts_ollama_json_content() {
-        let raw = serde_json::json!({"content":[{"type":"text","text":"{"model":"llama"}"}],"done":true});
+        let raw = serde_json::json!({"content":[{"type":"text","text":"{\"model\":\"llama\"}"}],"done":true});
         let text = extract_text(&raw).unwrap();
         assert!(text.contains("llama"));
     }

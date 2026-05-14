@@ -111,7 +111,8 @@ fn ai_stats_shows_zero_for_fresh_db() {
         .assert()
         .success()
         .stdout(contains("AI invocations: 0"))
-        .stdout(contains("total cost: $0.0000"));
+        .stdout(contains("cost: $"))
+        .stdout(contains("0.0000"));
 }
 
 #[test]

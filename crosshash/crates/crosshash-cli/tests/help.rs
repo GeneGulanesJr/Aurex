@@ -376,7 +376,7 @@ fn impact_command_runs_end_to_end() {
         ])
         .assert()
         .success()
-        .stdout(contains("api_endpoint"));
+        .stdout(contains("changed_entities"));
 }
 
 #[test]

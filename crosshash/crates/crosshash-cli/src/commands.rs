@@ -396,9 +396,10 @@ async fn index_one_repo(storage: &GraphStorage, repo: &Repo, incremental: bool, 
             seen_ids.insert(entity.id);
             storage.insert_entity(&entity)?;
             storage.insert_entity_version(&version_for(&entity, &commit_hash))?;
+            let is_new_export = entity.is_exported && !existing_exported.contains(&entity.id);
             all_entities.push(entity);
             extracted += 1;
-            if entity.is_exported && !existing_exported.contains(&entity.id) {
+            if is_new_export {
                 exported_added += 1;
             }
         }
@@ -1103,6 +1104,7 @@ fn execute_ai_stats(
         edges_suggested,
         edges_auto_accepted,
     };
+    let total_cost: f64 = total_cost.abs();
     let text = format!(
         "AI invocations: {invocations}, total cost: ${total_cost:.4}, tokens: {total_input_tokens}in/{total_output_tokens}out, edges: {edges_suggested} suggested, {edges_auto_accepted} auto-accepted"
     );

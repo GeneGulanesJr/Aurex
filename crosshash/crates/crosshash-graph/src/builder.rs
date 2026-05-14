@@ -19,7 +19,15 @@ pub struct GraphBuilder;
 impl GraphBuilder {
     pub fn from_storage(storage: &GraphStorage, repo_id: Uuid) -> Result<DependencyGraph> {
         let entities = storage.get_entities_by_repo(repo_id)?;
-        let edges = storage.get_edges_by_repo(repo_id)?;
+        let entity_ids = entities.iter().map(|e| e.id).collect::<HashSet<_>>();
+        let edges = storage
+            .get_edges_by_repo(repo_id)?
+            .into_iter()
+            .filter(|edge| {
+                entity_ids.contains(&edge.source_entity_id)
+                    && entity_ids.contains(&edge.target_entity_id)
+            })
+            .collect::<Vec<_>>();
         Self::from_parts(entities, edges)
     }
 

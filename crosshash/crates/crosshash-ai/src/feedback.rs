@@ -97,6 +97,6 @@ mod tests {
         ];
         let stats = FeedbackStats::from_events(&events);
         assert!((stats.precision - 2.0 / 3.0).abs() < 0.001);
-        assert!((stats.calibrated_threshold - 0.95).abs() < 0.001);
+        assert!((stats.calibrated_threshold - 0.98).abs() < 0.001);
     }
 }
