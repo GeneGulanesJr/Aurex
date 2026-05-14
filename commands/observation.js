@@ -63,6 +63,10 @@ function del(deps, args) {
   if (!id) {
     return deps.jsonErrNoExit('Missing --id');
   }
+  const existing = obsDA.getObservation(deps, id);
+  if (!existing || existing.length === 0) {
+    return deps.jsonErrNoExit('Observation not found');
+  }
   if (hard) {
     obsDA.hardDeleteObservation(deps, id);
     return { ok: true, hardDeleted: true };

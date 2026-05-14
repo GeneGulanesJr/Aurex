@@ -50,6 +50,9 @@ function adjustTrust(deps, args) {
   const reason = args.reason || 'manual';
   if (!memoryId) return deps.jsonErrNoExit('--memory-id required');
   const newTrust = symDA.adjustTrust(deps, { memoryId, delta, reason });
+  if (newTrust === null) {
+    return { ok: true, memoryId, newTrust: null, delta, reason, warning: 'No symbol link found for this memory' };
+  }
   return { ok: true, memoryId, newTrust, delta, reason };
 }
 

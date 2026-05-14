@@ -282,9 +282,9 @@ describe('memory-store: delete', () => {
     expect(result.error).toBeDefined();
   });
 
-  it('should return ok even for non-existent id (soft delete)', () => {
-    const result = run(`delete --id 999999999`);
-    expect(result.ok).toBe(true);
+  it('should return error for non-existent id (soft delete)', () => {
+    const result = runFail(`delete --id 999999999`);
+    expect(result.error).toBe('Observation not found');
   });
 });
 
