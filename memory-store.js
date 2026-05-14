@@ -5,6 +5,13 @@
  * Database operations via db.js. Code parsing via parse-code.js (WASM).
  * Code analysis via code-analysis.js. Doc indexing via doc-indexer.js.
  *
+ * Service modules handle domain logic:
+ *   - services/dedup:        trigramOverlap, checkDuplicate, markDuplicate
+ *   - services/sessions:     sessionStart, sessionEnd, sessionSummary, findLatestSession
+ *   - services/dream:        runCompact, compact, dream, trustRecovery
+ *   - services/search:       search, rankObservations, symbolCluster, related
+ *   - services/code-indexing: parseCodeFile, ensureParserAvailable, indexRepoInternal, reindexRepoInternal, _emitProgress
+ *
  * Usage: <subcommand> [options]
  */
 
@@ -37,26 +44,22 @@ const {
   hashContent,
 } = require('./utils');
 
-// Lazily resolve db handle (available after ensureDb())
-let db = null;
+// ── Service imports ──────────────────────────────────────────
+const dedupService = require('./services/dedup');
+const sessionsService = require('./services/sessions');
+const dreamService = require('./services/dream');
+const searchService = require('./services/search');
+const codeIndexingService = require('./services/code-indexing');
 
-const TRUST_RECALL_JOINS = `
-LEFT JOIN (
-  SELECT memory_id, MAX(trust_score) as trust_score
-  FROM symbol_links GROUP BY memory_id
-) sl ON sl.memory_id = CAST(o.id AS TEXT)
-LEFT JOIN (
-  SELECT memory_id, COUNT(*) as recall_count
-  FROM recall_log GROUP BY memory_id
-) rl ON rl.memory_id = o.id`;
+// ── Re-exported constants from services ──────────────────────
+const { TRUST_RECALL_JOINS, TYPE_PRIORITY_CASE } = searchService;
 
-const TYPE_PRIORITY_CASE = `CASE o.type
-  WHEN 'decision' THEN 3 WHEN 'architecture' THEN 3
-  WHEN 'bugfix' THEN 2 WHEN 'pattern' THEN 2
-  WHEN 'preference' THEN 2 WHEN 'config' THEN 1
-  WHEN 'discovery' THEN 1 WHEN 'learning' THEN 1
-  ELSE 0
-END`;
+// ── Pure-function delegations (no deps needed) ───────────────
+const { trigramOverlap, rankObservations } = searchService;
+const { findLatestSession } = sessionsService;
+const { runCompact, compact } = dreamService;
+const { trustRecovery } = dreamService;
+const { parseCodeFile, ensureParserAvailable } = codeIndexingService;
 
 /* ── subcommands ───────────────────────────────────────────── */
 
@@ -98,97 +101,24 @@ function _readTierConfig() {
   }
 }
 
-/* ── subcommands ───────────────────────────────────────────── */
+/* ── session delegations ──────────────────────────────────── */
 
 function sessionStart(args) {
-  const project = args.project;
-  if (!project) {
-    return jsonErrNoExit('Missing --project');
-  }
-
-  const sessionRows = sqlJson('INSERT INTO session_log (project) VALUES (?) RETURNING id, started_at', [project]);
-  const sessionId = sessionRows[0].id;
-
-  const countRows = sqlJson('SELECT COUNT(*) as cnt FROM session_log WHERE project = ?', [project]);
-  const sessionCount = countRows[0].cnt;
-  const compactInterval = getConfig().compact_every_n_sessions || 5;
-  const consolidateDue = sessionCount > 0 && sessionCount % compactInterval === 0;
-
-  const archiveCandidates = sqlJson(
-    `
-    SELECT project, MAX(started_at) as last_active
-    FROM session_log
-    WHERE project != ?
-    GROUP BY project
-    HAVING last_active < datetime('now', '-${TIME_WINDOWS.ARCHIVE_INACTIVE_DAYS} days')
-  `,
-    [project],
-  );
-
-  const incompleteSession = sqlJson(
-    `
-    SELECT id FROM session_log
-    WHERE project = ? AND ended_at IS NULL AND id != ?
-    ORDER BY started_at DESC LIMIT 1
-  `,
-    [project, sessionId],
-  );
-
-  // Auto-recover incomplete sessions
-  let recoveredSession = null;
-  if (incompleteSession.length > 0) {
-    recoveredSession = autoRecoverInternal(String(incompleteSession[0].id));
-  }
-
-  const compacted = runCompact();
-
-  // Tool tiering (v6)
-  const tierConfig = _readTierConfig();
-  const tier = tierConfig.tier || 'full';
-  const tierSet = TOOL_TIERS[tier];
-  const availableCommands = tierSet ? Object.keys(commands).filter((c) => tierSet.has(c)) : Object.keys(commands);
-  // Apply extra/hidden overrides
-  const extra = tierConfig.extra_commands || [];
-  const hidden = tierConfig.hidden_commands || [];
-  const finalCommands = [...new Set([...availableCommands, ...extra])].filter((c) => !hidden.includes(c)).sort();
-
-  return {
-    sessionId,
-    sessionCount,
-    consolidateDue,
-    compacted,
-    archiveCandidates,
-    recoveredSession,
-    hasIncompletePreviousSession: incompleteSession.length > 0,
-    incompleteSessionId: incompleteSession.length > 0 ? incompleteSession[0].id : null,
-    tool_tier: tier,
-    available_commands: finalCommands,
-    available_commands_count: finalCommands.length,
-  };
+  return sessionsService.sessionStart({
+    sqlJson, sqlRun, autoRecoverInternal, runCompact, _readTierConfig, TOOL_TIERS, commands,
+  }, args);
 }
 
 function sessionEnd(args) {
-  const id = args.id;
-  const memories = parseInt(args.memories || '0', 10);
-  const auto = args.auto === 'true' || args.auto === true;
-  if (!id) {
-    return jsonErrNoExit('Missing --id');
-  }
+  return sessionsService.sessionEnd({
+    sqlJson, sqlRun, trustRecovery,
+  }, args);
+}
 
-  let trustRecoveryResult = null;
-  if (auto) {
-    trustRecoveryResult = trustRecovery({ session: id });
-  }
-
-  sqlRun("UPDATE session_log SET ended_at = datetime('now'), memories_saved = ? WHERE id = ?", [
-    memories,
-    parseInt(id, 10),
-  ]);
-  const result = { ok: true, sessionId: parseInt(id, 10) };
-  if (trustRecoveryResult) {
-    result.trustRecovery = trustRecoveryResult;
-  }
-  return result;
+function sessionSummary(args) {
+  return sessionsService.sessionSummary({
+    sqlJson, jsonErrNoExit, findLatestSession,
+  }, args);
 }
 
 /* ── observations ─────────────────────────────────────────── */
@@ -262,144 +192,13 @@ function save(args) {
   return { id: rows[0].id, title, created_at: rows[0].created_at };
 }
 
-/* ── search ranking ─────────────────────────────────────── */
-
-/**
- * Composite rank: FTS5 relevance, recency, trust, usefulness.
- * When FTS rank is 0 (LIKE fallback), estimates relevance via word overlap.
- */
-function rankObservations(rows, query = '') {
-  const now = Date.now();
-  const queryWords = query
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((w) => w.length > 1);
-  return rows
-    .map((row) => {
-      let ftsScore = 0;
-      if (row.rank !== undefined && row.rank !== null && row.rank !== 0) {
-        ftsScore = -row.rank;
-      } else if (queryWords.length > 0) {
-        // LIKE fallback: score by word overlap in title
-        const title = (row.title || '').toLowerCase();
-        const hits = queryWords.filter((w) => title.includes(w)).length;
-        ftsScore = queryWords.length > 0 ? (hits / queryWords.length) * 2 : 0;
-      }
-      const ageMs = now - new Date(`${row.created_at}Z`).getTime();
-      const recencyScore = Math.exp(-ageMs / TIME_WINDOWS.RECENCY_HALF_LIFE_MS);
-      const trustScore = row.trust_score !== undefined && row.trust_score !== null ? row.trust_score : RANKING.DEFAULT_TRUST_SCORE;
-      const recallScore = Math.log(1 + (row.recall_count || 0)) * RANKING.RECALL_LOG_MULTIPLIER;
-      const typeBoost = RANKING.TYPE_BOOST[row.type] || 1.0;
-      const ranking = getConfig().ranking;
-      const composite =
-        (ftsScore * ranking.fts_relevance +
-          recencyScore * ranking.recency +
-          trustScore * ranking.trust +
-          recallScore * ranking.recall) *
-        typeBoost;
-      return { ...row, _score: composite };
-    })
-    .sort((a, b) => b._score - a._score);
-}
+/* ── search delegation ─────────────────────────────────────── */
 
 function search(args) {
-  const query = args.query;
-  const project = args.project || null;
-  const type = args.type || null;
-  const scope = args.scope || null;
-  const limit = parseInt(args.limit || '10', 10);
-  const sessionId = args['session-id'] ? parseInt(args['session-id'], 10) : null;
-  const includeCode = args['include-code'] === 'true' || args['include-code'] === true;
-  if (!query) {
-    return jsonErrNoExit('Missing --query');
-  }
-
-  const isFtsSpecial = /[*"\-]|\b(AND|OR|NOT)\b/i.test(query);
-  const needsFallback = query === '*' || query === '' || isFtsSpecial;
-
-  let rows;
-  if (!needsFallback) {
-    try {
-      let q = `
-        SELECT o.id, o.title, o.type, o.project, o.scope, o.topic_key, o.created_at,
-               snippet(observations_fts, 0, '»', '«', '…', 32) as snippet,
-               rank,
-               sl.trust_score,
-               COALESCE(rl.recall_count, 0) as recall_count
-        FROM observations o
-        JOIN observations_fts fts ON o.id = fts.rowid
-        ${TRUST_RECALL_JOINS}
-        WHERE observations_fts MATCH ?
-          AND o.deleted_at IS NULL
-      `;
-      const params = [query];
-      if (project) {
-        q += ' AND o.project = ?';
-        params.push(project);
-      }
-      if (type) {
-        q += ' AND o.type = ?';
-        params.push(type);
-      }
-      if (scope) {
-        q += ' AND o.scope = ?';
-        params.push(scope);
-      }
-      q += ' ORDER BY rank LIMIT ?';
-      params.push(Math.min(limit * RESULT_LIMITS.SEARCH_MULTIPLIER, RESULT_LIMITS.SEARCH_MAX_ROWS));
-      rows = sqlJson(q, params);
-    } catch (e) {
-      rows = null;
-    }
-  }
-
-  if (!rows || rows.length === 0) {
-    let q = `
-      SELECT o.id, o.title, o.type, o.project, o.scope, o.topic_key, o.created_at,
-             '' as snippet, 0 as rank,
-             sl.trust_score,
-             COALESCE(rl.recall_count, 0) as recall_count
-      FROM observations o
-      ${TRUST_RECALL_JOINS}
-      WHERE (o.title LIKE ? OR o.content LIKE ?)
-        AND o.deleted_at IS NULL
-    `;
-    const like = `%${query.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
-    const params = [like, like];
-    if (project) {
-      q += ' AND o.project = ?';
-      params.push(project);
-    }
-    if (type) {
-      q += ' AND o.type = ?';
-      params.push(type);
-    }
-    if (scope) {
-      q += ' AND o.scope = ?';
-      params.push(scope);
-    }
-    q += ' ORDER BY o.created_at DESC LIMIT ?';
-    params.push(Math.min(limit * RESULT_LIMITS.SEARCH_MULTIPLIER, RESULT_LIMITS.SEARCH_MAX_ROWS));
-    rows = sqlJson(q, params);
-  }
-
-  const ranked = rankObservations(rows, query).slice(0, limit);
-
-  // Wire recall tracking: batch insert for ranking feedback
-  if (sessionId && ranked.length > 0) {
-    const placeholders = ranked.map(() => '(?, ?, ?)').join(',');
-    const params = ranked.flatMap((r) => [r.id, sessionId, query]);
-    sqlRun(`INSERT OR IGNORE INTO recall_log (memory_id, session_id, query) VALUES ${placeholders}`, params);
-  }
-
-  // If --include-code, also search code symbols
-  let codeResults = null;
-  if (includeCode) {
-    codeResults = searchCode(query, null, null, limit);
-  }
-
-  return { results: ranked, code_results: codeResults };
+  return searchService.search({ sqlJson, sqlRun, jsonErrNoExit, searchCode }, args);
 }
+
+/* ── context (uses TRUST_RECALL_JOINS and TYPE_PRIORITY_CASE from searchService) ── */
 
 function context(args) {
   const project = args.project || null;
@@ -766,25 +565,6 @@ function getStats() {
   };
 }
 
-function sessionSummary(args) {
-  const content = args.content;
-  const project = args.project || null;
-  const sessionId = args['session-id'] || findLatestSession(project);
-  if (!content) {
-    return jsonErrNoExit('Missing --content');
-  }
-
-  const rows = sqlJson(
-    `
-    INSERT INTO observations (session_id, type, title, content, project, scope)
-    VALUES (?, ?, ?, ?, ?, ?)
-    RETURNING id, created_at
-  `,
-    [String(sessionId), 'session_summary', 'Session Summary', content, project, 'project'],
-  );
-  return { id: rows[0].id, title: 'Session Summary', created_at: rows[0].created_at };
-}
-
 /* ── symbol anchoring ─────────────────────────────────────── */
 
 function linkSymbol(args) {
@@ -1005,157 +785,21 @@ function syncCodeTrust(args) {
 /* ── symbol-aware recall ─────────────────────────────────── */
 
 function symbolCluster(args) {
-  const symbolId = args.symbol;
-  const repo = args.repo || null;
-  if (!symbolId) {
-    return jsonErrNoExit('Missing --symbol');
-  }
-
-  let q = `
-    SELECT o.id, o.title, o.type, o.project, o.scope, o.topic_key, o.created_at,
-           sl.trust_score
-    FROM observations o
-    JOIN symbol_links sl ON sl.memory_id = CAST(o.id AS TEXT)
-    WHERE sl.symbol_id = ?
-      AND o.deleted_at IS NULL
-  `;
-  const params = [symbolId];
-  if (repo) {
-    q += ' AND sl.repo = ?';
-    params.push(repo);
-  }
-  q += ' ORDER BY o.created_at DESC';
-
-  return { symbol: symbolId, memories: sqlJson(q, params) };
+  return searchService.symbolCluster({ sqlJson, jsonErrNoExit }, args);
 }
 
 function related(args) {
-  const id = parseInt(args.id);
-  if (isNaN(id)) {
-    return jsonErrNoExit('Missing --id');
-  }
-
-  const symbols = sqlJson('SELECT symbol_id, repo FROM symbol_links WHERE memory_id = ? AND symbol_id != ?', [
-    String(id),
-    '__unlinked__',
-  ]);
-  if (symbols.length === 0) {
-    return { memory_id: id, related: [] };
-  }
-
-  const result = [];
-  if (symbols.length > 0) {
-    const symbolIds = symbols.map((s) => s.symbol_id);
-    const placeholders = symbolIds.map(() => '?').join(',');
-    const clusters = sqlJson(
-      `
-      SELECT sl.symbol_id, o.id, o.title, o.type, o.project, o.created_at
-      FROM observations o
-      JOIN symbol_links sl ON sl.memory_id = CAST(o.id AS TEXT)
-      WHERE sl.symbol_id IN (${placeholders})
-        AND o.id != ?
-        AND o.deleted_at IS NULL
-      ORDER BY o.created_at DESC
-    `,
-      [...symbolIds, id],
-    );
-    // Group by symbol_id, limit 5 per group
-    const grouped = new Map();
-    for (const row of clusters) {
-      if (!grouped.has(row.symbol_id)) {grouped.set(row.symbol_id, []);}
-      if (grouped.get(row.symbol_id).length < RESULT_LIMITS.RELATED_PER_SYMBOL) {
-        grouped.get(row.symbol_id).push(row);
-      }
-    }
-    for (const sym of symbols) {
-      const cluster = grouped.get(sym.symbol_id);
-      if (cluster && cluster.length > 0) {
-        result.push({ symbol: sym.symbol_id, repo: sym.repo, memories: cluster });
-      }
-    }
-  }
-
-  return { memory_id: id, related: result };
+  return searchService.related({ sqlJson, jsonErrNoExit }, args);
 }
 
 /* ── deduplication ───────────────────────────────────────── */
 
-function trigramOverlap(a, b) {
-  const trigrams = (s) => {
-    const t = new Set();
-    const lower = s.toLowerCase().replace(/[^a-z0-9]/g, '');
-    for (let i = 0; i <= lower.length - 3; i++) {
-      t.add(lower.slice(i, i + 3));
-    }
-    return t;
-  };
-  const ta = trigrams(a);
-  const tb = trigrams(b);
-  if (ta.size === 0 && tb.size === 0) {
-    return 1.0;
-  }
-  if (ta.size === 0 || tb.size === 0) {
-    return 0.0;
-  }
-  let shared = 0;
-  for (const t of ta) {
-    if (tb.has(t)) {
-      shared++;
-    }
-  }
-  return shared / Math.max(ta.size, tb.size);
-}
-
 function checkDuplicate(title, type, project, topicKey) {
-  let q = `
-    SELECT id, title, topic_key, created_at
-    FROM observations
-    WHERE type = ? AND deleted_at IS NULL
-  `;
-  const params = [type];
-  if (project) {
-    q += ' AND project = ?';
-    params.push(project);
-  }
-  if (topicKey) {
-    q += ' ORDER BY CASE WHEN topic_key = ? THEN 0 ELSE 1 END, created_at DESC';
-    params.push(topicKey);
-  } else {
-    q += ' ORDER BY created_at DESC';
-  }
-  q += ` LIMIT ${RESULT_LIMITS.DEDUP_CANDIDATES}`;
-  const candidates = sqlJson(q, params);
-
-  const duplicates = [];
-  const warningThreshold = getConfig().dedup.warning_threshold;
-  for (const c of candidates) {
-    const score = trigramOverlap(title, c.title);
-    if (score >= warningThreshold) {
-      duplicates.push({
-        id: c.id,
-        title: c.title,
-        similarity: Math.round(score * 100) / 100,
-        created_at: c.created_at,
-      });
-    }
-  }
-  return { potential_duplicates: duplicates };
+  return dedupService.checkDuplicate({ sqlJson }, title, type, project, topicKey);
 }
 
 function markDuplicate(args) {
-  const source = parseInt(args.source);
-  const target = parseInt(args.target);
-  const confidence = parseFloat(args.confidence || String(DEDUP.MARK_DUP_DEFAULT_CONFIDENCE));
-  if (!source || !target) {
-    return jsonErrNoExit('Missing --source and --target');
-  }
-
-  sqlRun(
-    'INSERT OR REPLACE INTO observation_relations (source_id, target_id, relation, confidence) VALUES (?, ?, ?, ?)',
-    [source, target, 'duplicate', confidence],
-  );
-  softDeleteObservation(target);
-  return { ok: true, merged: { kept: source, removed: target } };
+  return dedupService.markDuplicate({ sqlJson, sqlRun, softDeleteObservation }, args);
 }
 
 /* ── auto session recovery ──────────────────────────────── */
@@ -1378,301 +1022,11 @@ function getWorkflow(args) {
   return { ...meta[0], steps };
 }
 
-/* ── compaction ────────────────────────────────────────────── */
-
-function runCompact() {
-  const startedAt = new Date().toISOString();
-  const report = { startedAt, steps: {} };
-
-  try {
-    sqlRun(
-      'DELETE FROM symbol_links WHERE memory_id NOT IN (SELECT CAST(id AS TEXT) FROM observations WHERE deleted_at IS NULL)',
-    );
-    report.steps.deadLinksCleaned = true;
-
-    sqlRun(`DELETE FROM observations WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now', '-${TIME_WINDOWS.PURGE_SOFT_DELETED_DAYS} days')`);
-    report.steps.purgedSoftDeleted = true;
-
-    sqlRun(`DELETE FROM observations WHERE id IN (
-      SELECT id FROM (
-        SELECT id, ROW_NUMBER() OVER (PARTITION BY project ORDER BY created_at DESC) AS rn
-        FROM observations WHERE type = 'session_summary' AND deleted_at IS NULL
-      ) WHERE rn > ${RESULT_LIMITS.SUMMARIES_PER_PROJECT}
-    )`);
-    report.steps.oldSummariesPruned = true;
-
-    sqlRun(`DELETE FROM user_prompts WHERE id IN (
-      SELECT id FROM (
-        SELECT id, ROW_NUMBER() OVER (PARTITION BY project ORDER BY created_at DESC) AS rn
-        FROM user_prompts
-      ) WHERE rn > ${RESULT_LIMITS.PROMPTS_PER_PROJECT}
-    )`);
-    report.steps.oldPromptsPruned = true;
-
-    sqlRun(`DELETE FROM session_log WHERE id NOT IN (
-      SELECT id FROM (
-        SELECT id, ROW_NUMBER() OVER (PARTITION BY project ORDER BY started_at DESC) AS rn
-        FROM session_log
-      ) WHERE rn <= ${RESULT_LIMITS.SESSIONS_PER_PROJECT}
-    )`);
-    report.steps.sessionLogPruned = true;
-
-    sqlRun(`DELETE FROM trust_adjustments WHERE timestamp < datetime('now', '-${TIME_WINDOWS.TRUST_ADJUSTMENTS_RETENTION_DAYS} days')`);
-    report.steps.trustAdjustmentsPruned = true;
-
-    sqlRun('DELETE FROM session_recalls WHERE session_id NOT IN (SELECT id FROM session_log)');
-    report.steps.recallsPruned = true;
-
-    sqlRun(`DELETE FROM procedural_memory WHERE updated_at < datetime('now', '-${TIME_WINDOWS.WORKFLOW_RETENTION_DAYS} days')`);
-    report.steps.oldWorkflowsPruned = true;
-
-    sqlRun(`UPDATE symbol_links SET trust_score = MAX(${TRUST_DELTA.TRUST_FLOOR}, trust_score - ${Math.abs(TRUST_DELTA.STALE_TRUST_DECAY)})
-      WHERE memory_id IN (
-        SELECT CAST(id AS TEXT) FROM observations WHERE updated_at < datetime('now', '-${TIME_WINDOWS.ARCHIVE_INACTIVE_DAYS} days')
-      ) AND trust_score > ${TRUST_DELTA.TRUST_FLOOR}`);
-    report.steps.staleTrustDecayed = true;
-
-    sqlRaw('VACUUM;');
-    report.steps.vacuumed = true;
-
-    sqlRaw("INSERT INTO observations_fts(observations_fts) VALUES('optimize')");
-    sqlRaw("INSERT INTO prompts_fts(prompts_fts) VALUES('optimize')");
-    report.steps.ftsOptimized = true;
-
-    report.completedAt = new Date().toISOString();
-    report.ok = true;
-  } catch (e) {
-    report.error = e.message;
-    report.ok = false;
-  }
-  return report;
-}
-
-function compact() {
-  return runCompact();
-}
-
-/* ── dreaming: Dream Cycle ───────────────────────────── */
-
-/**
- * Dream() — Dream Cycle: clean stale (not just old) memories.
- *
- * Unlike compact (housekeeping: vacuum, FTS optimize, purge soft-deleted),
- * dream targets STALENESS — information that is no longer accurate or useful:
- *
- *   1. Superseded memories — replaced by newer observations (via observation_relations)
- *   2. Stale auto-progress — progress checkpoints, "accomplished" edits with zero recall
- *   3. Never-recalled low-trust — auto-detected decisions never acted upon
- *   4. Stale corrections — "CORRECTION:" prefix memories (should have used update)
- *   5. Replaced configs — superseded config/setup memories (e.g., "using frpc" → "switched to CF Tunnel")
- *
- * Age alone is NOT a signal. A 6-month-old architecture decision that's still valid stays.
- * A 1-day-old memory that's been superseded goes.
- */
+/* ── compaction & dream — delegated to dreamService ────────── */
+// runCompact, compact, trustRecovery are imported as pure delegations above.
+// dream() needs softDeleteObservation injected:
 function dream() {
-  const startedAt = new Date().toISOString();
-  const report = { startedAt, phases: {} };
-  let totalCleaned = 0;
-  const cleanedIds = [];
-
-  // ── Phase 1: Superseded memories (observation_relations) ──
-  // Memories that have been explicitly superseded by newer ones
-  const superseded = sqlJson(`
-    SELECT o.id, o.title, o.type, o.project,
-           r.source_id AS newer_id, r.relation, r.confidence
-    FROM observations o
-    JOIN observation_relations r ON r.target_id = o.id
-    WHERE r.relation IN ('duplicate', 'supersedes')
-      AND o.deleted_at IS NULL
-      AND r.confidence >= ${DEDUP.DREAM_SUPERSEDED_CONFIDENCE}
-  `);
-  for (const row of superseded) {
-    softDeleteObservation(row.id);
-    cleanedIds.push({ id: row.id, title: row.title, reason: `superseded by #${row.newer_id} (${row.relation}, ${Math.round(row.confidence * 100)}%)` });
-  }
-  report.phases.superseded = { count: superseded.length };
-  totalCleaned += superseded.length;
-
-  // ── Phase 2: Stale auto-progress memories ──
-  // Progress checkpoints and "accomplished" edit tracking with zero recall
-  const staleAutoTypes = ['progress', 'accomplished'];
-  for (const type of staleAutoTypes) {
-    const rows = sqlJson(`
-      SELECT o.id, o.title, o.project
-      FROM observations o
-      LEFT JOIN (
-        SELECT memory_id, COUNT(*) as recall_count
-        FROM recall_log GROUP BY memory_id
-      ) rl ON rl.memory_id = o.id
-      WHERE o.type = ? AND o.deleted_at IS NULL
-        AND (rl.recall_count IS NULL OR rl.recall_count = 0)
-    `, [type]);
-    for (const row of rows) {
-      softDeleteObservation(row.id);
-      cleanedIds.push({ id: row.id, title: row.title, reason: `${type} type, never recalled` });
-    }
-    report.phases[`stale_${type}`] = { count: rows.length };
-    totalCleaned += rows.length;
-  }
-
-  // ── Phase 3: Never-recalled auto-detected decisions with low trust ──
-  // Auto-detected decisions/bugfixes that were never useful and have low confidence
-  const autoDetectedTypes = ['decision', 'bugfix', 'discovery'];
-  for (const type of autoDetectedTypes) {
-    const rows = sqlJson(`
-      SELECT o.id, o.title, o.project
-      FROM observations o
-      LEFT JOIN (
-        SELECT memory_id, COUNT(*) as recall_count
-        FROM recall_log GROUP BY memory_id
-      ) rl ON rl.memory_id = o.id
-      LEFT JOIN (
-        SELECT memory_id, MAX(trust_score) as trust_score
-        FROM symbol_links GROUP BY memory_id
-      ) sl ON sl.memory_id = CAST(o.id AS TEXT)
-      WHERE o.type = ? AND o.deleted_at IS NULL
-        AND (rl.recall_count IS NULL OR rl.recall_count = 0)
-        AND o.content LIKE '%Auto-detected%'
-        AND (sl.trust_score IS NULL OR sl.trust_score < ${DEDUP.DREAM_LOW_TRUST_THRESHOLD})
-        AND o.created_at < datetime('now', '-${TIME_WINDOWS.DREAM_AUTO_DETECTED_MIN_AGE_DAYS} days')
-    `, [type]);
-    for (const row of rows) {
-      softDeleteObservation(row.id);
-      cleanedIds.push({ id: row.id, title: row.title, reason: `auto-detected ${type}, never recalled in 7+ days` });
-    }
-    report.phases[`staleAuto_${type}`] = { count: rows.length };
-    totalCleaned += rows.length;
-  }
-
-  // ── Phase 4: Correction entry cleanup ──
-  // Memories starting with "CORRECTION:" are workarounds that should have used update.
-  // Find the corrected memory (referenced in content), ensure it's updated, then delete the correction.
-  const corrections = sqlJson(`
-    SELECT id, title, content, project
-    FROM observations
-    WHERE (title LIKE 'CORRECTION:%' OR title LIKE 'Correction:%')
-      AND deleted_at IS NULL
-  `);
-  for (const row of corrections) {
-    // Extract referenced memory ID from content (e.g., "Memory #1331 was wrong")
-    const refMatch = row.content.match(/#(\d+)/);
-    const refNote = refMatch ? ` (referenced #${refMatch[1]} — ensure it was updated)` : '';
-    softDeleteObservation(row.id);
-    cleanedIds.push({ id: row.id, title: row.title, reason: `correction entry${refNote} — should use memory-update instead` });
-  }
-  report.phases.staleCorrections = { count: corrections.length };
-  totalCleaned += corrections.length;
-
-  // ── Phase 5: Obsolete setup/config states ──
-  // Find memories about replaced tools/setups by looking for "replacing" or "replaced"
-  // In content where a newer memory on the same topic exists
-  const obsoleteConfigs = sqlJson(`
-    SELECT o1.id, o1.title, o1.project, o1.type,
-           o2.id AS newer_id, o2.title AS newer_title
-    FROM observations o1
-    JOIN observations o2 ON o1.project = o2.project
-      AND o1.id < o2.id
-      AND o2.deleted_at IS NULL
-      AND o1.type IN ('decision', 'config', 'architecture')
-      AND o2.type IN ('decision', 'config', 'architecture')
-    WHERE o1.deleted_at IS NULL
-      AND (
-        (o1.content LIKE '%replaced%' AND o2.content LIKE '%replacing%')
-        OR (o1.content LIKE '%setup%' AND o2.content LIKE '%replaced%')
-        OR (o1.title LIKE '%setup%' AND o2.title LIKE '%overhaul%')
-        OR (o1.title LIKE '%setup%' AND o2.title LIKE '%complete%')
-      )
-      AND o1.created_at < o2.created_at
-  `);
-  for (const row of obsoleteConfigs) {
-    softDeleteObservation(row.id);
-    cleanedIds.push({ id: row.id, title: row.title, reason: `replaced config — superseded by #${row.newer_id} "${row.newer_title}"` });
-  }
-  report.phases.replacedConfigs = { count: obsoleteConfigs.length };
-  totalCleaned += obsoleteConfigs.length;
-
-  // ── Phase 6: Low-value titled decisions (noise cleanup) ──
-  // Auto-saved decisions with vague/generic titles provide no retrieval value.
-  // Pattern: starts with "Architecture choice:", "Constraint identified:", etc.
-  // Followed by conversational filler ("Done!", "OK", "Now I'll", "Here's what I changed:")
-  // These are session progress notes, not real decisions.
-  const noiseTitlePatterns = [
-    /^Architecture choice:\s*(Done!|OK|Now I|Here's what|All \d+ |The complex|The symlink|Good concern|You're right|Approved)/i,
-    /^Constraint identified:\s*(Here's my review|Two issues|All errors)/i,
-  ];
-  const allDecisions = sqlJson(`
-    SELECT id, title, type, project, content, created_at
-    FROM observations
-    WHERE type = 'decision' AND deleted_at IS NULL
-    ORDER BY created_at DESC
-  `);
-  let noiseCleaned = 0;
-  for (const row of allDecisions) {
-    if (noiseTitlePatterns.some(p => p.test(row.title))) {
-      softDeleteObservation(row.id);
-      cleanedIds.push({ id: row.id, title: row.title, reason: 'low-value noise title — session progress, not a real decision' });
-      noiseCleaned++;
-    }
-  }
-  report.phases.noiseTitles = { count: noiseCleaned };
-  totalCleaned += noiseCleaned;
-
-  // ── Phase 7: Consolidate related memories on the same topic ──
-  // Find groups of 3+ memories with the same topic_key within 24 hours of each other.
-  // Merge them into a single consolidated entry, then soft-delete the originals.
-  const topicGroups = sqlJson(`
-    SELECT topic_key, project, COUNT(*) as cnt, MIN(id) as keep_id,
-           GROUP_CONCAT(id) as ids, GROUP_CONCAT(title, '\n') as titles
-    FROM observations
-    WHERE topic_key IS NOT NULL AND topic_key != ''
-      AND deleted_at IS NULL
-      AND type NOT IN ('skill', 'session_summary')
-    GROUP BY topic_key, project
-    HAVING COUNT(*) >= 3
-  `);
-  let consolidated = 0;
-  for (const group of topicGroups) {
-    const ids = group.ids.split(',').map(Number);
-    const keepId = Math.min(...ids);
-    const otherIds = ids.filter(id => id !== keepId);
-
-    // Get full content of all entries in this group
-    const entries = sqlJson(
-      `SELECT id, title, content, type, created_at FROM observations WHERE id IN (${ids.map(() => '?').join(',')}) ORDER BY created_at ASC`,
-      ids
-    );
-
-    if (entries.length < 3) {continue;} // Safety check
-
-    // Build consolidated content
-    const mergedContent = entries.map(e => `**${e.title}** (${e.created_at}):\n${e.content}`).join('\n\n---\n\n');
-    const mergedTitle = `${group.topic_key} — consolidated (${entries.length} entries)`;
-
-    // Update the kept entry with merged content
-    sqlRun(
-      'UPDATE observations SET content = ?, title = ?, type = ? WHERE id = ?',
-      [mergedContent, mergedTitle, 'decision', keepId]
-    );
-
-    // Soft-delete the others
-    for (const otherId of otherIds) {
-      softDeleteObservation(otherId);
-      cleanedIds.push({ id: otherId, title: entries.find(e => e.id === otherId)?.title || '', reason: `consolidated into #${keepId} (topic: ${group.topic_key})` });
-    }
-    consolidated += otherIds.length;
-  }
-  report.phases.consolidated = { count: consolidated };
-  totalCleaned += consolidated;
-
-  // ── Run compact as final step ──
-  const compactResult = runCompact();
-  report.phases.compact = compactResult;
-
-  report.completedAt = new Date().toISOString();
-  report.ok = true;
-  report.totalCleaned = totalCleaned;
-  report.cleaned = cleanedIds;
-  return report;
+  return dreamService.dream({ sqlJson, sqlRun, softDeleteObservation });
 }
 
 /* ── init ─────────────────────────────────────────────────── */
@@ -1682,42 +1036,10 @@ function initDb() {
   return { ok: true, db: DB_PATH, engine: getEngine() };
 }
 
-function trustRecovery(args) {
-  const sessionId = parseInt(args.session);
-  if (!sessionId) {
-    return jsonErrNoExit('Missing --session');
-  }
-
-  const recalled = sqlJson('SELECT memory_id FROM session_recalls WHERE session_id = ?', [sessionId]);
-  let recovered = 0;
-  for (const row of recalled) {
-    sqlRun(`UPDATE symbol_links SET trust_score = MIN(${TRUST_DELTA.TRUST_CEILING}, trust_score + ${TRUST_DELTA.PASSIVE_SURVIVAL}) WHERE memory_id = ?`, [
-      String(row.memory_id),
-    ]);
-    sqlRun('INSERT INTO trust_adjustments (memory_id, reason, delta) VALUES (?, ?, ?)', [
-      String(row.memory_id),
-      'passive_survival',
-      TRUST_DELTA.PASSIVE_SURVIVAL,
-    ]);
-    recovered++;
-  }
-  return { ok: true, memoriesRecovered: recovered };
-}
-
-/* ── helpers ──────────────────────────────────────────────── */
-function findLatestSession(project) {
-  const q = project
-    ? 'SELECT id FROM session_log WHERE project = ? ORDER BY started_at DESC LIMIT 1'
-    : 'SELECT id FROM session_log ORDER BY started_at DESC LIMIT 1';
-  const rows = sqlJson(q, project ? [project] : []);
-  return rows.length > 0 ? String(rows[0].id) : 'legacy';
-}
-
 /* ═══════════════════════════════════════════════════════════
-   CODE INDEXING (v3 — tree-sitter AST via WASM, in-process)
+   CODE INDEXING — delegated to codeIndexingService
    ═══════════════════════════════════════════════════════════ */
 
-const codeParser = require('./parse-code');
 const codeAnalysis = require('./code-analysis');
 const gitAnalysis = require('./git-analysis');
 const docIndexer = require('./doc-indexer');
@@ -1728,381 +1050,16 @@ const astPatterns = require('./ast-patterns');
 // Internal DB fields that are meaningless to the LLM consumer — stripped from compact output
 const _STRIP_FIELDS = ['symbol_id', 'id'];
 
-function parseCodeFile(filePath) {
-  return codeParser.parseFile(filePath);
-}
-
-async function ensureParserAvailable() {
-  if (codeParser.isReady()) {
-    return true;
-  }
-  await codeParser.init();
-  return codeParser.isReady();
-}
-
-
-
-function _emitProgress(phase, detail, stats) {
-  if (!args || !args.progress) {return;}
-  const payload = { progress: true, phase, ...detail };
-  if (stats) {
-    payload.files_total = stats.files_total;
-    payload.files_done = stats.files_done;
-    payload.symbols = stats.symbols;
-  }
-  process.stderr.write(JSON.stringify(payload) + '\n');
-}
-
 async function indexRepoInternal(repoPath, repoName) {
-  if (!(await ensureParserAvailable())) {
-    return { error: `WASM tree-sitter parser not available. Run: cd ${__dirname} && npm install web-tree-sitter` };
-  }
-
-  const absPath = path.resolve(repoPath);
-  if (!fs.existsSync(absPath)) {
-    return { error: `Path not found: ${absPath}` };
-  }
-
-  _emitProgress('init', { message: 'Initializing parser and walking files...' });
-
-  const files = walkDir(absPath);
-  let symbolCount = 0;
-  let fileCount = 0;
-  const skipped = [];
-
-  _emitProgress('discovery', { message: `Found ${files.length} code files to index`, files_total: files.length });
-
-  // Upsert repo — handle cases where name OR path already exists
-  const existingByName = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repoName]);
-  const existingByPath = sqlJson('SELECT id FROM code_repos WHERE path = ?', [absPath]);
-  let repoId;
-  if (existingByName.length > 0) {
-    repoId = existingByName[0].id;
-    sqlRun('UPDATE code_repos SET path = ? WHERE id = ?', [absPath, repoId]);
-    sqlRun('DELETE FROM code_symbols WHERE repo_id = ?', [repoId]);
-    sqlRun('DELETE FROM code_files WHERE repo_id = ?', [repoId]);
-    sqlRun('DELETE FROM churn_metrics WHERE repo_id = ?', [repoId]);
-  } else if (existingByPath.length > 0) {
-    repoId = existingByPath[0].id;
-    sqlRun('UPDATE code_repos SET name = ? WHERE id = ?', [repoName, repoId]);
-    sqlRun('DELETE FROM code_symbols WHERE repo_id = ?', [repoId]);
-    sqlRun('DELETE FROM code_files WHERE repo_id = ?', [repoId]);
-    sqlRun('DELETE FROM churn_metrics WHERE repo_id = ?', [repoId]);
-  } else {
-    sqlRun('INSERT INTO code_repos (name, path) VALUES (?, ?)', [repoName, absPath]);
-    repoId = sqlJson('SELECT id FROM code_repos WHERE name = ?', [repoName])[0].id;
-  }
-
-  // Capture current HEAD commit for freshness checks
-  let headCommit = null;
-  try {
-    headCommit = require('child_process')
-      .execSync('git rev-parse HEAD', {
-        cwd: absPath,
-        encoding: 'utf-8',
-        timeout: 5000,
-      })
-      .trim();
-  } catch (_) {
-    /* Non-git repo or git error */
-  }
-
-  const BATCH_SIZE = RESULT_LIMITS.INDEX_BATCH_SIZE;
-  const totalFiles = files.length;
-  for (let i = 0; i < files.length; i += BATCH_SIZE) {
-    const batch = files.slice(i, i + BATCH_SIZE);
-    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-    const totalBatches = Math.ceil(totalFiles / BATCH_SIZE);
-    _emitProgress('parsing', { message: `Parsing files batch ${batchNum}/${totalBatches}...` }, { files_total: totalFiles, files_done: fileCount, symbols: symbolCount });
-
-    const reads = await Promise.all(batch.map(async (fp) => {
-      try {
-        const [content, stats] = await Promise.all([
-          fs.promises.readFile(fp, 'utf-8'),
-          fs.promises.stat(fp),
-        ]);
-        return { filePath: fp, content, stats };
-      } catch (e) {
-        skipped.push({ file: fp, error: e.message });
-        return null;
-      }
-    }));
-
-    for (const entry of reads) {
-      if (!entry) {continue;}
-      const { filePath, content, stats } = entry;
-      try {
-        const contentHash = hashContent(content);
-        const lines = content.split('\n');
-
-        sqlRun(
-          'INSERT INTO code_files (repo_id, path, language, content, content_hash, mtime, size_bytes, line_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-          [
-            repoId,
-            filePath,
-            path.extname(filePath).slice(1),
-            content,
-            contentHash,
-            stats.mtimeMs,
-            stats.size,
-            lines.length,
-          ],
-        );
-        const fileRow = sqlJson('SELECT id FROM code_files WHERE repo_id = ? AND path = ?', [repoId, filePath]);
-        const fileId = fileRow[0].id;
-
-        const symbols = parseCodeFile(filePath);
-        for (const sym of symbols) {
-          sqlRun(
-            `INSERT INTO code_symbols (repo_id, file_id, file_path, name, kind, signature, qualified_name,
-             start_line, end_line, start_byte, end_byte, docstring, body_preview, language, parent_name)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-              repoId,
-              fileId,
-              filePath,
-              sym.name,
-              sym.kind,
-              sym.signature,
-              sym.qualified_name,
-              sym.start_line,
-              sym.end_line,
-              sym.start_byte,
-              sym.end_byte,
-              sym.docstring || '',
-              sym.body_preview || '',
-              sym.language,
-              sym.parent_name || '',
-            ],
-          );
-          symbolCount++;
-        }
-        fileCount++;
-      } catch (e) {
-        skipped.push({ file: filePath, error: e.message });
-      }
-    }
-  }
-
-  _emitProgress('analysis', { message: 'Building import graph...' }, { files_total: totalFiles, files_done: fileCount, symbols: symbolCount });
-
-  sqlRun(
-    "UPDATE code_repos SET file_count = (SELECT count(*) FROM code_files WHERE repo_id = ?), symbol_count = (SELECT count(*) FROM code_symbols WHERE repo_id = ?), head_commit = ?, updated_at = datetime('now') WHERE id = ?",
-    [repoId, repoId, headCommit || null, repoId],
-  );
-
-  // Build import graph, call graph, and complexity
-  let importEdges = 0,
-    callEdges = 0,
-    complexityCount = 0;
-  try {
-    const ig = codeAnalysis.buildImportGraph(db, repoId);
-    if (ig.success) {
-      importEdges = ig.edges;
-    }
-  } catch (_) {}
-  _emitProgress('analysis', { message: 'Building call graph...' }, { files_total: totalFiles, files_done: fileCount, symbols: symbolCount });
-  try {
-    const cg = codeAnalysis.buildCallGraph(db, repoId);
-    if (cg.success) {
-      callEdges = cg.calls;
-    }
-  } catch (_) {}
-  _emitProgress('analysis', { message: 'Computing complexity...' }, { files_total: totalFiles, files_done: fileCount, symbols: symbolCount });
-  try {
-    const cc = codeAnalysis.buildComplexity(db, repoId);
-    if (cc.success) {
-      complexityCount = cc.symbols;
-    }
-  } catch (_) {}
-
-  const result = {
-    success: true,
-    repo: repoName,
-    path: absPath,
-    files_indexed: fileCount,
-    symbols_extracted: symbolCount,
-    files_skipped: skipped.length,
-    import_edges: importEdges,
-    call_edges: callEdges,
-    complexity_symbols: complexityCount,
-    name: repoName,
-    file_count: fileCount,
-    symbol_count: symbolCount,
-    skipped,
-  };
-
-  _emitProgress('done', { message: `Indexed ${fileCount} files, ${symbolCount} symbols` }, { files_total: totalFiles, files_done: fileCount, symbols: symbolCount });
-
-  return result;
+  return codeIndexingService.indexRepoInternal({ db: getDb(), args }, repoPath, repoName);
 }
 
 async function reindexRepoInternal(repo, mode) {
-  const existing = sqlJson('SELECT id, path FROM code_repos WHERE name = ?', [repo]);
-  if (existing.length === 0) {
-    return { error: `Repo not found: ${repo}` };
-  }
-  const { id: repoId, path: repoPath } = existing[0];
+  return codeIndexingService.reindexRepoInternal({ db: getDb(), args }, repo, mode);
+}
 
-  if (mode === 'full') {
-    sqlRun('DELETE FROM code_symbols WHERE repo_id = ?', [repoId]);
-    sqlRun('DELETE FROM code_files WHERE repo_id = ?', [repoId]);
-    sqlRun('DELETE FROM churn_metrics WHERE repo_id = ?', [repoId]);
-    return indexRepoInternal(repoPath, repo);
-  }
-
-  // Incremental: only re-index files whose mtime changed
-  if (!(await ensureParserAvailable())) {
-    return { error: 'WASM tree-sitter parser not available' };
-  }
-
-  _emitProgress('init', { message: `Reindexing "${repo}" (incremental)...` });
-
-  const files = walkDir(repoPath);
-  let reindexed = 0;
-  let unchanged = 0;
-  let symbolCount = 0;
-
-  _emitProgress('discovery', { message: `Found ${files.length} code files to check`, files_total: files.length });
-
-  const existingFiles = {};
-  const efRows = sqlJson('SELECT path, mtime, id FROM code_files WHERE repo_id = ?', [repoId]);
-  for (const row of efRows) {
-    existingFiles[row.path] = { mtime: row.mtime, id: row.id };
-  }
-
-  const totalFiles = files.length;
-  for (let i = 0; i < files.length; i++) {
-    const filePath = files[i];
-    if (i % 50 === 0) {
-      _emitProgress('parsing', { message: `Reindexing file ${i + 1}/${totalFiles}...` }, { files_total: totalFiles, files_done: i, symbols: symbolCount });
-    }
-    try {
-      const stats = fs.statSync(filePath);
-      const prev = existingFiles[filePath];
-
-      if (prev && prev.mtime === stats.mtimeMs) {
-        unchanged++;
-        continue;
-      }
-
-      const content = fs.readFileSync(filePath, 'utf-8');
-      const contentHash = hashContent(content);
-      const lines = content.split('\n');
-      let fileId;
-
-      if (prev) {
-        sqlRun('DELETE FROM code_symbols WHERE file_id = ?', [prev.id]);
-        sqlRun(
-          'UPDATE code_files SET content = ?, content_hash = ?, mtime = ?, size_bytes = ?, line_count = ? WHERE id = ?',
-          [content, contentHash, stats.mtimeMs, stats.size, lines.length, prev.id],
-        );
-        fileId = prev.id;
-      } else {
-        sqlRun(
-          'INSERT INTO code_files (repo_id, path, language, content, content_hash, mtime, size_bytes, line_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-          [
-            repoId,
-            filePath,
-            path.extname(filePath).slice(1),
-            content,
-            contentHash,
-            stats.mtimeMs,
-            stats.size,
-            lines.length,
-          ],
-        );
-        fileId = sqlJson('SELECT id FROM code_files WHERE repo_id = ? AND path = ?', [repoId, filePath])[0].id;
-      }
-
-      const symbols = parseCodeFile(filePath);
-      for (const sym of symbols) {
-        sqlRun(
-          `INSERT INTO code_symbols (repo_id, file_id, file_path, name, kind, signature, qualified_name,
-           start_line, end_line, start_byte, end_byte, docstring, body_preview, language, parent_name)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            repoId,
-            fileId,
-            filePath,
-            sym.name,
-            sym.kind,
-            sym.signature,
-            sym.qualified_name,
-            sym.start_line,
-            sym.end_line,
-            sym.start_byte,
-            sym.end_byte,
-            sym.docstring || '',
-            sym.body_preview || '',
-            sym.language,
-            sym.parent_name || '',
-          ],
-        );
-        symbolCount++;
-      }
-      reindexed++;
-    } catch (_) {}
-  }
-
-  // Remove DB entries for files that no longer exist on disk
-  const currentFilesSet = new Set(files);
-  const staleFiles = Object.entries(existingFiles).filter(([fp]) => !currentFilesSet.has(fp));
-  for (const [filePath, fileInfo] of staleFiles) {
-    sqlRun('DELETE FROM code_symbols WHERE file_id = ?', [fileInfo.id]);
-    sqlRun('DELETE FROM code_files WHERE id = ?', [fileInfo.id]);
-  }
-  let staleCount = staleFiles.length;
-
-  sqlRun(
-    "UPDATE code_repos SET file_count = (SELECT count(*) FROM code_files WHERE repo_id = ?), symbol_count = (SELECT count(*) FROM code_symbols WHERE repo_id = ?), updated_at = datetime('now') WHERE id = ?",
-    [repoId, repoId, repoId],
-  );
-
-  _emitProgress('analysis', { message: 'Building import graph...' }, { files_total: totalFiles, files_done: totalFiles, symbols: symbolCount });
-
-  // Build import graph, call graph, and complexity
-  let importEdges = 0,
-    callEdges = 0,
-    complexityCount = 0;
-  try {
-    const ig = codeAnalysis.buildImportGraph(db, repoId);
-    if (ig.success) {
-      importEdges = ig.edges;
-    }
-  } catch (_) {}
-  _emitProgress('analysis', { message: 'Building call graph...' }, { files_total: totalFiles, files_done: totalFiles, symbols: symbolCount });
-  try {
-    const cg = codeAnalysis.buildCallGraph(db, repoId);
-    if (cg.success) {
-      callEdges = cg.calls;
-    }
-  } catch (_) {}
-  _emitProgress('analysis', { message: 'Computing complexity...' }, { files_total: totalFiles, files_done: totalFiles, symbols: symbolCount });
-  try {
-    const cc = codeAnalysis.buildComplexity(db, repoId);
-    if (cc.success) {
-      complexityCount = cc.symbols;
-    }
-  } catch (_) {}
-
-  _emitProgress('done', { message: `Reindexed: ${reindexed} files, ${symbolCount} symbols` }, { files_total: totalFiles, files_done: totalFiles, symbols: symbolCount });
-
-  return {
-    success: true,
-    repo,
-    mode,
-    name: repo,
-    file_count: reindexed + unchanged,
-    symbol_count: symbolCount,
-    files_reindexed: reindexed,
-    files_unchanged: unchanged,
-    files_removed: staleCount,
-    symbols_extracted: symbolCount,
-    import_edges: importEdges,
-    call_edges: callEdges,
-    complexity_symbols: complexityCount,
-  };
+function _emitProgress(phase, detail, stats) {
+  codeIndexingService._emitProgress(args, phase, detail, stats);
 }
 
 /** Fallback search using LIKE when FTS5 is unavailable */
@@ -2322,7 +1279,6 @@ const _USAGE = {
   'blast-radius': '--symbol S --repo X [--depth N]',
   'dead-code': '--repo X [--min-confidence 0.5] [--include-tests true]',
   complexity: '--repo X [--symbol S | --file F]',
-  outline: '--file F --repo X',
   churn: '--repo X [--file F] [--days 90] [--refresh]',
   hotspots: '--repo X [--top N] [--days N]',
   cycles: '--repo X',
@@ -2378,7 +1334,7 @@ function _dispatchDoc(cmd, repoName, fn) {
 }
 
 /**
- * _wrapAnalysis(toolName, data, repoRow, startTime) — wrap analysis result
+ * _wrapAnalysis(toolName, data, repoRow, startTime, format) — wrap analysis result
  * with _meta envelope and optional format conversion.
  */
 function _wrapAnalysis(toolName, data, repoRow, startTime, format) {
@@ -2410,7 +1366,7 @@ function _wrapAnalysis(toolName, data, repoRow, startTime, format) {
   const wrapped = responseMeta.buildEnvelope({
     toolName: internalName,
     data,
-    db,
+    db: getDb(),
     repoId: repoRow.id,
     repoPath: repoRow.path,
     storedHeadCommit: repoRow.head_commit || null,
@@ -2429,9 +1385,6 @@ function _wrapAnalysis(toolName, data, repoRow, startTime, format) {
 
   return wrapped;
 }
-
-// Track the global --format flag for all analysis subcommands
-let _globalFormat = 'json'; // Set by parseArgs at dispatch time
 
 /* ── dispatch ─────────────────────────────────────────────── */
 const commands = {
@@ -2521,7 +1474,7 @@ const commands = {
 
   'import-graph': (args) =>
     _dispatch('import-graph', args.repo, (r) =>
-      codeAnalysis.getImportGraph(db, r.id, {
+      codeAnalysis.getImportGraph(getDb(), r.id, {
         file: args.file || null,
         direction: args.direction || 'both',
         depth: parseInt(args.depth || '1'),
@@ -2533,7 +1486,7 @@ const commands = {
       return jsonErrNoExit('Missing --symbol. Usage: call-hierarchy --symbol S --repo X');
     }
     return _dispatch('call-hierarchy', args.repo, (r) =>
-      codeAnalysis.getCallHierarchy(db, r.id, {
+      codeAnalysis.getCallHierarchy(getDb(), r.id, {
         symbol: args.symbol,
         direction: args.direction || 'callers',
         depth: parseInt(args.depth || '3'),
@@ -2546,7 +1499,7 @@ const commands = {
       return jsonErrNoExit('Missing --symbol. Usage: blast-radius --symbol S --repo X');
     }
     return _dispatch('blast-radius', args.repo, (r) =>
-      codeAnalysis.getBlastRadius(db, r.id, {
+      codeAnalysis.getBlastRadius(getDb(), r.id, {
         symbol: args.symbol,
         depth: parseInt(args.depth || '3'),
       }),
@@ -2555,7 +1508,7 @@ const commands = {
 
   'dead-code': (args) =>
     _dispatch('dead-code', args.repo, (r) =>
-      codeAnalysis.getDeadCode(db, r.id, {
+      codeAnalysis.getDeadCode(getDb(), r.id, {
         minConfidence: parseFloat(args['min-confidence'] || '0.5'),
         includeTests: args['include-tests'] === 'true',
       }),
@@ -2566,34 +1519,34 @@ const commands = {
       const symbolId = args.symbol
         ? (sqlJson('SELECT id FROM code_symbols WHERE repo_id = ? AND name = ?', [r.id, args.symbol])[0]?.id ?? null)
         : null;
-      return codeAnalysis.getComplexity(db, r.id, symbolId);
+      return codeAnalysis.getComplexity(getDb(), r.id, symbolId);
     }),
 
   outline: (args) => {
     if (!args.file) {
       return jsonErrNoExit('Missing --file. Usage: outline --file F --repo X');
     }
-    return _dispatch('outline', args.repo, (r) => codeAnalysis.getFileOutline(db, r.id, args.file));
+    return _dispatch('outline', args.repo, (r) => codeAnalysis.getFileOutline(getDb(), r.id, args.file));
   },
 
   churn: (args) =>
     _dispatch('churn', args.repo, (r) =>
-      gitAnalysis.getChurn(db, r.id, args.file || '__all__', parseInt(args.days || '90'), args.refresh === 'true'),
+      gitAnalysis.getChurn(getDb(), r.id, args.file || '__all__', parseInt(args.days || '90'), args.refresh === 'true'),
     ),
 
   hotspots: (args) =>
     _dispatch('hotspots', args.repo, (r) =>
-      codeAnalysis.getHotspots(db, r.id, {
+      codeAnalysis.getHotspots(getDb(), r.id, {
         top: args.top ? parseInt(args.top) : 20,
         days: args.days ? parseInt(args.days) : 90,
       }),
     ),
 
-  cycles: (args) => _dispatch('cycles', args.repo, (r) => codeAnalysis.getDependencyCycles(db, r.id)),
+  cycles: (args) => _dispatch('cycles', args.repo, (r) => codeAnalysis.getDependencyCycles(getDb(), r.id)),
 
   importance: (args) =>
     _dispatch('importance', args.repo, (r) =>
-      codeAnalysis.getSymbolImportance(db, r.id, {
+      codeAnalysis.getSymbolImportance(getDb(), r.id, {
         top: args.top ? parseInt(args.top) : 20,
         scope: args.scope || null,
       }),
@@ -2601,7 +1554,7 @@ const commands = {
 
   coupling: (args) =>
     _dispatch('coupling', args.repo, (r) =>
-      codeAnalysis.getCouplingMetrics(db, r.id, {
+      codeAnalysis.getCouplingMetrics(getDb(), r.id, {
         file: args.file || null,
         minCa: args['min-ca'] ? parseInt(args['min-ca']) : 0,
         sortBy: args['sort-by'] || 'instability',
@@ -2610,7 +1563,7 @@ const commands = {
 
   extractable: (args) =>
     _dispatch('extractable', args.repo, (r) =>
-      codeAnalysis.getExtractionCandidates(db, r.id, {
+      codeAnalysis.getExtractionCandidates(getDb(), r.id, {
         minComplexity: args['min-complexity'] ? parseInt(args['min-complexity']) : 5,
         minCallers: args['min-callers'] ? parseInt(args['min-callers']) : 2,
         top: args.top ? parseInt(args.top) : 20,
@@ -2619,7 +1572,7 @@ const commands = {
 
   hierarchy: (args) =>
     _dispatch('hierarchy', args.repo, (r) =>
-      codeAnalysis.getClassHierarchy(db, r.id, {
+      codeAnalysis.getClassHierarchy(getDb(), r.id, {
         class: args.class,
         symbol: args.symbol,
         direction: args.direction || 'both',
@@ -2628,7 +1581,7 @@ const commands = {
 
   'signal-chains': (args) =>
     _dispatch('signal-chains', args.repo, (r) =>
-      codeAnalysis.getSignalChains(db, r.id, {
+      codeAnalysis.getSignalChains(getDb(), r.id, {
         kind: args.kind || null,
         symbol: args.symbol || null,
         maxDepth: args['max-depth'] ? parseInt(args['max-depth']) : 5,
@@ -2644,14 +1597,14 @@ const commands = {
         return jsonErrNoExit(`Invalid rules JSON: ${e.message}`);
       }
     }
-    return _dispatch('layer-violations', args.repo, (r) => codeAnalysis.getLayerViolations(db, r.id, { rules }));
+    return _dispatch('layer-violations', args.repo, (r) => codeAnalysis.getLayerViolations(getDb(), r.id, { rules }));
   },
 
   // ── v6: Winnow multi-axis query ──
 
   winnow: (args) =>
     _dispatch('winnow', args.repo, (repoRow) =>
-      codeAnalysis.winnow(db, repoRow.id, {
+      codeAnalysis.winnow(getDb(), repoRow.id, {
         kind: args.kind || null,
         minComplexity: args['min-complexity'] ? parseInt(args['min-complexity']) : null,
         minChurn: args['min-churn'] ? parseInt(args['min-churn']) : null,
@@ -2668,7 +1621,7 @@ const commands = {
 
   'ast-patterns': (args) =>
     _dispatch('ast-patterns', args.repo, (repoRow) =>
-      astPatterns.scanAstPatterns(db, repoRow.id, {
+      astPatterns.scanAstPatterns(getDb(), repoRow.id, {
         category: args.category || 'all',
         patterns: args.pattern ? args.pattern.split(',').map((s) => s.trim()) : [],
         limit: args.limit ? parseInt(args.limit) : 200,
@@ -2678,13 +1631,13 @@ const commands = {
   // ── v6: Symbol provenance ──
 
   provenance: (args) =>
-    _dispatch('provenance', args.repo, (repoRow) => gitAnalysis.getProvenance(db, repoRow.id, args.symbol)),
+    _dispatch('provenance', args.repo, (repoRow) => gitAnalysis.getProvenance(getDb(), repoRow.id, args.symbol)),
 
   // ── v6: Untested symbols + PR risk ──
 
   untested: (args) =>
     _dispatch('untested', args.repo, (repoRow) =>
-      codeAnalysis.getUntestedSymbols(db, repoRow.id, {
+      codeAnalysis.getUntestedSymbols(getDb(), repoRow.id, {
         minConfidence: args['min-confidence'] ? parseFloat(args['min-confidence']) : 0.5,
         includePrivate: args['include-private'] === 'true',
       }),
@@ -2692,7 +1645,7 @@ const commands = {
 
   'pr-risk': (args) =>
     _dispatch('pr-risk', args.repo, (repoRow) =>
-      codeAnalysis.getPrRiskProfile(db, repoRow.id, {
+      codeAnalysis.getPrRiskProfile(getDb(), repoRow.id, {
         branch: args.branch || 'HEAD',
         base: args.base || 'main',
       }),
@@ -2702,7 +1655,7 @@ const commands = {
 
   'doc-orphans': (args) =>
     _dispatchDoc('doc-orphans', args.repo, (r) =>
-      docIndexer.getOrphanSections(db, r.id, {
+      docIndexer.getOrphanSections(getDb(), r.id, {
         includeSameDoc: args['include-same-doc'] === 'true',
       }),
     ),
@@ -2721,13 +1674,13 @@ const commands = {
     if (!docRepoRow.length) {
       return jsonErrNoExit(`Doc repo "${docRepo}" not found. Run index-docs first.`);
     }
-    return docIndexer.getDocCoverage(db, codeRepoRow[0].id, docRepoRow[0].id);
+    return docIndexer.getDocCoverage(getDb(), codeRepoRow[0].id, docRepoRow[0].id);
   },
 
-  'stale-pages': (args) => _dispatchDoc('stale-pages', args.repo, (r) => docIndexer.getStalePages(db, r.id)),
+  'stale-pages': (args) => _dispatchDoc('stale-pages', args.repo, (r) => docIndexer.getStalePages(getDb(), r.id)),
 
   'doc-duplicates': (args) =>
-    _dispatchDoc('doc-duplicates', args.repo, (r) => docIndexer.getDuplicateSections(db, r.id)),
+    _dispatchDoc('doc-duplicates', args.repo, (r) => docIndexer.getDuplicateSections(getDb(), r.id)),
 
   // ── v5: Doc indexing subcommands ──
 
@@ -2737,12 +1690,12 @@ const commands = {
     if (!docPath || !name) {
       return jsonErrNoExit('Usage: index-docs --path P --name X [--ignore GLOB]');
     }
-    return docIndexer.indexDocs(db, path.resolve(docPath), name, args.ignore || null);
+    return docIndexer.indexDocs(getDb(), path.resolve(docPath), name, args.ignore || null);
   },
 
   'reindex-docs': async (args) =>
     _dispatchDoc('reindex-docs', args.repo, async (r) =>
-      docIndexer.reindexDocs(db, r.id, args.mode || 'full', args.ignore || null),
+      docIndexer.reindexDocs(getDb(), r.id, args.mode || 'full', args.ignore || null),
     ),
 
   'doc-search': (args) => {
@@ -2750,7 +1703,7 @@ const commands = {
       return jsonErrNoExit('Missing --query. Usage: doc-search --query Q --repo X');
     }
     return _dispatchDoc('doc-search', args.repo, (r) =>
-      docIndexer.searchDocs(db, r.id, args.query, {
+      docIndexer.searchDocs(getDb(), r.id, args.query, {
         level: args.level ? parseInt(args.level) : null,
         role: args.role || null,
       }),
@@ -2758,26 +1711,26 @@ const commands = {
   },
 
   'doc-outline': (args) =>
-    _dispatchDoc('doc-outline', args.repo, (r) => docIndexer.getDocOutline(db, r.id, args.file || null)),
+    _dispatchDoc('doc-outline', args.repo, (r) => docIndexer.getDocOutline(getDb(), r.id, args.file || null)),
 
   backlinks: (args) => {
     if (!args.path) {
       return jsonErrNoExit('Missing --path. Usage: backlinks --repo X --path F');
     }
-    return _dispatchDoc('backlinks', args.repo, (r) => docIndexer.getBacklinks(db, r.id, args.path));
+    return _dispatchDoc('backlinks', args.repo, (r) => docIndexer.getBacklinks(getDb(), r.id, args.path));
   },
 
   'broken-links': (args) =>
-    _dispatchDoc('broken-links', args.repo, (r) => ({ broken_links: docIndexer.getBrokenLinks(db, r.id) })),
+    _dispatchDoc('broken-links', args.repo, (r) => ({ broken_links: docIndexer.getBrokenLinks(getDb(), r.id) })),
 
-  glossary: (args) => _dispatchDoc('glossary', args.repo, (r) => docIndexer.lookupTerm(db, r.id, args.term || null)),
+  glossary: (args) => _dispatchDoc('glossary', args.repo, (r) => docIndexer.lookupTerm(getDb(), r.id, args.term || null)),
 
   'tutorial-path': (args) => {
     if (!args.section) {
       return jsonErrNoExit('Missing --section. Usage: tutorial-path --section S --repo X');
     }
     return _dispatchDoc('tutorial-path', args.repo, (r) =>
-      docIndexer.getTutorialPath(db, r.id, parseInt(args.section)),
+      docIndexer.getTutorialPath(getDb(), r.id, parseInt(args.section)),
     );
   },
 
@@ -2786,7 +1739,7 @@ const commands = {
       return jsonErrNoExit('Missing --query. Usage: code-examples --query Q --repo X');
     }
     return _dispatchDoc('code-examples', args.repo, (r) =>
-      docIndexer.findCodeExamples(db, r.id, args.query, args.lang || null),
+      docIndexer.findCodeExamples(getDb(), r.id, args.query, args.lang || null),
     );
   },
 };
@@ -2820,8 +1773,8 @@ const _ANALYSIS_TOOLS = new Set([
 
 (async () => {
   ensureDb();
-  db = getDb();
-  _globalFormat = args.format || 'json';
+  const db = getDb();
+  const format = args.format || 'json';
 
   if (cmd && commands[cmd]) {
     const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -2847,7 +1800,7 @@ const _ANALYSIS_TOOLS = new Set([
       if (repoName) {
         const repoRow = sqlJson('SELECT id, path, head_commit FROM code_repos WHERE name = ?', [repoName]);
         if (repoRow.length > 0) {
-          jsonOut(_wrapAnalysis(cmd, result, repoRow[0], startTime, _globalFormat));
+          jsonOut(_wrapAnalysis(cmd, result, repoRow[0], startTime, format));
           return;
         }
         // For tools querying churn (which has a different repo resolution),
