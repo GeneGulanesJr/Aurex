@@ -5,6 +5,11 @@
  * Database operations via db.js. Code parsing via parse-code.js (WASM).
  * Code analysis via code-analysis.js. Doc indexing via doc-indexer.js.
  *
+ * Data-access modules handle SQL for observations, symbols, workspaces:
+ *   - data-access/observations:  insertObservation, insertObservationRelation, softDeleteObservation, hardDeleteObservation, getObservation, getSymbolLinksForMemory, getRecallCountForMemory, updateObservation, getTimeline, insertUserPrompt, insertCapturePassiveObservation, getObservationStats, countObservationsByProjectAndType, insertRecallLog
+ *   - data-access/symbols:       linkSymbol, findUnlinked, insertSymbolLink, adjustTrust, recordRecall, getStaleLinks, getAnchoredLinks, updateLinkTrust, insertTrustAdjustment
+ *   - data-access/workspaces:    listWorkspaces, createWorkspace, archiveWorkspace, listProjects
+ *
  * Service modules handle domain logic:
  *   - services/dedup:        trigramOverlap, checkDuplicate, markDuplicate
  *   - services/sessions:     sessionStart, sessionEnd, sessionSummary, findLatestSession
@@ -36,6 +41,7 @@ const {
 const { getConfig } = require('./config');
 const {
   TRUST_DELTA, DEDUP, TIME_WINDOWS, RESULT_LIMITS, RANKING, CONTEXT,
+  CAPTURE_PASSIVE,
 } = require('./constants');
 const {
   IGNORE_DIRS_CODE: _IGNORE_DIRS,
@@ -43,6 +49,11 @@ const {
   walkDirForCode: walkDir,
   hashContent,
 } = require('./utils');
+
+// ── Data-access imports ──────────────────────────────────────
+const obsDA = require('./data-access/observations');
+const symDA = require('./data-access/symbols');
+const wsDA = require('./data-access/workspaces');
 
 // ── Service imports ──────────────────────────────────────────
 const dedupService = require('./services/dedup');
@@ -60,6 +71,9 @@ const { findLatestSession } = sessionsService;
 const { runCompact, compact } = dreamService;
 const { trustRecovery } = dreamService;
 const { parseCodeFile, ensureParserAvailable } = codeIndexingService;
+
+// ── Shared deps object for data-access calls ────────────────
+const deps = { sqlJson, sqlRun, sqlRaw };
 
 /* ── subcommands ───────────────────────────────────────────── */
 
@@ -142,31 +156,20 @@ function save(args) {
     const dupes = checkDuplicate(title, type, project, topicKey);
     if (dupes.potential_duplicates.length > 0) {
       const bestMatch = dupes.potential_duplicates[0];
-      // Auto-merge at high confidence (≥85% trigram overlap)
+      // Auto-merge at high confidence (>=85% trigram overlap)
       const dedupCfg = getConfig().dedup;
       if (bestMatch.similarity >= dedupCfg.auto_merge_threshold) {
-        const keptId = bestMatch.id;
-        const rows = sqlJson(
-          `
-          INSERT INTO observations (session_id, type, title, content, project, scope, topic_key)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-          RETURNING id, created_at
-        `,
-          [String(sessionId), type, title, content, project, scope, topicKey],
-        );
+        const rows = obsDA.insertObservation(deps, { sessionId, type, title, content, project, scope, topicKey });
         const newId = rows[0].id;
         // Soft-delete the older duplicate, record the relation
-        sqlRun(
-          'INSERT OR IGNORE INTO observation_relations (source_id, target_id, relation, confidence) VALUES (?, ?, ?, ?)',
-          [newId, keptId, 'duplicate', bestMatch.similarity],
-        );
-        softDeleteObservation(keptId);
+        obsDA.insertObservationRelation(deps, { sourceId: newId, targetId: bestMatch.id, relation: 'duplicate', confidence: bestMatch.similarity });
+        obsDA.softDeleteObservation(deps, bestMatch.id);
         return {
           id: newId,
           title,
           created_at: rows[0].created_at,
           auto_merged: true,
-          superseded_id: keptId,
+          superseded_id: bestMatch.id,
           superseded_title: bestMatch.title,
           similarity: bestMatch.similarity,
         };
@@ -181,14 +184,7 @@ function save(args) {
     }
   }
 
-  const rows = sqlJson(
-    `
-    INSERT INTO observations (session_id, type, title, content, project, scope, topic_key)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-    RETURNING id, created_at
-  `,
-    [String(sessionId), type, title, content, project, scope, topicKey],
-  );
+  const rows = obsDA.insertObservation(deps, { sessionId, type, title, content, project, scope, topicKey });
   return { id: rows[0].id, title, created_at: rows[0].created_at };
 }
 
@@ -325,21 +321,19 @@ function context(args) {
       )
     : [];
 
-  // Wire recall tracking: batch insert
+  // Wire recall tracking: batch insert via data-access
   if (sessionId && observations.length > 0) {
     const recallQuery = topicQuery || topicKey || 'context-auto';
-    const placeholders = observations.map(() => '(?, ?, ?)').join(',');
-    const params = observations.flatMap((o) => [o.id, sessionId, recallQuery]);
-    sqlRun(`INSERT OR IGNORE INTO recall_log (memory_id, session_id, query) VALUES ${placeholders}`, params);
+    const entries = observations.map((o) => ({
+      memoryId: o.id,
+      sessionId: String(sessionId),
+      query: recallQuery,
+    }));
+    obsDA.insertRecallLog(deps, entries);
   }
 
   // Calculate stats: total across all projects vs current
-  const totalAll = crossProject
-    ? sqlJson('SELECT COUNT(*) as cnt FROM observations WHERE deleted_at IS NULL AND type != ?', ['skill'])[0].cnt
-    : sqlJson('SELECT COUNT(*) as cnt FROM observations WHERE project = ? AND deleted_at IS NULL AND type != ?', [
-        project,
-        'skill',
-      ])[0].cnt;
+  const totalAll = obsDA.countObservationsByProjectAndType(deps, crossProject ? null : project);
 
   return {
     sessions,
@@ -362,15 +356,7 @@ function get(args) {
   if (!id) {
     return jsonErrNoExit('Missing --id');
   }
-  const rows = sqlJson(
-    `
-    SELECT id, title, content, type, project, scope, topic_key,
-           created_at, updated_at, deleted_at
-    FROM observations
-    WHERE id = ?
-  `,
-    [parseInt(id, 10)],
-  );
+  const rows = obsDA.getObservation(deps, id);
   if (rows.length === 0) {
     return { error: 'Observation not found' };
   }
@@ -378,14 +364,14 @@ function get(args) {
   const obs = rows[0];
 
   // Attach symbol links
-  const links = sqlJson('SELECT symbol_id, repo, trust_score FROM symbol_links WHERE memory_id = ?', [String(id)]);
+  const links = obsDA.getSymbolLinksForMemory(deps, id);
   if (links.length > 0) {
     obs.symbols = links;
   }
 
   // Attach recall count
-  const recallCount = sqlJson('SELECT COUNT(*) as cnt FROM recall_log WHERE memory_id = ?', [parseInt(id, 10)]);
-  obs.recall_count = recallCount[0].cnt;
+  const recallResult = obsDA.getRecallCountForMemory(deps, id);
+  obs.recall_count = recallResult[0].cnt;
 
   return obs;
 }
@@ -395,55 +381,23 @@ function update(args) {
   if (!id) {
     return jsonErrNoExit('Missing --id');
   }
-  const sets = [];
-  const params = [];
-  if (args.title) {
-    sets.push('title = ?');
-    params.push(args.title);
-  }
-  if (args.content) {
-    sets.push('content = ?');
-    params.push(args.content);
-  }
-  if (args.type) {
-    sets.push('type = ?');
-    params.push(args.type);
-  }
-  if (args.project) {
-    sets.push('project = ?');
-    params.push(args.project);
-  }
-  if (args.scope) {
-    sets.push('scope = ?');
-    params.push(args.scope);
-  }
-  if (args['topic-key']) {
-    sets.push('topic_key = ?');
-    params.push(args['topic-key']);
-  }
-  if (sets.length === 0) {
+  const result = obsDA.updateObservation(deps, {
+    id,
+    title: args.title,
+    content: args.content,
+    type: args.type,
+    project: args.project,
+    scope: args.scope,
+    topicKey: args['topic-key'],
+  });
+  if (result === null) {
     return jsonErrNoExit('Nothing to update');
   }
-
-  params.push(parseInt(id, 10));
-  sqlRun(`UPDATE observations SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = ?`, params);
-
-  const rows = sqlJson(
-    `
-    SELECT id, title, content, type, project, scope, topic_key,
-           created_at, updated_at
-    FROM observations WHERE id = ?
-  `,
-    [parseInt(id, 10)],
-  );
-  return rows.length > 0 ? rows[0] : { error: 'Observation not found' };
+  return result.length > 0 ? result[0] : { error: 'Observation not found' };
 }
 
 function softDeleteObservation(id) {
-  sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [parseInt(id, 10)]);
-  try {
-    sqlRun("INSERT INTO observations_fts(observations_fts, rowid, title, content, type, project, topic_key) VALUES ('delete', ?, '', '', '', '', '')", [parseInt(id, 10)]);
-  } catch (_) {}
+  obsDA.softDeleteObservation(deps, id);
 }
 
 function del(args) {
@@ -454,10 +408,10 @@ function del(args) {
   }
 
   if (hard) {
-    sqlRun('DELETE FROM observations WHERE id = ?', [parseInt(id, 10)]);
+    obsDA.hardDeleteObservation(deps, id);
     return { ok: true, hardDeleted: true };
   }
-  softDeleteObservation(id);
+  obsDA.softDeleteObservation(deps, id);
   return { ok: true, hardDeleted: false };
 }
 
@@ -469,16 +423,7 @@ function timeline(args) {
     return jsonErrNoExit('Missing --id');
   }
 
-  return sqlJson(
-    `
-    SELECT id, title, type, project, scope, created_at
-    FROM observations
-    WHERE id BETWEEN ? AND ?
-      AND deleted_at IS NULL
-    ORDER BY id
-  `,
-    [id - before, id + after],
-  );
+  return obsDA.getTimeline(deps, { id, before, after });
 }
 
 function suggestTopicKey(args) {
@@ -501,14 +446,7 @@ function savePrompt(args) {
     return jsonErrNoExit('Missing --content');
   }
 
-  const rows = sqlJson(
-    `
-    INSERT INTO user_prompts (session_id, content, project)
-    VALUES (?, ?, ?)
-    RETURNING id, created_at
-  `,
-    [String(sessionId), content, project],
-  );
+  const rows = obsDA.insertUserPrompt(deps, { sessionId, content, project });
   return { id: rows[0].id, created_at: rows[0].created_at };
 }
 
@@ -538,31 +476,14 @@ function capturePassive(args) {
   const sessionId = findLatestSession(null);
   for (const item of items) {
     const summary = item.length > CAPTURE_PASSIVE.SUMMARY_MAX_LENGTH ? `${item.slice(0, CAPTURE_PASSIVE.SUMMARY_MAX_LENGTH - 3)}…` : item;
-    sqlJson('INSERT INTO observations (session_id, type, title, content, scope) VALUES (?, ?, ?, ?, ?)', [
-      String(sessionId),
-      'learning',
-      summary,
-      item,
-      'project',
-    ]);
+    obsDA.insertCapturePassiveObservation(deps, { sessionId, summary, content: item });
     inserted++;
   }
   return { extracted: inserted, items };
 }
 
 function getStats() {
-  const obs = sqlJson('SELECT COUNT(*) as cnt FROM observations WHERE deleted_at IS NULL')[0].cnt;
-  const prompts = sqlJson('SELECT COUNT(*) as cnt FROM user_prompts')[0].cnt;
-  const sessions = sqlJson('SELECT COUNT(*) as cnt FROM session_log')[0].cnt;
-  const links = sqlJson('SELECT COUNT(*) as cnt FROM symbol_links')[0].cnt;
-  const workflows = sqlJson('SELECT COUNT(*) as cnt FROM procedural_memory')[0].cnt;
-  return {
-    total_observations: obs,
-    total_prompts: prompts,
-    total_sessions: sessions,
-    total_symbol_links: links,
-    total_workflows: workflows,
-  };
+  return obsDA.getObservationStats(deps);
 }
 
 /* ── symbol anchoring ─────────────────────────────────────── */
@@ -576,15 +497,8 @@ function linkSymbol(args) {
   if (!memoryId || !repo) {
     return jsonErrNoExit('Missing --memory and --repo');
   }
-  const symVal = symbolId || '__unlinked__';
 
-  sqlRun('INSERT OR REPLACE INTO symbol_links (memory_id, symbol_id, repo, trust_score) VALUES (?, ?, ?, ?)', [
-    memoryId,
-    symVal,
-    repo,
-    trust,
-  ]);
-  return { ok: true, memoryId, symbolId: symVal, repo, trustScore: trust };
+  return symDA.linkSymbol(deps, { memoryId, symbolId, repo, trust });
 }
 
 function autoLink(args) {
@@ -593,23 +507,16 @@ function autoLink(args) {
     return jsonErrNoExit('Missing --project');
   }
 
-  const unlinked = sqlJson(
-    `
-    SELECT CAST(id AS TEXT) as memory_id FROM observations
-    WHERE project = ? AND deleted_at IS NULL
-      AND CAST(id AS TEXT) NOT IN (SELECT memory_id FROM symbol_links)
-  `,
-    [project],
-  );
+  const unlinked = symDA.findUnlinked(deps, project);
 
   let linked = 0;
   for (const row of unlinked) {
-    sqlRun('INSERT OR IGNORE INTO symbol_links (memory_id, symbol_id, repo, trust_score) VALUES (?, ?, ?, ?)', [
-      String(row.memory_id),
-      '__unlinked__',
-      project,
-      TRUST_DELTA.DEFAULT_INITIAL,
-    ]);
+    symDA.insertSymbolLink(deps, {
+      memoryId: String(row.memory_id),
+      symbolId: '__unlinked__',
+      repo: project,
+      trustScore: TRUST_DELTA.DEFAULT_INITIAL,
+    });
     linked++;
   }
   return { ok: true, project, linked, unlinkedCount: unlinked.length };
@@ -623,11 +530,8 @@ function adjustTrust(args) {
     return jsonErrNoExit('Missing --memory, --reason, --delta');
   }
 
-  sqlRun('UPDATE symbol_links SET trust_score = MIN(1.0, MAX(0.0, trust_score + ?)) WHERE memory_id = ?', [delta, memoryId]);
-  sqlRun('INSERT INTO trust_adjustments (memory_id, reason, delta) VALUES (?, ?, ?)', [memoryId, reason, delta]);
-
-  const updated = sqlJson('SELECT trust_score FROM symbol_links WHERE memory_id = ? LIMIT 1', [memoryId]);
-  return { ok: true, memoryId, newTrustScore: updated.length > 0 ? updated[0].trust_score : null };
+  const newTrustScore = symDA.adjustTrust(deps, { memoryId, delta, reason });
+  return { ok: true, memoryId, newTrustScore };
 }
 
 function recordRecall(args) {
@@ -636,7 +540,7 @@ function recordRecall(args) {
   if (!sessionId || !memoryId) {
     return jsonErrNoExit('Missing --session and --memory');
   }
-  sqlRun('INSERT OR IGNORE INTO session_recalls (session_id, memory_id) VALUES (?, ?)', [sessionId, memoryId]);
+  symDA.recordRecall(deps, { sessionId, memoryId });
   return { ok: true };
 }
 
@@ -645,27 +549,13 @@ function staleLinks(args) {
   if (!project) {
     return jsonErrNoExit('Missing --project');
   }
-  return sqlJson(
-    `SELECT memory_id, symbol_id, repo, trust_score, last_verified
-     FROM symbol_links
-     WHERE repo = ? AND symbol_id != '__unlinked__'
-     ORDER BY trust_score ASC`,
-    [project],
-  );
+  return symDA.getStaleLinks(deps, project);
 }
 
 /* ── project discovery ─────────────────────────────────────── */
 
 function listProjects() {
-  const rows = sqlJson(`
-    SELECT project, COUNT(*) as memory_count,
-           MAX(created_at) as last_active
-    FROM observations
-    WHERE deleted_at IS NULL AND type != 'skill'
-    GROUP BY project
-    ORDER BY last_active DESC
-  `);
-  return { projects: rows };
+  return wsDA.listProjects(deps);
 }
 
 /* ── code-aware trust sync ─────────────────────────────────── */
@@ -725,11 +615,7 @@ function syncCodeTrust(args) {
   }
 
   // Get all anchored links for this repo
-  const allLinks = sqlJson(
-    `SELECT memory_id, symbol_id, trust_score, last_verified
-     FROM symbol_links WHERE repo = ? AND symbol_id != '__unlinked__'`,
-    [repo],
-  );
+  const allLinks = symDA.getAnchoredLinks(deps, repo);
 
   const result = { total: allLinks.length, adjusted: [], survived: [], unchanged: [] };
 
@@ -741,15 +627,8 @@ function syncCodeTrust(args) {
     if (isChanged) {
       const delta = TRUST_DELTA.SYMBOL_CHANGED;
       const newTrust = Math.max(TRUST_DELTA.TRUST_FLOOR, link.trust_score + delta);
-      sqlRun(
-        "UPDATE symbol_links SET trust_score = ?, last_verified = datetime('now') WHERE memory_id = ? AND symbol_id = ?",
-        [newTrust, link.memory_id, link.symbol_id],
-      );
-      sqlRun('INSERT INTO trust_adjustments (memory_id, reason, delta) VALUES (?, ?, ?)', [
-        link.memory_id,
-        'symbol_changed',
-        delta,
-      ]);
+      symDA.updateLinkTrust(deps, { memoryId: link.memory_id, symbolId: link.symbol_id, newTrust });
+      symDA.insertTrustAdjustment(deps, { memoryId: link.memory_id, reason: 'symbol_changed', delta });
       result.adjusted.push({
         memory_id: link.memory_id,
         symbol_id: link.symbol_id,
@@ -759,15 +638,8 @@ function syncCodeTrust(args) {
     } else if (link.trust_score < TRUST_DELTA.MAX_SURVIVED) {
       const delta = TRUST_DELTA.SURVIVED_UNCHANGED;
       const newTrust = Math.min(TRUST_DELTA.TRUST_CEILING, link.trust_score + delta);
-      sqlRun(
-        "UPDATE symbol_links SET trust_score = ?, last_verified = datetime('now') WHERE memory_id = ? AND symbol_id = ?",
-        [newTrust, link.memory_id, link.symbol_id],
-      );
-      sqlRun('INSERT INTO trust_adjustments (memory_id, reason, delta) VALUES (?, ?, ?)', [
-        link.memory_id,
-        'survived_unchanged',
-        delta,
-      ]);
+      symDA.updateLinkTrust(deps, { memoryId: link.memory_id, symbolId: link.symbol_id, newTrust });
+      symDA.insertTrustAdjustment(deps, { memoryId: link.memory_id, reason: 'survived_unchanged', delta });
       result.survived.push({
         memory_id: link.memory_id,
         symbol_id: link.symbol_id,
@@ -799,7 +671,7 @@ function checkDuplicate(title, type, project, topicKey) {
 }
 
 function markDuplicate(args) {
-  return dedupService.markDuplicate({ sqlJson, sqlRun, softDeleteObservation }, args);
+  return dedupService.markDuplicate({ sqlJson, sqlRun, softDeleteObservation: (id) => obsDA.softDeleteObservation(deps, id) }, args);
 }
 
 /* ── auto session recovery ──────────────────────────────── */
@@ -921,7 +793,7 @@ function recoverOrphans() {
 
       // Soft-delete the individual summaries
       for (const s of recentSummaries) {
-        softDeleteObservation(s.id);
+        obsDA.softDeleteObservation(deps, s.id);
       }
 
       // Insert the consolidated summary
@@ -1026,7 +898,7 @@ function getWorkflow(args) {
 // runCompact, compact, trustRecovery are imported as pure delegations above.
 // dream() needs softDeleteObservation injected:
 function dream() {
-  return dreamService.dream({ sqlJson, sqlRun, softDeleteObservation });
+  return dreamService.dream({ sqlJson, sqlRun, softDeleteObservation: (id) => obsDA.softDeleteObservation(deps, id) });
 }
 
 /* ── init ─────────────────────────────────────────────────── */
@@ -1231,16 +1103,7 @@ function removeCodeRepoInternal(repo) {
 
 function listWorkspaces() {
   ensureDb();
-  const workspaces = sqlJson(`
-    SELECT w.id, w.name, w.created_at, w.archived_at,
-           COUNT(CASE WHEN o.deleted_at IS NULL AND o.type != 'skill' THEN 1 END) as memory_count,
-           MAX(o.created_at) as last_active
-    FROM workspaces w
-    LEFT JOIN observations o ON o.project = w.name
-    GROUP BY w.id
-    ORDER BY w.archived_at NULLS FIRST, last_active DESC
-  `);
-  return { workspaces, total: workspaces.length };
+  return wsDA.listWorkspaces(deps);
 }
 
 function createWorkspace(name) {
@@ -1248,13 +1111,7 @@ function createWorkspace(name) {
     return { error: 'Missing --name' };
   }
   ensureDb();
-  try {
-    sqlRun('INSERT INTO workspaces (name) VALUES (?)', [name]);
-    const row = sqlJson('SELECT id, name, created_at FROM workspaces WHERE name = ?', [name]);
-    return { success: true, workspace: row[0] };
-  } catch (e) {
-    return { error: `Workspace already exists: ${name}` };
-  }
+  return wsDA.createWorkspace(deps, name);
 }
 
 function archiveWorkspace(name) {
@@ -1262,12 +1119,7 @@ function archiveWorkspace(name) {
     return { error: 'Missing --name' };
   }
   ensureDb();
-  const existing = sqlJson('SELECT id FROM workspaces WHERE name = ? AND archived_at IS NULL', [name]);
-  if (existing.length === 0) {
-    return { error: `Workspace not found or already archived: ${name}` };
-  }
-  sqlRun("UPDATE workspaces SET archived_at = datetime('now') WHERE id = ?", [existing[0].id]);
-  return { success: true, workspace: name, archived: true };
+  return wsDA.archiveWorkspace(deps, name);
 }
 
 /* ── dispatch helpers ─────────────────────────────────────── */
