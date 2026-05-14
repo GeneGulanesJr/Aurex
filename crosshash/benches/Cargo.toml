@@ -1,0 +1,17 @@
+[package]
+name = "crosshash-bench"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "crosshash-bench"
+path = "bench_impact.rs"
+
+[dependencies]
+crosshash-core = { path = "../crates/crosshash-core" }
+crosshash-graph = { path = "../crates/crosshash-graph" }
+crosshash-hash = { path = "../crates/crosshash-hash" }
+crosshash-parser = { path = "../crates/crosshash-parser" }
+uuid.workspace = true

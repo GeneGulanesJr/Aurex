@@ -1,0 +1,100 @@
+const { context } = require('../services/context');
+
+describe('services/context', () => {
+  it('should default to cross-project mode when project is missing', () => {
+    const observations = [
+      { id: 1, title: 'Global', type: 'decision', scope: 'project', topic_key: 'x', created_at: '2025-01-01', trust_score: 0.7, recall_count: 2, type_priority: 3 },
+    ];
+    const sqlJson = vi.fn((query, params) => {
+      if (query.includes("scope = 'personal'")) return [];
+      return observations;
+    });
+    const jsonErrNoExit = vi.fn((msg) => ({ error: msg }));
+    const countObservationsByProjectAndType = vi.fn(() => 5);
+    const result = context(
+      { sqlJson, sqlRun: vi.fn(), jsonErrNoExit, insertRecallLog: vi.fn(), countObservationsByProjectAndType, searchCode: vi.fn() },
+      {},
+    );
+    expect(result.cross_project).toBe(true);
+    expect(jsonErrNoExit).not.toHaveBeenCalled();
+  });
+
+  it('should return observations and sessions for a project', () => {
+    const sessions = [{ id: 1, project: 'test', started_at: '2025-01-01', ended_at: '2025-01-01', memories_saved: 3 }];
+    const observations = [
+      { id: 10, title: 'Dec 1', type: 'decision', scope: 'project', topic_key: 'arch', created_at: '2025-01-01', trust_score: 0.8, recall_count: 5, type_priority: 3 },
+    ];
+    const personal = [{ id: 20, title: 'My note', type: 'preference', scope: 'personal', topic_key: null, created_at: '2025-01-01' }];
+    const sqlJson = vi.fn((query, params) => {
+      if (query.includes('session_log') && query.includes('WHERE project')) return sessions;
+      if (query.includes("scope = 'personal'")) return personal;
+      return observations;
+    });
+    const sqlRun = vi.fn();
+    const jsonErrNoExit = vi.fn((msg) => ({ error: msg }));
+    const insertRecallLog = vi.fn();
+    const countObservationsByProjectAndType = vi.fn(() => 10);
+
+    const result = context(
+      { sqlJson, sqlRun, jsonErrNoExit, insertRecallLog, countObservationsByProjectAndType, searchCode: vi.fn() },
+      { project: 'test', 'session-id': '5' },
+    );
+    expect(result.project).toBe('test');
+    expect(result.observations).toBeDefined();
+    expect(result.sessions).toEqual(sessions);
+    expect(result.personal).toEqual(personal);
+    expect(result.stats).toBeDefined();
+  });
+
+  it('should work with all-projects mode', () => {
+    const observations = [
+      { id: 1, title: 'Global', type: 'decision', scope: 'project', topic_key: 'x', created_at: '2025-01-01', trust_score: 0.7, recall_count: 2, type_priority: 3 },
+    ];
+    const sqlJson = vi.fn((query, params) => {
+      if (query.includes("scope = 'personal'")) return [];
+      return observations;
+    });
+    const jsonErrNoExit = vi.fn((msg) => ({ error: msg }));
+    const countObservationsByProjectAndType = vi.fn(() => 5);
+    const result = context(
+      { sqlJson, sqlRun: vi.fn(), jsonErrNoExit, insertRecallLog: vi.fn(), countObservationsByProjectAndType, searchCode: vi.fn() },
+      { 'all-projects': 'true' },
+    );
+    expect(result.cross_project).toBe(true);
+    expect(result.observations).toBeDefined();
+  });
+
+  it('should filter by topic key', () => {
+    const observations = [
+      { id: 1, title: 'Topic', type: 'decision', scope: 'project', topic_key: 'arch', created_at: '2025-01-01', trust_score: 0.8, recall_count: 0, type_priority: 3 },
+    ];
+    const sqlJson = vi.fn((query, params) => {
+      if (query.includes("scope = 'personal'")) return [];
+      return observations;
+    });
+    const jsonErrNoExit = vi.fn((msg) => ({ error: msg }));
+    const countObservationsByProjectAndType = vi.fn(() => 2);
+    const result = context(
+      { sqlJson, sqlRun: vi.fn(), jsonErrNoExit, insertRecallLog: vi.fn(), countObservationsByProjectAndType, searchCode: vi.fn() },
+      { project: 'test', 'topic-key': 'arch' },
+    );
+    expect(result.topic).toBe('arch');
+  });
+
+  it('should filter by query (topic query)', () => {
+    const observations = [
+      { id: 1, title: 'Query result', type: 'decision', scope: 'project', topic_key: null, created_at: '2025-01-01', trust_score: 0.8, recall_count: 0, type_priority: 3 },
+    ];
+    const sqlJson = vi.fn((query, params) => {
+      if (query.includes("scope = 'personal'")) return [];
+      return observations;
+    });
+    const jsonErrNoExit = vi.fn((msg) => ({ error: msg }));
+    const countObservationsByProjectAndType = vi.fn(() => 1);
+    const result = context(
+      { sqlJson, sqlRun: vi.fn(), jsonErrNoExit, insertRecallLog: vi.fn(), countObservationsByProjectAndType, searchCode: vi.fn() },
+      { project: 'test', query: 'authentication' },
+    );
+    expect(result.topic).toBe('authentication');
+  });
+});

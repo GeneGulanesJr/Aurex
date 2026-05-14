@@ -64,22 +64,62 @@ mod subphase_71_language_expansion {
     }
 
     #[test]
-    fn unsupported_languages_are_detected_but_not_extracted() {
+    fn go_entity_extraction_works_end_to_end() {
         let dir = tempfile::tempdir().unwrap();
-        let repo = dir.path().join("go-repo");
+        let repo = dir.path().join("go-svc");
         fs::create_dir_all(&repo).unwrap();
         fs::write(
             repo.join("main.go"),
-            "package main\nfunc main() { println(\"hello\") }\n",
+            "package main\n\nfunc Hello() string { return \"hello\" }\nfunc main() { fmt.Println(Hello()) }\n",
         )
         .unwrap();
         let db = dir.path().join("test.db");
 
-        add_repo(db.to_str().unwrap(), "go-repo", repo.to_str().unwrap());
+        add_repo(db.to_str().unwrap(), "go-svc", repo.to_str().unwrap());
+        index_repo(db.to_str().unwrap(), "go-svc");
 
         Command::cargo_bin("crosshash")
             .unwrap()
-            .args(["--db", db.to_str().unwrap(), "index", "--repo", "go-repo"])
+            .args([
+                "--db",
+                db.to_str().unwrap(),
+                "entity",
+                "lookup",
+                "Hello",
+                "--repo",
+                "go-svc",
+            ])
+            .assert()
+            .success()
+            .stdout(contains("Hello"));
+    }
+
+    #[test]
+    fn html_and_css_are_detected_but_not_extracted() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path().join("web-repo");
+        fs::create_dir_all(&repo).unwrap();
+        fs::write(repo.join("index.html"), "<!DOCTYPE html><html><body>Hello</body></html>").unwrap();
+        fs::write(repo.join("style.css"), "body { color: red; }").unwrap();
+        let db = dir.path().join("test.db");
+
+        Command::cargo_bin("crosshash")
+            .unwrap()
+            .args([
+                "--db",
+                db.to_str().unwrap(),
+                "repo",
+                "add",
+                repo.to_str().unwrap(),
+                "--name",
+                "web-repo",
+            ])
+            .assert()
+            .success();
+
+        Command::cargo_bin("crosshash")
+            .unwrap()
+            .args(["--db", db.to_str().unwrap(), "index", "--repo", "web-repo"])
             .assert()
             .failure()
             .stderr(contains("unsupported language"));

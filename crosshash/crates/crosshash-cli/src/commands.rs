@@ -7,9 +7,25 @@ use crosshash_core::{
 use crosshash_git::get_head_commit;
 use crosshash_graph::{GraphBuilder, GraphStorage, GraphTraversal, StaticEdgeExtractor};
 use crosshash_hash::hash_file_content;
+use crosshash_parser::languages::bash::BashExtractor;
+use crosshash_parser::languages::c::CExtractor;
+use crosshash_parser::languages::cpp::CppExtractor;
+use crosshash_parser::languages::csharp::CSharpExtractor;
+use crosshash_parser::languages::dart::DartExtractor;
+use crosshash_parser::languages::elixir::ElixirExtractor;
+use crosshash_parser::languages::go::GoExtractor;
+use crosshash_parser::languages::java::JavaExtractor;
+use crosshash_parser::languages::javascript::JavaScriptExtractor;
+use crosshash_parser::languages::kotlin::KotlinExtractor;
+use crosshash_parser::languages::ocaml::OcamlExtractor;
+use crosshash_parser::languages::php::PhpExtractor;
 use crosshash_parser::languages::python::PythonExtractor;
+use crosshash_parser::languages::ruby::RubyExtractor;
 use crosshash_parser::languages::rust::RustExtractor;
+use crosshash_parser::languages::scala::ScalaExtractor;
+use crosshash_parser::languages::swift::SwiftExtractor;
 use crosshash_parser::languages::typescript::TypeScriptExtractor;
+use crosshash_parser::languages::zig::ZigExtractor;
 use crosshash_parser::{
     collect_source_files, detect_language, EntityExtractor, ParserConfig, ParserEngine,
 };
@@ -1216,13 +1232,66 @@ fn extract_for_language(
         Language::Rust => {
             Ok(RustExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
         }
-        Language::TypeScript | Language::JavaScript => {
+        Language::TypeScript => {
             Ok(TypeScriptExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
+        }
+        Language::JavaScript => {
+            Ok(JavaScriptExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
         }
         Language::Python => {
             Ok(PythonExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
         }
-        other => Err(anyhow!("unsupported language for extraction: {other:?}")),
+        Language::Go => {
+            Ok(GoExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
+        }
+        Language::Java => {
+            Ok(JavaExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
+        }
+        Language::C => {
+            Ok(CExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
+        }
+        Language::Cpp => {
+            Ok(CppExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
+        }
+        Language::CSharp => {
+            Ok(CSharpExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
+        }
+        Language::Ruby => {
+            Ok(RubyExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
+        }
+        Language::Php => {
+            Ok(PhpExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
+        }
+        Language::Swift => {
+            Ok(SwiftExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
+        }
+        Language::Kotlin => {
+            Ok(KotlinExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
+        }
+        Language::Scala => {
+            Ok(ScalaExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
+        }
+        Language::Elixir => {
+            Ok(ElixirExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
+        }
+        Language::Dart => {
+            Ok(DartExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
+        }
+        Language::Ocaml => {
+            Ok(OcamlExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
+        }
+        Language::Zig => {
+            Ok(ZigExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
+        }
+        Language::Bash => {
+            Ok(BashExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
+        }
+        Language::Html | Language::Css => {
+            Err(anyhow!("unsupported language for extraction: {:?}", language))
+        }
+        Language::Unknown => {
+            Err(anyhow!("unsupported language for extraction: Unknown"))
+        }
     }
 }
 
