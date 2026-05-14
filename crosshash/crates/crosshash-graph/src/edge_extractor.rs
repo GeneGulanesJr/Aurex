@@ -19,6 +19,9 @@ struct ImportInfo {
 struct TypeScriptResolver;
 struct RustResolver;
 struct PythonResolver;
+struct GoResolver;
+struct JavaResolver;
+struct RubyResolver;
 
 impl ImportResolver for TypeScriptResolver {
     fn extract_imports(source: &str, file_path: &str) -> Vec<ImportInfo> {
@@ -232,6 +235,133 @@ impl ImportResolver for PythonResolver {
                             });
                         }
                     }
+                }
+            }
+        }
+        imports
+    }
+}
+
+impl ImportResolver for GoResolver {
+    fn extract_imports(source: &str, file_path: &str) -> Vec<ImportInfo> {
+        let mut imports = Vec::new();
+        let mut in_import_block = false;
+        for line in source.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("import ") {
+                if trimmed.contains('(') {
+                    in_import_block = true;
+                    let after_paren = trimmed.split('(').nth(1).unwrap_or("");
+                    extract_go_import_names(after_paren, file_path, &mut imports);
+                } else {
+                    let path = trimmed.strip_prefix("import ").unwrap_or("").trim();
+                    let name = go_import_name(path);
+                    if !name.is_empty() {
+                        imports.push(ImportInfo {
+                            imported_name: name,
+                            source_file: file_path.to_string(),
+                            _raw_line: trimmed.to_string(),
+                        });
+                    }
+                }
+            } else if in_import_block {
+                if trimmed.contains(')') {
+                    in_import_block = false;
+                    let before_paren = trimmed.split(')').next().unwrap_or("");
+                    extract_go_import_names(before_paren, file_path, &mut imports);
+                } else {
+                    extract_go_import_names(trimmed, file_path, &mut imports);
+                }
+            }
+        }
+        imports
+    }
+}
+
+fn extract_go_import_names(text: &str, file_path: &str, imports: &mut Vec<ImportInfo>) {
+    for entry in text.split(',') {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        let name = go_import_name(entry);
+        if !name.is_empty() {
+            imports.push(ImportInfo {
+                imported_name: name,
+                source_file: file_path.to_string(),
+                _raw_line: entry.to_string(),
+            });
+        }
+    }
+}
+
+fn go_import_name(path: &str) -> String {
+    let path = path.trim().trim_matches('"').trim();
+    if path.is_empty() {
+        return String::new();
+    }
+    if let Some(alias_end) = path.find(' ') {
+        path[..alias_end].trim().to_string()
+    } else {
+        path.rsplit('/').next().unwrap_or(path).to_string()
+    }
+}
+
+impl ImportResolver for JavaResolver {
+    fn extract_imports(source: &str, file_path: &str) -> Vec<ImportInfo> {
+        let mut imports = Vec::new();
+        for line in source.lines() {
+            let trimmed = line.trim();
+            if let Some(rest) = trimmed.strip_prefix("import ") {
+                if let Some(static_rest) = rest.strip_prefix("static ") {
+                    let name = static_rest.split('.').next_back().unwrap_or(static_rest).trim_end_matches(';').trim();
+                    if !name.is_empty() && !name.contains('*') {
+                        imports.push(ImportInfo {
+                            imported_name: name.to_string(),
+                            source_file: file_path.to_string(),
+                            _raw_line: trimmed.to_string(),
+                        });
+                    }
+                } else {
+                    let name = rest.trim_end_matches(';').split('.').next_back().unwrap_or(rest.trim_end_matches(';')).trim();
+                    if !name.is_empty() && !name.contains('*') {
+                        imports.push(ImportInfo {
+                            imported_name: name.to_string(),
+                            source_file: file_path.to_string(),
+                            _raw_line: trimmed.to_string(),
+                        });
+                    }
+                }
+            }
+        }
+        imports
+    }
+}
+
+impl ImportResolver for RubyResolver {
+    fn extract_imports(source: &str, file_path: &str) -> Vec<ImportInfo> {
+        let mut imports = Vec::new();
+        for line in source.lines() {
+            let trimmed = line.trim();
+            if let Some(rest) = trimmed.strip_prefix("require ") {
+                let path = rest.trim_matches('\'').trim_matches('"').trim_end_matches(';').trim();
+                if !path.is_empty() {
+                    let name = path.rsplit('/').next().unwrap_or(path).to_string();
+                    imports.push(ImportInfo {
+                        imported_name: name,
+                        source_file: file_path.to_string(),
+                        _raw_line: trimmed.to_string(),
+                    });
+                }
+            } else if let Some(rest) = trimmed.strip_prefix("require_relative ") {
+                let path = rest.trim_matches('\'').trim_matches('"').trim_end_matches(';').trim();
+                if !path.is_empty() {
+                    let name = path.rsplit('/').next().unwrap_or(path).to_string();
+                    imports.push(ImportInfo {
+                        imported_name: name,
+                        source_file: file_path.to_string(),
+                        _raw_line: trimmed.to_string(),
+                    });
                 }
             }
         }
@@ -489,6 +619,9 @@ impl StaticEdgeExtractor {
                 }
                 Some(Language::Rust) => RustResolver::extract_imports(file_source, file_path),
                 Some(Language::Python) => PythonResolver::extract_imports(file_source, file_path),
+                Some(Language::Go) => GoResolver::extract_imports(file_source, file_path),
+                Some(Language::Java) => JavaResolver::extract_imports(file_source, file_path),
+                Some(Language::Ruby) => RubyResolver::extract_imports(file_source, file_path),
                 _ => Vec::new(),
             };
             file_imports.insert(file_path.clone(), import_infos);

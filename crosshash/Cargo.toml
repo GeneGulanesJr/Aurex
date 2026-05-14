@@ -10,6 +10,7 @@ members = [
   "crates/crosshash-impact",
   "crates/crosshash-api",
   "crates/crosshash-mcp",
+  "benches",
 ]
 resolver = "2"
 
@@ -48,8 +49,23 @@ thiserror = "1"
 tower = "0.5"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync"] }
 tree-sitter = "0.22"
+tree-sitter-bash = "0.21"
+tree-sitter-c = "0.21"
+tree-sitter-cpp = "0.22"
+tree-sitter-c-sharp = "0.21"
+tree-sitter-dart = "0.1"
+tree-sitter-elixir = "0.1"
+tree-sitter-go = "0.21"
+tree-sitter-java = "0.21"
+tree-sitter-kotlin = "0.1"
+tree-sitter-ocaml = "0.1"
+tree-sitter-php = "0.22"
 tree-sitter-python = "0.21"
+tree-sitter-ruby = "0.21"
 tree-sitter-rust = "0.21"
+tree-sitter-scala = "0.1"
+tree-sitter-swift = "0.1"
 tree-sitter-typescript = "0.21"
+tree-sitter-zig = "0.1"
 uuid = { version = "1", features = ["v7", "v5", "serde"] }
 walkdir = "2"
