@@ -64,3 +64,78 @@ impl PromptBuilder {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{FeedbackDecision, InferredEdgeType};
+
+    fn make_surface(name: &str) -> ApiSurface {
+        ApiSurface {
+            repo_id: uuid::Uuid::now_v7(),
+            entities: vec![crate::PublicEntitySurface {
+                entity_id: uuid::Uuid::now_v7(),
+                repo_id: uuid::Uuid::now_v7(),
+                language: crosshash_core::Language::Rust,
+                kind: crate::SurfaceKind::LibraryApi,
+                name: name.into(),
+                qualified_name: format!("myapp::{name}"),
+                signature: format!("fn {name}()"),
+            }],
+        }
+    }
+
+    #[test]
+    fn build_prompt_includes_both_surfaces() {
+        let exporter = make_surface("api_fn");
+        let consumer = make_surface("client_fn");
+        let prompt = PromptBuilder::new().build_edge_inference_prompt(&exporter, &consumer);
+        assert!(prompt.contains("api_fn"));
+        assert!(prompt.contains("client_fn"));
+        assert!(prompt.contains("Repo A exports"));
+        assert!(prompt.contains("Repo B consumes"));
+    }
+
+    #[test]
+    fn build_prompt_includes_feedback_examples() {
+        let exporter = make_surface("a");
+        let consumer = make_surface("b");
+        let prompt = PromptBuilder::new()
+            .with_feedback(vec![FeedbackEvent {
+                suggestion_id: uuid::Uuid::now_v7(),
+                edge_type: InferredEdgeType::APIContract,
+                language: "Rust".into(),
+                confidence: 0.8,
+                decision: FeedbackDecision::Reject,
+            }])
+            .build_edge_inference_prompt(&exporter, &consumer);
+        assert!(prompt.contains("Previous feedback"));
+        assert!(prompt.contains("Reject"));
+    }
+
+    #[test]
+    fn build_prompt_without_feedback() {
+        let exporter = make_surface("a");
+        let consumer = make_surface("b");
+        let prompt = PromptBuilder::new().build_edge_inference_prompt(&exporter, &consumer);
+        assert!(!prompt.contains("Previous feedback"));
+    }
+
+    #[test]
+    fn build_prompt_with_language_context() {
+        let exporter = make_surface("a");
+        let consumer = make_surface("b");
+        let prompt = PromptBuilder::new()
+            .with_language_context("Rust, TypeScript")
+            .build_edge_inference_prompt(&exporter, &consumer);
+        assert!(prompt.contains("Rust, TypeScript"));
+    }
+
+    #[test]
+    fn build_prompt_with_no_language_shows_unknown() {
+        let exporter = make_surface("a");
+        let consumer = make_surface("b");
+        let prompt = PromptBuilder::new().build_edge_inference_prompt(&exporter, &consumer);
+        assert!(prompt.contains("unknown"));
+    }
+}

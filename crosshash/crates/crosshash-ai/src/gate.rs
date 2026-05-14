@@ -147,4 +147,114 @@ mod tests {
         assert!(d.should_run_ai);
         assert_eq!(d.scope, "changed-signatures-and-dependents");
     }
+
+    #[test]
+    fn gate_disabled_returns_should_run_false() {
+        let d = AiGate::decide(&GateInput {
+            ai_enabled: false,
+            auto_gate: true,
+            ..Default::default()
+        });
+        assert!(!d.should_run_ai);
+        assert_eq!(d.reasons[0], GateReason::Disabled);
+    }
+
+    #[test]
+    fn no_ai_flag_overrides_everything() {
+        let d = AiGate::decide(&GateInput {
+            ai_enabled: true,
+            auto_gate: true,
+            no_ai: true,
+            exported_signature_changed: 5,
+            ..Default::default()
+        });
+        assert!(!d.should_run_ai);
+        assert_eq!(d.reasons[0], GateReason::NoAiFlag);
+    }
+
+    #[test]
+    fn force_ai_overrides_gate_logic() {
+        let d = AiGate::decide(&GateInput {
+            ai_enabled: true,
+            auto_gate: true,
+            force_ai: true,
+            body_only_changed: 10,
+            ..Default::default()
+        });
+        assert!(d.should_run_ai);
+        assert_eq!(d.reasons[0], GateReason::Forced);
+        assert_eq!(d.scope, "all");
+    }
+
+    #[test]
+    fn periodic_revalidation_triggers_after_50_commits() {
+        let d = AiGate::decide(&GateInput {
+            ai_enabled: true,
+            auto_gate: true,
+            commits_since_validation: 50,
+            ..Default::default()
+        });
+        assert!(d.should_run_ai);
+        assert!(d.reasons.contains(&GateReason::PeriodicRevalidation));
+    }
+
+    #[test]
+    fn periodic_revalidation_triggers_after_7_days() {
+        let d = AiGate::decide(&GateInput {
+            ai_enabled: true,
+            auto_gate: true,
+            days_since_validation: 7,
+            ..Default::default()
+        });
+        assert!(d.should_run_ai);
+        assert!(d.reasons.contains(&GateReason::PeriodicRevalidation));
+    }
+
+    #[test]
+    fn exports_deleted_triggers_stale_edge_scope() {
+        let d = AiGate::decide(&GateInput {
+            ai_enabled: true,
+            auto_gate: true,
+            exported_deleted: 2,
+            ..Default::default()
+        });
+        assert!(d.should_run_ai);
+        assert_eq!(d.scope, "stale-ai-edges");
+    }
+
+    #[test]
+    fn no_changes_returns_no_api_surface_change() {
+        let d = AiGate::decide(&GateInput {
+            ai_enabled: true,
+            auto_gate: true,
+            ..Default::default()
+        });
+        assert!(!d.should_run_ai);
+        assert_eq!(d.reasons[0], GateReason::NoApiSurfaceChange);
+    }
+
+    #[test]
+    fn combined_signals_trigger_ai() {
+        let d = AiGate::decide(&GateInput {
+            ai_enabled: true,
+            auto_gate: true,
+            exported_added: 3,
+            exported_signature_changed: 2,
+            ..Default::default()
+        });
+        assert!(d.should_run_ai);
+        assert!(d.reasons.contains(&GateReason::NewExports));
+        assert!(d.reasons.contains(&GateReason::SignatureChanged));
+    }
+
+    #[test]
+    fn auto_gate_false_forces_ai() {
+        let d = AiGate::decide(&GateInput {
+            ai_enabled: true,
+            auto_gate: false,
+            ..Default::default()
+        });
+        assert!(d.should_run_ai);
+        assert_eq!(d.reasons[0], GateReason::Forced);
+    }
 }

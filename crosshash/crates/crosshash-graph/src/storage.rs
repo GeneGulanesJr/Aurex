@@ -1148,4 +1148,46 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0]["decision"], "accept");
     }
+
+    #[test]
+    fn test_update_suggestion_status_to_rejected() {
+        let storage = GraphStorage::open_in_memory().unwrap();
+        let id = Uuid::now_v7();
+        let exporter = Uuid::now_v7();
+        let consumer = Uuid::now_v7();
+        storage
+            .insert_ai_edge_suggestion(&id, &exporter, &consumer, "APIContract", "test", 0.88, "pending")
+            .unwrap();
+        storage.update_suggestion_status(&id, "rejected").unwrap();
+        let found = storage.get_suggestion_by_id(&id).unwrap().unwrap();
+        assert_eq!(found["status"], "rejected");
+        let pending = storage.get_pending_suggestions().unwrap();
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn test_get_ai_inference_logs_respects_limit() {
+        let storage = GraphStorage::open_in_memory().unwrap();
+        for i in 0..5 {
+            let id = Uuid::now_v7();
+            storage
+                .insert_ai_inference_log(
+                    &id,
+                    "NewExports",
+                    "all",
+                    None,
+                    None,
+                    i as u64 * 10,
+                    i as u64 * 5,
+                    0.001 * i as f64,
+                    i,
+                    0,
+                )
+                .unwrap();
+        }
+        let logs = storage.get_ai_inference_logs(3).unwrap();
+        assert_eq!(logs.len(), 3);
+        let all_logs = storage.get_ai_inference_logs(100).unwrap();
+        assert_eq!(all_logs.len(), 5);
+    }
 }

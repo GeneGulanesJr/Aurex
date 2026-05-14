@@ -422,6 +422,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "toml",
  "uuid",
 ]
 
@@ -458,6 +459,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "tokio",
  "tree-sitter",
  "uuid",
 ]

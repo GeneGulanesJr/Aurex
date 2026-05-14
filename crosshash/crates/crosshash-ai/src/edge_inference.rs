@@ -137,4 +137,72 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].edge_type, InferredEdgeType::DataFlow);
     }
+
+    #[test]
+    fn accept_high_confidence_filters_by_threshold() {
+        let engine = EdgeInferenceEngine {
+            auto_accept_threshold: 0.9,
+            ..Default::default()
+        };
+        let a = Uuid::now_v7();
+        let b = Uuid::now_v7();
+        let c = Uuid::now_v7();
+        let suggestions = vec![
+            AiEdgeSuggestion { id: Uuid::now_v7(), exporter_entity_id: a, consumer_entity_id: b, edge_type: InferredEdgeType::APIContract, reasoning: "high".into(), confidence: 0.95, status: SuggestionStatus::Pending },
+            AiEdgeSuggestion { id: Uuid::now_v7(), exporter_entity_id: a, consumer_entity_id: c, edge_type: InferredEdgeType::SharedType, reasoning: "low".into(), confidence: 0.7, status: SuggestionStatus::Pending },
+        ];
+        let accepted = engine.accept_high_confidence(&suggestions);
+        assert_eq!(accepted.len(), 1);
+    }
+
+    #[test]
+    fn accept_high_confidence_converts_to_edges() {
+        let engine = EdgeInferenceEngine::default();
+        let a = Uuid::now_v7();
+        let b = Uuid::now_v7();
+        let suggestions = vec![
+            AiEdgeSuggestion { id: Uuid::now_v7(), exporter_entity_id: a, consumer_entity_id: b, edge_type: InferredEdgeType::DataFlow, reasoning: "test".into(), confidence: 0.99, status: SuggestionStatus::Pending },
+        ];
+        let edges = engine.accept_high_confidence(&suggestions);
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges[0].source, EdgeSource::AiInferred);
+        assert_eq!(edges[0].target_entity_id, a);
+        assert_eq!(edges[0].source_entity_id, b);
+    }
+
+    #[test]
+    fn parse_suggestions_handles_empty_edges() {
+        let out = parse_suggestions(&serde_json::json!({"edges": []}));
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn parse_suggestions_handles_all_edge_types() {
+        let a = Uuid::now_v7();
+        let b = Uuid::now_v7();
+        let c = Uuid::now_v7();
+        let d = Uuid::now_v7();
+        let out = parse_suggestions(
+            &serde_json::json!({"edges":[
+                {"entity_a":a,"entity_b":b,"edge_type":"SharedType","confidence":0.8},
+                {"entity_a":a,"entity_b":c,"edge_type":"DataFlow","confidence":0.7},
+                {"entity_a":a,"entity_b":d,"edge_type":"EventContract","confidence":0.9},
+            ]}),
+        );
+        assert_eq!(out.len(), 3);
+        assert_eq!(out[0].edge_type, InferredEdgeType::SharedType);
+        assert_eq!(out[1].edge_type, InferredEdgeType::DataFlow);
+        assert_eq!(out[2].edge_type, InferredEdgeType::EventContract);
+    }
+
+    #[test]
+    fn parse_suggestions_handles_missing_confidence_default() {
+        let a = Uuid::now_v7();
+        let b = Uuid::now_v7();
+        let out = parse_suggestions(
+            &serde_json::json!({"edges":[{"entity_a":a,"entity_b":b,"edge_type":"APIContract"}]}),
+        );
+        assert_eq!(out.len(), 1);
+        assert!((out[0].confidence - 0.5).abs() < 0.001);
+    }
 }

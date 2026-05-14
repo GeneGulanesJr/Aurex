@@ -158,4 +158,47 @@ mod tests {
         assert_eq!(extract_text(&raw).unwrap(), "{\"edges\":[]}");
         assert_eq!(extract_usage(&raw, "abcd", "efgh").input_tokens, 12);
     }
+
+    #[test]
+    fn extracts_anthropic_json_content() {
+        let raw = serde_json::json!({"content":[{"type":"text","text":"{"found":true}"}]});
+        assert_eq!(extract_text(&raw).unwrap(), "{"found":true}");
+    }
+
+    #[test]
+    fn extracts_ollama_json_content() {
+        let raw = serde_json::json!({"content":[{"type":"text","text":"{"model":"llama"}"}],"done":true});
+        let text = extract_text(&raw).unwrap();
+        assert!(text.contains("llama"));
+    }
+
+    #[test]
+    fn extract_usage_falls_back_to_char_estimate() {
+        let raw = serde_json::json!({"choices":[{"message":{"content":"hello world"}}]});
+        let usage = extract_usage(&raw, "a".repeat(40).as_str(), "b".repeat(20).as_str());
+        assert_eq!(usage.input_tokens, 10);
+        assert_eq!(usage.output_tokens, 5);
+    }
+
+    #[test]
+    fn llm_request_serializes_provider() {
+        let req = LlmRequest {
+            provider: LlmProvider::Anthropic,
+            endpoint: "https://api.anthropic.com/v1/messages".into(),
+            api_key: Some("sk-test".into()),
+            model: "claude-3".into(),
+            prompt: "test".into(),
+            temperature: 0.0,
+            max_tokens: 1024,
+        };
+        assert_eq!(req.provider, LlmProvider::Anthropic);
+        assert_eq!(req.max_tokens, 1024);
+    }
+
+    #[test]
+    fn token_usage_default_is_zero() {
+        let usage = TokenUsage::default();
+        assert_eq!(usage.input_tokens, 0);
+        assert_eq!(usage.output_tokens, 0);
+    }
 }

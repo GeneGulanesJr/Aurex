@@ -214,7 +214,7 @@ impl Cli {
     pub async fn execute_async(self) -> Result<()> {
         match self.command {
             Command::Repo(cmd) => execute_repo(self.format, self.db, cmd),
-            Command::Index(cmd) => execute_index(self.format, self.db, cmd),
+            Command::Index(cmd) => execute_index(self.format, self.db, cmd).await,
             Command::Entity(cmd) => execute_entity(self.format, self.db, cmd),
             Command::Graph(cmd) => execute_graph(self.format, self.db, cmd),
             Command::DiscoverEdges(cmd) => {
@@ -300,13 +300,13 @@ fn execute_repo(format: OutputFormat, db: Option<PathBuf>, cmd: RepoCommand) -> 
     }
 }
 
-fn execute_index(format: OutputFormat, db: Option<PathBuf>, cmd: IndexCommand) -> Result<()> {
+async fn execute_index(format: OutputFormat, db: Option<PathBuf>, cmd: IndexCommand) -> Result<()> {
     let storage = open_storage(db)?;
     if cmd.repo.is_none() {
         let repos = storage.list_repos()?;
         let mut summaries = Vec::new();
         for repo in repos {
-            summaries.push(index_one_repo(&storage, &repo, cmd.incremental)?);
+            summaries.push(index_one_repo(&storage, &repo, cmd.incremental, &cmd).await?);
         }
         return print(
             format,
@@ -318,7 +318,7 @@ fn execute_index(format: OutputFormat, db: Option<PathBuf>, cmd: IndexCommand) -
     let repo = storage
         .get_repo_by_name(repo_name)?
         .ok_or_else(|| anyhow!("repo not found: {repo_name}"))?;
-    let summary = index_one_repo(&storage, &repo, cmd.incremental)?;
+    let summary = index_one_repo(&storage, &repo, cmd.incremental, &cmd).await?;
     print(format, &summary.text, json!(summary))
 }
 
@@ -332,10 +332,14 @@ struct IndexSummary {
     edges: usize,
     entities_deleted: usize,
     exports: usize,
+    ai_edges_suggested: usize,
+    ai_edges_auto_accepted: usize,
+    ai_cost: f64,
+    gate_decision: Option<String>,
     text: String,
 }
 
-fn index_one_repo(storage: &GraphStorage, repo: &Repo, incremental: bool) -> Result<IndexSummary> {
+async fn index_one_repo(storage: &GraphStorage, repo: &Repo, incremental: bool, cmd: &IndexCommand) -> Result<IndexSummary> {
     let root = PathBuf::from(&repo.root_path);
     let commit_hash = get_head_commit(&root).unwrap_or_else(|_| repo.commit_hash.clone());
     let files = collect_source_files(&root, &repo.languages)?;
@@ -343,12 +347,15 @@ fn index_one_repo(storage: &GraphStorage, repo: &Repo, incremental: bool) -> Res
         languages: repo.languages.clone(),
     });
     let existing = storage.get_entities_by_repo(repo.id)?;
+    let existing_exported: HashSet<Uuid> = existing.iter().filter(|e| e.is_exported).map(|e| e.id).collect();
+    let is_new_repo = existing.is_empty();
     let mut seen_ids = HashSet::new();
     let mut parsed_files = 0usize;
     let mut skipped_files = 0usize;
     let mut extracted = 0usize;
     let mut all_entities = Vec::new();
     let mut source_by_file = HashMap::new();
+    let mut exported_added = 0usize;
 
     for file in files {
         let rel = file
@@ -391,16 +398,20 @@ fn index_one_repo(storage: &GraphStorage, repo: &Repo, incremental: bool) -> Res
             storage.insert_entity_version(&version_for(&entity, &commit_hash))?;
             all_entities.push(entity);
             extracted += 1;
+            if entity.is_exported && !existing_exported.contains(&entity.id) {
+                exported_added += 1;
+            }
         }
         storage.upsert_file_hash(repo.id, &rel, &file_hash)?;
     }
 
-    let deleted = existing
+    let deleted_ids: Vec<Uuid> = existing
         .into_iter()
         .filter(|e| !seen_ids.contains(&e.id))
         .map(|e| e.id)
-        .collect::<Vec<_>>();
-    storage.mark_entities_deleted(repo.id, &deleted, &commit_hash)?;
+        .collect();
+    let exported_deleted = deleted_ids.iter().filter(|id| existing_exported.contains(id)).count();
+    storage.mark_entities_deleted(repo.id, &deleted_ids, &commit_hash)?;
     storage.remove_edges_for_repo(repo.id)?;
     let edges = infer_static_edges(repo.id, &root, &all_entities, &source_by_file);
     for edge in &edges {
@@ -413,7 +424,153 @@ fn index_one_repo(storage: &GraphStorage, repo: &Repo, incremental: bool) -> Res
     }
     let edge_count = edges.len() + cross_repo_edges.len();
     let exports = storage.get_public_api_surface(repo.id)?.len();
-    let text = format!("indexed {}: {parsed_files} files parsed, {skipped_files} files skipped, {extracted} entities extracted, {edge_count} edges, {exports} exports, {} deleted", repo.name, deleted.len());
+
+    let mut ai_edges_suggested = 0usize;
+    let mut ai_edges_auto_accepted = 0usize;
+    let mut ai_cost = 0.0f64;
+    let mut gate_decision_str: Option<String> = None;
+
+    if !cmd.no_ai {
+        let ai_config = load_ai_config();
+        let decision = crosshash_ai::AiGate::decide(&crosshash_ai::GateInput {
+            ai_enabled: ai_config.enabled,
+            auto_gate: ai_config.auto_gate,
+            no_ai: false,
+            force_ai: cmd.force_ai,
+            new_repo: is_new_repo,
+            exported_added,
+            exported_signature_changed: 0,
+            exported_deleted,
+            body_only_changed: 0,
+            commits_since_validation: 0,
+            days_since_validation: 0,
+        });
+        gate_decision_str = Some(format!("{:?}", decision.reasons.first().unwrap_or(&crosshash_ai::GateReason::NoApiSurfaceChange)));
+        if decision.should_run_ai && ai_config.enabled {
+            let other_repos = storage.list_repos()?.into_iter().filter(|r| r.id != repo.id).collect::<Vec<_>>();
+            if !other_repos.is_empty() {
+                let client = crosshash_ai::LlmClient::default();
+                let llm_request = crosshash_ai::LlmRequest {
+                    provider: ai_config.provider(),
+                    endpoint: ai_config.endpoint(),
+                    api_key: ai_config.api_key(),
+                    model: ai_config.model.clone(),
+                    prompt: String::new(),
+                    temperature: ai_config.temperature,
+                    max_tokens: ai_config.max_tokens,
+                };
+                let mut languages = HashSet::new();
+                languages.extend(repo.languages.iter().map(|l| format!("{l:?}")));
+                for other in &other_repos {
+                    languages.extend(other.languages.iter().map(|l| format!("{l:?}")));
+                }
+                let mut engine = crosshash_ai::EdgeInferenceEngine {
+                    auto_accept_threshold: ai_config.confidence_auto_accept,
+                    languages: languages.into_iter().collect(),
+                    feedback: Vec::new(),
+                };
+                let feedback_rows = storage.get_feedback_events()?;
+                engine.feedback = feedback_rows
+                    .into_iter()
+                    .filter_map(|row| {
+                        let edge_type = match row.get("edge_type")?.as_str()?.trim() {
+                            "SharedType" => crosshash_ai::InferredEdgeType::SharedType,
+                            "DataFlow" => crosshash_ai::InferredEdgeType::DataFlow,
+                            "EventContract" => crosshash_ai::InferredEdgeType::EventContract,
+                            _ => crosshash_ai::InferredEdgeType::APIContract,
+                        };
+                        let decision = match row.get("decision")?.as_str()? {
+                            "reject" => crosshash_ai::FeedbackDecision::Reject,
+                            _ => crosshash_ai::FeedbackDecision::Accept,
+                        };
+                        let confidence = row.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.5);
+                        let suggestion_id = row
+                            .get("suggestion_id")
+                            .and_then(|v| v.as_str())
+                            .and_then(|s| Uuid::parse_str(s).ok())?;
+                        Some(crosshash_ai::FeedbackEvent {
+                            suggestion_id,
+                            edge_type,
+                            language: String::new(),
+                            confidence,
+                            decision,
+                        })
+                    })
+                    .collect();
+                let current_exports = storage.get_public_api_surface(repo.id)?;
+                let current_surface = crosshash_ai::ApiSurface::from_exported_entities(repo.id, current_exports);
+                for other in &other_repos {
+                    let other_exports = storage.get_public_api_surface(other.id)?;
+                    if other_exports.is_empty() {
+                        continue;
+                    }
+                    let other_surface = crosshash_ai::ApiSurface::from_exported_entities(other.id, other_exports);
+                    let (exporter, consumer, surface_a, surface_b) = if is_new_repo {
+                        (&other.id, &repo.id, &other_surface, &current_surface)
+                    } else {
+                        (&repo.id, &other.id, &current_surface, &other_surface)
+                    };
+                    match engine.infer(&client, &llm_request, surface_a, surface_b).await {
+                        Ok(suggestions) => {
+                            let suggested = suggestions.len();
+                            let auto_accepted = engine.accept_high_confidence(&suggestions);
+                            let auto_count = auto_accepted.len();
+                            for edge in &auto_accepted {
+                                let _ = storage.insert_edge(edge);
+                            }
+                            for suggestion in &suggestions {
+                                let status = if suggestion.confidence >= engine.auto_accept_threshold {
+                                    "accepted"
+                                } else {
+                                    "pending"
+                                };
+                                let _ = storage.insert_ai_edge_suggestion(
+                                    &suggestion.id,
+                                    &suggestion.exporter_entity_id,
+                                    &suggestion.consumer_entity_id,
+                                    &format!("{:?}", suggestion.edge_type),
+                                    &suggestion.reasoning,
+                                    suggestion.confidence,
+                                    status,
+                                );
+                            }
+                            let input_est = surface_a.entities.len() as u64 * 4;
+                            let output_est = suggested as u64 * 20;
+                            let cost = (input_est + output_est) as f64 * 0.00001;
+                            let log_id = Uuid::now_v7();
+                            let reason_str = format!("{:?}", decision.reasons.first().unwrap_or(&crosshash_ai::GateReason::Forced));
+                            let _ = storage.insert_ai_inference_log(
+                                &log_id,
+                                &reason_str,
+                                &decision.scope,
+                                Some(exporter),
+                                Some(consumer),
+                                input_est,
+                                output_est,
+                                cost,
+                                suggested,
+                                auto_count,
+                            );
+                            ai_edges_suggested += suggested;
+                            ai_edges_auto_accepted += auto_count;
+                            ai_cost += cost;
+                        }
+                        Err(e) => {
+                            eprintln!("AI inference failed for {} vs {}: {}", repo.name, other.name, e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut text = format!("indexed {}: {parsed_files} files parsed, {skipped_files} files skipped, {extracted} entities extracted, {edge_count} edges, {exports} exports, {} deleted", repo.name, deleted_ids.len());
+    if ai_edges_suggested > 0 {
+        text.push_str(&format!(", AI edges: {ai_edges_suggested} suggested, {ai_edges_auto_accepted} auto-accepted, ${ai_cost:.4} cost"));
+    }
+    if let Some(ref gate) = gate_decision_str {
+        text.push_str(&format!(", gate={}", if cmd.no_ai { "skipped (--no-ai)" } else { gate }));
+    }
     Ok(IndexSummary {
         status: "ok",
         repo: repo.name.clone(),
@@ -421,8 +578,12 @@ fn index_one_repo(storage: &GraphStorage, repo: &Repo, incremental: bool) -> Res
         files_skipped: skipped_files,
         entities_extracted: extracted,
         edges: edge_count,
-        entities_deleted: deleted.len(),
+        entities_deleted: deleted_ids.len(),
         exports,
+        ai_edges_suggested,
+        ai_edges_auto_accepted,
+        ai_cost,
+        gate_decision: gate_decision_str,
         text,
     })
 }

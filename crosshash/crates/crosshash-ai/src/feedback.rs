@@ -47,3 +47,56 @@ impl FeedbackStats {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_events_empty_returns_perfect_precision() {
+        let stats = FeedbackStats::from_events(&[]);
+        assert_eq!(stats.total, 0);
+        assert!((stats.precision - 1.0).abs() < 0.001);
+        assert!((stats.calibrated_threshold - 0.95).abs() < 0.001);
+    }
+
+    #[test]
+    fn from_events_all_accepted() {
+        let events = vec![
+            FeedbackEvent { suggestion_id: Uuid::now_v7(), edge_type: InferredEdgeType::APIContract, language: "Rust".into(), confidence: 0.9, decision: FeedbackDecision::Accept },
+            FeedbackEvent { suggestion_id: Uuid::now_v7(), edge_type: InferredEdgeType::SharedType, language: "Rust".into(), confidence: 0.85, decision: FeedbackDecision::Accept },
+        ];
+        let stats = FeedbackStats::from_events(&events);
+        assert_eq!(stats.total, 2);
+        assert_eq!(stats.accepted, 2);
+        assert_eq!(stats.rejected, 0);
+        assert!((stats.precision - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn from_events_mixed_calibrates_threshold() {
+        let events = vec![
+            FeedbackEvent { suggestion_id: Uuid::now_v7(), edge_type: InferredEdgeType::APIContract, language: "Rust".into(), confidence: 0.9, decision: FeedbackDecision::Accept },
+            FeedbackEvent { suggestion_id: Uuid::now_v7(), edge_type: InferredEdgeType::DataFlow, language: "Rust".into(), confidence: 0.7, decision: FeedbackDecision::Reject },
+            FeedbackEvent { suggestion_id: Uuid::now_v7(), edge_type: InferredEdgeType::SharedType, language: "Rust".into(), confidence: 0.6, decision: FeedbackDecision::Reject },
+        ];
+        let stats = FeedbackStats::from_events(&events);
+        assert_eq!(stats.total, 3);
+        assert_eq!(stats.accepted, 1);
+        assert_eq!(stats.rejected, 2);
+        assert!((stats.precision - 1.0 / 3.0).abs() < 0.001);
+        assert!((stats.calibrated_threshold - 0.98).abs() < 0.001);
+    }
+
+    #[test]
+    fn from_events_high_precision_keeps_default_threshold() {
+        let events = vec![
+            FeedbackEvent { suggestion_id: Uuid::now_v7(), edge_type: InferredEdgeType::APIContract, language: "Rust".into(), confidence: 0.95, decision: FeedbackDecision::Accept },
+            FeedbackEvent { suggestion_id: Uuid::now_v7(), edge_type: InferredEdgeType::DataFlow, language: "Rust".into(), confidence: 0.9, decision: FeedbackDecision::Accept },
+            FeedbackEvent { suggestion_id: Uuid::now_v7(), edge_type: InferredEdgeType::SharedType, language: "Rust".into(), confidence: 0.8, decision: FeedbackDecision::Reject },
+        ];
+        let stats = FeedbackStats::from_events(&events);
+        assert!((stats.precision - 2.0 / 3.0).abs() < 0.001);
+        assert!((stats.calibrated_threshold - 0.95).abs() < 0.001);
+    }
+}
