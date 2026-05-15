@@ -13,6 +13,7 @@ Fixes #
 - [ ] Smoke CLI tests pass: `node test/smoke-cli.js`
 - [ ] Lint passes: `npm run lint`
 - [ ] No regressions in existing test behavior
+- [ ] `docs/MODULE_MAP.md` updated if modules were added, removed, renamed, or dependency boundaries changed
 - [ ] If a test behavior change was legitimate, it is documented below
 
 ### Legitimate Test Behavior Changes

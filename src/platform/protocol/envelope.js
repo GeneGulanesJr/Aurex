@@ -1,3 +1,8 @@
+// Module boundary:
+// Owns response envelopes, freshness/confidence metadata, and protocol-level
+// Result shaping. Feature business logic should return data for this boundary
+// To wrap rather than formatting LLM-facing responses itself.
+
 /**
  * Response-meta.js — Metadata envelope for every analysis response
  *
