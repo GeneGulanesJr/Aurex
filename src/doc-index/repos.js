@@ -45,6 +45,7 @@ async function readDocBatch(files) {
         const [content, stat] = await Promise.all([fs.promises.readFile(fp, 'utf-8'), fs.promises.stat(fp)]);
         return { filePath: fp, content, stat };
       } catch (e) {
+        console.warn(`[doc-index] Skipping unreadable doc file ${fp}: ${e.message}`);
         return null;
       }
     }),
@@ -159,4 +160,4 @@ async function reindexDocs(db, repoId, mode, ignoreGlob) {
   return indexDocs(db, repo.path, repo.name, ignoreGlob);
 }
 
-module.exports = { indexDocs, reindexDocs, upsertDocRepo, clearRepo };
+module.exports = { indexDocs, reindexDocs, upsertDocRepo, clearRepo, readDocBatch };

@@ -21,11 +21,12 @@ function extractCodeBlocks(content, sectionByteStart) {
       inBlock = false;
       const blockText = blockContent.join('\n');
       const preBytes = lines.slice(0, blockStartLine).reduce((s, l) => s + l.length + 1, 0);
+      const closingFenceBytes = lines.slice(0, i).reduce((s, l) => s + l.length + 1, 0) + line.length;
       blocks.push({
         lang: lang || '',
         content: blockText,
         byte_start: sectionByteStart + preBytes,
-        byte_end: sectionByteStart + preBytes + blockText.length + 7,
+        byte_end: sectionByteStart + closingFenceBytes,
       });
       continue;
     }

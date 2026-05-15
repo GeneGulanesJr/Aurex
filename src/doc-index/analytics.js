@@ -4,7 +4,7 @@ const { RESULT_LIMITS } = require('../../constants');
 
 function searchDocs(db, repoId, query, opts) {
   opts = opts || {};
-  let sql = `SELECT ds.id, ds.title, ds.level, ds.role, ds.tags, ds.content_hash, df.path as file_path,
+  let sql = `SELECT ds.id, ds.title, ds.level, ds.role, ds.tags, ds.content, ds.content_hash, df.path as file_path,
     length(ds.content) as content_length
     FROM doc_sections_fts
     JOIN doc_sections ds ON ds.id = doc_sections_fts.rowid
@@ -23,24 +23,18 @@ function searchDocs(db, repoId, query, opts) {
   try {
     const results = db.prepare(sql).all(...params);
     for (const r of results) {
-      const contentRow = db.prepare('SELECT content FROM doc_sections WHERE id = ?').get(r.id);
-      if (contentRow) {
-        const content = contentRow.content || '';
-        const hasCode = content.includes('```');
-        const codeRatio = (content.match(/```[\s\S]*?```/g) || []).join('').length / Math.max(content.length, 1);
-        r.answerability = Math.min(
-          1,
-          (r.level >= 2 && r.level <= 4 ? 0.3 : 0.1) +
-            (r.role === 'how_to' || r.role === 'tutorial'
-              ? 0.3
-              : r.role === 'api' || r.role === 'reference'
-                ? 0.2
-                : 0) +
-            (content.length > 100 && content.length < 3000 ? 0.2 : 0.1) +
-            (hasCode ? 0.2 : 0) +
-            (codeRatio > 0.2 && codeRatio < 0.7 ? 0.1 : 0),
-        );
-      }
+      const content = r.content || '';
+      const hasCode = content.includes('```');
+      const codeRatio = (content.match(/```[\s\S]*?```/g) || []).join('').length / Math.max(content.length, 1);
+      r.answerability = Math.min(
+        1,
+        (r.level >= 2 && r.level <= 4 ? 0.3 : 0.1) +
+          (r.role === 'how_to' || r.role === 'tutorial' ? 0.3 : r.role === 'api' || r.role === 'reference' ? 0.2 : 0) +
+          (content.length > 100 && content.length < 3000 ? 0.2 : 0.1) +
+          (hasCode ? 0.2 : 0) +
+          (codeRatio > 0.2 && codeRatio < 0.7 ? 0.1 : 0),
+      );
+      delete r.content;
       delete r.content_hash;
       delete r.content_length;
     }
