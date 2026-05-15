@@ -1,5 +1,6 @@
-const { evaluateTrustSync, stripOperations } = require('../src/trust-sync/trust-policy');
-const { collectChangedSymbols } = require('../src/trust-sync/change-detector');
+const { collectChangedSymbols, extractSymbolKey } = require('../src/trust-sync/change-detector');
+const { getTrustSyncRepository } = require('../src/trust-sync/symbol-links');
+const { evaluateTrustSync, stripOperations, symbolMatchesChange } = require('../src/trust-sync/trust-policy');
 
 const { TRUST_DELTA } = require('../constants');
 
@@ -35,6 +36,14 @@ describe('src/trust-sync trust policy', () => {
     expect(result.operations).toHaveLength(2);
     expect(stripOperations(result).operations).toBeUndefined();
   });
+
+  it('matches changed symbols only on symbol boundaries', () => {
+    expect(symbolMatchesChange('pkg::bar', 'bar')).toBe(true);
+    expect(symbolMatchesChange('pkg.Class.bar', 'bar')).toBe(true);
+    expect(symbolMatchesChange('pkg::Class.bar', 'Class.bar')).toBe(true);
+    expect(symbolMatchesChange('pkg::foobar', 'bar')).toBe(false);
+    expect(symbolMatchesChange('pkg::barista', 'bar')).toBe(false);
+  });
 });
 
 describe('src/trust-sync change detector', () => {
@@ -47,5 +56,24 @@ describe('src/trust-sync change detector', () => {
     });
 
     expect([...changed].sort()).toEqual(['addedFunc', 'modifiedFunc', 'removedFunc']);
+  });
+
+  it('does not fall through from falsy symbol_id values to name', () => {
+    expect(extractSymbolKey({ symbol_id: 0, name: 'fallback' })).toBe(0);
+    expect(extractSymbolKey({ symbol_id: '', name: 'fallback' })).toBe('');
+    expect([
+      ...collectChangedSymbols([
+        { symbol_id: 0, name: 'fallback' },
+        { symbol_id: '', name: 'skip' },
+      ]),
+    ]).toEqual(['0']);
+  });
+});
+
+describe('src/trust-sync repository adapter', () => {
+  it('validates required legacy repository methods before returning an adapter', () => {
+    expect(() =>
+      getTrustSyncRepository({ getAnchoredLinks: vi.fn() }, ['getAnchoredLinks', 'updateLinkTrust']),
+    ).toThrow('updateLinkTrust');
   });
 });

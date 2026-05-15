@@ -1,7 +1,21 @@
 const { TRUST_DELTA } = require('../../constants');
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function symbolMatchesChange(symbolId, changedSymbol) {
-  return symbolId === changedSymbol || symbolId.endsWith(`::${changedSymbol}`) || symbolId.includes(changedSymbol);
+  if (symbolId === changedSymbol) {
+    return true;
+  }
+  const symbol = String(symbolId ?? '');
+  const changed = String(changedSymbol ?? '');
+  if (!symbol || !changed) {
+    return false;
+  }
+
+  const boundaryPattern = new RegExp(`(^|[^A-Za-z0-9_$])${escapeRegExp(changed)}($|[^A-Za-z0-9_$])`);
+  return boundaryPattern.test(symbol);
 }
 
 function isChangedLink(link, changedSet) {

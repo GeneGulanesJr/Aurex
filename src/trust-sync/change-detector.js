@@ -1,3 +1,7 @@
+function hasOwn(value, key) {
+  return Object.hasOwn(value, key);
+}
+
 function extractSymbolKey(value) {
   if (typeof value === 'string') {
     return value;
@@ -5,7 +9,13 @@ function extractSymbolKey(value) {
   if (!value || typeof value !== 'object') {
     return null;
   }
-  return value.symbol_id || value.name || null;
+  if (hasOwn(value, 'symbol_id')) {
+    return value.symbol_id;
+  }
+  if (hasOwn(value, 'name')) {
+    return value.name;
+  }
+  return null;
 }
 
 function collectSymbolsFromList(changedSet, values) {
@@ -14,8 +24,8 @@ function collectSymbolsFromList(changedSet, values) {
   }
   for (const value of values) {
     const symbol = extractSymbolKey(value);
-    if (symbol) {
-      changedSet.add(symbol);
+    if (symbol !== null && symbol !== undefined && symbol !== '') {
+      changedSet.add(String(symbol));
     }
   }
 }
@@ -56,6 +66,9 @@ function parseChangedSymbolsJson(args, jsonErrNoExit) {
 
 function createGitTrustSyncAdapter(mem, notify) {
   return async function syncGitOperation(repo) {
+    // The git hook currently does not receive a symbol diff.
+    // The empty object is a best-effort sentinel that sync-code-trust rejects as a no-op.
+    // This adapter intentionally swallows that result until the hook can provide real changed-symbol payloads.
     await mem('sync-code-trust', {
       repo,
       'changed-symbols-json': '{}',

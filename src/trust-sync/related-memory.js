@@ -8,7 +8,7 @@ function symbolCluster(deps, args) {
     return deps.jsonErrNoExit('Missing --symbol');
   }
 
-  const memories = getTrustSyncRepository(deps).getSymbolCluster({ symbolId, repo });
+  const memories = getTrustSyncRepository(deps, ['getSymbolCluster']).getSymbolCluster({ symbolId, repo });
   return { symbol: symbolId, memories };
 }
 
@@ -19,7 +19,7 @@ function related(deps, args) {
     return deps.jsonErrNoExit('Missing --id');
   }
 
-  const repository = getTrustSyncRepository(deps);
+  const repository = getTrustSyncRepository(deps, ['getSymbolsForMemory', 'getRelatedMemories']);
   const symbols = repository.getSymbolsForMemory(id);
   if (symbols.length === 0) {
     return { memory_id: id, related: [] };
