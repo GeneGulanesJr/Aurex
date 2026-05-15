@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022"],
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "strict": false,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@earendil-works/pi-coding-agent": ["types/pi-coding-agent.d.ts"]
+    },
+    "ignoreDeprecations": "6.0"
+  },
+  "include": [
+    "types/**/*.d.ts",
+    "index.ts",
+    "extensions/**/*.ts",
+    "src/**/*.ts",
+    "src/**/*.js",
+    "services/**/*.js",
+    "data-access/**/*.js",
+    "commands/**/*.js",
+    "*.js"
+  ],
+  "exclude": ["node_modules", "test", "bench", "crosshash", ".worktrees", "coverage", "dist"]
+}
