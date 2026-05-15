@@ -1,20 +1,15 @@
-const workflowDA = require('../data-access/workflows');
+const workflowMemory = require('../src/workflow-memory');
+const { createWorkflowRepository } = require('../src/platform/storage/repositories/workflow');
 
-function getWorkflowRepository(deps) {
-  if (deps.workflowRepository) {
-    return deps.workflowRepository;
-  }
+function getWorkflowServiceDeps(deps) {
   return {
-    saveWorkflow: (params) => workflowDA.saveWorkflow(deps, params),
-    recordStep: (params) => workflowDA.recordStep(deps, params),
-    stepOutcome: (params) => workflowDA.stepOutcome(deps, params),
-    getWorkflow: (params) => workflowDA.getWorkflow(deps, params),
+    jsonErrNoExit: deps.jsonErrNoExit,
+    workflowRepository: deps.workflowRepository || createWorkflowRepository(deps),
   };
 }
 
 function saveWorkflow(deps, args) {
-  const workflowRepository = getWorkflowRepository(deps);
-  return workflowRepository.saveWorkflow({
+  return workflowMemory.saveWorkflow(getWorkflowServiceDeps(deps), {
     id: args.id,
     name: args.name,
     project: args.project || null,
@@ -23,27 +18,24 @@ function saveWorkflow(deps, args) {
 }
 
 function recordStep(deps, args) {
-  const workflowRepository = getWorkflowRepository(deps);
-  return workflowRepository.recordStep({
+  return workflowMemory.recordStep(getWorkflowServiceDeps(deps), {
     workflow: args.workflow,
-    step: parseInt(args.step),
+    step: parseInt(args.step, 10),
     command: args.command,
   });
 }
 
 function stepOutcome(deps, args) {
-  const workflowRepository = getWorkflowRepository(deps);
-  return workflowRepository.stepOutcome({
+  return workflowMemory.stepOutcome(getWorkflowServiceDeps(deps), {
     workflow: args.workflow,
-    step: parseInt(args.step),
+    step: parseInt(args.step, 10),
     success: args.success === 'true',
     workaround: args.workaround || null,
   });
 }
 
 function getWorkflow(deps, args) {
-  const workflowRepository = getWorkflowRepository(deps);
-  return workflowRepository.getWorkflow({ id: args.id });
+  return workflowMemory.getWorkflow(getWorkflowServiceDeps(deps), { id: args.id });
 }
 
-module.exports = { saveWorkflow, recordStep, stepOutcome, getWorkflow };
+module.exports = { saveWorkflow, recordStep, stepOutcome, getWorkflow, getWorkflowServiceDeps };
