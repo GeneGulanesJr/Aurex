@@ -1,5 +1,5 @@
 const codeAnalysis = require('../../../code-analysis');
-const { formatAnalysisForLlm } = require('../../code-analysis/formatters/llm');
+const { formatAnalysisForLlm } = require('../../platform/protocol/llm-format');
 
 const USAGE = {
   'import-graph': '--repo X [--file F] [--direction imports|importers|both] [--depth N]',
