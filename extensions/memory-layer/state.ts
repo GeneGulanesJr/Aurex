@@ -1,12 +1,12 @@
-import path from "node:path";
+import path from 'node:path';
 
-const PKG_ROOT = path.resolve(__dirname, "..", "..");
-const MEMORY_SCRIPT = path.join(PKG_ROOT, "memory-store.js");
+const PKG_ROOT = path.resolve(__dirname, '..', '..');
+const MEMORY_SCRIPT = path.join(PKG_ROOT, 'memory-store.js');
 
 export { PKG_ROOT, MEMORY_SCRIPT };
 
 export interface MemResult {
-  [key: string]: unknown;
+  [key: string]: any;
 }
 
 export interface RepoInfo {
@@ -19,21 +19,21 @@ export interface RepoInfo {
 
 const TIMEOUT_DEFAULTS: Record<string, number> = {
   _default: 15000,
-  "dead-code": 60000,
+  'dead-code': 60000,
   cycles: 60000,
-  "signal-chains": 45000,
+  'signal-chains': 45000,
   hotspots: 45000,
   importance: 45000,
   coupling: 30000,
-  "blast-radius": 30000,
+  'blast-radius': 30000,
   churn: 30000,
   extractable: 30000,
-  "import-graph": 30000,
-  "call-hierarchy": 30000,
-  "index-repo": 120000,
-  "reindex-repo": 120000,
-  "index-docs": 120000,
-  "reindex-docs": 120000,
+  'import-graph': 30000,
+  'call-hierarchy': 30000,
+  'index-repo': 120000,
+  'reindex-repo': 120000,
+  'index-docs': 120000,
+  'reindex-docs': 120000,
 };
 
 export function getTimeout(cmd: string): number {
@@ -41,16 +41,44 @@ export function getTimeout(cmd: string): number {
 }
 
 export function trustIcon(score: number): string {
-  if (score < 0.5) {return " ⚠️";}
-  if (score < 0.7) {return " 🔎";}
-  return "";
+  if (score < 0.5) {
+    return ' ⚠️';
+  }
+  if (score < 0.7) {
+    return ' 🔎';
+  }
+  return '';
 }
 
 const CODE_EXTENSIONS = new Set([
-  ".js", ".ts", ".tsx", ".jsx", ".mjs", ".cjs",
-  ".py", ".pyi", ".pyx",
-  ".go", ".rs", ".rb", ".java", ".kt", ".swift", ".c", ".h", ".cpp", ".hpp",
-  ".cs", ".scala", ".clj", ".ex", ".exs", ".erl", ".hs", ".ml", ".zig",
+  '.js',
+  '.ts',
+  '.tsx',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+  '.py',
+  '.pyi',
+  '.pyx',
+  '.go',
+  '.rs',
+  '.rb',
+  '.java',
+  '.kt',
+  '.swift',
+  '.c',
+  '.h',
+  '.cpp',
+  '.hpp',
+  '.cs',
+  '.scala',
+  '.clj',
+  '.ex',
+  '.exs',
+  '.erl',
+  '.hs',
+  '.ml',
+  '.zig',
 ]);
 
 export function isCodeFile(filePath: string): boolean {
