@@ -99,23 +99,24 @@ describe('platform storage repositories', () => {
     );
   });
 
-  it('routes workflow commands through the workflow repository when supplied', () => {
+  it('routes workflow commands through the workflow-memory service and workflow repository when supplied', () => {
     const workflowRepository = {
-      saveWorkflow: vi.fn(() => ({ ok: true, stepsSaved: 0 })),
-      recordStep: vi.fn(),
-      stepOutcome: vi.fn(),
-      getWorkflow: vi.fn(),
+      insertWorkflow: vi.fn(),
+      upsertStep: vi.fn(),
     };
 
-    const result = workflowCmd.saveWorkflow({ workflowRepository }, { id: 'wf', name: 'Workflow', project: 'p' });
+    const result = workflowCmd.saveWorkflow(
+      { workflowRepository, jsonErrNoExit: vi.fn((message) => ({ error: message })) },
+      { id: 'wf', name: 'Workflow', project: 'p' },
+    );
 
     expect(result.ok).toBe(true);
-    expect(workflowRepository.saveWorkflow).toHaveBeenCalledWith({
+    expect(workflowRepository.insertWorkflow).toHaveBeenCalledWith({
       id: 'wf',
       name: 'Workflow',
       project: 'p',
-      stepsRaw: null,
     });
+    expect(workflowRepository.upsertStep).not.toHaveBeenCalled();
   });
 
   it('routes observation commands through the memory repository when supplied', () => {
