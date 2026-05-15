@@ -12,19 +12,17 @@ const USAGE = {
 };
 
 function register(commands, deps) {
-  const { sqlJson, sqlRun, jsonErrNoExit, repositories } = deps;
+  const { jsonErrNoExit, repositories } = deps;
   const trustSyncRepository = repositories && repositories.trustSync;
 
-  commands['link-symbol'] = (args) => symCmd.linkSymbol({ sqlJson, sqlRun, jsonErrNoExit, trustSyncRepository }, args);
-  commands['auto-link'] = (args) => symCmd.autoLink({ sqlJson, sqlRun, jsonErrNoExit, trustSyncRepository }, args);
-  commands['adjust-trust'] = (args) =>
-    symCmd.adjustTrust({ sqlJson, sqlRun, jsonErrNoExit, trustSyncRepository }, args);
-  commands['record-recall'] = (args) =>
-    symCmd.recordRecall({ sqlJson, sqlRun, jsonErrNoExit, trustSyncRepository }, args);
-  commands['stale-links'] = (args) => symCmd.staleLinks({ sqlJson, jsonErrNoExit, trustSyncRepository }, args);
-  commands['sync-code-trust'] = (args) => symCmd.syncCodeTrust({ sqlJson, jsonErrNoExit, trustSyncRepository }, args);
-  commands['symbol-cluster'] = (args) => symCmd.symbolCluster({ sqlJson, jsonErrNoExit }, args);
-  commands.related = (args) => symCmd.related({ sqlJson, jsonErrNoExit }, args);
+  commands['link-symbol'] = (args) => symCmd.linkSymbol({ jsonErrNoExit, trustSyncRepository }, args);
+  commands['auto-link'] = (args) => symCmd.autoLink({ jsonErrNoExit, trustSyncRepository }, args);
+  commands['adjust-trust'] = (args) => symCmd.adjustTrust({ jsonErrNoExit, trustSyncRepository }, args);
+  commands['record-recall'] = (args) => symCmd.recordRecall({ jsonErrNoExit, trustSyncRepository }, args);
+  commands['stale-links'] = (args) => symCmd.staleLinks({ jsonErrNoExit, trustSyncRepository }, args);
+  commands['sync-code-trust'] = (args) => symCmd.syncCodeTrust({ jsonErrNoExit, trustSyncRepository }, args);
+  commands['symbol-cluster'] = (args) => symCmd.symbolCluster({ jsonErrNoExit, trustSyncRepository }, args);
+  commands.related = (args) => symCmd.related({ jsonErrNoExit, trustSyncRepository }, args);
 }
 
 module.exports = { register, USAGE };

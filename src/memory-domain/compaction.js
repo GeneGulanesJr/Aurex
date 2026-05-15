@@ -1,4 +1,6 @@
 const { TRUST_DELTA, DEDUP, TIME_WINDOWS, RESULT_LIMITS } = require('../../constants');
+const { createTrustSyncRepository } = require('../platform/storage/repositories/trust-sync');
+const trustSync = require('../trust-sync');
 
 function runCompact(deps) {
   const { sqlRun, sqlRaw } = deps;
@@ -296,26 +298,8 @@ function dream(deps) {
 }
 
 function trustRecovery(deps, args) {
-  const sessionId = parseInt(args.session);
-  if (!sessionId) {
-    return deps.jsonErrNoExit('Missing --session');
-  }
-
-  const recalled = deps.sqlJson('SELECT memory_id FROM session_recalls WHERE session_id = ?', [sessionId]);
-  let recovered = 0;
-  for (const row of recalled) {
-    deps.sqlRun(
-      `UPDATE symbol_links SET trust_score = MIN(${TRUST_DELTA.TRUST_CEILING}, trust_score + ${TRUST_DELTA.PASSIVE_SURVIVAL}) WHERE memory_id = ?`,
-      [String(row.memory_id)],
-    );
-    deps.sqlRun('INSERT INTO trust_adjustments (memory_id, reason, delta) VALUES (?, ?, ?)', [
-      String(row.memory_id),
-      'passive_survival',
-      TRUST_DELTA.PASSIVE_SURVIVAL,
-    ]);
-    recovered++;
-  }
-  return { ok: true, memoriesRecovered: recovered };
+  const trustSyncRepository = deps.trustSyncRepository || createTrustSyncRepository(deps);
+  return trustSync.trustRecovery({ jsonErrNoExit: deps.jsonErrNoExit, trustSyncRepository }, args);
 }
 
 module.exports = { runCompact, compact, dream, trustRecovery };
