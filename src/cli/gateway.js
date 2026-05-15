@@ -1,3 +1,8 @@
+// Module boundary:
+// Owns CLI command-map composition and feature router registration. Routers map
+// Command arguments to feature services; business logic belongs in feature
+// Modules, and Pi extension state must stay outside this gateway.
+
 const memoryRouter = require('./commands/memory');
 const workflowRouter = require('./commands/workflow');
 const codeIndexRouter = require('./commands/code-index');
@@ -32,4 +37,9 @@ function getAllUsage() {
   };
 }
 
-module.exports = { buildCommandMap, getAllUsage, ANALYSIS_TOOLS: codeAnalysisRouter.ANALYSIS_TOOLS, _wrapAnalysis: codeAnalysisRouter._wrapAnalysis };
+module.exports = {
+  buildCommandMap,
+  getAllUsage,
+  ANALYSIS_TOOLS: codeAnalysisRouter.ANALYSIS_TOOLS,
+  _wrapAnalysis: codeAnalysisRouter._wrapAnalysis,
+};

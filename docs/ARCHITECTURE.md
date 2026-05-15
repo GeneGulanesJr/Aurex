@@ -1,0 +1,64 @@
+# LaPis Architecture
+
+LaPis is a modular monolith: it ships as one Node.js package and Pi extension, but each feature area has a defined owner, dependency boundary, and test surface.
+
+For the detailed extraction assessment and rationale, see [`ARCHITECTURE_MODULARIZATION.md`](ARCHITECTURE_MODULARIZATION.md). For a directory-by-directory ownership table, see [`MODULE_MAP.md`](MODULE_MAP.md).
+
+## Runtime layers
+
+```text
+Pi Agent
+  -> extensions/memory-layer/        # Pi hooks, tools, host adapters, formatting adapters
+  -> memory-store.js / cli.js        # CLI entry points and command dispatch setup
+  -> src/cli/                        # command gateway and feature routers
+  -> src/{feature}/                  # independently testable feature services
+  -> src/platform/ + data-access/    # storage, repositories, protocol formatting
+```
+
+## Layer responsibilities
+
+### Pi extension adapters
+
+`extensions/memory-layer/` registers Pi hooks and tools, performs project detection and native dependency health checks, and adapts backend results for LLM/tool responses. It should degrade gracefully when a feature adapter fails and should not contain raw SQL, parser internals, or feature business logic.
+
+### CLI command gateway
+
+`src/cli/gateway.js` composes feature routers from `src/cli/commands/`. Routers map CLI arguments to feature services and preserve command behavior for `memory-store.js`; they should not become a second implementation of feature logic.
+
+### Feature services
+
+Feature services live under `src/` and own one feature family each:
+
+- `src/memory-domain/` — declarative memory: observations, search, context, sessions, recall, dedupe, compaction, and workspaces.
+- `src/workflow-memory/` — procedural workflow memory and step outcomes.
+- `src/code-index/` — repository scanning, parsing, symbol extraction, edge extraction, incremental indexing, and source retrieval.
+- `src/code-analysis/` — graph, impact, quality, git-aware, and risk analysis over the code-index read model.
+- `src/doc-index/` — Markdown documentation indexing and documentation intelligence.
+- `src/trust-sync/` — explicit integration between memory observations and code symbols.
+
+### Platform helpers
+
+`src/platform/` owns shared platform concerns such as storage composition and protocol/output formatting. Feature modules should receive repositories or typed helpers rather than importing unrelated feature internals.
+
+## Dependency rules
+
+1. `extensions/*` may depend on backend clients and formatting adapters, but not raw SQL or parser internals.
+2. `memory-domain` may depend on storage, config, and ranking constants, but not code/doc parsers.
+3. `workflow-memory` may depend on storage and project identity only.
+4. `code-index` may depend on parser, filesystem, hashing, and storage helpers, but not memory observation ranking.
+5. `code-analysis` may depend on code-index read repositories and git metrics, but not Pi extension state.
+6. `doc-index` may depend on Markdown/doc storage; documentation coverage may depend only on a narrow code-symbol lookup.
+7. `trust-sync` is the only feature module that should coordinate memory observations with code symbol tables.
+8. `platform/protocol` owns `_meta`, compact/auto output, and LLM-facing transformations.
+9. Crosshash remains behind a command/API boundary until it fully replaces the JavaScript code-intelligence path.
+
+## Testability expectations
+
+Each feature module should have:
+
+- A public service interface with typed or well-documented inputs and outputs.
+- Repository interfaces or fixtures for tests.
+- Unit tests that do not start the Pi extension.
+- Integration tests against a temporary SQLite database for storage behavior.
+- CLI/router tests that verify argument mapping and delegation only.
+- Failure-mode tests proving a module failure returns a scoped error and does not break unrelated features.

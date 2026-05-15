@@ -1,3 +1,8 @@
+// Module boundary:
+// Owns code intelligence queries over the code-index read model: graph, impact,
+// Quality, git-aware, and risk analysis. Depends on code-index repositories and
+// Git metrics; must not depend on Pi extension state or memory CRUD internals.
+
 const graph = require('./graph');
 const impact = require('./impact');
 const quality = require('./quality');

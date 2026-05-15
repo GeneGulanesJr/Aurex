@@ -1,3 +1,8 @@
+// Module boundary:
+// Owns documentation indexing and intelligence: Markdown sections, links,
+// Glossary terms, examples, and doc analytics. Coverage may use a narrow code
+// Symbol lookup, but this module must not depend on memory/code-analysis internals.
+
 const { withDb } = require('../../utils');
 const repos = require('./repos');
 const markdownParser = require('./markdown-parser');
