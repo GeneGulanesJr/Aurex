@@ -75,13 +75,15 @@ describe('doc-index focused modules', () => {
     expect(result.results[0].content).toBeUndefined();
   });
 
-  it('warns when a doc file cannot be read during a batch', async () => {
+  it('warns and returns structured diagnostics when a doc file cannot be read during a batch', async () => {
     const originalWarn = console.warn;
     const warnings = [];
     console.warn = (message) => warnings.push(message);
     try {
       const result = await repos.readDocBatch(['/tmp/lapis-missing-doc-file.md']);
-      expect(result).toEqual([null]);
+      expect(result).toHaveLength(1);
+      expect(result[0].filePath).toBe('/tmp/lapis-missing-doc-file.md');
+      expect(result[0].error).toContain('ENOENT');
       expect(warnings[0]).toContain('Skipping unreadable doc file /tmp/lapis-missing-doc-file.md');
     } finally {
       console.warn = originalWarn;

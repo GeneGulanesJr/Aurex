@@ -45,8 +45,9 @@ async function readDocBatch(files) {
         const [content, stat] = await Promise.all([fs.promises.readFile(fp, 'utf-8'), fs.promises.stat(fp)]);
         return { filePath: fp, content, stat };
       } catch (e) {
+        const warning = { filePath: fp, error: e.message };
         console.warn(`[doc-index] Skipping unreadable doc file ${fp}: ${e.message}`);
-        return null;
+        return warning;
       }
     }),
   );
@@ -63,6 +64,7 @@ async function indexDocs(db, rootPath, repoName, ignoreGlob) {
     totalLinks = 0,
     totalTerms = 0,
     totalCodeBlocks = 0;
+  const warnings = [];
 
   const insertFile = db.prepare(
     'INSERT INTO doc_files (repo_id, path, content, content_hash, mtime) VALUES (?, ?, ?, ?, ?) RETURNING id',
@@ -85,7 +87,8 @@ async function indexDocs(db, rootPath, repoName, ignoreGlob) {
     const reads = await readDocBatch(files.slice(i, i + BATCH_SIZE));
 
     for (const entry of reads) {
-      if (!entry) {
+      if (entry.error) {
+        warnings.push({ path: path.relative(rootPath, entry.filePath), error: entry.error });
         continue;
       }
       const { filePath, content, stat } = entry;
@@ -148,6 +151,8 @@ async function indexDocs(db, rootPath, repoName, ignoreGlob) {
     links: totalLinks,
     terms: totalTerms,
     code_blocks: totalCodeBlocks,
+    skipped_files: warnings.length,
+    warnings,
     link_resolution: linkResults,
   };
 }
