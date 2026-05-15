@@ -1,10 +1,5 @@
 const codeAnalysis = require('../../../code-analysis');
-const gitAnalysis = require('../../../git-analysis');
-const astPatterns = require('../../../ast-patterns');
-const responseMeta = require('../../../response-meta');
-const wireFormat = require('../../../wire-format');
-
-const _STRIP_FIELDS = ['symbol_id', 'id'];
+const { formatAnalysisForLlm } = require('../../code-analysis/formatters/llm');
 
 const USAGE = {
   'import-graph': '--repo X [--file F] [--direction imports|importers|both] [--depth N]',
@@ -29,9 +24,26 @@ const USAGE = {
 };
 
 const ANALYSIS_TOOLS = new Set([
-  'import-graph', 'call-hierarchy', 'blast-radius', 'dead-code', 'complexity', 'outline',
-  'churn', 'hotspots', 'cycles', 'importance', 'coupling', 'extractable', 'hierarchy',
-  'signal-chains', 'layer-violations', 'winnow', 'ast-patterns', 'provenance', 'untested', 'pr-risk',
+  'import-graph',
+  'call-hierarchy',
+  'blast-radius',
+  'dead-code',
+  'complexity',
+  'outline',
+  'churn',
+  'hotspots',
+  'cycles',
+  'importance',
+  'coupling',
+  'extractable',
+  'hierarchy',
+  'signal-chains',
+  'layer-violations',
+  'winnow',
+  'ast-patterns',
+  'provenance',
+  'untested',
+  'pr-risk',
 ]);
 
 function _dispatch(cmd, repoName, fn, deps) {
@@ -46,64 +58,242 @@ function _dispatch(cmd, repoName, fn, deps) {
 }
 
 function _wrapAnalysis(toolName, data, repoRow, startTime, format, deps) {
-  const toolMap = {
-    'import-graph': 'getImportGraph', 'call-hierarchy': 'getCallHierarchy', 'blast-radius': 'getBlastRadius',
-    'dead-code': 'getDeadCode', complexity: 'getComplexity', outline: 'getFileOutline',
-    churn: 'getChurn', hotspots: 'getHotspots', cycles: 'getDependencyCycles',
-    importance: 'getSymbolImportance', coupling: 'getCouplingMetrics', extractable: 'getExtractionCandidates',
-    hierarchy: 'getClassHierarchy', 'signal-chains': 'getSignalChains', 'layer-violations': 'getLayerViolations',
-    winnow: 'winnow', 'ast-patterns': 'astPatterns', provenance: 'getProvenance',
-    untested: 'getUntestedSymbols', 'pr-risk': 'getPrRiskProfile',
-  };
-  const internalName = toolMap[toolName] || toolName;
-  const wrapped = responseMeta.buildEnvelope({
-    toolName: internalName, data, db: deps.getDb(), repoId: repoRow.id,
-    repoPath: repoRow.path, storedHeadCommit: repoRow.head_commit || null, startTime,
-  });
-  if (format === 'compact') {
-    wrapped.data = wireFormat.compactResponse(wrapped.data, { stripFields: _STRIP_FIELDS });
-  } else if (format === 'auto') {
-    const autoFmt = wireFormat.autoFormat(wrapped.data);
-    if (autoFmt === 'compact') {
-      wrapped.data = wireFormat.compactResponse(wrapped.data, { stripFields: _STRIP_FIELDS });
-    }
-  }
-  return wrapped;
+  return formatAnalysisForLlm(toolName, data, repoRow, startTime, format, deps);
 }
 
 function register(commands, deps) {
   const { sqlJson, jsonErrNoExit, getDb } = deps;
   const dispatchDeps = { sqlJson, jsonErrNoExit, getDb };
 
-  commands['import-graph'] = (args) => _dispatch('import-graph', args.repo, (r) => codeAnalysis.getImportGraph(getDb(), r.id, { file: args.file || null, direction: args.direction || 'both', depth: parseInt(args.depth || '1') }), dispatchDeps);
+  commands['import-graph'] = (args) =>
+    _dispatch(
+      'import-graph',
+      args.repo,
+      (r) =>
+        codeAnalysis.getImportGraph(getDb(), r.id, {
+          file: args.file || null,
+          direction: args.direction || 'both',
+          depth: parseInt(args.depth || '1'),
+        }),
+      dispatchDeps,
+    );
   commands['call-hierarchy'] = (args) => {
-    if (!args.symbol) return jsonErrNoExit('Missing --symbol. Usage: call-hierarchy --symbol S --repo X');
-    return _dispatch('call-hierarchy', args.repo, (r) => codeAnalysis.getCallHierarchy(getDb(), r.id, { symbol: args.symbol, direction: args.direction || 'callers', depth: parseInt(args.depth || '3') }), dispatchDeps);
+    if (!args.symbol) {
+      return jsonErrNoExit('Missing --symbol. Usage: call-hierarchy --symbol S --repo X');
+    }
+    return _dispatch(
+      'call-hierarchy',
+      args.repo,
+      (r) =>
+        codeAnalysis.getCallHierarchy(getDb(), r.id, {
+          symbol: args.symbol,
+          direction: args.direction || 'callers',
+          depth: parseInt(args.depth || '3'),
+        }),
+      dispatchDeps,
+    );
   };
   commands['blast-radius'] = (args) => {
-    if (!args.symbol) return jsonErrNoExit('Missing --symbol. Usage: blast-radius --symbol S --repo X');
-    return _dispatch('blast-radius', args.repo, (r) => codeAnalysis.getBlastRadius(getDb(), r.id, { symbol: args.symbol, depth: parseInt(args.depth || '3') }), dispatchDeps);
+    if (!args.symbol) {
+      return jsonErrNoExit('Missing --symbol. Usage: blast-radius --symbol S --repo X');
+    }
+    return _dispatch(
+      'blast-radius',
+      args.repo,
+      (r) => codeAnalysis.getBlastRadius(getDb(), r.id, { symbol: args.symbol, depth: parseInt(args.depth || '3') }),
+      dispatchDeps,
+    );
   };
-  commands['dead-code'] = (args) => _dispatch('dead-code', args.repo, (r) => codeAnalysis.getDeadCode(getDb(), r.id, { minConfidence: parseFloat(args['min-confidence'] || '0.5'), includeTests: args['include-tests'] === 'true' }), dispatchDeps);
-  commands.complexity = (args) => _dispatch('complexity', args.repo, (r) => {
-    const symbolId = args.symbol ? (sqlJson('SELECT id FROM code_symbols WHERE repo_id = ? AND name = ?', [r.id, args.symbol])[0]?.id ?? null) : null;
-    return codeAnalysis.getComplexity(getDb(), r.id, symbolId);
-  }, dispatchDeps);
-  commands.outline = (args) => { if (!args.file) return jsonErrNoExit('Missing --file. Usage: outline --file F --repo X'); return _dispatch('outline', args.repo, (r) => codeAnalysis.getFileOutline(getDb(), r.id, args.file), dispatchDeps); };
-  commands.churn = (args) => _dispatch('churn', args.repo, (r) => gitAnalysis.getChurn(getDb(), r.id, args.file || '__all__', parseInt(args.days || '90'), args.refresh === 'true'), dispatchDeps);
-  commands.hotspots = (args) => _dispatch('hotspots', args.repo, (r) => codeAnalysis.getHotspots(getDb(), r.id, { top: args.top ? parseInt(args.top) : 20, days: args.days ? parseInt(args.days) : 90 }), dispatchDeps);
-  commands.cycles = (args) => _dispatch('cycles', args.repo, (r) => codeAnalysis.getDependencyCycles(getDb(), r.id), dispatchDeps);
-  commands.importance = (args) => _dispatch('importance', args.repo, (r) => codeAnalysis.getSymbolImportance(getDb(), r.id, { top: args.top ? parseInt(args.top) : 20, scope: args.scope || null }), dispatchDeps);
-  commands.coupling = (args) => _dispatch('coupling', args.repo, (r) => codeAnalysis.getCouplingMetrics(getDb(), r.id, { file: args.file || null, minCa: args['min-ca'] ? parseInt(args['min-ca']) : 0, sortBy: args['sort-by'] || 'instability' }), dispatchDeps);
-  commands.extractable = (args) => _dispatch('extractable', args.repo, (r) => codeAnalysis.getExtractionCandidates(getDb(), r.id, { minComplexity: args['min-complexity'] ? parseInt(args['min-complexity']) : 5, minCallers: args['min-callers'] ? parseInt(args['min-callers']) : 2, top: args.top ? parseInt(args.top) : 20 }), dispatchDeps);
-  commands.hierarchy = (args) => _dispatch('hierarchy', args.repo, (r) => codeAnalysis.getClassHierarchy(getDb(), r.id, { class: args.class, symbol: args.symbol, direction: args.direction || 'both' }), dispatchDeps);
-  commands['signal-chains'] = (args) => _dispatch('signal-chains', args.repo, (r) => codeAnalysis.getSignalChains(getDb(), r.id, { kind: args.kind || null, symbol: args.symbol || null, maxDepth: args['max-depth'] ? parseInt(args['max-depth']) : 5 }), dispatchDeps);
-  commands['layer-violations'] = (args) => { let rules = null; if (args.rules) { try { rules = JSON.parse(args.rules); } catch (e) { return jsonErrNoExit(`Invalid rules JSON: ${e.message}`); } } return _dispatch('layer-violations', args.repo, (r) => codeAnalysis.getLayerViolations(getDb(), r.id, { rules }), dispatchDeps); };
-  commands.winnow = (args) => _dispatch('winnow', args.repo, (repoRow) => codeAnalysis.winnow(getDb(), repoRow.id, { kind: args.kind || null, minComplexity: args['min-complexity'] ? parseInt(args['min-complexity']) : null, minChurn: args['min-churn'] ? parseInt(args['min-churn']) : null, minPageRank: args['min-pagerank'] ? parseFloat(args['min-pagerank']) : null, minCallers: args['min-callers'] ? parseInt(args['min-callers']) : null, fileGlob: args['file-glob'] || null, nameRegex: args['name-regex'] || null, sortBy: args['sort-by'] || 'pagerank', top: args.top ? parseInt(args.top) : 20 }), dispatchDeps);
-  commands['ast-patterns'] = (args) => _dispatch('ast-patterns', args.repo, (repoRow) => astPatterns.scanAstPatterns(getDb(), repoRow.id, { category: args.category || 'all', patterns: args.pattern ? args.pattern.split(',').map((s) => s.trim()) : [], limit: args.limit ? parseInt(args.limit) : 200 }), dispatchDeps);
-  commands.provenance = (args) => _dispatch('provenance', args.repo, (repoRow) => gitAnalysis.getProvenance(getDb(), repoRow.id, args.symbol), dispatchDeps);
-  commands.untested = (args) => _dispatch('untested', args.repo, (repoRow) => codeAnalysis.getUntestedSymbols(getDb(), repoRow.id, { minConfidence: args['min-confidence'] ? parseFloat(args['min-confidence']) : 0.5, includePrivate: args['include-private'] === 'true' }), dispatchDeps);
-  commands['pr-risk'] = (args) => _dispatch('pr-risk', args.repo, (repoRow) => codeAnalysis.getPrRiskProfile(getDb(), repoRow.id, { branch: args.branch || 'HEAD', base: args.base || 'main' }), dispatchDeps);
+  commands['dead-code'] = (args) =>
+    _dispatch(
+      'dead-code',
+      args.repo,
+      (r) =>
+        codeAnalysis.getDeadCode(getDb(), r.id, {
+          minConfidence: parseFloat(args['min-confidence'] || '0.5'),
+          includeTests: args['include-tests'] === 'true',
+        }),
+      dispatchDeps,
+    );
+  commands.complexity = (args) =>
+    _dispatch(
+      'complexity',
+      args.repo,
+      (r) => {
+        const symbolId = args.symbol
+          ? (sqlJson('SELECT id FROM code_symbols WHERE repo_id = ? AND name = ?', [r.id, args.symbol])[0]?.id ?? null)
+          : null;
+        return codeAnalysis.getComplexity(getDb(), r.id, symbolId);
+      },
+      dispatchDeps,
+    );
+  commands.outline = (args) => {
+    if (!args.file) {
+      return jsonErrNoExit('Missing --file. Usage: outline --file F --repo X');
+    }
+    return _dispatch('outline', args.repo, (r) => codeAnalysis.getFileOutline(getDb(), r.id, args.file), dispatchDeps);
+  };
+  commands.churn = (args) =>
+    _dispatch(
+      'churn',
+      args.repo,
+      (r) =>
+        codeAnalysis.getChurn(
+          getDb(),
+          r.id,
+          args.file || '__all__',
+          parseInt(args.days || '90'),
+          args.refresh === 'true',
+        ),
+      dispatchDeps,
+    );
+  commands.hotspots = (args) =>
+    _dispatch(
+      'hotspots',
+      args.repo,
+      (r) =>
+        codeAnalysis.getHotspots(getDb(), r.id, {
+          top: args.top ? parseInt(args.top) : 20,
+          days: args.days ? parseInt(args.days) : 90,
+        }),
+      dispatchDeps,
+    );
+  commands.cycles = (args) =>
+    _dispatch('cycles', args.repo, (r) => codeAnalysis.getDependencyCycles(getDb(), r.id), dispatchDeps);
+  commands.importance = (args) =>
+    _dispatch(
+      'importance',
+      args.repo,
+      (r) =>
+        codeAnalysis.getSymbolImportance(getDb(), r.id, {
+          top: args.top ? parseInt(args.top) : 20,
+          scope: args.scope || null,
+        }),
+      dispatchDeps,
+    );
+  commands.coupling = (args) =>
+    _dispatch(
+      'coupling',
+      args.repo,
+      (r) =>
+        codeAnalysis.getCouplingMetrics(getDb(), r.id, {
+          file: args.file || null,
+          minCa: args['min-ca'] ? parseInt(args['min-ca']) : 0,
+          sortBy: args['sort-by'] || 'instability',
+        }),
+      dispatchDeps,
+    );
+  commands.extractable = (args) =>
+    _dispatch(
+      'extractable',
+      args.repo,
+      (r) =>
+        codeAnalysis.getExtractionCandidates(getDb(), r.id, {
+          minComplexity: args['min-complexity'] ? parseInt(args['min-complexity']) : 5,
+          minCallers: args['min-callers'] ? parseInt(args['min-callers']) : 2,
+          top: args.top ? parseInt(args.top) : 20,
+        }),
+      dispatchDeps,
+    );
+  commands.hierarchy = (args) =>
+    _dispatch(
+      'hierarchy',
+      args.repo,
+      (r) =>
+        codeAnalysis.getClassHierarchy(getDb(), r.id, {
+          class: args.class,
+          symbol: args.symbol,
+          direction: args.direction || 'both',
+        }),
+      dispatchDeps,
+    );
+  commands['signal-chains'] = (args) =>
+    _dispatch(
+      'signal-chains',
+      args.repo,
+      (r) =>
+        codeAnalysis.getSignalChains(getDb(), r.id, {
+          kind: args.kind || null,
+          symbol: args.symbol || null,
+          maxDepth: args['max-depth'] ? parseInt(args['max-depth']) : 5,
+        }),
+      dispatchDeps,
+    );
+  commands['layer-violations'] = (args) => {
+    let rules = null;
+    if (args.rules) {
+      try {
+        rules = JSON.parse(args.rules);
+      } catch (e) {
+        return jsonErrNoExit(`Invalid rules JSON: ${e.message}`);
+      }
+    }
+    return _dispatch(
+      'layer-violations',
+      args.repo,
+      (r) => codeAnalysis.getLayerViolations(getDb(), r.id, { rules }),
+      dispatchDeps,
+    );
+  };
+  commands.winnow = (args) =>
+    _dispatch(
+      'winnow',
+      args.repo,
+      (repoRow) =>
+        codeAnalysis.winnow(getDb(), repoRow.id, {
+          kind: args.kind || null,
+          minComplexity: args['min-complexity'] ? parseInt(args['min-complexity']) : null,
+          minChurn: args['min-churn'] ? parseInt(args['min-churn']) : null,
+          minPageRank: args['min-pagerank'] ? parseFloat(args['min-pagerank']) : null,
+          minCallers: args['min-callers'] ? parseInt(args['min-callers']) : null,
+          fileGlob: args['file-glob'] || null,
+          nameRegex: args['name-regex'] || null,
+          sortBy: args['sort-by'] || 'pagerank',
+          top: args.top ? parseInt(args.top) : 20,
+        }),
+      dispatchDeps,
+    );
+  commands['ast-patterns'] = (args) =>
+    _dispatch(
+      'ast-patterns',
+      args.repo,
+      (repoRow) =>
+        codeAnalysis.scanAstPatterns(getDb(), repoRow.id, {
+          category: args.category || 'all',
+          patterns: args.pattern ? args.pattern.split(',').map((s) => s.trim()) : [],
+          limit: args.limit ? parseInt(args.limit) : 200,
+        }),
+      dispatchDeps,
+    );
+  commands.provenance = (args) =>
+    _dispatch(
+      'provenance',
+      args.repo,
+      (repoRow) => codeAnalysis.getProvenance(getDb(), repoRow.id, args.symbol),
+      dispatchDeps,
+    );
+  commands.untested = (args) =>
+    _dispatch(
+      'untested',
+      args.repo,
+      (repoRow) =>
+        codeAnalysis.getUntestedSymbols(getDb(), repoRow.id, {
+          minConfidence: args['min-confidence'] ? parseFloat(args['min-confidence']) : 0.5,
+          includePrivate: args['include-private'] === 'true',
+        }),
+      dispatchDeps,
+    );
+  commands['pr-risk'] = (args) =>
+    _dispatch(
+      'pr-risk',
+      args.repo,
+      (repoRow) =>
+        codeAnalysis.getPrRiskProfile(getDb(), repoRow.id, {
+          branch: args.branch || 'HEAD',
+          base: args.base || 'main',
+        }),
+      dispatchDeps,
+    );
 }
 
 module.exports = { register, USAGE, ANALYSIS_TOOLS, _wrapAnalysis };
