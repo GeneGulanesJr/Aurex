@@ -12,14 +12,17 @@ const USAGE = {
 };
 
 function register(commands, deps) {
-  const { sqlJson, sqlRun, jsonErrNoExit } = deps;
+  const { sqlJson, sqlRun, jsonErrNoExit, repositories } = deps;
+  const trustSyncRepository = repositories && repositories.trustSync;
 
-  commands['link-symbol'] = (args) => symCmd.linkSymbol({ sqlJson, sqlRun, jsonErrNoExit }, args);
-  commands['auto-link'] = (args) => symCmd.autoLink({ sqlJson, sqlRun, jsonErrNoExit }, args);
-  commands['adjust-trust'] = (args) => symCmd.adjustTrust({ sqlJson, sqlRun, jsonErrNoExit }, args);
-  commands['record-recall'] = (args) => symCmd.recordRecall({ sqlJson, sqlRun, jsonErrNoExit }, args);
-  commands['stale-links'] = (args) => symCmd.staleLinks({ sqlJson, jsonErrNoExit }, args);
-  commands['sync-code-trust'] = (args) => symCmd.syncCodeTrust({ sqlJson, jsonErrNoExit }, args);
+  commands['link-symbol'] = (args) => symCmd.linkSymbol({ sqlJson, sqlRun, jsonErrNoExit, trustSyncRepository }, args);
+  commands['auto-link'] = (args) => symCmd.autoLink({ sqlJson, sqlRun, jsonErrNoExit, trustSyncRepository }, args);
+  commands['adjust-trust'] = (args) =>
+    symCmd.adjustTrust({ sqlJson, sqlRun, jsonErrNoExit, trustSyncRepository }, args);
+  commands['record-recall'] = (args) =>
+    symCmd.recordRecall({ sqlJson, sqlRun, jsonErrNoExit, trustSyncRepository }, args);
+  commands['stale-links'] = (args) => symCmd.staleLinks({ sqlJson, jsonErrNoExit, trustSyncRepository }, args);
+  commands['sync-code-trust'] = (args) => symCmd.syncCodeTrust({ sqlJson, jsonErrNoExit, trustSyncRepository }, args);
   commands['symbol-cluster'] = (args) => symCmd.symbolCluster({ sqlJson, jsonErrNoExit }, args);
   commands.related = (args) => symCmd.related({ sqlJson, jsonErrNoExit }, args);
 }

@@ -1,7 +1,20 @@
 const workflowDA = require('../data-access/workflows');
 
+function getWorkflowRepository(deps) {
+  if (deps.workflowRepository) {
+    return deps.workflowRepository;
+  }
+  return {
+    saveWorkflow: (params) => workflowDA.saveWorkflow(deps, params),
+    recordStep: (params) => workflowDA.recordStep(deps, params),
+    stepOutcome: (params) => workflowDA.stepOutcome(deps, params),
+    getWorkflow: (params) => workflowDA.getWorkflow(deps, params),
+  };
+}
+
 function saveWorkflow(deps, args) {
-  return workflowDA.saveWorkflow(deps, {
+  const workflowRepository = getWorkflowRepository(deps);
+  return workflowRepository.saveWorkflow({
     id: args.id,
     name: args.name,
     project: args.project || null,
@@ -10,7 +23,8 @@ function saveWorkflow(deps, args) {
 }
 
 function recordStep(deps, args) {
-  return workflowDA.recordStep(deps, {
+  const workflowRepository = getWorkflowRepository(deps);
+  return workflowRepository.recordStep({
     workflow: args.workflow,
     step: parseInt(args.step),
     command: args.command,
@@ -18,7 +32,8 @@ function recordStep(deps, args) {
 }
 
 function stepOutcome(deps, args) {
-  return workflowDA.stepOutcome(deps, {
+  const workflowRepository = getWorkflowRepository(deps);
+  return workflowRepository.stepOutcome({
     workflow: args.workflow,
     step: parseInt(args.step),
     success: args.success === 'true',
@@ -27,7 +42,8 @@ function stepOutcome(deps, args) {
 }
 
 function getWorkflow(deps, args) {
-  return workflowDA.getWorkflow(deps, { id: args.id });
+  const workflowRepository = getWorkflowRepository(deps);
+  return workflowRepository.getWorkflow({ id: args.id });
 }
 
 module.exports = { saveWorkflow, recordStep, stepOutcome, getWorkflow };
