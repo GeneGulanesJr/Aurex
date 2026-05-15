@@ -1,21 +1,54 @@
 #!/usr/bin/env node
-const { DB_PATH, sqlJson, sqlRun, sqlRaw, ensureDb, getDb, getEngine, jsonOut, jsonErrNoExit, parseArgs, MemoryError } = require('./db');
+const {
+  DB_PATH,
+  sqlJson,
+  sqlRun,
+  sqlRaw,
+  ensureDb,
+  getDb,
+  getEngine,
+  jsonOut,
+  jsonErrNoExit,
+  parseArgs,
+  MemoryError,
+} = require('./db');
 const { getConfig } = require('./config');
-const { TRUST_DELTA } = require('./constants');
-
 const obsDA = require('./data-access/observations');
 
 const fs = require('fs');
 
 const { buildCommandMap, ANALYSIS_TOOLS, _wrapAnalysis } = require('./src/cli/gateway');
+const { createRepositories } = require('./src/platform/storage/repositories');
 
 const TOOL_TIERS = {
-  core: new Set(['search', 'save', 'context', 'search-code', 'get-code-source', 'importance', 'outline', 'winnow', 'dream']),
+  core: new Set([
+    'search',
+    'save',
+    'context',
+    'search-code',
+    'get-code-source',
+    'importance',
+    'outline',
+    'winnow',
+    'dream',
+  ]),
   standard: new Set([
-    'search', 'save', 'context', 'search-code', 'get-code-source',
-    'importance', 'outline', 'winnow', 'dream',
-    'complexity', 'dead-code', 'hotspots', 'blast-radius',
-    'call-hierarchy', 'cycles', 'coupling',
+    'search',
+    'save',
+    'context',
+    'search-code',
+    'get-code-source',
+    'importance',
+    'outline',
+    'winnow',
+    'dream',
+    'complexity',
+    'dead-code',
+    'hotspots',
+    'blast-radius',
+    'call-hierarchy',
+    'cycles',
+    'coupling',
   ]),
   full: null,
 };
@@ -26,17 +59,26 @@ function _readTierConfig() {
     const raw = fs.readFileSync(configPath, 'utf-8');
     const cleaned = raw.replace(/\/\/.*$/gm, '');
     return JSON.parse(cleaned);
-  } catch (_) {
+  } catch {
     return { tier: 'full' };
   }
 }
 
 const softDeleteObservation = (id) => obsDA.softDeleteObservation({ sqlJson, sqlRun, sqlRaw }, id);
 
+const baseStorageDeps = { sqlJson, sqlRun, sqlRaw, jsonErrNoExit };
+const repositories = createRepositories(baseStorageDeps);
+
 const commands = buildCommandMap({
-  sqlJson, sqlRun, sqlRaw, jsonErrNoExit, getDb,
-  softDeleteObservation, _readTierConfig, TOOL_TIERS,
-  ensureDb, DB_PATH, getEngine,
+  ...baseStorageDeps,
+  getDb,
+  repositories,
+  softDeleteObservation,
+  _readTierConfig,
+  TOOL_TIERS,
+  ensureDb,
+  DB_PATH,
+  getEngine,
 });
 
 const args = parseArgs(process.argv);
@@ -44,7 +86,6 @@ const cmd = process.argv[2];
 
 (async () => {
   ensureDb();
-  const db = getDb();
   const format = args.format || 'json';
 
   if (cmd && commands[cmd]) {
@@ -79,8 +120,7 @@ const cmd = process.argv[2];
     jsonOut(result);
   } else {
     console.error(
-      `Usage: memory-store <subcommand> [--option value ...]\n` +
-        `Subcommands: ${Object.keys(commands).join(', ')}`,
+      `Usage: memory-store <subcommand> [--option value ...]\nSubcommands: ${Object.keys(commands).join(', ')}`,
     );
     process.exit(1);
   }

@@ -1,16 +1,36 @@
 const symDA = require('../data-access/symbols');
 const trustService = require('../services/trust');
 const searchService = require('../services/search');
-const codeSearchService = require('../services/code-search');
 
-function syncCodeTrust(deps, args) {
-  return trustService.syncCodeTrust({
-    sqlJson: deps.sqlJson,
-    jsonErrNoExit: deps.jsonErrNoExit,
+function getTrustSyncRepository(deps) {
+  if (deps.trustSyncRepository) {
+    return deps.trustSyncRepository;
+  }
+  return {
+    linkSymbol: (params) => symDA.linkSymbol(deps, params),
+    findUnlinked: (project) => symDA.findUnlinked(deps, project),
+    insertSymbolLink: (params) => symDA.insertSymbolLink(deps, params),
+    adjustTrust: (params) => symDA.adjustTrust(deps, params),
+    recordRecall: (params) => symDA.recordRecall(deps, params),
+    getStaleLinks: (repo) => symDA.getStaleLinks(deps, repo),
     getAnchoredLinks: (repo) => symDA.getAnchoredLinks(deps, repo),
     updateLinkTrust: (params) => symDA.updateLinkTrust(deps, params),
     insertTrustAdjustment: (params) => symDA.insertTrustAdjustment(deps, params),
-  }, args);
+  };
+}
+
+function syncCodeTrust(deps, args) {
+  const trustSyncRepository = getTrustSyncRepository(deps);
+  return trustService.syncCodeTrust(
+    {
+      sqlJson: deps.sqlJson,
+      jsonErrNoExit: deps.jsonErrNoExit,
+      getAnchoredLinks: (repo) => trustSyncRepository.getAnchoredLinks(repo),
+      updateLinkTrust: (params) => trustSyncRepository.updateLinkTrust(params),
+      insertTrustAdjustment: (params) => trustSyncRepository.insertTrustAdjustment(params),
+    },
+    args,
+  );
 }
 
 function symbolCluster(deps, args) {
@@ -22,18 +42,26 @@ function linkSymbol(deps, args) {
   const symbolId = args['symbol-id'] || args.symbolId;
   const repo = args.repo;
   const trust = parseFloat(args.trust || '0.5');
-  if (!memoryId) return deps.jsonErrNoExit('--memory-id required');
-  if (!repo) return deps.jsonErrNoExit('--repo required');
-  return symDA.linkSymbol(deps, { memoryId, symbolId, repo, trust });
+  if (!memoryId) {
+    return deps.jsonErrNoExit('--memory-id required');
+  }
+  if (!repo) {
+    return deps.jsonErrNoExit('--repo required');
+  }
+  const trustSyncRepository = getTrustSyncRepository(deps);
+  return trustSyncRepository.linkSymbol({ memoryId, symbolId, repo, trust });
 }
 
 function autoLink(deps, args) {
   const project = args.project;
-  if (!project) return deps.jsonErrNoExit('--project required');
-  const unlinked = symDA.findUnlinked(deps, project);
+  if (!project) {
+    return deps.jsonErrNoExit('--project required');
+  }
+  const trustSyncRepository = getTrustSyncRepository(deps);
+  const unlinked = trustSyncRepository.findUnlinked(project);
   let linked = 0;
   for (const row of unlinked) {
-    symDA.insertSymbolLink(deps, {
+    trustSyncRepository.insertSymbolLink({
       memoryId: row.memory_id,
       symbolId: '__unlinked__',
       repo: project,
@@ -48,8 +76,11 @@ function adjustTrust(deps, args) {
   const memoryId = args['memory-id'] || args.memoryId;
   const delta = parseFloat(args.delta || '0');
   const reason = args.reason || 'manual';
-  if (!memoryId) return deps.jsonErrNoExit('--memory-id required');
-  const newTrust = symDA.adjustTrust(deps, { memoryId, delta, reason });
+  if (!memoryId) {
+    return deps.jsonErrNoExit('--memory-id required');
+  }
+  const trustSyncRepository = getTrustSyncRepository(deps);
+  const newTrust = trustSyncRepository.adjustTrust({ memoryId, delta, reason });
   if (newTrust === null) {
     return { ok: true, memoryId, newTrust: null, delta, reason, warning: 'No symbol link found for this memory' };
   }
@@ -59,15 +90,21 @@ function adjustTrust(deps, args) {
 function recordRecall(deps, args) {
   const sessionId = args['session-id'] || args.sessionId;
   const memoryId = args['memory-id'] || args.memoryId;
-  if (!sessionId || !memoryId) return deps.jsonErrNoExit('--session-id and --memory-id required');
-  symDA.recordRecall(deps, { sessionId, memoryId });
+  if (!sessionId || !memoryId) {
+    return deps.jsonErrNoExit('--session-id and --memory-id required');
+  }
+  const trustSyncRepository = getTrustSyncRepository(deps);
+  trustSyncRepository.recordRecall({ sessionId, memoryId });
   return { ok: true, sessionId, memoryId };
 }
 
 function staleLinks(deps, args) {
   const repo = args.repo;
-  if (!repo) return deps.jsonErrNoExit('--repo required');
-  const links = symDA.getStaleLinks(deps, repo);
+  if (!repo) {
+    return deps.jsonErrNoExit('--repo required');
+  }
+  const trustSyncRepository = getTrustSyncRepository(deps);
+  const links = trustSyncRepository.getStaleLinks(repo);
   return { links, total: links.length };
 }
 
