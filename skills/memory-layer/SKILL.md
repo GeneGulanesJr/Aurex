@@ -118,7 +118,7 @@ Dead code confidence: 0.33 per signal (no callers, unreachable file), 1.0 = prov
 - `related --id INT` — memories linked to the same symbols
 - `link-symbol --memory TEXT --symbol TEXT --repo TEXT [--trust REAL]`
 - `auto-link --project NAME`
-- `sync-code-trust --repo TEXT --changed-symbols-json JSON` — trust sync with code changes
+- `sync-code-trust --repo TEXT` — trust sync after git changes (compares stored HEAD vs current HEAD via built-in index)
 
 ### Maintenance
 

@@ -503,7 +503,7 @@ smokeTestWithDb('tutorial-path', path.join(TMP_DIR, 'smoke-tp.db'), (env, _proje
 
 console.log('\nTrust sync commands (temp DB):');
 smokeTestWithDb('sync-code-trust', path.join(TMP_DIR, 'smoke-trust.db'), (env) => {
-  run(`${CLI} sync-code-trust --repo test-repo --changed-symbols-json "[]"`, { env });
+  run(`${CLI} sync-code-trust --repo test-repo`, { env });
 });
 
 smokeTestWithDb('related', path.join(TMP_DIR, 'smoke-related.db'), (env) => {

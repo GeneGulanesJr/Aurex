@@ -350,24 +350,28 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
     name: 'memory-sync-code-trust',
     label: 'Sync Trust w/ Code Changes',
     description:
-      'Synchronize memory trust scores with code changes detected by jCodeMunch. ' +
-      'Pipe the output of jcodemunch_get_changed_symbols to auto-adjust trust: ' +
-      'memories linked to changed symbols lose trust (-0.3), unchanged ones gain (+0.05). ' +
-      'Run this after a git pull, branch switch, or major code change to keep memory accurate.',
+      'Synchronize memory trust scores with code changes. Compares the stored HEAD commit ' +
+      'against the current git HEAD to detect changed files, then looks up affected symbols ' +
+      'in the built-in code index. Memories linked to changed symbols lose trust (-0.3), ' +
+      'unchanged ones gain (+0.05). Run after git pull, branch switch, or merge.',
     parameters: Type.Object({
-      repo: Type.String({ description: 'jCodeMunch repo identifier for symbol lookups' }),
-      changed_symbols_json: Type.String({
-        description: 'JSON output from jcodemunch_get_changed_symbols (the raw result object, stringified)',
-      }),
+      repo: Type.String({ description: 'Repository name (must be indexed)' }),
     }),
     async execute(_id, params, _signal, _onUpdate, _ctx) {
       const result = await deps.mem('sync-code-trust', {
         repo: params.repo,
-        'changed-symbols-json': params.changed_symbols_json,
       });
 
       if (!result) {
         return { content: [{ type: 'text', text: 'Failed to sync trust scores.' }], details: {}, isError: true };
+      }
+
+      // Early-exit messages (HEAD unchanged, no indexed symbols, etc.)
+      if (result.message) {
+        return {
+          content: [{ type: 'text', text: result.message }],
+          details: result,
+        };
       }
 
       const lines: string[] = [];

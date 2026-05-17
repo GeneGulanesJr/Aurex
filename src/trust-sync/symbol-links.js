@@ -1,5 +1,5 @@
 const { TRUST_DELTA } = require('../../constants');
-const { parseChangedSymbolsJson } = require('./change-detector');
+const { detectChangedSymbols, parseChangedSymbolsJson } = require('./change-detector');
 const { evaluateTrustSync, stripOperations } = require('./trust-policy');
 
 const TRUST_SYNC_METHODS = [
@@ -131,14 +131,39 @@ function staleLinks(deps, args) {
 }
 
 function syncCodeTrust(deps, args) {
-  const parsed = parseChangedSymbolsJson(args, deps.jsonErrNoExit);
-  if (parsed.error) {
-    return parsed.error;
+  const repo = args.repo;
+  if (!repo) {
+    return deps.jsonErrNoExit('Missing --repo');
   }
 
+  // Try new git-based detection first
+  const detected = detectChangedSymbols(deps, repo);
+  if (detected.error) {
+    return detected.error;
+  }
+
+  // HEAD unchanged — nothing to do
+  if (detected.message) {
+    return detected;
+  }
+
+  // No changed symbols in the index — update head_commit and return
+  if (detected.changedSet.size === 0) {
+    deps.sqlRun('UPDATE code_repos SET head_commit = ? WHERE name = ?', [detected.new_head, repo]);
+    return {
+      ok: true,
+      repo,
+      message: 'Files changed but no indexed symbols affected',
+      changed_files: detected.changed_files,
+      old_head: detected.old_head,
+      new_head: detected.new_head,
+    };
+  }
+
+  // Evaluate trust adjustments
   const repository = getTrustSyncRepository(deps, ['getAnchoredLinks', 'updateLinkTrust', 'insertTrustAdjustment']);
-  const allLinks = repository.getAnchoredLinks(parsed.repo);
-  const evaluated = evaluateTrustSync(allLinks, parsed.changedSet);
+  const allLinks = repository.getAnchoredLinks(repo);
+  const evaluated = evaluateTrustSync(allLinks, detected.changedSet);
 
   for (const operation of evaluated.operations) {
     repository.updateLinkTrust({
@@ -153,7 +178,15 @@ function syncCodeTrust(deps, args) {
     });
   }
 
-  return stripOperations(evaluated);
+  // Update head_commit to current
+  deps.sqlRun('UPDATE code_repos SET head_commit = ? WHERE name = ?', [detected.new_head, repo]);
+
+  const result = stripOperations(evaluated);
+  result.changed_symbols = detected.changedSet.size;
+  result.changed_files = detected.changed_files;
+  result.old_head = detected.old_head;
+  result.new_head = detected.new_head;
+  return result;
 }
 
 function trustRecovery(deps, args) {
