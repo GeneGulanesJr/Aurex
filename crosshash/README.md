@@ -25,18 +25,18 @@ cargo run -p crosshash-cli -- impact --source my-api --all --output markdown
 
 ## Crates
 
-| Crate | Description |
-|---|---|
-| `crosshash-core` | Shared types, error types, edge semantics |
+| Crate              | Description                                                               |
+| ------------------ | ------------------------------------------------------------------------- |
+| `crosshash-core`   | Shared types, error types, edge semantics                                 |
 | `crosshash-parser` | Tree-sitter parsing, 5-hash BLAKE3, language detection, entity extraction |
-| `crosshash-hash` | BLAKE3 5-hash computation, incremental decisions |
-| `crosshash-graph` | SQLite storage, edge extraction, graph traversal, cycle detection |
-| `crosshash-git` | Git operations via libgit2 |
-| `crosshash-cli` | CLI interface (clap + indicatif) |
-| `crosshash-ai` | AI-gated edge discovery, LLM client, cost tracking |
-| `crosshash-impact` | Impact analysis (hash diff + BFS + classification + SARIF) |
-| `crosshash-api` | HTTP API (Axum) |
-| `crosshash-mcp` | MCP stdio server |
+| `crosshash-hash`   | BLAKE3 5-hash computation, incremental decisions                          |
+| `crosshash-graph`  | SQLite storage, edge extraction, graph traversal, cycle detection         |
+| `crosshash-git`    | Git operations via libgit2                                                |
+| `crosshash-cli`    | CLI interface (clap + indicatif)                                          |
+| `crosshash-ai`     | AI-gated edge discovery, LLM client, cost tracking                        |
+| `crosshash-impact` | Impact analysis (hash diff + BFS + classification + SARIF)                |
+| `crosshash-api`    | HTTP API (Axum)                                                           |
+| `crosshash-mcp`    | MCP stdio server                                                          |
 
 ## CI
 

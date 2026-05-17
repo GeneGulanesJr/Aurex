@@ -3,18 +3,42 @@ const { rankObservations, search, related, symbolCluster } = require('../service
 describe('services/search: rankObservations', () => {
   it('should rank decisions higher than session summaries', () => {
     const rows = [
-      { id: 1, title: 'Session summary', type: 'session_summary', created_at: new Date().toISOString().replace('Z', ''), trust_score: 0.5, recall_count: 0, rank: 0 },
-      { id: 2, title: 'Important decision', type: 'decision', created_at: new Date().toISOString().replace('Z', ''), trust_score: 0.5, recall_count: 0, rank: 0 },
+      {
+        id: 1,
+        title: 'Session summary',
+        type: 'session_summary',
+        created_at: new Date().toISOString().replace('Z', ''),
+        trust_score: 0.5,
+        recall_count: 0,
+        rank: 0,
+      },
+      {
+        id: 2,
+        title: 'Important decision',
+        type: 'decision',
+        created_at: new Date().toISOString().replace('Z', ''),
+        trust_score: 0.5,
+        recall_count: 0,
+        rank: 0,
+      },
     ];
     const ranked = rankObservations(rows, 'decision');
-    const decisionEntry = ranked.find(r => r.type === 'decision');
-    const summaryEntry = ranked.find(r => r.type === 'session_summary');
+    const decisionEntry = ranked.find((r) => r.type === 'decision');
+    const summaryEntry = ranked.find((r) => r.type === 'session_summary');
     expect(decisionEntry._score).toBeGreaterThan(summaryEntry._score);
   });
 
   it('should produce valid numeric scores (no NaN)', () => {
     const rows = [
-      { id: 1, title: 'Test observation', type: 'decision', created_at: new Date().toISOString().replace('Z', ''), trust_score: 0.8, recall_count: 5, rank: 0 },
+      {
+        id: 1,
+        title: 'Test observation',
+        type: 'decision',
+        created_at: new Date().toISOString().replace('Z', ''),
+        trust_score: 0.8,
+        recall_count: 5,
+        rank: 0,
+      },
     ];
     const ranked = rankObservations(rows, 'test');
     for (const r of ranked) {
@@ -31,9 +55,25 @@ describe('services/search: rankObservations', () => {
   it('should produce sorted results (descending by score)', () => {
     const now = new Date().toISOString().replace('Z', '');
     const rows = [
-      { id: 1, title: 'Old bugfix', type: 'bugfix', created_at: '2024-01-01T00:00:00', trust_score: 0.2, recall_count: 0, rank: 0 },
+      {
+        id: 1,
+        title: 'Old bugfix',
+        type: 'bugfix',
+        created_at: '2024-01-01T00:00:00',
+        trust_score: 0.2,
+        recall_count: 0,
+        rank: 0,
+      },
       { id: 2, title: 'New decision', type: 'decision', created_at: now, trust_score: 0.9, recall_count: 10, rank: 0 },
-      { id: 3, title: 'Mid discovery', type: 'discovery', created_at: '2024-06-01T00:00:00', trust_score: 0.5, recall_count: 2, rank: 0 },
+      {
+        id: 3,
+        title: 'Mid discovery',
+        type: 'discovery',
+        created_at: '2024-06-01T00:00:00',
+        trust_score: 0.5,
+        recall_count: 2,
+        rank: 0,
+      },
     ];
     const ranked = rankObservations(rows, 'decision');
     for (let i = 1; i < ranked.length; i++) {
@@ -43,7 +83,15 @@ describe('services/search: rankObservations', () => {
 
   it('should compute fts-like score from query words when rank is 0', () => {
     const rows = [
-      { id: 1, title: 'Use SQLite for storage', type: 'decision', created_at: new Date().toISOString().replace('Z', ''), trust_score: 0.5, recall_count: 0, rank: 0 },
+      {
+        id: 1,
+        title: 'Use SQLite for storage',
+        type: 'decision',
+        created_at: new Date().toISOString().replace('Z', ''),
+        trust_score: 0.5,
+        recall_count: 0,
+        rank: 0,
+      },
     ];
     const ranked = rankObservations(rows, 'sqlite storage');
     expect(ranked[0]._score).toBeGreaterThan(0);
@@ -67,14 +115,30 @@ describe('services/search: related', () => {
       { symbol_id: 'sym2', repo: 'repo2' },
     ];
     const mockClusters = [
-      { symbol_id: 'sym1', id: 100, title: 'Related memory 1', type: 'decision', project: 'proj1', created_at: '2025-01-01T00:00:00' },
-      { symbol_id: 'sym2', id: 101, title: 'Related memory 2', type: 'bugfix', project: 'proj2', created_at: '2025-01-01T00:00:00' },
+      {
+        symbol_id: 'sym1',
+        id: 100,
+        title: 'Related memory 1',
+        type: 'decision',
+        project: 'proj1',
+        created_at: '2025-01-01T00:00:00',
+      },
+      {
+        symbol_id: 'sym2',
+        id: 101,
+        title: 'Related memory 2',
+        type: 'bugfix',
+        project: 'proj2',
+        created_at: '2025-01-01T00:00:00',
+      },
     ];
     let callCount = 0;
     const deps = {
       sqlJson: vi.fn(() => {
         callCount++;
-        if (callCount === 1) return mockSymbols;
+        if (callCount === 1) {
+          return mockSymbols;
+        }
         return mockClusters;
       }),
       jsonErrNoExit: vi.fn((msg) => ({ error: msg })),
@@ -90,7 +154,7 @@ describe('services/search: related', () => {
       sqlJson: vi.fn(),
       jsonErrNoExit: vi.fn((msg) => ({ error: msg })),
     };
-    const result = related(deps, { });
+    const result = related(deps, {});
     expect(result.error).toBeDefined();
   });
 });
@@ -107,7 +171,16 @@ describe('services/search: symbolCluster', () => {
 
   it('should query with symbol_id filter', () => {
     const mockMemories = [
-      { id: 1, title: 'Memory about symbol', type: 'decision', project: 'proj', scope: null, topic_key: null, created_at: '2025-01-01T00:00:00', trust_score: 0.8 },
+      {
+        id: 1,
+        title: 'Memory about symbol',
+        type: 'decision',
+        project: 'proj',
+        scope: null,
+        topic_key: null,
+        created_at: '2025-01-01T00:00:00',
+        trust_score: 0.8,
+      },
     ];
     const deps = {
       sqlJson: vi.fn(() => mockMemories),

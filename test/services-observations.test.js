@@ -35,13 +35,27 @@ describe('services/observations', () => {
 
   describe('save', () => {
     it('should return error when title is missing', () => {
-      const deps = { jsonErrNoExit: vi.fn((msg) => ({ error: msg })), insertObservation: vi.fn(), insertObservationRelation: vi.fn(), softDeleteObservation: vi.fn(), checkDuplicate: vi.fn(), findLatestSession: vi.fn() };
+      const deps = {
+        jsonErrNoExit: vi.fn((msg) => ({ error: msg })),
+        insertObservation: vi.fn(),
+        insertObservationRelation: vi.fn(),
+        softDeleteObservation: vi.fn(),
+        checkDuplicate: vi.fn(),
+        findLatestSession: vi.fn(),
+      };
       const result = obsService.save(deps, { content: 'hello' });
       expect(result.error).toContain('title');
     });
 
     it('should return error when content is missing', () => {
-      const deps = { jsonErrNoExit: vi.fn((msg) => ({ error: msg })), insertObservation: vi.fn(), insertObservationRelation: vi.fn(), softDeleteObservation: vi.fn(), checkDuplicate: vi.fn(), findLatestSession: vi.fn() };
+      const deps = {
+        jsonErrNoExit: vi.fn((msg) => ({ error: msg })),
+        insertObservation: vi.fn(),
+        insertObservationRelation: vi.fn(),
+        softDeleteObservation: vi.fn(),
+        checkDuplicate: vi.fn(),
+        findLatestSession: vi.fn(),
+      };
       const result = obsService.save(deps, { title: 'hello' });
       expect(result.error).toContain('content');
     });
@@ -53,7 +67,14 @@ describe('services/observations', () => {
       const checkDuplicate = vi.fn(() => ({ potential_duplicates: [] }));
       const findLatestSession = vi.fn(() => '1');
       const jsonErrNoExit = vi.fn((msg) => ({ error: msg }));
-      const deps = { jsonErrNoExit, insertObservation, insertObservationRelation, softDeleteObservation, checkDuplicate, findLatestSession };
+      const deps = {
+        jsonErrNoExit,
+        insertObservation,
+        insertObservationRelation,
+        softDeleteObservation,
+        checkDuplicate,
+        findLatestSession,
+      };
       const result = obsService.save(deps, { title: 'Test', content: 'Body', type: 'decision', project: 'proj' });
       expect(result.id).toBe(42);
       expect(insertObservation).toHaveBeenCalled();
@@ -69,7 +90,14 @@ describe('services/observations', () => {
       }));
       const findLatestSession = vi.fn(() => '1');
       const jsonErrNoExit = vi.fn((msg) => ({ error: msg }));
-      const deps = { jsonErrNoExit, insertObservation, insertObservationRelation, softDeleteObservation, checkDuplicate, findLatestSession };
+      const deps = {
+        jsonErrNoExit,
+        insertObservation,
+        insertObservationRelation,
+        softDeleteObservation,
+        checkDuplicate,
+        findLatestSession,
+      };
       const result = obsService.save(deps, { title: 'Test', content: 'Body', project: 'proj' });
       expect(result.auto_merged).toBe(true);
       expect(result.superseded_id).toBe(10);
@@ -84,7 +112,14 @@ describe('services/observations', () => {
       }));
       const findLatestSession = vi.fn(() => '1');
       const jsonErrNoExit = vi.fn((msg) => ({ error: msg }));
-      const deps = { jsonErrNoExit, insertObservation, checkDuplicate, findLatestSession, insertObservationRelation: vi.fn(), softDeleteObservation: vi.fn() };
+      const deps = {
+        jsonErrNoExit,
+        insertObservation,
+        checkDuplicate,
+        findLatestSession,
+        insertObservationRelation: vi.fn(),
+        softDeleteObservation: vi.fn(),
+      };
       const result = obsService.save(deps, { title: 'Test', content: 'Body' });
       expect(result.status).toBe('potential_duplicate');
       expect(insertObservation).not.toHaveBeenCalled();
@@ -97,7 +132,14 @@ describe('services/observations', () => {
       }));
       const findLatestSession = vi.fn(() => '1');
       const jsonErrNoExit = vi.fn((msg) => ({ error: msg }));
-      const deps = { jsonErrNoExit, insertObservation, checkDuplicate, findLatestSession, insertObservationRelation: vi.fn(), softDeleteObservation: vi.fn() };
+      const deps = {
+        jsonErrNoExit,
+        insertObservation,
+        checkDuplicate,
+        findLatestSession,
+        insertObservationRelation: vi.fn(),
+        softDeleteObservation: vi.fn(),
+      };
       const result = obsService.save(deps, { title: 'Test', content: 'Body', force: 'true' });
       expect(result.id).toBe(55);
       expect(insertObservation).toHaveBeenCalled();
@@ -127,7 +169,8 @@ describe('services/observations', () => {
       const findLatestSession = vi.fn(() => '1');
       const insertCapturePassiveObservation = vi.fn();
       const deps = { jsonErrNoExit, insertCapturePassiveObservation, findLatestSession };
-      const content = '## Key Learning:\n\n- Use SQLite for storage\n- Prefer event-driven architectures\n- Always add tests';
+      const content =
+        '## Key Learning:\n\n- Use SQLite for storage\n- Prefer event-driven architectures\n- Always add tests';
       const result = obsService.capturePassive(deps, { content });
       expect(result.extracted).toBe(3);
       expect(insertCapturePassiveObservation).toHaveBeenCalledTimes(3);

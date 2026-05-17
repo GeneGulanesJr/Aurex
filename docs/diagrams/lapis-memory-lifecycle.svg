@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" width="1200" height="760">
+
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#1b365d"/>
+    </marker>
+    <marker id="arrow-soft" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#6b7280"/>
+    </marker>
+    <style><![CDATA[
+      .bg{fill:#f8f6ef}.title{font:700 25px Georgia,serif;fill:#14213d}.subtitle{font:13px Georgia,serif;fill:#4b5563}.layer{fill:#fffdf7;stroke:#d7c9ad;stroke-width:1.5}.box{fill:#ffffff;stroke:#1b365d;stroke-width:1.4}.box2{fill:#eef6ff;stroke:#1b365d;stroke-width:1.4}.box3{fill:#f6f0ff;stroke:#7653b8;stroke-width:1.4}.box4{fill:#effaf4;stroke:#2f7d52;stroke-width:1.4}.label{font:700 14px Georgia,serif;fill:#111827}.small{font:12px Georgia,serif;fill:#374151}.mono{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#4b5563}.eyebrow{font:700 10px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em;fill:#1b365d}.arrow{stroke:#1b365d;stroke-width:2;fill:none;marker-end:url(#arrow)}.soft{stroke:#6b7280;stroke-width:1.6;fill:none;marker-end:url(#arrow-soft);stroke-dasharray:5 4}.caption{font:12px Georgia,serif;fill:#6b5f4a}.note{fill:#fff8e6;stroke:#c8a64b;stroke-width:1.2}
+    ]]></style>
+  </defs>
+  <rect class="bg" width="1200" height="760"/>
+  <text class="title" x="600" y="44" text-anchor="middle">LaPis Memory Lifecycle</text>
+  <text class="subtitle" x="600" y="68" text-anchor="middle">How session context, saved observations, code/doc retrieval, trust, and cleanup move through one local store</text>
+
+  <rect class="box2" x="70" y="125" width="175" height="58" rx="12"/><text class="label" x="157" y="149" text-anchor="middle">User + Pi</text><text class="mono" x="157" y="167" text-anchor="middle">prompt, tool call</text>
+  <rect class="box" x="310" y="125" width="190" height="58" rx="12"/><text class="label" x="405" y="149" text-anchor="middle">Extension Hooks</text><text class="mono" x="405" y="167" text-anchor="middle">capture + inject</text>
+  <rect class="box" x="565" y="125" width="190" height="58" rx="12"/><text class="label" x="660" y="149" text-anchor="middle">CLI Gateway</text><text class="mono" x="660" y="167" text-anchor="middle">route command</text>
+  <rect class="box4" x="820" y="125" width="220" height="58" rx="12"/><text class="label" x="930" y="149" text-anchor="middle">Feature Service</text><text class="mono" x="930" y="167" text-anchor="middle">memory/code/doc/trust</text>
+  <path class="arrow" d="M245 154 L310 154"/><path class="arrow" d="M500 154 L565 154"/><path class="arrow" d="M755 154 L820 154"/>
+
+  <rect class="layer" x="80" y="250" width="1040" height="230" rx="18"/><text class="eyebrow" x="105" y="276">PRIMARY OPERATIONS</text>
+  <rect class="box4" x="120" y="310" width="190" height="70" rx="12"/><text class="label" x="215" y="334" text-anchor="middle">Write Path</text><text class="mono" x="215" y="352" text-anchor="middle">save/update/delete</text><text class="mono" x="215" y="368" text-anchor="middle">dedupe + recall</text>
+  <rect class="box4" x="380" y="310" width="190" height="70" rx="12"/><text class="label" x="475" y="334" text-anchor="middle">Read Path</text><text class="mono" x="475" y="352" text-anchor="middle">search/context/get</text><text class="mono" x="475" y="368" text-anchor="middle">rank + compact</text>
+  <rect class="box4" x="640" y="310" width="190" height="70" rx="12"/><text class="label" x="735" y="334" text-anchor="middle">Index Path</text><text class="mono" x="735" y="352" text-anchor="middle">code + docs</text><text class="mono" x="735" y="368" text-anchor="middle">symbols, sections</text>
+  <rect class="box3" x="900" y="310" width="190" height="70" rx="12"/><text class="label" x="995" y="334" text-anchor="middle">Trust Path</text><text class="mono" x="995" y="352" text-anchor="middle">changed symbols</text><text class="mono" x="995" y="368" text-anchor="middle">adjust memory trust</text>
+  <path class="arrow" d="M930 183 L930 310"/><path class="soft" d="M930 183 C650 225 215 220 215 310"/><path class="soft" d="M930 183 C720 230 475 235 475 310"/><path class="soft" d="M930 183 C780 235 735 250 735 310"/>
+
+  <rect class="box" x="445" y="545" width="310" height="92" rx="16"/><text class="label" x="600" y="574" text-anchor="middle">Local SQLite Memory Store</text><text class="mono" x="600" y="594" text-anchor="middle">observations · sessions · code symbols</text><text class="mono" x="600" y="612" text-anchor="middle">doc sections · symbol links · FTS5</text>
+  <path class="arrow" d="M215 380 C215 520 445 520 510 545"/><path class="arrow" d="M475 380 L545 545"/><path class="arrow" d="M735 380 L655 545"/><path class="arrow" d="M995 380 C995 520 755 520 690 545"/>
+
+  <rect class="note" x="120" y="665" width="410" height="46" rx="10"/><text class="label" x="325" y="686" text-anchor="middle">Maintenance</text><text class="mono" x="325" y="704" text-anchor="middle">compact vacuums; dream removes stale memories</text>
+  <rect class="note" x="670" y="665" width="410" height="46" rx="10"/><text class="label" x="875" y="686" text-anchor="middle">Next Session</text><text class="mono" x="875" y="704" text-anchor="middle">context is reloaded by project relevance</text>
+  <path class="soft" d="M530 665 C545 640 555 635 570 637"/><path class="soft" d="M755 637 C825 635 855 645 875 665"/>
+</svg>

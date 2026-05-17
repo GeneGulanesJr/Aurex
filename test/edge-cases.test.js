@@ -15,7 +15,9 @@ function run(cmd) {
     return JSON.parse(out.trim());
   } catch (e) {
     if (e.stdout?.trim()) {
-      try { return JSON.parse(e.stdout.trim()); } catch (_) {}
+      try {
+        return JSON.parse(e.stdout.trim());
+      } catch (_) {}
     }
     return { error: e.message };
   }
@@ -32,7 +34,9 @@ function runFail(cmd) {
   } catch (e) {
     const stderr = e.stderr?.trim() || '';
     const stdout = e.stdout?.trim() || '';
-    try { return JSON.parse(stderr || stdout); } catch (_) {
+    try {
+      return JSON.parse(stderr || stdout);
+    } catch (_) {
       return { error: stderr || stdout || e.message };
     }
   }
@@ -70,7 +74,9 @@ describe('edge cases: CRUD', () => {
   });
 
   it('should persist all optional fields on save', () => {
-    const r = run(`save --title "Edge: all fields" --content "Full fields test" --type bugfix --project ${testProject} --scope personal --topic-key "testing/all-fields" --force`);
+    const r = run(
+      `save --title "Edge: all fields" --content "Full fields test" --type bugfix --project ${testProject} --scope personal --topic-key "testing/all-fields" --force`,
+    );
     expect(r.id).toBeTruthy();
     const got = run(`get --id ${r.id}`);
     expect(got.type).toBe('bugfix');
@@ -83,7 +89,9 @@ describe('edge cases: CRUD', () => {
   it('should round-trip special characters in title and content', () => {
     const title = `Special: 'quotes' and "double" & <html> 🎉`;
     const content = `What: Tabs \t newlines \n emoji ✅. Why: Coverage.`;
-    const r = run(`save --title "${title.replace(/"/g, '\\"')}" --content "${content.replace(/"/g, '\\"')}" --type learning --force --project ${testProject}`);
+    const r = run(
+      `save --title "${title.replace(/"/g, '\\"')}" --content "${content.replace(/"/g, '\\"')}" --type learning --force --project ${testProject}`,
+    );
     expect(r.id).toBeTruthy();
     const got = run(`get --id ${r.id}`);
     expect(got.title).toContain('quotes');
@@ -93,10 +101,12 @@ describe('edge cases: CRUD', () => {
   });
 
   it('should increment updated_at on update', async () => {
-    const r = run(`save --title "Edge: update timestamp" --content "before" --type learning --force --project ${testProject}`);
+    const r = run(
+      `save --title "Edge: update timestamp" --content "before" --type learning --force --project ${testProject}`,
+    );
     const before = run(`get --id ${r.id}`);
     // Small delay to ensure timestamp differs
-    await new Promise(resolve => setTimeout(resolve, 1100));
+    await new Promise((resolve) => setTimeout(resolve, 1100));
     run(`update --id ${r.id} --content "after"`);
     const after = run(`get --id ${r.id}`);
     expect(after.updated_at).not.toBe(before.updated_at);
@@ -105,12 +115,14 @@ describe('edge cases: CRUD', () => {
   });
 
   it('should exclude soft-deleted from search results', () => {
-    const r = run(`save --title "Edge: soft delete search" --content "visible" --type learning --force --project ${testProject}`);
+    const r = run(
+      `save --title "Edge: soft delete search" --content "visible" --type learning --force --project ${testProject}`,
+    );
     const search1 = run(`search --query "soft delete search" --project ${testProject}`);
     expect(search1.results.length).toBeGreaterThanOrEqual(1);
     run(`delete --id ${r.id}`);
     const search2 = run(`search --query "soft delete search" --project ${testProject}`);
-    expect(search2.results.find(m => m.id === r.id)).toBeUndefined();
+    expect(search2.results.find((m) => m.id === r.id)).toBeUndefined();
   });
 });
 
@@ -188,7 +200,9 @@ describe('edge cases: trust system', () => {
   let testMemoryId;
 
   beforeAll(() => {
-    const r = run(`save --title "Edge: trust test memory" --content "for trust testing" --type learning --force --project ${testProject}`);
+    const r = run(
+      `save --title "Edge: trust test memory" --content "for trust testing" --type learning --force --project ${testProject}`,
+    );
     testMemoryId = r.id;
     run(`link-symbol --memory-id ${testMemoryId} --repo PiMemoryExtension --trust 0.5`);
   });
@@ -258,7 +272,7 @@ describe('edge cases: trust system', () => {
     expect(r.trustScore).toBe(0.8);
 
     const stale = run('stale-links --repo PiMemoryExtension');
-    const found = stale.links.find(l => l.memory_id === String(testMemoryId) && l.symbol_id === '12345');
+    const found = stale.links.find((l) => l.memory_id === String(testMemoryId) && l.symbol_id === '12345');
     expect(found).toBeTruthy();
     expect(found.trust_score).toBe(0.8);
   });
@@ -356,7 +370,9 @@ describe('edge cases: compact/dream', () => {
 // ═══════════════════════════════════════════
 describe('edge cases: symbol commands (previously broken)', () => {
   it('link-symbol should work with valid args', () => {
-    const r = run(`save --title "Edge: sym cmd test" --content "test" --type learning --force --project ${testProject}`);
+    const r = run(
+      `save --title "Edge: sym cmd test" --content "test" --type learning --force --project ${testProject}`,
+    );
     const result = run(`link-symbol --memory-id ${r.id} --repo PiMemoryExtension --trust 0.7`);
     expect(result.ok).toBe(true);
     expect(result.trustScore).toBe(0.7);

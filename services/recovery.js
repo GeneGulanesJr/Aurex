@@ -39,7 +39,7 @@ function autoRecoverInternal(deps, sessionId) {
   for (const [type, titles] of Object.entries(types)) {
     lines.push(`### ${type}`);
     for (const t of titles) {
-      lines.push(`- ${  t}`);
+      lines.push(`- ${t}`);
     }
     lines.push('');
   }

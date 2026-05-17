@@ -4,7 +4,10 @@ function linkSymbol(deps, { memoryId, symbolId, repo, trust }) {
   const { sqlRun } = deps;
   const symVal = symbolId || '__unlinked__';
   sqlRun('INSERT OR REPLACE INTO symbol_links (memory_id, symbol_id, repo, trust_score) VALUES (?, ?, ?, ?)', [
-    memoryId, symVal, repo, trust,
+    memoryId,
+    symVal,
+    repo,
+    trust,
   ]);
   return { ok: true, memoryId, symbolId: symVal, repo, trustScore: trust };
 }
@@ -22,13 +25,19 @@ function findUnlinked(deps, project) {
 function insertSymbolLink(deps, { memoryId, symbolId, repo, trustScore }) {
   const { sqlRun } = deps;
   sqlRun('INSERT OR IGNORE INTO symbol_links (memory_id, symbol_id, repo, trust_score) VALUES (?, ?, ?, ?)', [
-    memoryId, symbolId, repo, trustScore,
+    memoryId,
+    symbolId,
+    repo,
+    trustScore,
   ]);
 }
 
 function adjustTrust(deps, { memoryId, delta, reason }) {
   const { sqlRun, sqlJson } = deps;
-  sqlRun('UPDATE symbol_links SET trust_score = MIN(1.0, MAX(0.0, trust_score + ?)) WHERE memory_id = ?', [delta, memoryId]);
+  sqlRun('UPDATE symbol_links SET trust_score = MIN(1.0, MAX(0.0, trust_score + ?)) WHERE memory_id = ?', [
+    delta,
+    memoryId,
+  ]);
   sqlRun('INSERT INTO trust_adjustments (memory_id, reason, delta) VALUES (?, ?, ?)', [memoryId, reason, delta]);
   const updated = sqlJson('SELECT trust_score FROM symbol_links WHERE memory_id = ? LIMIT 1', [memoryId]);
   return updated.length > 0 ? updated[0].trust_score : null;
@@ -79,12 +88,18 @@ function getRecalledMemoryIds(deps, sessionId) {
 
 function updateLinkTrustByMemoryId(deps, { memoryId, newTrust }) {
   const { sqlRun } = deps;
-  sqlRun(`UPDATE symbol_links SET trust_score = MIN(${TRUST_DELTA.TRUST_CEILING}, trust_score + ?) WHERE memory_id = ?`, [newTrust, memoryId]);
+  sqlRun(
+    `UPDATE symbol_links SET trust_score = MIN(${TRUST_DELTA.TRUST_CEILING}, trust_score + ?) WHERE memory_id = ?`,
+    [newTrust, memoryId],
+  );
 }
 
 function getSymbolsForMemory(deps, memoryId) {
   const { sqlJson } = deps;
-  return sqlJson('SELECT symbol_id, repo FROM symbol_links WHERE memory_id = ? AND symbol_id != ?', [String(memoryId), '__unlinked__']);
+  return sqlJson('SELECT symbol_id, repo FROM symbol_links WHERE memory_id = ? AND symbol_id != ?', [
+    String(memoryId),
+    '__unlinked__',
+  ]);
 }
 
 function getSymbolCluster(deps, { symbolId, repo }) {

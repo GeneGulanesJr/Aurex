@@ -22,7 +22,13 @@ describe('data-access/observations', () => {
       const deps = mockDeps();
       deps.sqlJson.mockReturnValue([{ id: 1, created_at: '2024-01-01' }]);
       const result = insertObservation(deps, {
-        sessionId: '1', type: 'decision', title: 'Test', content: 'Content', project: 'proj', scope: 'project', topicKey: null,
+        sessionId: '1',
+        type: 'decision',
+        title: 'Test',
+        content: 'Content',
+        project: 'proj',
+        scope: 'project',
+        topicKey: null,
       });
       expect(deps.sqlJson).toHaveBeenCalledTimes(1);
       expect(result[0].id).toBe(1);
@@ -33,7 +39,10 @@ describe('data-access/observations', () => {
     it('should update deleted_at and remove from FTS', () => {
       const deps = mockDeps();
       softDeleteObservation(deps, 42);
-      expect(deps.sqlRun).toHaveBeenCalledWith("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [42]);
+      expect(deps.sqlRun).toHaveBeenCalledWith(
+        "UPDATE observations SET deleted_at = datetime('now') WHERE id = ?",
+        [42],
+      );
     });
   });
 

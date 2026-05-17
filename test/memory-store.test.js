@@ -42,7 +42,9 @@ afterAll(() => {
 
 describe('memory-store: save', () => {
   it('should save a basic observation', () => {
-    const result = run(`save --title "Test decision" --content "**What**: Use SQLite\n**Why**: Simple" --type decision --project ${testProject}`);
+    const result = run(
+      `save --title "Test decision" --content "**What**: Use SQLite\n**Why**: Simple" --type decision --project ${testProject}`,
+    );
     expect(result.id).toBeDefined();
     expect(result.title).toBe('Test decision');
     expect(typeof result.id).toBe('number');
@@ -65,8 +67,8 @@ describe('memory-store: save', () => {
   it('should save with all optional fields', () => {
     const result = run(
       `save --title "Full observation" --content "Detailed content" ` +
-      `--type architecture --project ${testProject} --scope project ` +
-      `--topic-key "auth/middleware" --session-id ${sessionId}`,
+        `--type architecture --project ${testProject} --scope project ` +
+        `--topic-key "auth/middleware" --session-id ${sessionId}`,
     );
     expect(result.id).toBeDefined();
     expect(result.title).toBe('Full observation');
@@ -74,8 +76,7 @@ describe('memory-store: save', () => {
 
   it('should save with personal scope', () => {
     const result = run(
-      `save --title "Cross-project pref" --content "Always use tabs" ` +
-      `--type preference --scope personal`,
+      'save --title "Cross-project pref" --content "Always use tabs" --type preference --scope personal',
     );
     expect(result.id).toBeDefined();
   });
@@ -88,8 +89,12 @@ describe('memory-store: save', () => {
   });
 
   it('should detect potential duplicates', () => {
-    run(`save --title "Fix login bug in auth module" --content "Root cause was missing token validation" --project ${testProject} --type bugfix --force`);
-    const result = run(`save --title "Fix login bug in auth module v2" --content "Root cause was missing token validation fix" --project ${testProject} --type bugfix`);
+    run(
+      `save --title "Fix login bug in auth module" --content "Root cause was missing token validation" --project ${testProject} --type bugfix --force`,
+    );
+    const result = run(
+      `save --title "Fix login bug in auth module v2" --content "Root cause was missing token validation fix" --project ${testProject} --type bugfix`,
+    );
     if (result.status === 'potential_duplicate') {
       expect(result.matches.length).toBeGreaterThanOrEqual(1);
     } else if (result.auto_merged) {
@@ -100,8 +105,12 @@ describe('memory-store: save', () => {
   });
 
   it('should auto-merge at high similarity', () => {
-    run(`save --title "Auto-merge target original xyz" --content "Content for auto merge test" --project ${testProject} --type pattern --force`);
-    const result = run(`save --title "Auto-merge target original xyz" --content "Content for auto merge test" --project ${testProject} --type pattern`);
+    run(
+      `save --title "Auto-merge target original xyz" --content "Content for auto merge test" --project ${testProject} --type pattern --force`,
+    );
+    const result = run(
+      `save --title "Auto-merge target original xyz" --content "Content for auto merge test" --project ${testProject} --type pattern`,
+    );
     if (result.auto_merged) {
       expect(result.superseded_id).toBeDefined();
       expect(result.superseded_title).toBeDefined();
@@ -112,9 +121,15 @@ describe('memory-store: save', () => {
 
 describe('memory-store: search', () => {
   beforeAll(() => {
-    run(`save --title "Search test alpha" --content "Alpha content about SQLite" --project ${testProject} --type decision --force`);
-    run(`save --title "Search test beta" --content "Beta content about PostgreSQL" --project ${testProject} --type bugfix --force`);
-    run(`save --title "Search test gamma" --content "Gamma content about Redis cache" --project ${testProject} --type pattern --force`);
+    run(
+      `save --title "Search test alpha" --content "Alpha content about SQLite" --project ${testProject} --type decision --force`,
+    );
+    run(
+      `save --title "Search test beta" --content "Beta content about PostgreSQL" --project ${testProject} --type bugfix --force`,
+    );
+    run(
+      `save --title "Search test gamma" --content "Gamma content about Redis cache" --project ${testProject} --type pattern --force`,
+    );
   });
 
   it('should find results by keyword', () => {
@@ -134,12 +149,12 @@ describe('memory-store: search', () => {
   it('should filter by type', () => {
     const result = run(`search --query "Search test" --project ${testProject} --type decision`);
     expect(result.results.length).toBeGreaterThanOrEqual(1);
-    expect(result.results.every(r => r.type === 'decision')).toBe(true);
+    expect(result.results.every((r) => r.type === 'decision')).toBe(true);
   });
 
   it('should filter by scope', () => {
     const result = run(`search --query "Search test" --scope project`);
-    expect(result.results.every(r => r.scope === 'project')).toBe(true);
+    expect(result.results.every((r) => r.scope === 'project')).toBe(true);
   });
 
   it('should respect --limit', () => {
@@ -164,10 +179,12 @@ describe('memory-store: search', () => {
   });
 
   it('should exclude soft-deleted observations from search', () => {
-    const saved = run(`save --title "Will be deleted soon" --content "Temporary content" --project ${testProject} --force`);
+    const saved = run(
+      `save --title "Will be deleted soon" --content "Temporary content" --project ${testProject} --force`,
+    );
     run(`delete --id ${saved.id}`);
     const result = run(`search --query "Will be deleted soon" --project ${testProject}`);
-    expect(result.results.every(r => r.id !== saved.id)).toBe(true);
+    expect(result.results.every((r) => r.id !== saved.id)).toBe(true);
   });
 
   it('should record recall tracking when session-id is provided', () => {
@@ -180,7 +197,9 @@ describe('memory-store: get', () => {
   let savedId;
 
   beforeAll(() => {
-    const result = run(`save --title "Get test observation" --content "Content to retrieve" --project ${testProject} --type learning --force`);
+    const result = run(
+      `save --title "Get test observation" --content "Content to retrieve" --project ${testProject} --type learning --force`,
+    );
     savedId = result.id;
   });
 
@@ -212,7 +231,9 @@ describe('memory-store: update', () => {
   let savedId;
 
   beforeAll(() => {
-    const result = run(`save --title "Update test original" --content "Original content" --project ${testProject} --type manual --force`);
+    const result = run(
+      `save --title "Update test original" --content "Original content" --project ${testProject} --type manual --force`,
+    );
     savedId = result.id;
   });
 
@@ -264,14 +285,18 @@ describe('memory-store: update', () => {
 
 describe('memory-store: delete', () => {
   it('should soft-delete by default', () => {
-    const saved = run(`save --title "Soft delete test" --content "Will be soft-deleted" --project ${testProject} --force`);
+    const saved = run(
+      `save --title "Soft delete test" --content "Will be soft-deleted" --project ${testProject} --force`,
+    );
     const result = run(`delete --id ${saved.id}`);
     expect(result.ok).toBe(true);
     expect(result.hardDeleted).toBe(false);
   });
 
   it('should hard-delete when --hard true', () => {
-    const saved = run(`save --title "Hard delete test" --content "Will be hard-deleted" --project ${testProject} --force`);
+    const saved = run(
+      `save --title "Hard delete test" --content "Will be hard-deleted" --project ${testProject} --force`,
+    );
     const result = run(`delete --id ${saved.id} --hard true`);
     expect(result.ok).toBe(true);
     expect(result.hardDeleted).toBe(true);
@@ -290,9 +315,15 @@ describe('memory-store: delete', () => {
 
 describe('memory-store: context', () => {
   beforeAll(() => {
-    run(`save --title "Context test decision" --content "Important decision" --project ${testProject} --type decision --force`);
-    run(`save --title "Context test bugfix" --content "Bug fix details" --project ${testProject} --type bugfix --force`);
-    run(`save --title "Context test personal" --content "Personal preference" --type preference --scope personal --force`);
+    run(
+      `save --title "Context test decision" --content "Important decision" --project ${testProject} --type decision --force`,
+    );
+    run(
+      `save --title "Context test bugfix" --content "Bug fix details" --project ${testProject} --type bugfix --force`,
+    );
+    run(
+      `save --title "Context test personal" --content "Personal preference" --type preference --scope personal --force`,
+    );
   });
 
   it('should return project-scoped context', () => {
@@ -316,7 +347,9 @@ describe('memory-store: context', () => {
   });
 
   it('should filter by topic-key', () => {
-    run(`save --title "Topic context test" --content "Content" --project ${testProject} --topic-key "test/topic-context" --force`);
+    run(
+      `save --title "Topic context test" --content "Content" --project ${testProject} --topic-key "test/topic-context" --force`,
+    );
     const result = run(`context --project ${testProject} --topic-key "test/topic-context"`);
     expect(result.observations.length).toBeGreaterThanOrEqual(1);
     expect(result.topic).toBe('test/topic-context');
@@ -403,8 +436,8 @@ describe('memory-store: search ranking quality', () => {
 
     const result = run(`search --query "Important" --project ${proj}`);
     if (result.results.length >= 2) {
-      const decisionIdx = result.results.findIndex(r => r.type === 'decision');
-      const summaryIdx = result.results.findIndex(r => r.type === 'session_summary');
+      const decisionIdx = result.results.findIndex((r) => r.type === 'decision');
+      const summaryIdx = result.results.findIndex((r) => r.type === 'session_summary');
       if (decisionIdx >= 0 && summaryIdx >= 0) {
         expect(result.results[decisionIdx]._score).toBeGreaterThan(result.results[summaryIdx]._score);
       }

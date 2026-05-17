@@ -3,31 +3,40 @@ const sessionsService = require('../services/sessions');
 const dreamService = require('../services/dream');
 
 function sessionStart(deps, args) {
-  return sessionsService.sessionStart({
-    sqlJson: deps.sqlJson,
-    sqlRun: deps.sqlRun,
-    autoRecoverInternal: (sessionId) => recoveryService.autoRecoverInternal(deps, sessionId),
-    runCompact: dreamService.runCompact,
-    _readTierConfig: deps._readTierConfig,
-    TOOL_TIERS: deps.TOOL_TIERS,
-    commands: deps.commands,
-  }, args);
+  return sessionsService.sessionStart(
+    {
+      sqlJson: deps.sqlJson,
+      sqlRun: deps.sqlRun,
+      autoRecoverInternal: (sessionId) => recoveryService.autoRecoverInternal(deps, sessionId),
+      runCompact: dreamService.runCompact,
+      _readTierConfig: deps._readTierConfig,
+      TOOL_TIERS: deps.TOOL_TIERS,
+      commands: deps.commands,
+    },
+    args,
+  );
 }
 
 function sessionEnd(deps, args) {
-  return sessionsService.sessionEnd({
-    sqlJson: deps.sqlJson,
-    sqlRun: deps.sqlRun,
-    trustRecovery: dreamService.trustRecovery,
-  }, args);
+  return sessionsService.sessionEnd(
+    {
+      sqlJson: deps.sqlJson,
+      sqlRun: deps.sqlRun,
+      trustRecovery: dreamService.trustRecovery,
+    },
+    args,
+  );
 }
 
 function sessionSummary(deps, args) {
-  return sessionsService.sessionSummary({
-    sqlJson: deps.sqlJson,
-    jsonErrNoExit: deps.jsonErrNoExit,
-    findLatestSession: sessionsService.findLatestSession,
-  }, args);
+  return sessionsService.sessionSummary(
+    {
+      sqlJson: deps.sqlJson,
+      jsonErrNoExit: deps.jsonErrNoExit,
+      findLatestSession: sessionsService.findLatestSession,
+    },
+    args,
+  );
 }
 
 function autoRecover(deps, args) {
@@ -54,4 +63,13 @@ function trustRecovery(args) {
   return dreamService.trustRecovery(args);
 }
 
-module.exports = { sessionStart, sessionEnd, sessionSummary, autoRecover, recoverOrphans, dream, compact, trustRecovery };
+module.exports = {
+  sessionStart,
+  sessionEnd,
+  sessionSummary,
+  autoRecover,
+  recoverOrphans,
+  dream,
+  compact,
+  trustRecovery,
+};

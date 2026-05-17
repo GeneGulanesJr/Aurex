@@ -8,7 +8,11 @@ const DOC_PATH = path.resolve(__dirname, '..', 'docs');
 
 function run(cmd) {
   try {
-    const out = execSync(`node "${STORE}" ${cmd}`, { encoding: 'utf8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] });
+    const out = execSync(`node "${STORE}" ${cmd}`, {
+      encoding: 'utf8',
+      timeout: 15000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
     const result = JSON.parse(out.trim());
     return result.data || result;
   } catch (e) {

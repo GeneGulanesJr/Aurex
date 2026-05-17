@@ -8,10 +8,7 @@ function detectChangedSymbols(deps, repoName) {
   const { sqlJson, sqlRun, jsonErrNoExit } = deps;
 
   // Look up the indexed repo
-  const repoRow = sqlJson(
-    'SELECT id, path, head_commit FROM code_repos WHERE name = ?',
-    [repoName],
-  );
+  const repoRow = sqlJson('SELECT id, path, head_commit FROM code_repos WHERE name = ?', [repoName]);
   if (!repoRow || repoRow.length === 0) {
     return { error: jsonErrNoExit(`Repo not found: ${repoName}. Index it first with index-repo.`) };
   }
@@ -47,16 +44,18 @@ function detectChangedSymbols(deps, repoName) {
   // Get changed files via git diff
   let changedFiles = [];
   try {
-    const diffArgs = baseCommit
-      ? `diff --name-only ${baseCommit}..HEAD`
-      : 'diff --name-only HEAD~1 HEAD';
+    const diffArgs = baseCommit ? `diff --name-only ${baseCommit}..HEAD` : 'diff --name-only HEAD~1 HEAD';
     const output = execSync(`git ${diffArgs}`, {
       cwd: repoPath,
       encoding: 'utf-8',
       timeout: 10000,
       maxBuffer: 10 * 1024 * 1024,
     });
-    changedFiles = output.trim().split('\n').map((f) => f.trim()).filter(Boolean);
+    changedFiles = output
+      .trim()
+      .split('\n')
+      .map((f) => f.trim())
+      .filter(Boolean);
   } catch (_) {
     return { error: jsonErrNoExit('Failed to run git diff to determine changed files') };
   }

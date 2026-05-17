@@ -6,7 +6,7 @@ describe('ast-patterns.js', () => {
     it('should have at least 8 preset detectors covering all categories', () => {
       expect(astPatterns.PRESET_DETECTORS.length).toBeGreaterThanOrEqual(8);
       // Verify category coverage
-      const categories = new Set(astPatterns.PRESET_DETECTORS.map(d => d.category));
+      const categories = new Set(astPatterns.PRESET_DETECTORS.map((d) => d.category));
       expect(categories.has('error_handling')).toBe(true);
       expect(categories.has('quality')).toBe(true);
       expect(categories.has('complexity')).toBe(true);
@@ -16,7 +16,7 @@ describe('ast-patterns.js', () => {
     });
 
     it('should have unique IDs', () => {
-      const ids = astPatterns.PRESET_DETECTORS.map(d => d.id);
+      const ids = astPatterns.PRESET_DETECTORS.map((d) => d.id);
       expect(new Set(ids).size).toBe(ids.length);
     });
 
@@ -36,22 +36,28 @@ describe('ast-patterns.js', () => {
   });
 
   describe('empty_catch detector', () => {
-    const detector = astPatterns.PRESET_DETECTORS.find(d => d.id === 'empty_catch');
+    const detector = astPatterns.PRESET_DETECTORS.find((d) => d.id === 'empty_catch');
 
     it('should detect empty catch blocks', () => {
-      const result = detector.detect({
-        body_preview: 'try { something(); } catch (e) { }',
-        start_line: 10,
-      }, null);
+      const result = detector.detect(
+        {
+          body_preview: 'try { something(); } catch (e) { }',
+          start_line: 10,
+        },
+        null,
+      );
       expect(result).not.toBeNull();
       expect(result.count).toBe(1);
     });
 
     it('should not detect non-empty catch blocks', () => {
-      const result = detector.detect({
-        body_preview: 'try { something(); } catch (e) { handleError(e); }',
-        start_line: 10,
-      }, null);
+      const result = detector.detect(
+        {
+          body_preview: 'try { something(); } catch (e) { handleError(e); }',
+          start_line: 10,
+        },
+        null,
+      );
       expect(result).toBeNull();
     });
 
@@ -62,15 +68,18 @@ describe('ast-patterns.js', () => {
   });
 
   describe('empty_function detector', () => {
-    const detector = astPatterns.PRESET_DETECTORS.find(d => d.id === 'empty_function');
+    const detector = astPatterns.PRESET_DETECTORS.find((d) => d.id === 'empty_function');
 
     it('should detect empty function via body_preview', () => {
-      const result = detector.detect({
-        kind: 'function',
-        body_preview: '',
-        start_line: 5,
-        end_line: 5,
-      }, null);
+      const result = detector.detect(
+        {
+          kind: 'function',
+          body_preview: '',
+          start_line: 5,
+          end_line: 5,
+        },
+        null,
+      );
       expect(result).not.toBeNull();
     });
 
@@ -81,77 +90,98 @@ describe('ast-patterns.js', () => {
   });
 
   describe('eval_exec detector', () => {
-    const detector = astPatterns.PRESET_DETECTORS.find(d => d.id === 'eval_exec');
+    const detector = astPatterns.PRESET_DETECTORS.find((d) => d.id === 'eval_exec');
 
     it('should detect eval()', () => {
-      const result = detector.detect({
-        body_preview: 'const x = eval("2 + 2");',
-        start_line: 1,
-      }, null);
+      const result = detector.detect(
+        {
+          body_preview: 'const x = eval("2 + 2");',
+          start_line: 1,
+        },
+        null,
+      );
       expect(result).not.toBeNull();
     });
 
     it('should detect new Function()', () => {
-      const result = detector.detect({
-        body_preview: 'const fn = new Function("a", "b", "return a + b");',
-        start_line: 1,
-      }, null);
+      const result = detector.detect(
+        {
+          body_preview: 'const fn = new Function("a", "b", "return a + b");',
+          start_line: 1,
+        },
+        null,
+      );
       expect(result).not.toBeNull();
     });
 
     it('should return null for clean code', () => {
-      const result = detector.detect({
-        body_preview: 'const x = a + b; return x;',
-        start_line: 1,
-      }, null);
+      const result = detector.detect(
+        {
+          body_preview: 'const x = a + b; return x;',
+          start_line: 1,
+        },
+        null,
+      );
       expect(result).toBeNull();
     });
   });
 
   describe('hardcoded_secret detector', () => {
-    const detector = astPatterns.PRESET_DETECTORS.find(d => d.id === 'hardcoded_secret');
+    const detector = astPatterns.PRESET_DETECTORS.find((d) => d.id === 'hardcoded_secret');
 
     it('should detect password strings', () => {
-      const result = detector.detect({
-        body_preview: 'const pw = "password123";',
-        start_line: 1,
-      }, null);
+      const result = detector.detect(
+        {
+          body_preview: 'const pw = "password123";',
+          start_line: 1,
+        },
+        null,
+      );
       expect(result).not.toBeNull();
     });
 
     it('should detect api_key strings', () => {
-      const result = detector.detect({
-        body_preview: "const key = 'api_key_abc';",
-        start_line: 1,
-      }, null);
+      const result = detector.detect(
+        {
+          body_preview: "const key = 'api_key_abc';",
+          start_line: 1,
+        },
+        null,
+      );
       expect(result).not.toBeNull();
     });
   });
 
   describe('todo_fixme detector', () => {
-    const detector = astPatterns.PRESET_DETECTORS.find(d => d.id === 'todo_fixme');
+    const detector = astPatterns.PRESET_DETECTORS.find((d) => d.id === 'todo_fixme');
 
     it('should detect TODO comments', () => {
-      const result = detector.detect({
-        body_preview: '// TODO: implement this later\nreturn 42;',
-        start_line: 10,
-      }, null);
+      const result = detector.detect(
+        {
+          body_preview: '// TODO: implement this later\nreturn 42;',
+          start_line: 10,
+        },
+        null,
+      );
       expect(result).not.toBeNull();
       expect(result.items[0].type).toBe('TODO');
     });
 
     it('should detect FIXME comments', () => {
-      const result = detector.detect({
-        body_preview: '// FIXME: this is broken\nreturn null;',
-        start_line: 10,
-      }, null);
+      const result = detector.detect(
+        {
+          body_preview: '// FIXME: this is broken\nreturn null;',
+          start_line: 10,
+        },
+        null,
+      );
       expect(result).not.toBeNull();
       expect(result.items[0].type).toBe('FIXME');
     });
   });
 
   describe('nested_loops detector', () => {
-    const detector = astPatterns.PRESET_DETECTORS.find(d => d.id === 'nested_loops');
+    const detector = astPatterns.PRESET_DETECTORS.find((d) => d.id === 'nested_loops');
 
     it('should detect 3 nested loops via indentation', () => {
       const body = [
@@ -187,31 +217,40 @@ describe('ast-patterns.js', () => {
   });
 
   describe('magic_number detector', () => {
-    const detector = astPatterns.PRESET_DETECTORS.find(d => d.id === 'magic_number');
+    const detector = astPatterns.PRESET_DETECTORS.find((d) => d.id === 'magic_number');
 
     it('should detect suspicious large numbers (>= 100)', () => {
-      const result = detector.detect({
-        body_preview: 'const timeout = 5000;\nconst limit = 200;',
-        start_line: 1,
-      }, null);
+      const result = detector.detect(
+        {
+          body_preview: 'const timeout = 5000;\nconst limit = 200;',
+          start_line: 1,
+        },
+        null,
+      );
       expect(result).not.toBeNull();
       // 50, 99, 200, 5000 — many numeric literals
       expect(result.count).toBeGreaterThanOrEqual(2);
     });
 
     it('should not flag common small numbers (0, 1, 2, -1)', () => {
-      const result = detector.detect({
-        body_preview: 'const a = 0;\nconst b = 1;\nconst c = 2;\nconst d = -1;',
-        start_line: 1,
-      }, null);
+      const result = detector.detect(
+        {
+          body_preview: 'const a = 0;\nconst b = 1;\nconst c = 2;\nconst d = -1;',
+          start_line: 1,
+        },
+        null,
+      );
       expect(result).toBeNull();
     });
 
     it('should return null when few magic numbers present', () => {
-      const result = detector.detect({
-        body_preview: 'const width = 42;\nreturn width * 3;',
-        start_line: 1,
-      }, null);
+      const result = detector.detect(
+        {
+          body_preview: 'const width = 42;\nreturn width * 3;',
+          start_line: 1,
+        },
+        null,
+      );
       // Only 42 and 3 — less than 5 total matches, no notable (>99) numbers
       expect(result).toBeNull();
     });
@@ -223,23 +262,29 @@ describe('ast-patterns.js', () => {
   });
 
   describe('reassigned_param detector', () => {
-    const detector = astPatterns.PRESET_DETECTORS.find(d => d.id === 'reassigned_param');
+    const detector = astPatterns.PRESET_DETECTORS.find((d) => d.id === 'reassigned_param');
 
     it('should detect parameter reassignment', () => {
-      const result = detector.detect({
-        signature: 'function foo(x, y) {',
-        body_preview: 'x = x + 1;\nreturn x;',
-        start_line: 1,
-      }, null);
+      const result = detector.detect(
+        {
+          signature: 'function foo(x, y) {',
+          body_preview: 'x = x + 1;\nreturn x;',
+          start_line: 1,
+        },
+        null,
+      );
       expect(result).not.toBeNull();
     });
 
     it('should return null for no reassignment', () => {
-      const result = detector.detect({
-        signature: 'function foo(x, y) {',
-        body_preview: 'return x + y;',
-        start_line: 1,
-      }, null);
+      const result = detector.detect(
+        {
+          signature: 'function foo(x, y) {',
+          body_preview: 'return x + y;',
+          start_line: 1,
+        },
+        null,
+      );
       expect(result).toBeNull();
     });
   });

@@ -2,10 +2,7 @@
 
 const path = require('path');
 const { execSync } = require('child_process');
-const {
-  BENCHMARK_TOOLS, formatBytes, pad,
-  runCli, isRepoIndexed, findSymbolWithCallers,
-} = require('./bench-helper');
+const { BENCHMARK_TOOLS, formatBytes, pad, runCli, isRepoIndexed, findSymbolWithCallers } = require('./bench-helper');
 const wf = require('../wire-format');
 
 // ══════════════════════════════════════════════════════════
@@ -42,27 +39,38 @@ function parseArgs() {
 // ══════════════════════════════════════════════════════════
 
 function unwrap(data) {
-  if (data && data._meta && data.data) {return data.data;}
+  if (data && data._meta && data.data) {
+    return data.data;
+  }
   return data;
 }
 
 function estimateRowCount(data, toolName) {
   const d = unwrap(data);
   switch (toolName) {
-    case 'getSymbolImportance': return (d.nodes || []).length;
-    case 'getHotspots': return (d.hotspots || d.files || []).length;
+    case 'getSymbolImportance':
+      return (d.nodes || []).length;
+    case 'getHotspots':
+      return (d.hotspots || d.files || []).length;
     case 'getDeadCode': {
       const syms = (d.dead_symbols || []).length;
       const files = (d.dead_files || []).length;
       return syms + files;
     }
-    case 'getCouplingMetrics': return (d.metrics || d.files || []).length;
-    case 'getExtractionCandidates': return (d.candidates || []).length;
-    case 'getCallHierarchy': return (d.edges || []).length;
-    case 'getImportGraph': return (d.edges || []).length;
-    case 'getBlastRadius': return (d.edges || []).length;
-    case 'getDependencyCycles': return (d.cycles || []).length;
-    default: return 0;
+    case 'getCouplingMetrics':
+      return (d.metrics || d.files || []).length;
+    case 'getExtractionCandidates':
+      return (d.candidates || []).length;
+    case 'getCallHierarchy':
+      return (d.edges || []).length;
+    case 'getImportGraph':
+      return (d.edges || []).length;
+    case 'getBlastRadius':
+      return (d.edges || []).length;
+    case 'getDependencyCycles':
+      return (d.cycles || []).length;
+    default:
+      return 0;
   }
 }
 
@@ -101,13 +109,17 @@ function ensureRepoIndexed(repoPath, repoName, forceReindex) {
 
 function _removeExistingRepo(repoName) {
   execSync(`node memory-store.js remove-code-repo --repo "${repoName}"`, {
-    cwd: path.resolve(__dirname, '..'), encoding: 'utf-8', timeout: 10000,
+    cwd: path.resolve(__dirname, '..'),
+    encoding: 'utf-8',
+    timeout: 10000,
   });
 }
 
 function _doIndexRepo(repoPath, repoName) {
   const indexResult = execSync(`node memory-store.js index-repo --path "${repoPath}" --name "${repoName}"`, {
-    cwd: path.resolve(__dirname, '..'), encoding: 'utf-8', timeout: 120000,
+    cwd: path.resolve(__dirname, '..'),
+    encoding: 'utf-8',
+    timeout: 120000,
   });
   const idx = JSON.parse(indexResult.trim());
   if (idx.error) {
@@ -141,11 +153,15 @@ function runBenchmarks(repoName, callSymbol) {
 function benchmarkTool(repoName, tool, callSymbol) {
   let extraFlags = '';
   if (tool.cli === 'call-hierarchy' || tool.cli === 'blast-radius') {
-    if (!callSymbol) {return { tool: tool.name, error: 'No symbol available' };}
+    if (!callSymbol) {
+      return { tool: tool.name, error: 'No symbol available' };
+    }
     extraFlags = `--symbol "${callSymbol}"`;
   }
   const toolData = _runToolCli(repoName, tool, extraFlags);
-  if (toolData.error) {return { tool: tool.name, error: toolData.error };}
+  if (toolData.error) {
+    return { tool: tool.name, error: toolData.error };
+  }
   return { ..._computeCompactStats(toolData, tool), rows: estimateRowCount(toolData, tool.toolName) };
 }
 
@@ -181,7 +197,9 @@ function _printResultsHeader() {
 }
 
 function _printResultRows(results) {
-  let totalRaw = 0, totalCompact = 0, totalRows = 0;
+  let totalRaw = 0,
+    totalCompact = 0,
+    totalRows = 0;
   for (const r of results) {
     if (r.error) {
       console.log(`${pad(r.tool, 15)}ERROR: ${r.error.slice(0, 30)}`);
@@ -198,10 +216,10 @@ function _printResultRows(results) {
 function _printResultRow(r) {
   console.log(
     pad(r.tool, 15) +
-    pad(r.rows, 6) +
-    pad(r.rawBytes, 10) +
-    pad(r.compactBytes, 12) +
-    ('-' + r.savingsPct + '%').padStart(8)
+      pad(r.rows, 6) +
+      pad(r.rawBytes, 10) +
+      pad(r.compactBytes, 12) +
+      ('-' + r.savingsPct + '%').padStart(8),
   );
 }
 
@@ -209,10 +227,10 @@ function _printSummary(totalRaw, totalCompact, totalRows) {
   const overallPct = totalRaw > 0 ? Math.round((1 - totalCompact / totalRaw) * 100) : 0;
   console.log(
     pad('TOTAL', 15) +
-    pad(totalRows, 6) +
-    pad(totalRaw, 10) +
-    pad(totalCompact, 12) +
-    ('-' + overallPct + '%').padStart(8)
+      pad(totalRows, 6) +
+      pad(totalRaw, 10) +
+      pad(totalCompact, 12) +
+      ('-' + overallPct + '%').padStart(8),
   );
   const savedBytes = totalRaw - totalCompact;
   const savedTokens = Math.round(savedBytes / 3.5);
@@ -222,7 +240,7 @@ function _printSummary(totalRaw, totalCompact, totalRows) {
   console.log(`  Saved:         ${formatBytes(savedBytes)} (~${savedTokens} tokens, -${overallPct}%)`);
 }
 
-main().catch(e => {
+main().catch((e) => {
   console.error('Benchmark failed:', e.message);
   process.exit(1);
 });

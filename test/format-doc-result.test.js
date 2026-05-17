@@ -4,9 +4,7 @@ describe('tools/format-doc-result', () => {
   describe('search', () => {
     it('should format doc search results', () => {
       const result = formatDocResult('search', {
-        results: [
-          { role: 'concept', level: 2, title: 'Getting Started', file_path: 'docs/intro.md' },
-        ],
+        results: [{ role: 'concept', level: 2, title: 'Getting Started', file_path: 'docs/intro.md' }],
       });
       expect(result).toContain('**Doc search:** 1 results');
       expect(result).toContain('[concept]');
@@ -17,9 +15,12 @@ describe('tools/format-doc-result', () => {
   describe('outline (tree)', () => {
     it('should format tree outline', () => {
       const result = formatDocResult('outline', [
-        { level: 1, title: 'Intro', role: 'concept', children: [
-          { level: 2, title: 'Setup', role: 'how_to', children: [] },
-        ]},
+        {
+          level: 1,
+          title: 'Intro',
+          role: 'concept',
+          children: [{ level: 2, title: 'Setup', role: 'how_to', children: [] }],
+        },
       ]);
       expect(result).toContain('Intro');
       expect(result).toContain('Setup');
@@ -58,9 +59,7 @@ describe('tools/format-doc-result', () => {
 
   describe('glossary (list)', () => {
     it('should format glossary list', () => {
-      const result = formatDocResult('glossary', [
-        { term: 'API', definition: 'Application Programming Interface' },
-      ]);
+      const result = formatDocResult('glossary', [{ term: 'API', definition: 'Application Programming Interface' }]);
       expect(result).toContain('**Glossary:** 1 terms');
       expect(result).toContain('API');
     });

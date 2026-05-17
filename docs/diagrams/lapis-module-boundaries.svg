@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 820" width="1200" height="820">
+
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#1b365d"/>
+    </marker>
+    <marker id="arrow-soft" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#6b7280"/>
+    </marker>
+    <style><![CDATA[
+      .bg{fill:#f8f6ef}.title{font:700 25px Georgia,serif;fill:#14213d}.subtitle{font:13px Georgia,serif;fill:#4b5563}.layer{fill:#fffdf7;stroke:#d7c9ad;stroke-width:1.5}.box{fill:#ffffff;stroke:#1b365d;stroke-width:1.4}.box2{fill:#eef6ff;stroke:#1b365d;stroke-width:1.4}.box3{fill:#f6f0ff;stroke:#7653b8;stroke-width:1.4}.box4{fill:#effaf4;stroke:#2f7d52;stroke-width:1.4}.label{font:700 14px Georgia,serif;fill:#111827}.small{font:12px Georgia,serif;fill:#374151}.mono{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#4b5563}.eyebrow{font:700 10px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em;fill:#1b365d}.arrow{stroke:#1b365d;stroke-width:2;fill:none;marker-end:url(#arrow)}.soft{stroke:#6b7280;stroke-width:1.6;fill:none;marker-end:url(#arrow-soft);stroke-dasharray:5 4}.caption{font:12px Georgia,serif;fill:#6b5f4a}.note{fill:#fff8e6;stroke:#c8a64b;stroke-width:1.2}
+    ]]></style>
+  </defs>
+  <rect class="bg" width="1200" height="820"/>
+  <text class="title" x="600" y="44" text-anchor="middle">LaPis Module Boundaries</text>
+  <text class="subtitle" x="600" y="68" text-anchor="middle">Feature modules are peers; platform owns storage/protocol; trust-sync is the explicit memory-code bridge</text>
+
+  <rect class="layer" x="70" y="100" width="1060" height="100" rx="16"/><text class="eyebrow" x="95" y="126">PI EXTENSION</text>
+  <rect class="box" x="130" y="145" width="180" height="38" rx="9"/><text class="small" x="220" y="169" text-anchor="middle">hooks/</text>
+  <rect class="box" x="350" y="145" width="180" height="38" rx="9"/><text class="small" x="440" y="169" text-anchor="middle">tools/</text>
+  <rect class="box" x="570" y="145" width="180" height="38" rx="9"/><text class="small" x="660" y="169" text-anchor="middle">host/ backend client</text>
+  <rect class="box" x="790" y="145" width="250" height="38" rx="9"/><text class="small" x="915" y="169" text-anchor="middle">format-code/doc-result</text>
+
+  <path class="arrow" d="M600 200 L600 245"/>
+  <rect class="layer" x="70" y="245" width="1060" height="105" rx="16"/><text class="eyebrow" x="95" y="271">CLI COMMAND GATEWAY</text>
+  <rect class="box2" x="145" y="290" width="230" height="38" rx="9"/><text class="small" x="260" y="314" text-anchor="middle">src/cli/gateway.js</text>
+  <rect class="box2" x="430" y="290" width="340" height="38" rx="9"/><text class="small" x="600" y="314" text-anchor="middle">src/cli/commands/* routers</text>
+  <rect class="box2" x="825" y="290" width="230" height="38" rx="9"/><text class="small" x="940" y="314" text-anchor="middle">legacy compatibility</text>
+
+  <path class="arrow" d="M600 350 L600 395"/>
+  <rect class="layer" x="70" y="395" width="1060" height="200" rx="16"/><text class="eyebrow" x="95" y="421">FEATURE SERVICES</text>
+  <rect class="box4" x="110" y="445" width="210" height="58" rx="10"/><text class="label" x="215" y="468" text-anchor="middle">memory-domain</text><text class="mono" x="215" y="486" text-anchor="middle">observations, context</text>
+  <rect class="box4" x="360" y="445" width="210" height="58" rx="10"/><text class="label" x="465" y="468" text-anchor="middle">workflow-memory</text><text class="mono" x="465" y="486" text-anchor="middle">procedures, steps</text>
+  <rect class="box4" x="610" y="445" width="210" height="58" rx="10"/><text class="label" x="715" y="468" text-anchor="middle">code-index</text><text class="mono" x="715" y="486" text-anchor="middle">symbols, edges</text>
+  <rect class="box4" x="860" y="445" width="210" height="58" rx="10"/><text class="label" x="965" y="468" text-anchor="middle">doc-index</text><text class="mono" x="965" y="486" text-anchor="middle">sections, links</text>
+  <rect class="box4" x="360" y="525" width="210" height="48" rx="10"/><text class="label" x="465" y="554" text-anchor="middle">code-analysis</text>
+  <rect class="box3" x="610" y="525" width="210" height="48" rx="10"/><text class="label" x="715" y="554" text-anchor="middle">trust-sync</text>
+  <path class="soft" d="M715 525 L715 503"/><path class="soft" d="M610 550 L570 550"/><path class="soft" d="M820 550 C890 550 895 505 965 503"/>
+
+  <path class="arrow" d="M600 595 L600 640"/>
+  <rect class="layer" x="70" y="640" width="1060" height="110" rx="16"/><text class="eyebrow" x="95" y="666">PLATFORM SERVICES</text>
+  <rect class="box" x="140" y="685" width="230" height="38" rx="9"/><text class="small" x="255" y="709" text-anchor="middle">storage repositories</text>
+  <rect class="box" x="415" y="685" width="170" height="38" rx="9"/><text class="small" x="500" y="709" text-anchor="middle">config</text>
+  <rect class="box" x="630" y="685" width="210" height="38" rx="9"/><text class="small" x="735" y="709" text-anchor="middle">protocol / compact</text>
+  <rect class="box" x="880" y="685" width="170" height="38" rx="9"/><text class="small" x="965" y="709" text-anchor="middle">git provider</text>
+
+  <rect class="note" x="170" y="770" width="860" height="28" rx="8"/><text class="caption" x="600" y="789" text-anchor="middle">Rule of thumb: features do domain work; CLI and extension adapt; platform owns shared infrastructure only.</text>
+</svg>

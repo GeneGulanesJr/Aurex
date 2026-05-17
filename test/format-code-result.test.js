@@ -73,7 +73,13 @@ describe('tools/format-code-result', () => {
 
     it('should format single function complexity', () => {
       const result = formatCodeResult('complexity', {
-        name: 'myFn', file_path: 'src/fn.ts', cyclomatic: 5, nesting_depth: 2, param_count: 3, lines_of_code: 20, assessment: 'medium',
+        name: 'myFn',
+        file_path: 'src/fn.ts',
+        cyclomatic: 5,
+        nesting_depth: 2,
+        param_count: 3,
+        lines_of_code: 20,
+        assessment: 'medium',
       });
       expect(result).toContain('myFn');
       expect(result).toContain('cyclomatic=5');
@@ -102,10 +108,12 @@ describe('tools/format-code-result', () => {
   describe('outline', () => {
     it('should format classes outline', () => {
       const result = formatCodeResult('outline', {
-        classes: [{
-          name: 'MyClass',
-          methods: [{ kind: 'method', name: 'doIt', signature: '(): void' }],
-        }],
+        classes: [
+          {
+            name: 'MyClass',
+            methods: [{ kind: 'method', name: 'doIt', signature: '(): void' }],
+          },
+        ],
         standalone: [{ kind: 'function', name: 'helper' }],
       });
       expect(result).toContain('File outline');

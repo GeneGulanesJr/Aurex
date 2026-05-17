@@ -15,6 +15,16 @@ Pi Agent
   -> src/platform/ + data-access/    # storage, repositories, protocol formatting
 ```
 
+![LaPis module boundaries](diagrams/lapis-module-boundaries.png)
+
+This structural view shows the current target shape: extension code adapts Pi events and tools, the CLI gateway maps commands to feature routers, feature services own domain behavior, and platform services own shared storage, config, and protocol formatting.
+
+## Memory lifecycle view
+
+![LaPis memory lifecycle](diagrams/lapis-memory-lifecycle.png)
+
+The lifecycle view complements the module-boundary diagram. Session hooks capture and inject context, feature services handle read/write/index/trust operations, and the local SQLite store persists observations, sessions, code symbols, documentation sections, symbol links, and FTS indexes. Maintenance commands keep the store healthy through compaction and Dream Cycle cleanup without changing the single-database deployment model.
+
 ## Layer responsibilities
 
 ### Pi extension adapters

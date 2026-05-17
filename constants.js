@@ -20,7 +20,7 @@ const TRUST_DELTA = {
 
 const DEDUP = {
   AUTO_MERGE_THRESHOLD: 0.85,
-  WARNING_THRESHOLD: 0.60,
+  WARNING_THRESHOLD: 0.6,
   DREAM_SUPERSEDED_CONFIDENCE: 0.6,
   DREAM_LOW_TRUST_THRESHOLD: 0.3,
   MARK_DUP_DEFAULT_CONFIDENCE: 0.9,
@@ -124,11 +124,11 @@ const HOTSPOT_THRESHOLDS = {
 
 const PR_RISK = {
   WEIGHTS: {
-    blast_radius: 0.30,
-    complexity: 0.20,
-    churn: 0.20,
-    test_coverage: 0.20,
-    change_volume: 0.10,
+    blast_radius: 0.3,
+    complexity: 0.2,
+    churn: 0.2,
+    test_coverage: 0.2,
+    change_volume: 0.1,
   },
   BLAST_RADIUS_NORMALIZER: 50,
   COMPLEXITY_NORMALIZER: 30,

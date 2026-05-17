@@ -1,4 +1,4 @@
-import { state, getTimeout, trustIcon, isCodeFile } from '../extensions/memory-layer/state.ts';
+import { getTimeout, isCodeFile, state, trustIcon } from '../extensions/memory-layer/state.ts';
 
 describe('state', () => {
   it('should export a state object with expected keys', () => {

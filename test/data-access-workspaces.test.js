@@ -1,9 +1,4 @@
-const {
-  listWorkspaces,
-  createWorkspace,
-  archiveWorkspace,
-  listProjects,
-} = require('../data-access/workspaces');
+const { listWorkspaces, createWorkspace, archiveWorkspace, listProjects } = require('../data-access/workspaces');
 
 function mockDeps() {
   return { sqlJson: vi.fn(), sqlRun: vi.fn(), sqlRaw: vi.fn(), ensureDb: vi.fn() };
@@ -36,7 +31,9 @@ describe('data-access/workspaces', () => {
 
     it('should return error if workspace already exists', () => {
       const deps = mockDeps();
-      deps.sqlRun.mockImplementation(() => { throw new Error('UNIQUE constraint'); });
+      deps.sqlRun.mockImplementation(() => {
+        throw new Error('UNIQUE constraint');
+      });
       const result = createWorkspace(deps, 'existing');
       expect(result.error).toContain('already exists');
     });

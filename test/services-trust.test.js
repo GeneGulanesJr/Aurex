@@ -64,10 +64,11 @@ describe('services/trust: syncCodeTrust', () => {
       sqlRun,
       repositories: {
         trustSync: {
-          getAnchoredLinks: (repo) => sqlJson('fake', [])[0] || [
-            { memory_id: '1', symbol_id: 'myFunc', trust_score: 0.7 },
-            { memory_id: '2', symbol_id: 'otherFunc', trust_score: 0.9 },
-          ],
+          getAnchoredLinks: (repo) =>
+            sqlJson('fake', [])[0] || [
+              { memory_id: '1', symbol_id: 'myFunc', trust_score: 0.7 },
+              { memory_id: '2', symbol_id: 'otherFunc', trust_score: 0.9 },
+            ],
           updateLinkTrust,
           insertTrustAdjustment,
         },

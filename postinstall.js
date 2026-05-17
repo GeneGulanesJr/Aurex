@@ -18,7 +18,7 @@ try {
 
 // 2. Install AGENTS.md to ~/.pi/agent/ if LaPis is installed as a dependency
 //    (skip if we're developing LaPis itself — detected by checking if package.json
-//     has lapis as its own name and we're in the LaPis repo)
+//     Has lapis as its own name and we're in the LaPis repo)
 const pkgPath = path.resolve(__dirname, 'package.json');
 try {
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));

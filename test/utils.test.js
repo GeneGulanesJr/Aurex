@@ -105,7 +105,7 @@ describe('utils.js', () => {
     it('should find code files in src but skip node_modules', () => {
       const files = utils.walkDirForCode(tmpDir);
       expect(files.length).toBe(2);
-      const basenames = files.map(f => path.basename(f)).sort();
+      const basenames = files.map((f) => path.basename(f)).sort();
       expect(basenames).toEqual(['app.ts', 'index.js']);
     });
 
@@ -113,7 +113,7 @@ describe('utils.js', () => {
       fs.mkdirSync(path.join(tmpDir, '.hidden'), { recursive: true });
       fs.writeFileSync(path.join(tmpDir, '.hidden', 'secret.js'), '// hidden');
       const files = utils.walkDirForCode(tmpDir);
-      expect(files.every(f => !f.includes('.hidden'))).toBe(true);
+      expect(files.every((f) => !f.includes('.hidden'))).toBe(true);
     });
 
     it('should find .py, .go, .rs files', () => {
@@ -150,7 +150,7 @@ describe('utils.js', () => {
 
     it('should respect ignore glob', () => {
       const files = utils.walkDirForDocs(tmpDir, 'docs/guide*');
-      const basenames = files.map(f => path.basename(f));
+      const basenames = files.map((f) => path.basename(f));
       expect(basenames).not.toContain('guide.md');
     });
   });

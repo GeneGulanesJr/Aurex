@@ -132,6 +132,7 @@ Dead code confidence: 0.33 per signal (no callers, unreachable file), 1.0 = prov
 
   Age alone is NOT a signal. A 6-month-old valid decision stays. A 1-day-old superseded one goes.
   Auto-runs every 10th session. Run manually: `memory-store.js dream` or `/memory-dream`.
+
 - `stats`
 - `list-projects`
 
@@ -207,23 +208,24 @@ On `save`, trigram overlap checked against existing observations:
 The extension proactively ensures memory is always invoked at the right moment.
 All hooks are non-blocking — they enhance, not replace, explicit tool usage.
 
-| Hook | Situation | Response |
-| ---- | --------- | -------- |
-| `session_compact` | User runs `/compact` or auto-compaction fires | Re-inject full memory context (observations + preferences + status) so LLM retains awareness |
-| `context` | Every LLM call (8th call onwards) | Lightweight reminder to use memory-search/memory-save if no memory tool used recently |
-| `message_end` | Assistant message with decision/bugfix/discovery pattern | Auto-save as observation with detected type |
-| `turn_end` | Every 10th turn | Progress checkpoint with files touched + memory count |
-| `tool_call` | LLM reads code files directly (indexed repo, no offset/limit) | **Hard block** — forces `memory-code outline` first; partial reads (offset/limit) allowed for editing |
-| `tool_call` | LLM uses grep/rg/find on source code in indexed repo | **Hard block** — forces `memory-code` instead |
-| `tool_call` | LLM calls memory-code with file param | Marks file as explored → future reads allowed |
-| `tool_call` | LLM uses memory-* tools | Track last-usage timestamp (suppress redundant reminders) |
-| `tool_result` | bash with git pull/checkout/merge | Auto-sync code trust scores |
-| `tool_result` | edit/write on code files | Track file for session summary + periodic auto-save |
-| `session_shutdown` | Session ends | Rich summary with topics discussed + files modified + turn count |
+| Hook               | Situation                                                     | Response                                                                                              |
+| ------------------ | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `session_compact`  | User runs `/compact` or auto-compaction fires                 | Re-inject full memory context (observations + preferences + status) so LLM retains awareness          |
+| `context`          | Every LLM call (8th call onwards)                             | Lightweight reminder to use memory-search/memory-save if no memory tool used recently                 |
+| `message_end`      | Assistant message with decision/bugfix/discovery pattern      | Auto-save as observation with detected type                                                           |
+| `turn_end`         | Every 10th turn                                               | Progress checkpoint with files touched + memory count                                                 |
+| `tool_call`        | LLM reads code files directly (indexed repo, no offset/limit) | **Hard block** — forces `memory-code outline` first; partial reads (offset/limit) allowed for editing |
+| `tool_call`        | LLM uses grep/rg/find on source code in indexed repo          | **Hard block** — forces `memory-code` instead                                                         |
+| `tool_call`        | LLM calls memory-code with file param                         | Marks file as explored → future reads allowed                                                         |
+| `tool_call`        | LLM uses memory-\* tools                                      | Track last-usage timestamp (suppress redundant reminders)                                             |
+| `tool_result`      | bash with git pull/checkout/merge                             | Auto-sync code trust scores                                                                           |
+| `tool_result`      | edit/write on code files                                      | Track file for session summary + periodic auto-save                                                   |
+| `session_shutdown` | Session ends                                                  | Rich summary with topics discussed + files modified + turn count                                      |
 
 ### Decision Detection Patterns
 
 The extension pattern-matches assistant messages for:
+
 - **Design decisions**: "I'll use X", "going with", "switching to", "using X instead of Y"
 - **Architecture choices**: "approach:", "strategy:", "architecture:", "pattern:"
 - **Bug fixes**: "root cause", "the bug was", "fix is", "workaround is"
