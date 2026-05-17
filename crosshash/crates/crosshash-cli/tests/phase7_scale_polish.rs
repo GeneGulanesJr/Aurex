@@ -99,7 +99,11 @@ mod subphase_71_language_expansion {
         let dir = tempfile::tempdir().unwrap();
         let repo = dir.path().join("web-repo");
         fs::create_dir_all(&repo).unwrap();
-        fs::write(repo.join("index.html"), "<!DOCTYPE html><html><body>Hello</body></html>").unwrap();
+        fs::write(
+            repo.join("index.html"),
+            "<!DOCTYPE html><html><body>Hello</body></html>",
+        )
+        .unwrap();
         fs::write(repo.join("style.css"), "body { color: red; }").unwrap();
         let db = dir.path().join("test.db");
 

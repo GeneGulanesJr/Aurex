@@ -84,19 +84,25 @@ fn bench_edge_extraction(entity_count: usize, iterations: usize) -> std::time::D
     for i in 0..entity_count {
         let name = format!("fn_{i}");
         let file = format!("src/mod_{}/lib.rs", i % 10);
-        let source = format!("use crate::other::fn_{};\nfn {}() {{ fn_{}() }}", i.max(1), name, i.max(1));
-        entities.push(make_entity(&name, &file, EntityKind::Function, Language::Rust));
+        let source = format!(
+            "use crate::other::fn_{};\nfn {}() {{ fn_{}() }}",
+            i.max(1),
+            name,
+            i.max(1)
+        );
+        entities.push(make_entity(
+            &name,
+            &file,
+            EntityKind::Function,
+            Language::Rust,
+        ));
         sources.insert(file, source);
     }
     let mut total = std::time::Duration::ZERO;
     for _ in 0..iterations {
         let start = Instant::now();
-        let _ = StaticEdgeExtractor::extract(
-            Uuid::NAMESPACE_OID,
-            Path::new("."),
-            &entities,
-            &sources,
-        );
+        let _ =
+            StaticEdgeExtractor::extract(Uuid::NAMESPACE_OID, Path::new("."), &entities, &sources);
         total += start.elapsed();
     }
     total
@@ -151,7 +157,10 @@ fn main() {
     } else {
         f64::MAX
     };
-    println!("  Parse throughput: {:.0} files/sec (target: >100)", files_per_sec);
+    println!(
+        "  Parse throughput: {:.0} files/sec (target: >100)",
+        files_per_sec
+    );
 
     let edge_duration_100 = bench_edge_extraction(100, 50);
     let avg_edge_ms = edge_duration_100.as_millis() as f64 / 50.0;
@@ -163,12 +172,18 @@ fn main() {
     if files_per_sec >= 100.0 {
         println!("\n  ✓ Parse throughput meets target");
     } else {
-        println!("\n  ✗ Parse throughput below target ({:.0} < 100 files/sec)", files_per_sec);
+        println!(
+            "\n  ✗ Parse throughput below target ({:.0} < 100 files/sec)",
+            files_per_sec
+        );
     }
 
     if avg_edge_ms < 200.0 {
         println!("  ✓ Impact query time within target");
     } else {
-        println!("  ✗ Impact query time exceeds target ({:.1}ms > 200ms)", avg_edge_ms);
+        println!(
+            "  ✗ Impact query time exceeds target ({:.1}ms > 200ms)",
+            avg_edge_ms
+        );
     }
 }

@@ -172,10 +172,13 @@ mod tests {
             "source_file"
         );
         assert_eq!(
-            parse_source("class Main { public static void main(String[] args) {} }\n", Language::Java)
-                .unwrap()
-                .root_node()
-                .kind(),
+            parse_source(
+                "class Main { public static void main(String[] args) {} }\n",
+                Language::Java
+            )
+            .unwrap()
+            .root_node()
+            .kind(),
             "program"
         );
         assert_eq!(

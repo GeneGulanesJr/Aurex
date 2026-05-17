@@ -65,8 +65,7 @@ fn walk(
     if let Some((kind, name)) = entity_name(source, node) {
         let body = node_text(source, node).to_string();
         let signature = signature_text(&body);
-        let is_exported =
-            body.trim_start().starts_with("export") || parent_export(source, node);
+        let is_exported = body.trim_start().starts_with("export") || parent_export(source, node);
         let hashes = EntityHasher::compute(&HashInput {
             kind,
             signature: signature.clone(),
@@ -161,8 +160,12 @@ mod tests {
             &t,
             "h",
         );
-        assert!(e.iter().any(|e| e.name == "hello" && e.kind == EntityKind::Function));
-        assert!(e.iter().any(|e| e.name == "Foo" && e.kind == EntityKind::Class));
+        assert!(e
+            .iter()
+            .any(|e| e.name == "hello" && e.kind == EntityKind::Function));
+        assert!(e
+            .iter()
+            .any(|e| e.name == "Foo" && e.kind == EntityKind::Class));
         assert!(e.iter().all(|e| e.language == Language::JavaScript));
     }
 }

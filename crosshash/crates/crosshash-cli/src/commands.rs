@@ -1252,9 +1252,7 @@ fn extract_for_language(
         Language::Java => {
             Ok(JavaExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
         }
-        Language::C => {
-            Ok(CExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
-        }
+        Language::C => Ok(CExtractor.extract_entities(repo_id, root, file, source, tree, commit)?),
         Language::Cpp => {
             Ok(CppExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
         }
@@ -1291,12 +1289,11 @@ fn extract_for_language(
         Language::Bash => {
             Ok(BashExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
         }
-        Language::Html | Language::Css => {
-            Err(anyhow!("unsupported language for extraction: {:?}", language))
-        }
-        Language::Unknown => {
-            Err(anyhow!("unsupported language for extraction: Unknown"))
-        }
+        Language::Html | Language::Css => Err(anyhow!(
+            "unsupported language for extraction: {:?}",
+            language
+        )),
+        Language::Unknown => Err(anyhow!("unsupported language for extraction: Unknown")),
     }
 }
 

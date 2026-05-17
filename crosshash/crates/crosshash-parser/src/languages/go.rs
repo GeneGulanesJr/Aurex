@@ -141,9 +141,17 @@ fn entity_from_node(source: &str, node: Node) -> Option<(EntityKind, String, Vis
             if text.starts_with("type ") {
                 let after_type = text.strip_prefix("type ")?;
                 if after_type.contains("struct") {
-                    return Some((EntityKind::Struct, extract_name(source, node)?, Visibility::Public));
+                    return Some((
+                        EntityKind::Struct,
+                        extract_name(source, node)?,
+                        Visibility::Public,
+                    ));
                 } else if after_type.contains("interface") {
-                    return Some((EntityKind::Interface, extract_name(source, node)?, Visibility::Public));
+                    return Some((
+                        EntityKind::Interface,
+                        extract_name(source, node)?,
+                        Visibility::Public,
+                    ));
                 }
             }
             return None;
@@ -151,7 +159,12 @@ fn entity_from_node(source: &str, node: Node) -> Option<(EntityKind, String, Vis
         _ => return None,
     };
     let name = extract_name(source, node)?;
-    let visibility = if name.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+    let visibility = if name
+        .chars()
+        .next()
+        .map(|c| c.is_uppercase())
+        .unwrap_or(false)
+    {
         Visibility::Public
     } else {
         Visibility::Private

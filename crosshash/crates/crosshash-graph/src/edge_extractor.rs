@@ -314,7 +314,12 @@ impl ImportResolver for JavaResolver {
             let trimmed = line.trim();
             if let Some(rest) = trimmed.strip_prefix("import ") {
                 if let Some(static_rest) = rest.strip_prefix("static ") {
-                    let name = static_rest.split('.').next_back().unwrap_or(static_rest).trim_end_matches(';').trim();
+                    let name = static_rest
+                        .split('.')
+                        .next_back()
+                        .unwrap_or(static_rest)
+                        .trim_end_matches(';')
+                        .trim();
                     if !name.is_empty() && !name.contains('*') {
                         imports.push(ImportInfo {
                             imported_name: name.to_string(),
@@ -323,7 +328,12 @@ impl ImportResolver for JavaResolver {
                         });
                     }
                 } else {
-                    let name = rest.trim_end_matches(';').split('.').next_back().unwrap_or(rest.trim_end_matches(';')).trim();
+                    let name = rest
+                        .trim_end_matches(';')
+                        .split('.')
+                        .next_back()
+                        .unwrap_or(rest.trim_end_matches(';'))
+                        .trim();
                     if !name.is_empty() && !name.contains('*') {
                         imports.push(ImportInfo {
                             imported_name: name.to_string(),
@@ -344,7 +354,11 @@ impl ImportResolver for RubyResolver {
         for line in source.lines() {
             let trimmed = line.trim();
             if let Some(rest) = trimmed.strip_prefix("require ") {
-                let path = rest.trim_matches('\'').trim_matches('"').trim_end_matches(';').trim();
+                let path = rest
+                    .trim_matches('\'')
+                    .trim_matches('"')
+                    .trim_end_matches(';')
+                    .trim();
                 if !path.is_empty() {
                     let name = path.rsplit('/').next().unwrap_or(path).to_string();
                     imports.push(ImportInfo {
@@ -354,7 +368,11 @@ impl ImportResolver for RubyResolver {
                     });
                 }
             } else if let Some(rest) = trimmed.strip_prefix("require_relative ") {
-                let path = rest.trim_matches('\'').trim_matches('"').trim_end_matches(';').trim();
+                let path = rest
+                    .trim_matches('\'')
+                    .trim_matches('"')
+                    .trim_end_matches(';')
+                    .trim();
                 if !path.is_empty() {
                     let name = path.rsplit('/').next().unwrap_or(path).to_string();
                     imports.push(ImportInfo {
