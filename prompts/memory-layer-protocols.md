@@ -2,6 +2,8 @@
 
 ## 1. Code & Doc Retrieval — Use memory-code / memory-doc
 
+LaPis is the canonical Pi memory stack. For any code/doc lookup, prefer LaPis tools first.
+
 The `memory-layer` extension **enforces** structured retrieval over raw file reads:
 
 - **Code** → `memory-code` tool
@@ -17,6 +19,7 @@ If a repo isn't indexed yet, the tool will tell you exactly how to index it.
 - `read` on a code file **with** offset/limit → ALLOWED (editing targeted lines).
 - `bash` grep/rg/find on source code in an indexed repo → BLOCKED. Use `memory-code` instead.
 - After calling `memory-code outline` on a file, subsequent reads are allowed.
+- If a lookup seems to need raw source browsing, stop and use `memory-code` / `memory-doc` instead.
 
 ## 2. Persistent Memory — Automatic
 
@@ -59,6 +62,13 @@ Use **What/Why/Where/Learned** in the content field:
 ### No manual protocol needed
 
 The extension handles session start, context loading, and session shutdown automatically. No bash calls to memory-store.js needed during sessions.
+
+## Startup invariant
+
+When LaPis is installed and loaded, assume these behaviors are always active:
+- code/doc retrieval should use LaPis tools first
+- raw source reads/searches should be treated as a fallback to be avoided
+- trust-sync should be automatic after git changes
 
 ## LaPis Quick Start
 
