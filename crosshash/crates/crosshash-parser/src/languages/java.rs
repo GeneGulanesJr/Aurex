@@ -72,8 +72,8 @@ fn walk(
         };
         let body = node_text(source, node).to_string();
         let signature = signature_text(&body);
-        let is_public = body.trim_start().starts_with("public ")
-            || body.trim_start().starts_with("protected ");
+        let is_public =
+            body.trim_start().starts_with("public ") || body.trim_start().starts_with("protected ");
         let hashes = EntityHasher::compute(&HashInput {
             kind,
             signature: signature.clone(),

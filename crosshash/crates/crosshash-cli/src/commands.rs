@@ -431,6 +431,11 @@ async fn index_one_repo(
         let Some(language) = detect_language(&file)? else {
             continue;
         };
+        // Skip languages that don't support entity extraction
+        if matches!(language, Language::Html | Language::Css | Language::Unknown) {
+            skipped_files += 1;
+            continue;
+        }
         let parsed = parser.parse_file(&file, language)?;
         let entities = extract_for_language(
             language,
@@ -1247,9 +1252,7 @@ fn extract_for_language(
         Language::Java => {
             Ok(JavaExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
         }
-        Language::C => {
-            Ok(CExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
-        }
+        Language::C => Ok(CExtractor.extract_entities(repo_id, root, file, source, tree, commit)?),
         Language::Cpp => {
             Ok(CppExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
         }
@@ -1286,12 +1289,11 @@ fn extract_for_language(
         Language::Bash => {
             Ok(BashExtractor.extract_entities(repo_id, root, file, source, tree, commit)?)
         }
-        Language::Html | Language::Css => {
-            Err(anyhow!("unsupported language for extraction: {:?}", language))
-        }
-        Language::Unknown => {
-            Err(anyhow!("unsupported language for extraction: Unknown"))
-        }
+        Language::Html | Language::Css => Err(anyhow!(
+            "unsupported language for extraction: {:?}",
+            language
+        )),
+        Language::Unknown => Err(anyhow!("unsupported language for extraction: Unknown")),
     }
 }
 

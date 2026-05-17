@@ -77,10 +77,7 @@ macro_rules! define_c_family_extractor {
                     depth: 0,
                 });
                 out.push(Entity {
-                    id: Uuid::new_v5(
-                        &repo_id,
-                        format!("{file_path}:{kind:?}:{name}").as_bytes(),
-                    ),
+                    id: Uuid::new_v5(&repo_id, format!("{file_path}:{kind:?}:{name}").as_bytes()),
                     repo_id,
                     file_path: file_path.into(),
                     language: $lang,
@@ -127,13 +124,17 @@ fn entity_name(source: &str, node: Node) -> Option<(EntityKind, String)> {
     let name = node
         .child_by_field_name("name")
         .or_else(|| {
+            // Manual loop required — cursor lifetime is tied to the iterator,
+            // so .find() cannot be used (E0597 borrow error).
             let mut cursor = node.walk();
+            let mut result = None;
             for child in node.children(&mut cursor) {
                 if child.kind() == "identifier" || child.kind() == "type_identifier" {
-                    return Some(child);
+                    result = Some(child);
+                    break;
                 }
             }
-            None
+            result
         })
         .map(|n| node_text(source, n).to_string())
         .unwrap_or_else(|| format!("anonymous_{}", node.start_byte()));
