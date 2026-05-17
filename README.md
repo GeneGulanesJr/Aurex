@@ -12,7 +12,15 @@ LaPis is a **modular monolith** for Pi memory: one Pi extension and one local No
 
 ![LaPis Modular Memory Architecture](memory-layer-architecture.png)
 
-The README diagram is the high-level view. For dependency rules, module ownership, and deeper diagrams, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/MODULE_MAP.md`](docs/MODULE_MAP.md).
+### Module boundaries
+
+![LaPis module boundaries](docs/diagrams/lapis-module-boundaries.png)
+
+### Memory lifecycle
+
+![LaPis memory lifecycle](docs/diagrams/lapis-memory-lifecycle.png)
+
+For dependency rules and module ownership details, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/MODULE_MAP.md`](docs/MODULE_MAP.md).
 
 ## Development
 
