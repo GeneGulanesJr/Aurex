@@ -17,6 +17,12 @@ Code analysis (imports, call graph, complexity, dead code, churn) and doc indexi
 - `session-start --project NAME` → auto-recovers incomplete sessions, returns `{ sessionId, recoveredSession }`
 - `session-end --id INT --memories INT [--auto]` → trust-recovery + close
 
+### LaPis install/update
+
+- Install: `pi install git:github.com/GeneGulanesJr/LaPis`
+- Update: `pi update --extensions` or `pi update --extension git:github.com/GeneGulanesJr/LaPis`
+- Restart/reload Pi after updating so the refreshed prompt and extension resources are loaded
+
 ### Observations
 
 - `save --title TEXT --content TEXT [--type TYPE] [--project NAME] [--scope project|personal] [--topic-key KEY] [--session-id ID] [--force]`

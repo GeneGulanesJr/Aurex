@@ -59,3 +59,10 @@ Use **What/Why/Where/Learned** in the content field:
 ### No manual protocol needed
 
 The extension handles session start, context loading, and session shutdown automatically. No bash calls to memory-store.js needed during sessions.
+
+## LaPis Quick Start
+
+- Install: `pi install git:github.com/GeneGulanesJr/LaPis`
+- Update: `pi update --extensions` or `pi update --extension git:github.com/GeneGulanesJr/LaPis`
+- Source of truth: the packaged `prompts/`, `skills/`, and `extensions/` in the LaPis repo
+- If the package is updated, restart/reload Pi so the new prompt and extension resources are reloaded
