@@ -125,8 +125,8 @@ mod subphase_71_language_expansion {
             .unwrap()
             .args(["--db", db.to_str().unwrap(), "index", "--repo", "web-repo"])
             .assert()
-            .failure()
-            .stderr(contains("unsupported language"));
+            .success()
+            .stdout(contains("skipped"));
     }
 
     #[test]
