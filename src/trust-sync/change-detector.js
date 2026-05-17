@@ -1,3 +1,107 @@
+const { execSync } = require('child_process');
+
+/**
+ * Detects changed symbols by comparing stored head_commit against current HEAD.
+ * Uses git diff + the built-in code index (zero external dependencies).
+ */
+function detectChangedSymbols(deps, repoName) {
+  const { sqlJson, sqlRun, jsonErrNoExit } = deps;
+
+  // Look up the indexed repo
+  const repoRow = sqlJson(
+    'SELECT id, path, head_commit FROM code_repos WHERE name = ?',
+    [repoName],
+  );
+  if (!repoRow || repoRow.length === 0) {
+    return { error: jsonErrNoExit(`Repo not found: ${repoName}. Index it first with index-repo.`) };
+  }
+  const { id: repoId, path: repoPath, head_commit: storedHead } = repoRow[0];
+
+  // Get current HEAD commit
+  let currentHead = null;
+  try {
+    currentHead = execSync('git rev-parse HEAD', {
+      cwd: repoPath,
+      encoding: 'utf-8',
+      timeout: 5000,
+    }).trim();
+  } catch (_) {
+    return { error: jsonErrNoExit(`Cannot read HEAD commit from ${repoPath}. Is it a git repo?`) };
+  }
+
+  // No changes if HEAD hasn't moved
+  if (storedHead && storedHead === currentHead) {
+    return {
+      ok: true,
+      repo: repoName,
+      message: 'HEAD unchanged, nothing to sync',
+      old_head: storedHead,
+      new_head: currentHead,
+      changedSet: new Set(),
+    };
+  }
+
+  // Determine the base commit for diff
+  const baseCommit = storedHead || null;
+
+  // Get changed files via git diff
+  let changedFiles = [];
+  try {
+    const diffArgs = baseCommit
+      ? `diff --name-only ${baseCommit}..HEAD`
+      : 'diff --name-only HEAD~1 HEAD';
+    const output = execSync(`git ${diffArgs}`, {
+      cwd: repoPath,
+      encoding: 'utf-8',
+      timeout: 10000,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    changedFiles = output.trim().split('\n').map((f) => f.trim()).filter(Boolean);
+  } catch (_) {
+    return { error: jsonErrNoExit('Failed to run git diff to determine changed files') };
+  }
+
+  if (changedFiles.length === 0) {
+    // Update head_commit even if no file changes
+    sqlRun('UPDATE code_repos SET head_commit = ? WHERE id = ?', [currentHead, repoId]);
+    return {
+      ok: true,
+      repo: repoName,
+      message: 'No file changes detected',
+      old_head: storedHead,
+      new_head: currentHead,
+      changedSet: new Set(),
+    };
+  }
+
+  // Build set of changed symbol names from the code index
+  const changedSet = new Set();
+  const placeholders = changedFiles.map(() => '?').join(',');
+  const changedSymbols = sqlJson(
+    `SELECT DISTINCT name, qualified_name FROM code_symbols
+     WHERE repo_id = ? AND file_path IN (${placeholders})`,
+    [repoId, ...changedFiles],
+  );
+  for (const sym of changedSymbols) {
+    changedSet.add(sym.name);
+    if (sym.qualified_name && sym.qualified_name !== sym.name) {
+      changedSet.add(sym.qualified_name);
+    }
+  }
+
+  return {
+    ok: true,
+    repo: repoName,
+    old_head: storedHead,
+    new_head: currentHead,
+    changed_files: changedFiles.length,
+    changed_symbols: changedSet.size,
+    changedSet,
+  };
+}
+
+// --- Legacy functions (kept for backward compat with existing tests) ---
+
 function hasOwn(value, key) {
   return Object.hasOwn(value, key);
 }
@@ -42,6 +146,9 @@ function collectChangedSymbols(changedData) {
   return changedSet;
 }
 
+/**
+ * @deprecated Use detectChangedSymbols() instead. Kept for test compatibility.
+ */
 function parseChangedSymbolsJson(args, jsonErrNoExit) {
   const repo = args.repo;
   const changedJson = args['changed-symbols-json'] || args['changed-symbols'];
@@ -64,22 +171,29 @@ function parseChangedSymbolsJson(args, jsonErrNoExit) {
   return { repo, changedSet };
 }
 
+/**
+ * Creates a git trust sync adapter for the extension hook.
+ * Now uses the built-in code index — no external jCodeMunch dependency.
+ */
 function createGitTrustSyncAdapter(mem, notify) {
   return async function syncGitOperation(repo) {
-    // The git hook currently does not receive a symbol diff.
-    // The empty object is a best-effort sentinel that sync-code-trust rejects as a no-op.
-    // This adapter intentionally swallows that result until the hook can provide real changed-symbol payloads.
-    await mem('sync-code-trust', {
-      repo,
-      'changed-symbols-json': '{}',
-    }).catch(() => {});
+    try {
+      const result = await mem('sync-code-trust', { repo });
+      if (result && result.error) {
+        // Repo not indexed yet — silently skip
+        return;
+      }
+    } catch {
+      // Non-critical — trust sync failure should not break the session
+    }
     if (notify) {
-      notify(`🔄 Memory: syncing trust scores after git operation on ${repo}`, 'info');
+      notify(`Memory: syncing trust scores after git operation on ${repo}`, 'info');
     }
   };
 }
 
 module.exports = {
+  detectChangedSymbols,
   extractSymbolKey,
   collectChangedSymbols,
   parseChangedSymbolsJson,
