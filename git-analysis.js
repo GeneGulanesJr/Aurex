@@ -33,7 +33,9 @@ function computeSince(days) {
 
 function resolveTarget(repoId, target, db) {
   const repo = lookupRepo(db, repoId);
-  if (!repo) { return { error: `Repo ID ${repoId} not found` }; }
+  if (!repo) {
+    return { error: `Repo ID ${repoId} not found` };
+  }
   if (target && target !== '__all__') {
     // Normalize to absolute path for consistent cache key
     const filePath = path.isAbsolute(target) ? target : path.resolve(repo.path, target);
@@ -45,10 +47,14 @@ function resolveTarget(repoId, target, db) {
 // eslint-disable-next-line max-statements -- churn computation inherently requires many steps
 function getChurn(db, repoId, target, days, refresh) {
   const guard = _requireNativeDb(db);
-  if (guard) { return guard; }
+  if (guard) {
+    return guard;
+  }
 
   const resolved = resolveTarget(repoId, target, db);
-  if (resolved.error) { return resolved; }
+  if (resolved.error) {
+    return resolved;
+  }
 
   days = days || 90;
   refresh = refresh || false;
@@ -97,7 +103,10 @@ function getFirstSeen(repoPath, filePath) {
 function parseCommitLog(log) {
   const lines = log.split('\n');
   const authors = new Set(lines.map((l) => l.split('|')[1]).filter(Boolean));
-  const dates = lines.map((l) => l.split('|')[2]).filter(Boolean).sort();
+  const dates = lines
+    .map((l) => l.split('|')[2])
+    .filter(Boolean)
+    .sort();
   return { lines, authors, dates };
 }
 
@@ -115,7 +124,9 @@ function buildFileChurnResult(lines, authors, dates, firstSeen, days) {
 function computeFileChurn(db, repo, filePath, days, since) {
   const absPath = path.isAbsolute(filePath) ? filePath : path.resolve(repo.path, filePath);
   try {
-    const log = execFileSync('git', ['-C', repo.path, 'log', '--follow', '--format=%H|%an|%aI', `--since=${since}`, '--', filePath],
+    const log = execFileSync(
+      'git',
+      ['-C', repo.path, 'log', '--follow', '--format=%H|%an|%aI', `--since=${since}`, '--', filePath],
       { encoding: 'utf8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] },
     ).trim();
 
@@ -147,7 +158,9 @@ function computeRepoChurn(db, repo, days, since) {
     const fileCounts = new Map();
     for (const line of log.split('\n')) {
       const f = line.trim();
-      if (f) { fileCounts.set(f, (fileCounts.get(f) || 0) + 1); }
+      if (f) {
+        fileCounts.set(f, (fileCounts.get(f) || 0) + 1);
+      }
     }
 
     const topFiles = [...fileCounts.entries()]
@@ -174,7 +187,13 @@ function computeRepoChurn(db, repo, days, since) {
       last_modified: null,
       churn_per_week: Math.round((totalCommits / (days / 7)) * 100) / 100,
     };
-    const result = { repo: repo.name, window_days: days, total_files_changed: fileCounts.size, top_files: topFiles, ...cacheMetrics };
+    const result = {
+      repo: repo.name,
+      window_days: days,
+      total_files_changed: fileCounts.size,
+      top_files: topFiles,
+      ...cacheMetrics,
+    };
     upsertChurn(db, repo.id, '__all__', days, cacheMetrics);
     return result;
   } catch (e) {
@@ -214,38 +233,50 @@ const CLASSIFICATION_RULES = [
 
 function classifyCommit(message) {
   for (const rule of CLASSIFICATION_RULES) {
-    if (rule.pattern.test(message)) {return rule.classification;}
+    if (rule.pattern.test(message)) {
+      return rule.classification;
+    }
   }
   return 'unknown';
 }
 
 function getProvenance(db, repoId, symbolName) {
   const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
+  if (guard) {
+    return guard;
+  }
 
-  const symbol = db.prepare(
-    'SELECT id, name, file_path, start_line, end_line, kind FROM code_symbols WHERE repo_id = ? AND name = ?'
-  ).get(repoId, symbolName);
+  const symbol = db
+    .prepare('SELECT id, name, file_path, start_line, end_line, kind FROM code_symbols WHERE repo_id = ? AND name = ?')
+    .get(repoId, symbolName);
 
-  if (!symbol) {return { error: `Symbol "${symbolName}" not found in repo ${repoId}` };}
+  if (!symbol) {
+    return { error: `Symbol "${symbolName}" not found in repo ${repoId}` };
+  }
 
   const repo = db.prepare('SELECT path FROM code_repos WHERE id = ?').get(repoId);
-  if (!repo) {return { error: `Repo ${repoId} not found` };}
+  if (!repo) {
+    return { error: `Repo ${repoId} not found` };
+  }
 
   let logEntries = [];
   try {
-    const logOutput = execFileSync('git', ['-C', repo.path, 'log', '--follow', '--format=%H|%an|%aI|%s', '--', symbol.file_path],
-      { encoding: 'utf8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] }
+    const logOutput = execFileSync(
+      'git',
+      ['-C', repo.path, 'log', '--follow', '--format=%H|%an|%aI|%s', '--', symbol.file_path],
+      { encoding: 'utf8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] },
     ).trim();
 
     if (!logOutput) {
       return { symbol: symbolName, commits: [], total_commits: 0, summary: 'No git history found.' };
     }
 
-    logEntries = logOutput.split('\n').map(line => {
+    logEntries = logOutput.split('\n').map((line) => {
       const [hash, author, date, ...msgParts] = line.split('|');
       return {
-        hash, author, date,
+        hash,
+        author,
+        date,
         message: msgParts.join('|'),
         classification: classifyCommit(msgParts.join('|')),
         touches_symbol: false,
@@ -256,47 +287,72 @@ function getProvenance(db, repoId, symbolName) {
   }
 
   try {
-    const blameOutput = execFileSync('git', ['-C', repo.path, 'blame', `-L${symbol.start_line},${symbol.end_line}`, '--', symbol.file_path],
-      { encoding: 'utf8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] }
+    const blameOutput = execFileSync(
+      'git',
+      ['-C', repo.path, 'blame', `-L${symbol.start_line},${symbol.end_line}`, '--', symbol.file_path],
+      { encoding: 'utf8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] },
     ).trim();
     const blameHashes = new Set();
     const blameRe = /^([a-f0-9]{8,})/gm;
     let match;
-    while ((match = blameRe.exec(blameOutput)) !== null) {blameHashes.add(match[1]);}
-    for (const entry of logEntries) {
-      if (blameHashes.has(entry.hash.substring(0, 8)) || blameHashes.has(entry.hash))
-        {entry.touches_symbol = true;}
+    while ((match = blameRe.exec(blameOutput)) !== null) {
+      blameHashes.add(match[1]);
     }
-  } catch (_) { /* Blame failed, keep all */ }
+    for (const entry of logEntries) {
+      if (blameHashes.has(entry.hash.substring(0, 8)) || blameHashes.has(entry.hash)) {
+        entry.touches_symbol = true;
+      }
+    }
+  } catch (_) {
+    /* Blame failed, keep all */
+  }
 
-  const relevantCommits = logEntries.length > 50 && logEntries.some(e => e.touches_symbol)
-    ? logEntries.filter(e => e.touches_symbol).slice(0, 50)
-    : logEntries.slice(0, 50);
+  const relevantCommits =
+    logEntries.length > 50 && logEntries.some((e) => e.touches_symbol)
+      ? logEntries.filter((e) => e.touches_symbol).slice(0, 50)
+      : logEntries.slice(0, 50);
 
   const classifications = {};
-  let creationDate = null, lastModifiedDate = null;
+  let creationDate = null,
+    lastModifiedDate = null;
   const authors = new Set();
   for (const c of relevantCommits) {
     classifications[c.classification] = (classifications[c.classification] || 0) + 1;
-    if (c.classification === 'creation' && !creationDate) {creationDate = c.date;}
+    if (c.classification === 'creation' && !creationDate) {
+      creationDate = c.date;
+    }
     authors.add(c.author);
-    if (!lastModifiedDate || c.date > lastModifiedDate) {lastModifiedDate = c.date;}
+    if (!lastModifiedDate || c.date > lastModifiedDate) {
+      lastModifiedDate = c.date;
+    }
   }
 
   let summary = `${symbol.kind} "${symbolName}" in ${symbol.file_path}:${symbol.start_line}-${symbol.end_line}. `;
   summary += `${relevantCommits.length} commits by ${authors.size} author(s). `;
-  if (creationDate) {summary += `First seen: ${creationDate.split('T')[0]}. `;}
-  if (lastModifiedDate) {summary += `Last modified: ${lastModifiedDate.split('T')[0]}. `;}
-  const clsSummary = Object.entries(classifications).sort((a, b) => b[1] - a[1])
-    .map(([cls, count]) => `${cls}(${count})`).join(', ');
+  if (creationDate) {
+    summary += `First seen: ${creationDate.split('T')[0]}. `;
+  }
+  if (lastModifiedDate) {
+    summary += `Last modified: ${lastModifiedDate.split('T')[0]}. `;
+  }
+  const clsSummary = Object.entries(classifications)
+    .sort((a, b) => b[1] - a[1])
+    .map(([cls, count]) => `${cls}(${count})`)
+    .join(', ');
   summary += `Activity: ${clsSummary || 'unknown'}.`;
 
   return {
-    symbol: symbolName, file: symbol.file_path, kind: symbol.kind,
+    symbol: symbolName,
+    file: symbol.file_path,
+    kind: symbol.kind,
     lines: `${symbol.start_line}-${symbol.end_line}`,
-    commits: relevantCommits, total_commits: logEntries.length,
-    authors: [...authors], creation_date: creationDate, last_modified: lastModifiedDate,
-    classification_summary: classifications, summary,
+    commits: relevantCommits,
+    total_commits: logEntries.length,
+    authors: [...authors],
+    creation_date: creationDate,
+    last_modified: lastModifiedDate,
+    classification_summary: classifications,
+    summary,
   };
 }
 

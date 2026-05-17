@@ -18,7 +18,7 @@ const DEFAULTS = {
   },
   dedup: {
     auto_merge_threshold: 0.85,
-    warning_threshold: 0.60,
+    warning_threshold: 0.6,
   },
   compact_every_n_sessions: 5,
   context_limit: 5, // Used by memory-store.js context command — do not remove
@@ -29,7 +29,14 @@ function deepMerge(target, source) {
   const result = { ...target };
   for (const key of Object.keys(source)) {
     const val = source[key];
-    if (val !== null && typeof val === 'object' && !Array.isArray(val) && typeof target[key] === 'object' && target[key] !== null && !Array.isArray(target[key])) {
+    if (
+      val !== null &&
+      typeof val === 'object' &&
+      !Array.isArray(val) &&
+      typeof target[key] === 'object' &&
+      target[key] !== null &&
+      !Array.isArray(target[key])
+    ) {
       result[key] = deepMerge(target[key], val);
     } else {
       result[key] = val;
@@ -45,16 +52,22 @@ function stripJsoncComments(raw) {
     if (raw[i] === '"') {
       let j = i + 1;
       while (j < raw.length && raw[j] !== '"') {
-        if (raw[j] === '\\') {j++;}
+        if (raw[j] === '\\') {
+          j++;
+        }
         j++;
       }
       result += raw.slice(i, j + 1);
       i = j + 1;
     } else if (raw[i] === '/' && raw[i + 1] === '/') {
-      while (i < raw.length && raw[i] !== '\n') {i++;}
+      while (i < raw.length && raw[i] !== '\n') {
+        i++;
+      }
     } else if (raw[i] === '/' && raw[i + 1] === '*') {
       i += 2;
-      while (i < raw.length && !(raw[i] === '*' && raw[i + 1] === '/')) {i++;}
+      while (i < raw.length && !(raw[i] === '*' && raw[i + 1] === '/')) {
+        i++;
+      }
       i += 2;
     } else {
       result += raw[i];
@@ -101,4 +114,13 @@ function resetConfigCache() {
   getConfig._cached = null;
 }
 
-module.exports = { getConfig, loadConfig, resetConfigCache, stripJsoncComments, expandTilde, deepMerge, DEFAULTS, CONFIG_PATH };
+module.exports = {
+  getConfig,
+  loadConfig,
+  resetConfigCache,
+  stripJsoncComments,
+  expandTilde,
+  deepMerge,
+  DEFAULTS,
+  CONFIG_PATH,
+};

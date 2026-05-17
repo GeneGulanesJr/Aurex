@@ -21,15 +21,18 @@ describe('code-index parser registry', () => {
 
 describe('code-index symbol extractor', () => {
   it('normalizes optional parser fields without losing byte ranges', () => {
-    const normalized = normalizeSymbol({
-      name: 'main',
-      kind: 'function',
-      start_line: 1,
-      end_line: 3,
-      start_byte: 0,
-      end_byte: 30,
-      language: 'javascript',
-    }, '/repo/app.js');
+    const normalized = normalizeSymbol(
+      {
+        name: 'main',
+        kind: 'function',
+        start_line: 1,
+        end_line: 3,
+        start_byte: 0,
+        end_byte: 30,
+        language: 'javascript',
+      },
+      '/repo/app.js',
+    );
 
     expect(normalized).toMatchObject({
       file_path: '/repo/app.js',
@@ -46,17 +49,19 @@ describe('code-index symbol extractor', () => {
   it('extracts symbols through the parser registry abstraction', () => {
     const registry = {
       canParseFile: () => true,
-      parseFile: () => [{
-        name: 'answer',
-        kind: 'function',
-        signature: 'function answer()',
-        qualified_name: 'answer',
-        start_line: 1,
-        end_line: 1,
-        start_byte: 0,
-        end_byte: 20,
-        language: 'javascript',
-      }],
+      parseFile: () => [
+        {
+          name: 'answer',
+          kind: 'function',
+          signature: 'function answer()',
+          qualified_name: 'answer',
+          start_line: 1,
+          end_line: 1,
+          start_byte: 0,
+          end_byte: 20,
+          language: 'javascript',
+        },
+      ],
     };
 
     expect(extractSymbolsFromFile('/repo/app.js', registry)).toHaveLength(1);

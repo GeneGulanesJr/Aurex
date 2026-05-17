@@ -21,13 +21,18 @@ const USAGE = {
 function register(commands, deps) {
   const { sqlJson, sqlRun, softDeleteObservation, _readTierConfig, TOOL_TIERS, ensureDb, DB_PATH, getEngine } = deps;
 
-  commands.init = () => { ensureDb(); return { ok: true, db: DB_PATH, engine: getEngine() }; };
+  commands.init = () => {
+    ensureDb();
+    return { ok: true, db: DB_PATH, engine: getEngine() };
+  };
   commands.compact = () => sesCmd.compact();
   commands.dream = () => sesCmd.dream({ sqlJson, sqlRun, softDeleteObservation });
-  commands['session-start'] = (args) => sesCmd.sessionStart({ sqlJson, sqlRun, _readTierConfig, TOOL_TIERS, commands, softDeleteObservation }, args);
+  commands['session-start'] = (args) =>
+    sesCmd.sessionStart({ sqlJson, sqlRun, _readTierConfig, TOOL_TIERS, commands, softDeleteObservation }, args);
   commands['session-end'] = (args) => sesCmd.sessionEnd({ sqlJson, sqlRun, softDeleteObservation }, args);
   commands['session-summary'] = (args) => sesCmd.sessionSummary({ sqlJson, jsonErrNoExit: deps.jsonErrNoExit }, args);
-  commands['auto-recover'] = (args) => sesCmd.autoRecover({ sqlJson, sqlRun, jsonErrNoExit: deps.jsonErrNoExit, softDeleteObservation }, args);
+  commands['auto-recover'] = (args) =>
+    sesCmd.autoRecover({ sqlJson, sqlRun, jsonErrNoExit: deps.jsonErrNoExit, softDeleteObservation }, args);
   commands['recover-orphans'] = () => sesCmd.recoverOrphans({ sqlJson, sqlRun, softDeleteObservation });
   commands['trust-recovery'] = (args) => sesCmd.trustRecovery(args);
   commands['list-projects'] = () => wsCmd.listProjects(deps);

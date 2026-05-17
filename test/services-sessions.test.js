@@ -10,10 +10,18 @@ describe('services/sessions', () => {
 
     it('should create session and return session info', () => {
       const sqlJson = vi.fn((query, params) => {
-        if (query.includes('INSERT INTO session_log')) return [{ id: 42, started_at: '2025-01-01T00:00:00' }];
-        if (query.includes('COUNT(*)')) return [{ cnt: 3 }];
-        if (query.includes('ended_at IS NULL')) return [];
-        if (query.includes('archive')) return [];
+        if (query.includes('INSERT INTO session_log')) {
+          return [{ id: 42, started_at: '2025-01-01T00:00:00' }];
+        }
+        if (query.includes('COUNT(*)')) {
+          return [{ cnt: 3 }];
+        }
+        if (query.includes('ended_at IS NULL')) {
+          return [];
+        }
+        if (query.includes('archive')) {
+          return [];
+        }
         return [];
       });
       const sqlRun = vi.fn();
@@ -35,10 +43,18 @@ describe('services/sessions', () => {
 
     it('should detect incomplete previous session', () => {
       const sqlJson = vi.fn((query, params) => {
-        if (query.includes('INSERT INTO session_log')) return [{ id: 5, started_at: '2025-01-01' }];
-        if (query.includes('COUNT(*)')) return [{ cnt: 1 }];
-        if (query.includes('ended_at IS NULL')) return [{ id: 4 }];
-        if (query.includes('archive')) return [];
+        if (query.includes('INSERT INTO session_log')) {
+          return [{ id: 5, started_at: '2025-01-01' }];
+        }
+        if (query.includes('COUNT(*)')) {
+          return [{ cnt: 1 }];
+        }
+        if (query.includes('ended_at IS NULL')) {
+          return [{ id: 4 }];
+        }
+        if (query.includes('archive')) {
+          return [];
+        }
         return [];
       });
       const sqlRun = vi.fn();
@@ -71,10 +87,7 @@ describe('services/sessions', () => {
       const sqlRun = vi.fn();
       const jsonErrNoExit = vi.fn((msg) => ({ error: msg }));
       const trustRecovery = vi.fn(() => ({ ok: true }));
-      const result = sessionEnd(
-        { sqlJson, sqlRun, jsonErrNoExit, trustRecovery },
-        { id: '10', memories: '5' },
-      );
+      const result = sessionEnd({ sqlJson, sqlRun, jsonErrNoExit, trustRecovery }, { id: '10', memories: '5' });
       expect(result.ok).toBe(true);
       expect(result.sessionId).toBe(10);
       expect(sqlRun).toHaveBeenCalledWith(
@@ -88,10 +101,7 @@ describe('services/sessions', () => {
       const sqlRun = vi.fn();
       const jsonErrNoExit = vi.fn((msg) => ({ error: msg }));
       const trustRecovery = vi.fn(() => ({ ok: true, memoriesRecovered: 2 }));
-      const result = sessionEnd(
-        { sqlJson, sqlRun, jsonErrNoExit, trustRecovery },
-        { id: '10', auto: 'true' },
-      );
+      const result = sessionEnd({ sqlJson, sqlRun, jsonErrNoExit, trustRecovery }, { id: '10', auto: 'true' });
       expect(trustRecovery).toHaveBeenCalledWith({ session: '10' });
       expect(result.trustRecovery).toBeDefined();
     });
@@ -101,10 +111,7 @@ describe('services/sessions', () => {
       const sqlRun = vi.fn();
       const jsonErrNoExit = vi.fn((msg) => ({ error: msg }));
       const trustRecovery = vi.fn();
-      const result = sessionEnd(
-        { sqlJson, sqlRun, jsonErrNoExit, trustRecovery },
-        { id: '10', memories: '5' },
-      );
+      const result = sessionEnd({ sqlJson, sqlRun, jsonErrNoExit, trustRecovery }, { id: '10', memories: '5' });
       expect(trustRecovery).not.toHaveBeenCalled();
       expect(result.trustRecovery).toBeUndefined();
     });

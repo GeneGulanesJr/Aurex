@@ -16,9 +16,13 @@ function writeTmpRepo(repoPath, files) {
 function cleanupRepo(name) {
   try {
     execSync(`node "${STORE}" remove-code-repo --repo ${name}`, {
-      encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'],
+      encoding: 'utf8',
+      timeout: 5000,
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
-  } catch (_) { /* Not found — fine */ }
+  } catch (_) {
+    /* Not found — fine */
+  }
 }
 
 beforeAll(() => {
@@ -38,8 +42,10 @@ describe('index-repo (WASM)', () => {
     it('should index a small repo without Python', () => {
       const tmpRepo = path.join('/tmp', 'test-wasm-integ-repo');
       fs.mkdirSync(tmpRepo, { recursive: true });
-      fs.writeFileSync(path.join(tmpRepo, 'app.js'),
-        '/** App entry */\nfunction main() {\n  console.log("hello");\n}\n\nclass Server {\n  start() {\n    return 42;\n  }\n}');
+      fs.writeFileSync(
+        path.join(tmpRepo, 'app.js'),
+        '/** App entry */\nfunction main() {\n  console.log("hello");\n}\n\nclass Server {\n  start() {\n    return 42;\n  }\n}',
+      );
 
       const out = execSync(`node "${STORE}" index-repo --path "${tmpRepo}" --name test-wasm-integ`, {
         encoding: 'utf8',
@@ -63,10 +69,13 @@ describe('index-repo (WASM)', () => {
     });
 
     it('should retrieve source code for indexed symbols', () => {
-      const out = execSync(`node "${STORE}" get-code-source --repo test-wasm-integ --file /tmp/test-wasm-integ-repo/app.js --name main`, {
-        encoding: 'utf8',
-        timeout: 10000,
-      });
+      const out = execSync(
+        `node "${STORE}" get-code-source --repo test-wasm-integ --file /tmp/test-wasm-integ-repo/app.js --name main`,
+        {
+          encoding: 'utf8',
+          timeout: 10000,
+        },
+      );
       const result = JSON.parse(out);
       expect(result.success).toBe(true);
       expect(result.symbol).toBe('main');
@@ -94,8 +103,10 @@ describe('index-repo (WASM)', () => {
       const tmpRepo = path.join('/tmp', 'test-mixed-repo-dir');
       writeTmpRepo(tmpRepo, {
         'utils.js': 'function helper(x) {\n  return x * 2;\n}',
-        'types.ts': 'interface Config {\n  port: number;\n}\n\nfunction parseConfig(): Config {\n  return { port: 3000 };\n}',
-        'Component.tsx': 'export function Button({ label }: { label: string }) {\n  return <button>{label}</button>;\n}',
+        'types.ts':
+          'interface Config {\n  port: number;\n}\n\nfunction parseConfig(): Config {\n  return { port: 3000 };\n}',
+        'Component.tsx':
+          'export function Button({ label }: { label: string }) {\n  return <button>{label}</button>;\n}',
       });
 
       const out = execSync(`node "${STORE}" index-repo --path "${tmpRepo}" --name test-mixed-repo`, {
@@ -143,7 +154,7 @@ describe('index-repo (WASM)', () => {
       expect(result.success).toBe(true);
       // Full mode calls indexRepoInternal which returns files_indexed
       expect(typeof (result.files_indexed || result.files_reindexed)).toBe('number');
-      expect(typeof (result.symbols_extracted)).toBe('number');
+      expect(typeof result.symbols_extracted).toBe('number');
     });
 
     it('should return repos with name and numeric counts', () => {

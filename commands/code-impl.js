@@ -18,7 +18,11 @@ function reindexRepo(args) {
     const { jsonErrNoExit } = require('../db');
     return jsonErrNoExit('Usage: reindex-repo --repo <repo-name> [--mode full|incremental]');
   }
-  return codeIndexingService.reindexRepoInternal({ db: require('../db').getDb(), args }, repo, args.mode || 'incremental');
+  return codeIndexingService.reindexRepoInternal(
+    { db: require('../db').getDb(), args },
+    repo,
+    args.mode || 'incremental',
+  );
 }
 
 function searchCode(args) {
@@ -27,7 +31,12 @@ function searchCode(args) {
     const { jsonErrNoExit } = require('../db');
     return jsonErrNoExit('Usage: search-code --query <text> [--repo NAME] [--kind TYPE] [--max-results N]');
   }
-  return codeSearchService.searchCode(query, args.repo || null, args.kind || null, parseInt(args['max-results'] || '20', 10));
+  return codeSearchService.searchCode(
+    query,
+    args.repo || null,
+    args.kind || null,
+    parseInt(args['max-results'] || '20', 10),
+  );
 }
 
 function getCodeSource(args) {

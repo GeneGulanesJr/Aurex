@@ -11,7 +11,9 @@ describe('services/recovery', () => {
     it('should return nothing_to_recover when session has no observations', () => {
       const jsonErrNoExit = vi.fn((msg) => ({ error: msg }));
       const sqlJson = vi.fn((query, params) => {
-        if (query.includes('session_log')) return [{ id: 1, project: 'test', started_at: '2025-01-01' }];
+        if (query.includes('session_log')) {
+          return [{ id: 1, project: 'test', started_at: '2025-01-01' }];
+        }
         return [];
       });
       const sqlRun = vi.fn();

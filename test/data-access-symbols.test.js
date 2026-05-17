@@ -16,7 +16,10 @@ describe('data-access/symbols', () => {
     it('should insert a symbol link', () => {
       const deps = mockDeps();
       const result = linkSymbol(deps, { memoryId: '1', symbolId: 'fn()', repo: 'myrepo', trust: 0.7 });
-      expect(deps.sqlRun).toHaveBeenCalledWith(expect.stringContaining('INSERT OR REPLACE INTO symbol_links'), expect.any(Array));
+      expect(deps.sqlRun).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT OR REPLACE INTO symbol_links'),
+        expect.any(Array),
+      );
       expect(result.symbolId).toBe('fn()');
     });
 
@@ -41,7 +44,10 @@ describe('data-access/symbols', () => {
     it('should insert recall record', () => {
       const deps = mockDeps();
       recordRecall(deps, { sessionId: 1, memoryId: '42' });
-      expect(deps.sqlRun).toHaveBeenCalledWith(expect.stringContaining('INSERT OR IGNORE INTO session_recalls'), expect.any(Array));
+      expect(deps.sqlRun).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT OR IGNORE INTO session_recalls'),
+        expect.any(Array),
+      );
     });
   });
 
@@ -59,7 +65,10 @@ describe('data-access/symbols', () => {
       const deps = mockDeps();
       deps.sqlJson.mockReturnValue([{ symbol_id: 'myFunc', repo: 'myrepo' }]);
       const result = getSymbolsForMemory(deps, 42);
-      expect(deps.sqlJson).toHaveBeenCalledWith(expect.stringContaining('symbol_links WHERE memory_id'), expect.any(Array));
+      expect(deps.sqlJson).toHaveBeenCalledWith(
+        expect.stringContaining('symbol_links WHERE memory_id'),
+        expect.any(Array),
+      );
     });
   });
 

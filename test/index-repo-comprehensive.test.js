@@ -48,7 +48,9 @@ function repoName(suffix) {
 function cleanupRepo(name) {
   try {
     execSync(`node "${STORE}" remove-code-repo --repo ${name}`, {
-      encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'],
+      encoding: 'utf8',
+      timeout: 5000,
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
   } catch (_) {}
 }
@@ -67,7 +69,9 @@ describe('index-repo (comprehensive)', () => {
 
     afterAll(() => {
       cleanupRepo(name);
-      try { fs.rmSync(tmpRepo, { recursive: true }); } catch (_) {}
+      try {
+        fs.rmSync(tmpRepo, { recursive: true });
+      } catch (_) {}
     });
 
     it('should index a small repo', () => {
@@ -104,8 +108,10 @@ describe('index-repo (comprehensive)', () => {
       tmpRepo = path.join('/tmp', `test-idx-multi-${Date.now()}`);
       writeTmpRepo(tmpRepo, {
         'utils.js': 'function helper(x) {\n  return x * 2;\n}',
-        'types.ts': 'interface Config {\n  port: number;\n}\n\nfunction parseConfig(): Config {\n  return { port: 3000 };\n}',
-        'Component.tsx': 'export function Button({ label }: { label: string }) {\n  return <button>{label}</button>;\n}',
+        'types.ts':
+          'interface Config {\n  port: number;\n}\n\nfunction parseConfig(): Config {\n  return { port: 3000 };\n}',
+        'Component.tsx':
+          'export function Button({ label }: { label: string }) {\n  return <button>{label}</button>;\n}',
         'main.py': 'def run():\n    pass\n\nclass App:\n    def start(self):\n        pass',
         'server.go': 'package main\n\nfunc main() {}\n\nfunc (s *Server) Start() {}',
         'lib.rs': 'pub fn init() {}\n\npub struct Config;\n\nimpl Config {\n    pub fn new() -> Self { Config }\n}',
@@ -114,7 +120,9 @@ describe('index-repo (comprehensive)', () => {
 
     afterAll(() => {
       cleanupRepo(name);
-      try { fs.rmSync(tmpRepo, { recursive: true }); } catch (_) {}
+      try {
+        fs.rmSync(tmpRepo, { recursive: true });
+      } catch (_) {}
     });
 
     it('should index all supported languages', () => {
@@ -141,7 +149,9 @@ describe('index-repo (comprehensive)', () => {
 
     afterAll(() => {
       cleanupRepo(name);
-      try { fs.rmSync(tmpRepo, { recursive: true }); } catch (_) {}
+      try {
+        fs.rmSync(tmpRepo, { recursive: true });
+      } catch (_) {}
     });
 
     it('should exclude node_modules, .git, and dot-directories', () => {
@@ -150,7 +160,7 @@ describe('index-repo (comprehensive)', () => {
       expect(result.files_indexed).toBe(1);
 
       const search = run(`search-code --query get --repo ${name}`);
-      expect(search.results.every(r => !r.file.includes('node_modules'))).toBe(true);
+      expect(search.results.every((r) => !r.file.includes('node_modules'))).toBe(true);
     });
   });
 
@@ -165,7 +175,9 @@ describe('index-repo (comprehensive)', () => {
       expect(result.success).toBe(true);
 
       cleanupRepo(name);
-      try { fs.rmSync(tmpRepo, { recursive: true }); } catch (_) {}
+      try {
+        fs.rmSync(tmpRepo, { recursive: true });
+      } catch (_) {}
     });
 
     it('should handle a nonexistent path gracefully', () => {
@@ -187,7 +199,9 @@ describe('index-repo (comprehensive)', () => {
       expect(result.files_indexed).toBeGreaterThanOrEqual(1);
 
       cleanupRepo(name);
-      try { fs.rmSync(tmpRepo, { recursive: true }); } catch (_) {}
+      try {
+        fs.rmSync(tmpRepo, { recursive: true });
+      } catch (_) {}
     });
 
     it('should handle binary files mixed with source', () => {
@@ -204,7 +218,9 @@ describe('index-repo (comprehensive)', () => {
       expect(result.files_indexed).toBe(1);
 
       cleanupRepo(name);
-      try { fs.rmSync(tmpRepo, { recursive: true }); } catch (_) {}
+      try {
+        fs.rmSync(tmpRepo, { recursive: true });
+      } catch (_) {}
     });
   });
 
@@ -223,7 +239,9 @@ describe('index-repo (comprehensive)', () => {
 
     afterAll(() => {
       cleanupRepo(name);
-      try { fs.rmSync(tmpRepo, { recursive: true }); } catch (_) {}
+      try {
+        fs.rmSync(tmpRepo, { recursive: true });
+      } catch (_) {}
     });
 
     it('should reindex in full mode', () => {
@@ -257,7 +275,7 @@ describe('index-repo (comprehensive)', () => {
       run(`reindex-repo --repo ${name} --mode incremental`);
 
       const search = run(`search-code --query beta --repo ${name}`);
-      expect(search.results.every(r => !r.file.includes('b.js'))).toBe(true);
+      expect(search.results.every((r) => !r.file.includes('b.js'))).toBe(true);
     });
 
     it('should fail for non-existent repo', () => {
@@ -283,9 +301,11 @@ describe('index-repo (comprehensive)', () => {
       expect(result.success).toBe(true);
 
       const repos = run('list-code-repos');
-      expect(repos.repos.every(r => r.name !== name)).toBe(true);
+      expect(repos.repos.every((r) => r.name !== name)).toBe(true);
 
-      try { fs.rmSync(tmpRepo, { recursive: true }); } catch (_) {}
+      try {
+        fs.rmSync(tmpRepo, { recursive: true });
+      } catch (_) {}
     });
   });
 
@@ -304,7 +324,9 @@ describe('index-repo (comprehensive)', () => {
 
     afterAll(() => {
       cleanupRepo(name);
-      try { fs.rmSync(tmpRepo, { recursive: true }); } catch (_) {}
+      try {
+        fs.rmSync(tmpRepo, { recursive: true });
+      } catch (_) {}
     });
 
     it('should build import graph', () => {

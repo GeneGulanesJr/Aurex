@@ -26,7 +26,17 @@ describe('Module boundary: doc-index failure does not break memory save/search',
     // Verify search can still rank without doc-index
     const createdAt = new Date().toISOString().replace('Z', '');
     const ranked = rankObservations(
-      [{ id: 1, title: 'Decision X', type: 'decision', created_at: createdAt, trust_score: 0.5, recall_count: 0, rank: 0 }],
+      [
+        {
+          id: 1,
+          title: 'Decision X',
+          type: 'decision',
+          created_at: createdAt,
+          trust_score: 0.5,
+          recall_count: 0,
+          rank: 0,
+        },
+      ],
       'Decision',
     );
     expect(ranked).toHaveLength(1);
@@ -44,12 +54,14 @@ const { capturePassive } = require('../src/memory-domain/observations');
 describe('Module boundary: passive capture failure does not block session startup', () => {
   it('returns a result (not an exception) when content has no learnings section', () => {
     const brokenDbOps = {
-      insertCapturePassiveObservation: () => { throw new Error('db connection lost'); },
+      insertCapturePassiveObservation: () => {
+        throw new Error('db connection lost');
+      },
       findLatestSession: () => 'session-1',
     };
 
     // Content has no "## Key Learnings" section so the function returns early
-    // before touching insertCapturePassiveObservation — no exception thrown
+    // Before touching insertCapturePassiveObservation — no exception thrown
     const result = capturePassive(brokenDbOps, {
       content: 'No key learnings here, just a normal message',
     });
@@ -82,13 +94,36 @@ describe('Module boundary: trust sync failure does not block basic memory tools'
     expect(result.unchanged).toEqual([]);
 
     // Prove memory-domain save still works with proper deps
-    const calls = { jsonErrNoExit: 0, checkDuplicate: 0, findLatestSession: 0, insertObservation: 0, insertObservationRelation: 0, softDeleteObservation: 0 };
-    const jsonErrNoExit = (msg) => { calls.jsonErrNoExit++; return { error: msg }; };
-    const checkDuplicate = () => { calls.checkDuplicate++; return { potential_duplicates: [] }; };
-    const findLatestSession = () => { calls.findLatestSession++; return 'session-1'; };
-    const insertObservation = () => { calls.insertObservation++; return [{ id: 99, created_at: '2026-01-01' }]; };
-    const insertObservationRelation = () => { calls.insertObservationRelation++; };
-    const softDeleteObservation = () => { calls.softDeleteObservation++; };
+    const calls = {
+      jsonErrNoExit: 0,
+      checkDuplicate: 0,
+      findLatestSession: 0,
+      insertObservation: 0,
+      insertObservationRelation: 0,
+      softDeleteObservation: 0,
+    };
+    const jsonErrNoExit = (msg) => {
+      calls.jsonErrNoExit++;
+      return { error: msg };
+    };
+    const checkDuplicate = () => {
+      calls.checkDuplicate++;
+      return { potential_duplicates: [] };
+    };
+    const findLatestSession = () => {
+      calls.findLatestSession++;
+      return 'session-1';
+    };
+    const insertObservation = () => {
+      calls.insertObservation++;
+      return [{ id: 99, created_at: '2026-01-01' }];
+    };
+    const insertObservationRelation = () => {
+      calls.insertObservationRelation++;
+    };
+    const softDeleteObservation = () => {
+      calls.softDeleteObservation++;
+    };
 
     const saved = saveObs(
       {
@@ -141,14 +176,18 @@ describe('Module boundary: one code analyzer failure does not break other analyz
 
   it('graph.getImportGraph returns a scoped error for broken db without affecting quality.getComplexity', () => {
     function throwingDb(msg) {
-      return { prepare() { throw new Error(msg); } };
+      return {
+        prepare() {
+          throw new Error(msg);
+        },
+      };
     }
 
     const graphResult = graph.getImportGraph(throwingDb('graph failed'), 1);
     expect(graphResult.scoped).toBe(true);
     expect(graphResult.analyzer).toBeDefined();
 
-    // quality module still works independently
+    // Quality module still works independently
     const qualityResult = quality.getComplexity(throwingDb('quality failed'), 1);
     expect(qualityResult.scoped).toBe(true);
 
@@ -185,9 +224,9 @@ describe('Module boundary: formatter failure returns a scoped result without thr
   });
 
   it('formatAnalysisForLlm handles missing repoPath gracefully — proves it does not throw into the caller', () => {
-    // formatAnalysisForLlm calls buildAnalysisEnvelope which calls checkFreshness
-    // with repoPath. If repoPath is undefined it throws. This test verifies
-    // the calling code can wrap it safely — the isolation pattern.
+    // FormatAnalysisForLlm calls buildAnalysisEnvelope which calls checkFreshness
+    // With repoPath. If repoPath is undefined it throws. This test verifies
+    // The calling code can wrap it safely — the isolation pattern.
     let caught = false;
     let caughtError = null;
     try {

@@ -66,7 +66,12 @@ describe('data-access/workflows', () => {
     it('should update failure with workaround', () => {
       const sqlJson = vi.fn(() => [{ success: 0.5, attempts: 2, fail_workaround: 'try different approach' }]);
       const deps = { sqlJson, sqlRun: vi.fn(), jsonErrNoExit: vi.fn((msg) => ({ error: msg })) };
-      const result = wfDA.stepOutcome(deps, { workflow: 'wf-1', step: 1, success: false, workaround: 'try different approach' });
+      const result = wfDA.stepOutcome(deps, {
+        workflow: 'wf-1',
+        step: 1,
+        success: false,
+        workaround: 'try different approach',
+      });
       expect(result.ok).toBe(true);
       expect(result.fail_workaround).toBe('try different approach');
     });
@@ -95,8 +100,12 @@ describe('data-access/workflows', () => {
 
     it('should return workflow with steps', () => {
       const sqlJson = vi.fn((query, params) => {
-        if (query.includes('procedural_memory')) return [{ id: 'wf-1', name: 'Test', project: 'proj', status: 'active' }];
-        if (query.includes('procedural_steps')) return [{ step_num: 1, command: 'search', success: 1.0 }];
+        if (query.includes('procedural_memory')) {
+          return [{ id: 'wf-1', name: 'Test', project: 'proj', status: 'active' }];
+        }
+        if (query.includes('procedural_steps')) {
+          return [{ step_num: 1, command: 'search', success: 1.0 }];
+        }
         return [];
       });
       const deps = { sqlJson, jsonErrNoExit: vi.fn((msg) => ({ error: msg })) };

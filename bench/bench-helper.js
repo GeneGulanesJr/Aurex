@@ -14,11 +14,21 @@ function findLapisRoot() {
   const candidates = [
     path.resolve(__dirname, '..'),
     process.env.LAPIS_PATH,
-    path.join(process.env.HOME || process.env.USERPROFILE || '', '.pi', 'agent', 'git', 'github.com', 'GeneGulanesJr', 'LaPis'),
+    path.join(
+      process.env.HOME || process.env.USERPROFILE || '',
+      '.pi',
+      'agent',
+      'git',
+      'github.com',
+      'GeneGulanesJr',
+      'LaPis',
+    ),
     path.join(process.env.HOME || process.env.USERPROFILE || '', '.pi', 'agent', 'skills', 'memory-layer'),
   ];
   for (const dir of candidates) {
-    if (!dir) {continue;}
+    if (!dir) {
+      continue;
+    }
     const msPath = path.join(dir, 'memory-store.js');
     if (fs.existsSync(msPath)) {
       return dir;
@@ -53,8 +63,12 @@ const BENCHMARK_TOOLS = [
 const { estimateTokens } = require(path.join(LAPIS_ROOT, 'utils'));
 
 function formatBytes(n) {
-  if (n < 1024) {return `${n}B`;}
-  if (n < 1024 * 1024) {return `${(n / 1024).toFixed(1)}KB`;}
+  if (n < 1024) {
+    return `${n}B`;
+  }
+  if (n < 1024 * 1024) {
+    return `${(n / 1024).toFixed(1)}KB`;
+  }
   return `${(n / (1024 * 1024)).toFixed(1)}MB`;
 }
 
@@ -91,7 +105,7 @@ function isRepoIndexed(repo) {
       timeout: 5000,
     }).trim();
     const data = JSON.parse(stdout);
-    return (data.repos || []).some(r => r.name === repo);
+    return (data.repos || []).some((r) => r.name === repo);
   } catch (_) {
     return false;
   }
@@ -100,7 +114,9 @@ function isRepoIndexed(repo) {
 function findSymbolWithCallers(repo) {
   try {
     const hotFile = _pickHotFile(repo);
-    if (!hotFile) {return null;}
+    if (!hotFile) {
+      return null;
+    }
     return _pickCallSymbolFromOutline(repo, hotFile);
   } catch (_) {
     return null;
@@ -117,7 +133,9 @@ function _pickHotFile(repo) {
   const data = JSON.parse(stdout);
   const payload = data.data || data;
   const files = payload.hotspots || payload.files || [];
-  if (files.length === 0) {return null;}
+  if (files.length === 0) {
+    return null;
+  }
   return files[0].file_path || files[0].path;
 }
 
@@ -133,9 +151,9 @@ function _pickCallSymbolFromOutline(repo, hotFile) {
   const syms = [
     ...(outline.standalone || []),
     ...(outline.symbols || []),
-    ...(outline.classes || []).flatMap(c => c.methods || []),
+    ...(outline.classes || []).flatMap((c) => c.methods || []),
   ];
-  return syms.find(s => s.kind === 'function' && s.name.length > 3)?.name || syms[0]?.name || null;
+  return syms.find((s) => s.kind === 'function' && s.name.length > 3)?.name || syms[0]?.name || null;
 }
 
 module.exports = {

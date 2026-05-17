@@ -44,7 +44,7 @@ describe('services/dream: trustRecovery', () => {
     dbModule.ensureDb();
     const sessionResult = dbModule.sqlJson(
       "INSERT INTO session_log (project, started_at) VALUES (?, datetime('now')) RETURNING id",
-      ['test-trust-recovery']
+      ['test-trust-recovery'],
     );
     sessionId = sessionResult[0].id;
   });
@@ -77,7 +77,15 @@ describe('services/dream: dream', () => {
 
   it('should supersede duplicate memories in phase 1', () => {
     const supersededRows = [
-      { id: 10, title: 'Duplicate entry', type: 'decision', project: 'proj', newer_id: 20, relation: 'duplicate', confidence: 0.95 },
+      {
+        id: 10,
+        title: 'Duplicate entry',
+        type: 'decision',
+        project: 'proj',
+        newer_id: 20,
+        relation: 'duplicate',
+        confidence: 0.95,
+      },
     ];
     const deps = {
       sqlJson: vi.fn(() => []),
@@ -87,7 +95,9 @@ describe('services/dream: dream', () => {
     let callCount = 0;
     deps.sqlJson = vi.fn(() => {
       callCount++;
-      if (callCount === 1) return supersededRows;
+      if (callCount === 1) {
+        return supersededRows;
+      }
       return [];
     });
     const result = dream(deps);

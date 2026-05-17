@@ -17,14 +17,18 @@ const PRESET_DETECTORS = [
     description: 'catch block with empty body',
     severity: 'warning',
     detect(symbol, db) {
-      if (!symbol.body_preview) {return null;}
+      if (!symbol.body_preview) {
+        return null;
+      }
       // Match empty catch blocks: catch (...) { }
       const re = /catch\s*\([^)]*\)\s*\{\s*\}/g;
       const matches = [...symbol.body_preview.matchAll(re)];
-      if (matches.length === 0) {return null;}
+      if (matches.length === 0) {
+        return null;
+      }
       return {
         count: matches.length,
-        lines: matches.map(m => {
+        lines: matches.map((m) => {
           const preceding = symbol.body_preview.substring(0, m.index);
           return preceding.split('\n').length + symbol.start_line - 1;
         }),
@@ -38,11 +42,11 @@ const PRESET_DETECTORS = [
     severity: 'warning',
     detect(symbol, db) {
       // Check symbol_complexity for zero lines
-      if (symbol.kind !== 'function' && symbol.kind !== 'method') {return null;}
+      if (symbol.kind !== 'function' && symbol.kind !== 'method') {
+        return null;
+      }
       try {
-        const row = db.prepare(
-          'SELECT lines_of_code FROM symbol_complexity WHERE symbol_id = ?'
-        ).get(symbol.id);
+        const row = db.prepare('SELECT lines_of_code FROM symbol_complexity WHERE symbol_id = ?').get(symbol.id);
         if (row && row.lines_of_code === 0) {
           return { lines_of_code: 0 };
         }
@@ -61,9 +65,7 @@ const PRESET_DETECTORS = [
     severity: 'warning',
     detect(symbol, db) {
       try {
-        const row = db.prepare(
-          'SELECT nesting_depth FROM symbol_complexity WHERE symbol_id = ?'
-        ).get(symbol.id);
+        const row = db.prepare('SELECT nesting_depth FROM symbol_complexity WHERE symbol_id = ?').get(symbol.id);
         if (row && row.nesting_depth >= 5) {
           return { nesting_depth: row.nesting_depth };
         }
@@ -77,7 +79,9 @@ const PRESET_DETECTORS = [
     description: '≥ 3 nested loops',
     severity: 'warning',
     detect(symbol, db) {
-      if (!symbol.body_preview) {return null;}
+      if (!symbol.body_preview) {
+        return null;
+      }
       // Count loop keywords at different indentation levels as rough nesting proxy
       const lines = symbol.body_preview.split('\n');
       let maxNesting = 0;
@@ -87,8 +91,11 @@ const PRESET_DETECTORS = [
         const trimmed = line.trim();
         if (loopRe.test(trimmed)) {
           const indent = line.length - trimmed.length;
-          if (indent > 0) {currentNesting++;}
-          else {currentNesting = 1;}
+          if (indent > 0) {
+            currentNesting++;
+          } else {
+            currentNesting = 1;
+          }
           maxNesting = Math.max(maxNesting, currentNesting);
         }
       }
@@ -105,16 +112,16 @@ const PRESET_DETECTORS = [
     severity: 'info',
     detect(symbol, db) {
       try {
-        const row = db.prepare(
-          'SELECT lines_of_code FROM symbol_complexity WHERE symbol_id = ?'
-        ).get(symbol.id);
+        const row = db.prepare('SELECT lines_of_code FROM symbol_complexity WHERE symbol_id = ?').get(symbol.id);
         if (row && row.lines_of_code >= 100) {
           return { lines_of_code: row.lines_of_code };
         }
       } catch (_) {}
       // Fallback: compute from start/end lines
       const loc = symbol.end_line - symbol.start_line + 1;
-      if (loc >= 100) {return { lines_of_code: loc };}
+      if (loc >= 100) {
+        return { lines_of_code: loc };
+      }
       return null;
     },
   },
@@ -124,12 +131,10 @@ const PRESET_DETECTORS = [
     description: 'Usage of eval(), Function(), or new Function()',
     severity: 'error',
     detect(symbol, db) {
-      if (!symbol.body_preview) {return null;}
-      const patterns = [
-        /\beval\s*\(/g,
-        /\bnew\s+Function\s*\(/g,
-        /\bFunction\s*\(/g,
-      ];
+      if (!symbol.body_preview) {
+        return null;
+      }
+      const patterns = [/\beval\s*\(/g, /\bnew\s+Function\s*\(/g, /\bFunction\s*\(/g];
       const allMatches = [];
       for (const re of patterns) {
         const matches = [...symbol.body_preview.matchAll(re)];
@@ -139,7 +144,9 @@ const PRESET_DETECTORS = [
           allMatches.push({ pattern: m[0], line });
         }
       }
-      if (allMatches.length === 0) {return null;}
+      if (allMatches.length === 0) {
+        return null;
+      }
       return { occurrences: allMatches };
     },
   },
@@ -149,13 +156,17 @@ const PRESET_DETECTORS = [
     description: 'Hardcoded strings matching password/api_key/secret patterns',
     severity: 'error',
     detect(symbol, db) {
-      if (!symbol.body_preview) {return null;}
+      if (!symbol.body_preview) {
+        return null;
+      }
       const secretRe = /(['"`])(.*?(?:password|api[_-]?key|secret|token).*?)\1/gi;
       const matches = [...symbol.body_preview.matchAll(secretRe)];
-      if (matches.length === 0) {return null;}
+      if (matches.length === 0) {
+        return null;
+      }
       return {
-        occurrences: matches.map(m => ({
-          value: m[2].length > 40 ? `${m[2].substring(0, 40)  }...` : m[2],
+        occurrences: matches.map((m) => ({
+          value: m[2].length > 40 ? `${m[2].substring(0, 40)}...` : m[2],
           line: symbol.body_preview.substring(0, m.index).split('\n').length + symbol.start_line - 1,
         })),
       };
@@ -167,12 +178,16 @@ const PRESET_DETECTORS = [
     description: 'TODO/FIXME/HACK comments',
     severity: 'info',
     detect(symbol, db) {
-      if (!symbol.body_preview) {return null;}
+      if (!symbol.body_preview) {
+        return null;
+      }
       const commentRe = /\/\/\s*(TODO|FIXME|HACK)\b[^\n]*/gi;
       const matches = [...symbol.body_preview.matchAll(commentRe)];
-      if (matches.length === 0) {return null;}
+      if (matches.length === 0) {
+        return null;
+      }
       return {
-        items: matches.map(m => ({
+        items: matches.map((m) => ({
           type: m[1].toUpperCase(),
           text: m[0].trim(),
           line: symbol.body_preview.substring(0, m.index).split('\n').length + symbol.start_line - 1,
@@ -186,17 +201,23 @@ const PRESET_DETECTORS = [
     description: 'Unexplained numeric literals (not 0, 1, -1, 2)',
     severity: 'info',
     detect(symbol, db) {
-      if (!symbol.body_preview) {return null;}
+      if (!symbol.body_preview) {
+        return null;
+      }
       // Match numeric literals that aren't common constants
       const numRe = /(?<![a-zA-Z0-9_.])(\d{2,}|[3-9]\b|(?<!\d)-[3-9]\b)(?![a-zA-Z0-9_.])/g;
       const matches = [...symbol.body_preview.matchAll(numRe)];
-      if (matches.length === 0) {return null;}
+      if (matches.length === 0) {
+        return null;
+      }
       // Only flag if there are many or they're suspicious
-      const suspicious = matches.filter(m => parseInt(m[0]) > 99);
-      if (suspicious.length === 0 && matches.length < 5) {return null;}
+      const suspicious = matches.filter((m) => parseInt(m[0]) > 99);
+      if (suspicious.length === 0 && matches.length < 5) {
+        return null;
+      }
       return {
         count: matches.length,
-        notable: suspicious.slice(0, 5).map(m => ({
+        notable: suspicious.slice(0, 5).map((m) => ({
           value: parseInt(m[0]),
           line: symbol.body_preview.substring(0, m.index).split('\n').length + symbol.start_line - 1,
         })),
@@ -209,17 +230,23 @@ const PRESET_DETECTORS = [
     description: 'Function parameter reassigned within body',
     severity: 'warning',
     detect(symbol, db) {
-      if (!symbol.signature || !symbol.body_preview) {return null;}
+      if (!symbol.signature || !symbol.body_preview) {
+        return null;
+      }
       // Extract parameter names from signature
       const paramRe = /\(([^)]*)\)/;
       const sigMatch = symbol.signature.match(paramRe);
-      if (!sigMatch) {return null;}
+      if (!sigMatch) {
+        return null;
+      }
       const params = sigMatch[1]
         .split(',')
-        .map(p => p.trim().split(/[:=]/)[0].trim())
+        .map((p) => p.trim().split(/[:=]/)[0].trim())
         .filter(Boolean);
 
-      if (params.length === 0) {return null;}
+      if (params.length === 0) {
+        return null;
+      }
 
       const reassigned = [];
       for (const param of params) {
@@ -230,7 +257,9 @@ const PRESET_DETECTORS = [
           reassigned.push({ param, line });
         }
       }
-      if (reassigned.length === 0) {return null;}
+      if (reassigned.length === 0) {
+        return null;
+      }
       return { reassigned };
     },
   },
@@ -246,7 +275,9 @@ const PRESET_DETECTORS = [
  */
 function parseCustomPattern(raw) {
   const colonIdx = raw.indexOf(':');
-  if (colonIdx === -1) {return { error: `Invalid pattern: ${raw} (expected type:value)` };}
+  if (colonIdx === -1) {
+    return { error: `Invalid pattern: ${raw} (expected type:value)` };
+  }
 
   const type = raw.substring(0, colonIdx);
   const value = raw.substring(colonIdx + 1);
@@ -256,9 +287,13 @@ function parseCustomPattern(raw) {
       const re = new RegExp(`\\b${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\(`, 'g');
       return {
         detect(symbol) {
-          if (!symbol.body_preview) {return null;}
+          if (!symbol.body_preview) {
+            return null;
+          }
           const matches = [...symbol.body_preview.matchAll(re)];
-          if (matches.length === 0) {return null;}
+          if (matches.length === 0) {
+            return null;
+          }
           return { count: matches.length };
         },
       };
@@ -272,22 +307,26 @@ function parseCustomPattern(raw) {
       }
       return {
         detect(symbol) {
-          if (!symbol.body_preview) {return null;}
+          if (!symbol.body_preview) {
+            return null;
+          }
           const matches = [...symbol.body_preview.matchAll(regex)];
-          if (matches.length === 0) {return null;}
+          if (matches.length === 0) {
+            return null;
+          }
           return { count: matches.length };
         },
       };
     }
     case 'nesting': {
       const depth = parseInt(value);
-      if (isNaN(depth)) {return { error: `Invalid nesting depth: ${value}` };}
+      if (isNaN(depth)) {
+        return { error: `Invalid nesting depth: ${value}` };
+      }
       return {
         detect(symbol, db) {
           try {
-            const row = db.prepare(
-              'SELECT nesting_depth FROM symbol_complexity WHERE symbol_id = ?'
-            ).get(symbol.id);
+            const row = db.prepare('SELECT nesting_depth FROM symbol_complexity WHERE symbol_id = ?').get(symbol.id);
             if (row && row.nesting_depth >= depth) {
               return { nesting_depth: row.nesting_depth };
             }
@@ -298,11 +337,15 @@ function parseCustomPattern(raw) {
     }
     case 'lines': {
       const threshold = parseInt(value);
-      if (isNaN(threshold)) {return { error: `Invalid line count: ${value}` };}
+      if (isNaN(threshold)) {
+        return { error: `Invalid line count: ${value}` };
+      }
       return {
         detect(symbol) {
           const loc = symbol.end_line - symbol.start_line + 1;
-          if (loc >= threshold) {return { lines_of_code: loc };}
+          if (loc >= threshold) {
+            return { lines_of_code: loc };
+          }
           return null;
         },
       };
@@ -332,7 +375,13 @@ function scanAstPatterns(db, repoId, opts = {}) {
 
   // Guard: require native db
   if (!db || typeof db.prepare !== 'function') {
-    return { matches: [], symbols_scanned: 0, symbols_with_body: 0, detectors_used: 0, error: 'Native SQLite backend required' };
+    return {
+      matches: [],
+      symbols_scanned: 0,
+      symbols_with_body: 0,
+      detectors_used: 0,
+      error: 'Native SQLite backend required',
+    };
   }
 
   // Build detector list
@@ -348,7 +397,9 @@ function scanAstPatterns(db, repoId, opts = {}) {
   // Add custom DSL patterns
   for (const raw of customPatterns) {
     const parsed = parseCustomPattern(raw);
-    if (parsed.error) {continue;}
+    if (parsed.error) {
+      continue;
+    }
     detectors.push({
       id: `custom:${raw}`,
       category: 'custom',
@@ -365,12 +416,14 @@ function scanAstPatterns(db, repoId, opts = {}) {
   }
 
   // Get all symbols in repo
-  const symbols = db.prepare(
-    'SELECT id, name, kind, body_preview, signature, start_line, end_line, file_path FROM code_symbols WHERE repo_id = ?'
-  ).all(repoId);
+  const symbols = db
+    .prepare(
+      'SELECT id, name, kind, body_preview, signature, start_line, end_line, file_path FROM code_symbols WHERE repo_id = ?',
+    )
+    .all(repoId);
 
   // Get symbol IDs with body data for confidence calculation
-  const symbolsWithBody = symbols.filter(s => s.body_preview && s.body_preview.trim().length > 0);
+  const symbolsWithBody = symbols.filter((s) => s.body_preview && s.body_preview.trim().length > 0);
 
   const matches = [];
 
@@ -393,13 +446,17 @@ function scanAstPatterns(db, repoId, opts = {}) {
             has_body: Boolean(symbol.body_preview),
           });
 
-          if (matches.length >= limit) {break;}
+          if (matches.length >= limit) {
+            break;
+          }
         }
       } catch (_) {
         // Skip detector errors for individual symbols
       }
     }
-    if (matches.length >= limit) {break;}
+    if (matches.length >= limit) {
+      break;
+    }
   }
 
   return {

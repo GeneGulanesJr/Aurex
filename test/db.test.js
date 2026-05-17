@@ -144,9 +144,15 @@ describe('db.js (database layer)', () => {
       expect(result.ok).toBe(true);
       // Cleanup
       dbModule.resetDb();
-      try { fs.unlinkSync(tmpPath); } catch (_) {}
-      try { fs.unlinkSync(`${tmpPath}-wal`); } catch (_) {}
-      try { fs.unlinkSync(`${tmpPath}-shm`); } catch (_) {}
+      try {
+        fs.unlinkSync(tmpPath);
+      } catch (_) {}
+      try {
+        fs.unlinkSync(`${tmpPath}-wal`);
+      } catch (_) {}
+      try {
+        fs.unlinkSync(`${tmpPath}-shm`);
+      } catch (_) {}
       const { resetConfigCache } = require('../config');
       resetConfigCache();
       dbModule.ensureDb();
@@ -174,7 +180,16 @@ describe('db.js (database layer)', () => {
 
     it('parseArgs() should parse CLI arguments', () => {
       // Simulate node memory-store.js subcommand with repo and path flags
-      const args = dbModule.parseArgs(['node', 'memory-store.js', 'index-repo', '--repo', 'test', '--path', '/tmp', '--force']);
+      const args = dbModule.parseArgs([
+        'node',
+        'memory-store.js',
+        'index-repo',
+        '--repo',
+        'test',
+        '--path',
+        '/tmp',
+        '--force',
+      ]);
       expect(args.repo).toBe('test');
       expect(args.path).toBe('/tmp');
       expect(args.force).toBe(true);

@@ -1,7 +1,15 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { stripJsoncComments, expandTilde, deepMerge, loadConfig, resetConfigCache, DEFAULTS, CONFIG_PATH } = require('../config');
+const {
+  stripJsoncComments,
+  expandTilde,
+  deepMerge,
+  loadConfig,
+  resetConfigCache,
+  DEFAULTS,
+  CONFIG_PATH,
+} = require('../config');
 
 describe('config.js', () => {
   const ORIGINAL_READ = fs.readFileSync;
@@ -121,7 +129,11 @@ describe('config.js', () => {
 
   describe('loadConfig', () => {
     it('returns defaults when config file does not exist', () => {
-      fs.readFileSync = () => { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; };
+      fs.readFileSync = () => {
+        const e = new Error('ENOENT');
+        e.code = 'ENOENT';
+        throw e;
+      };
       const cfg = loadConfig();
       expect(cfg).toEqual(DEFAULTS);
     });
@@ -160,7 +172,9 @@ describe('config.js', () => {
     it('returns defaults on non-ENOENT read errors (with console.error)', () => {
       const err = new Error('permission denied');
       err.code = 'EACCES';
-      fs.readFileSync = () => { throw err; };
+      fs.readFileSync = () => {
+        throw err;
+      };
       const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
       const cfg = loadConfig();
       expect(cfg).toEqual(DEFAULTS);
@@ -171,7 +185,9 @@ describe('config.js', () => {
     it('silently returns defaults for ENOENT without console.error', () => {
       const err = new Error('not found');
       err.code = 'ENOENT';
-      fs.readFileSync = () => { throw err; };
+      fs.readFileSync = () => {
+        throw err;
+      };
       const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
       const cfg = loadConfig();
       expect(cfg).toEqual(DEFAULTS);

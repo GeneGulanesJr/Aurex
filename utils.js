@@ -35,30 +35,11 @@ function withDb(fn, featureName) {
 
 /* ── ignore directories ────────────────────────────────────── */
 
-const IGNORE_DIRS_COMMON = new Set([
-  'node_modules',
-  '.git',
-  '.next',
-  '.nuxt',
-  'dist',
-  'build',
-]);
+const IGNORE_DIRS_COMMON = new Set(['node_modules', '.git', '.next', '.nuxt', 'dist', 'build']);
 
-const IGNORE_DIRS_CODE = new Set([
-  ...IGNORE_DIRS_COMMON,
-  '.venv',
-  'coverage',
-]);
+const IGNORE_DIRS_CODE = new Set([...IGNORE_DIRS_COMMON, '.venv', 'coverage']);
 
-const IGNORE_DIRS_DOCS = new Set([
-  ...IGNORE_DIRS_COMMON,
-  '.svn',
-  '.hg',
-  '__pycache__',
-  '.cache',
-  '.pi',
-  'vendor',
-]);
+const IGNORE_DIRS_DOCS = new Set([...IGNORE_DIRS_COMMON, '.svn', '.hg', '__pycache__', '.cache', '.pi', 'vendor']);
 
 /* ── file extension sets ────────────────────────────────────── */
 
@@ -99,14 +80,22 @@ function walkDirForDocs(dirPath, ignoreGlob) {
   function walk(dir) {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
-      if (entry.name.startsWith('.')) {continue;}
+      if (entry.name.startsWith('.')) {
+        continue;
+      }
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (IGNORE_DIRS_DOCS.has(entry.name)) {continue;}
-        if (ignoreRe && ignoreRe.test(fullPath)) {continue;}
+        if (IGNORE_DIRS_DOCS.has(entry.name)) {
+          continue;
+        }
+        if (ignoreRe && ignoreRe.test(fullPath)) {
+          continue;
+        }
         walk(fullPath);
       } else if (entry.isFile() && MD_EXTENSIONS.has(path.extname(entry.name))) {
-        if (ignoreRe && ignoreRe.test(fullPath)) {continue;}
+        if (ignoreRe && ignoreRe.test(fullPath)) {
+          continue;
+        }
         results.push(fullPath);
       }
     }
@@ -125,11 +114,47 @@ function hashContent(content) {
 /* ── skip callee names (shared between code-analysis and parse-code) ── */
 
 const SKIP_CALLEE_NAMES = new Set([
-  'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'try', 'catch', 'finally',
-  'class', 'function', 'return', 'throw', 'new', 'typeof', 'instanceof', 'void',
-  'delete', 'in', 'of', 'yield', 'await', 'async', 'export', 'import', 'from',
-  'const', 'let', 'var', 'true', 'false', 'null', 'undefined', 'this', 'super',
-  'constructor', 'extends', 'static', 'get', 'set',
+  'if',
+  'else',
+  'for',
+  'while',
+  'do',
+  'switch',
+  'case',
+  'try',
+  'catch',
+  'finally',
+  'class',
+  'function',
+  'return',
+  'throw',
+  'new',
+  'typeof',
+  'instanceof',
+  'void',
+  'delete',
+  'in',
+  'of',
+  'yield',
+  'await',
+  'async',
+  'export',
+  'import',
+  'from',
+  'const',
+  'let',
+  'var',
+  'true',
+  'false',
+  'null',
+  'undefined',
+  'this',
+  'super',
+  'constructor',
+  'extends',
+  'static',
+  'get',
+  'set',
 ]);
 
 /* ── token estimation ──────────────────────────────────────── */

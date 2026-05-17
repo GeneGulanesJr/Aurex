@@ -25,7 +25,9 @@ const FORBIDDEN_IMPORTS = {
 
 function collectJsFiles(dir) {
   const results = [];
-  if (!fs.existsSync(dir)) return results;
+  if (!fs.existsSync(dir)) {
+    return results;
+  }
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
@@ -74,10 +76,7 @@ describe('Import boundary enforcement', () => {
               const resolved = path.normalize(path.join(path.dirname(file), req));
               for (const forbidden of forbiddenDeps) {
                 const forbiddenPath = path.join('src', forbidden);
-                if (
-                  resolved.includes(forbiddenPath + path.sep) ||
-                  resolved.endsWith(forbiddenPath)
-                ) {
+                if (resolved.includes(forbiddenPath + path.sep) || resolved.endsWith(forbiddenPath)) {
                   violations.push({ require: req, forbidden });
                 }
               }

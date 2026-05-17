@@ -14,7 +14,9 @@ describe('response-meta.js', () => {
       let head;
       try {
         head = execSync('git rev-parse HEAD', { cwd: repoPath, encoding: 'utf-8', timeout: 5000 }).trim();
-      } catch (_) { return; /* Skip if not in git repo */ }
+      } catch (_) {
+        return; /* Skip if not in git repo */
+      }
 
       const result = responseMeta.checkFreshness(repoPath, head);
       expect(['fresh', 'edited_uncommitted']).toContain(result);
@@ -24,7 +26,9 @@ describe('response-meta.js', () => {
       const repoPath = require('path').resolve(__dirname, '..');
       // Only test if this is a git repo
       const fs = require('fs');
-      if (!fs.existsSync(require('path').join(repoPath, '.git'))) {return;}
+      if (!fs.existsSync(require('path').join(repoPath, '.git'))) {
+        return;
+      }
 
       const result = responseMeta.checkFreshness(repoPath, '0000000000000000000000000000000000000000');
       expect(result).toBe('stale_index');
@@ -38,7 +42,9 @@ describe('response-meta.js', () => {
     it('should return stale_index for null head_commit', () => {
       const repoPath = require('path').resolve(__dirname, '..');
       const fs = require('fs');
-      if (!fs.existsSync(require('path').join(repoPath, '.git'))) {return;}
+      if (!fs.existsSync(require('path').join(repoPath, '.git'))) {
+        return;
+      }
 
       const result = responseMeta.checkFreshness(repoPath, null);
       expect(result).toBe('stale_index');
@@ -49,7 +55,9 @@ describe('response-meta.js', () => {
     it('should cache results for 60 seconds', () => {
       const repoPath = require('path').resolve(__dirname, '..');
       const fs = require('fs');
-      if (!fs.existsSync(require('path').join(repoPath, '.git'))) {return;}
+      if (!fs.existsSync(require('path').join(repoPath, '.git'))) {
+        return;
+      }
 
       const result1 = responseMeta.getFreshness(null, 1, repoPath, null);
       const result2 = responseMeta.getFreshness(null, 1, repoPath, null);
@@ -76,9 +84,7 @@ describe('response-meta.js', () => {
     });
 
     it('should compute confidence for getSymbolImportance', () => {
-      const data = { nodes: [
-        { pagerank: 0.05 }, { pagerank: 0.03 }, { pagerank: 0.02 }
-      ]};
+      const data = { nodes: [{ pagerank: 0.05 }, { pagerank: 0.03 }, { pagerank: 0.02 }] };
       const conf = responseMeta.computeConfidence('getSymbolImportance', data);
       // Gap is 0.02, normalized: 0.5 + 0.02 * 20 = 0.9
       expect(conf).toBeCloseTo(0.9, 1);
@@ -93,17 +99,13 @@ describe('response-meta.js', () => {
     });
 
     it('should compute confidence for getDeadCode', () => {
-      const data = { symbols: [
-        { confidence: 0.9 }, { confidence: 0.7 }, { confidence: 0.5 }
-      ]};
+      const data = { symbols: [{ confidence: 0.9 }, { confidence: 0.7 }, { confidence: 0.5 }] };
       const conf = responseMeta.computeConfidence('getDeadCode', data);
       expect(conf).toBeCloseTo(0.7, 1);
     });
 
     it('should compute confidence for getHotspots', () => {
-      const data = { files: [
-        { commits: 5 }, { commits: 0 }, { commits: 3 }
-      ]};
+      const data = { files: [{ commits: 5 }, { commits: 0 }, { commits: 3 }] };
       const conf = responseMeta.computeConfidence('getHotspots', data);
       // 2 of 3 have churn → 0.67
       expect(conf).toBeCloseTo(0.67, 1);

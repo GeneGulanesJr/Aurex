@@ -1,8 +1,8 @@
-// test/smoke-cli.js
+// Test/smoke-cli.js
 // Smoke tests: verify every CLI command exits cleanly after extraction.
 // Run: node test/smoke-cli.js
 // These are NOT vitest tests — they run as a standalone Node script
-// so they can be executed in CI without the vitest runner.
+// So they can be executed in CI without the vitest runner.
 
 const { execSync } = require('child_process');
 const path = require('path');
@@ -18,7 +18,9 @@ let failed = 0;
 const failures = [];
 
 function ensureDir(dir) {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
 }
 
 function smokeTest(name, cmd, { expectExit0 = true, expectContains = null, env = {} } = {}) {
@@ -107,7 +109,9 @@ smokeTest('--help lists subcommands', `${CLI} --help`, {
 const helpOutput = (() => {
   try {
     return execSync(`${CLI} --help`, {
-      cwd: ROOT, encoding: 'utf8', timeout: 10000,
+      cwd: ROOT,
+      encoding: 'utf8',
+      timeout: 10000,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
   } catch (e) {
@@ -117,25 +121,82 @@ const helpOutput = (() => {
 })();
 
 const requiredCommands = [
-  'save', 'search', 'context', 'get', 'update', 'delete',
-  'index-repo', 'reindex-repo', 'search-code', 'list-code-repos',
-  'remove-code-repo', 'import-graph', 'call-hierarchy', 'blast-radius',
-  'dead-code', 'complexity', 'outline', 'churn', 'hotspots', 'cycles',
-  'importance', 'coupling', 'extractable', 'hierarchy', 'signal-chains',
-  'layer-violations', 'winnow', 'ast-patterns', 'untested', 'pr-risk',
-  'index-docs', 'reindex-docs', 'doc-search', 'doc-outline', 'backlinks',
-  'broken-links', 'glossary', 'tutorial-path', 'code-examples',
-  'doc-orphans', 'doc-coverage', 'stale-pages', 'doc-duplicates',
-  'link-symbol', 'auto-link', 'adjust-trust', 'sync-code-trust',
-  'symbol-cluster', 'related',
-  'save-workflow', 'record-step', 'step-outcome', 'get-workflow',
-  'session-start', 'session-end', 'session-summary',
-  'init', 'compact', 'dream', 'auto-recover', 'recover-orphans',
-  'trust-recovery', 'list-projects', 'list-workspaces',
-  'create-workspace', 'archive-workspace',
-  'stats', 'timeline', 'check-dup', 'mark-dup',
-  'save-prompt', 'capture-passive', 'suggest-topic-key',
-  'record-recall', 'stale-links', 'provenance',
+  'save',
+  'search',
+  'context',
+  'get',
+  'update',
+  'delete',
+  'index-repo',
+  'reindex-repo',
+  'search-code',
+  'list-code-repos',
+  'remove-code-repo',
+  'import-graph',
+  'call-hierarchy',
+  'blast-radius',
+  'dead-code',
+  'complexity',
+  'outline',
+  'churn',
+  'hotspots',
+  'cycles',
+  'importance',
+  'coupling',
+  'extractable',
+  'hierarchy',
+  'signal-chains',
+  'layer-violations',
+  'winnow',
+  'ast-patterns',
+  'untested',
+  'pr-risk',
+  'index-docs',
+  'reindex-docs',
+  'doc-search',
+  'doc-outline',
+  'backlinks',
+  'broken-links',
+  'glossary',
+  'tutorial-path',
+  'code-examples',
+  'doc-orphans',
+  'doc-coverage',
+  'stale-pages',
+  'doc-duplicates',
+  'link-symbol',
+  'auto-link',
+  'adjust-trust',
+  'sync-code-trust',
+  'symbol-cluster',
+  'related',
+  'save-workflow',
+  'record-step',
+  'step-outcome',
+  'get-workflow',
+  'session-start',
+  'session-end',
+  'session-summary',
+  'init',
+  'compact',
+  'dream',
+  'auto-recover',
+  'recover-orphans',
+  'trust-recovery',
+  'list-projects',
+  'list-workspaces',
+  'create-workspace',
+  'archive-workspace',
+  'stats',
+  'timeline',
+  'check-dup',
+  'mark-dup',
+  'save-prompt',
+  'capture-passive',
+  'suggest-topic-key',
+  'record-recall',
+  'stale-links',
+  'provenance',
 ];
 
 for (const cmd of requiredCommands) {
@@ -155,27 +216,37 @@ console.log('\nMemory commands (temp DB):');
 smokeTestWithDb('save + search round-trip', path.join(TMP_DIR, 'smoke-memory.db'), (env) => {
   run(`${CLI} save --content "smoke test observation" --type bugfix --scope project --title "smoke test"`, { env });
   const out = run(`${CLI} search --query "smoke test"`, { env });
-  if (!out.includes('results')) throw new Error('search did not return results key');
+  if (!out.includes('results')) {
+    throw new Error('search did not return results key');
+  }
 });
 
 smokeTestWithDb('save + get round-trip', path.join(TMP_DIR, 'smoke-get.db'), (env) => {
   const saveOut = run(`${CLI} save --content "get test" --type decision --scope project --title "get test"`, { env });
-  if (!saveOut.includes('"id"')) throw new Error('save did not return id');
-  // get requires --id
+  if (!saveOut.includes('"id"')) {
+    throw new Error('save did not return id');
+  }
+  // Get requires --id
   const getOut = run(`${CLI} get --id 1`, { env });
-  if (!getOut.includes('"id"') && !getOut.includes('error')) throw new Error('get unexpected output');
+  if (!getOut.includes('"id"') && !getOut.includes('error')) {
+    throw new Error('get unexpected output');
+  }
 });
 
 smokeTestWithDb('save + update', path.join(TMP_DIR, 'smoke-upd.db'), (env) => {
   run(`${CLI} save --content "update test" --type learning --scope project --title "update test"`, { env });
   const out = run(`${CLI} update --id 1 --content "updated content"`, { env });
-  if (!out.includes('"id"') && !out.includes('error')) throw new Error('update unexpected output');
+  if (!out.includes('"id"') && !out.includes('error')) {
+    throw new Error('update unexpected output');
+  }
 });
 
 smokeTestWithDb('save + delete', path.join(TMP_DIR, 'smoke-del.db'), (env) => {
   run(`${CLI} save --content "delete test" --type bugfix --scope project --title "delete test"`, { env });
   const out = run(`${CLI} delete --id 1`, { env });
-  if (!out.includes('ok') && !out.includes('error')) throw new Error('delete unexpected output');
+  if (!out.includes('ok') && !out.includes('error')) {
+    throw new Error('delete unexpected output');
+  }
 });
 
 smokeTestWithDb('memory context', path.join(TMP_DIR, 'smoke-ctx.db'), (env) => {
@@ -185,7 +256,9 @@ smokeTestWithDb('memory context', path.join(TMP_DIR, 'smoke-ctx.db'), (env) => {
 
 smokeTestWithDb('memory stats', path.join(TMP_DIR, 'smoke-stats.db'), (env) => {
   const out = run(`${CLI} stats`, { env });
-  if (!out.includes('total_observations')) throw new Error('stats missing total_observations');
+  if (!out.includes('total_observations')) {
+    throw new Error('stats missing total_observations');
+  }
 });
 
 smokeTestWithDb('timeline', path.join(TMP_DIR, 'smoke-tl.db'), (env) => {
@@ -195,12 +268,16 @@ smokeTestWithDb('timeline', path.join(TMP_DIR, 'smoke-tl.db'), (env) => {
 
 smokeTestWithDb('suggest-topic-key', path.join(TMP_DIR, 'smoke-tk.db'), (env) => {
   const out = run(`${CLI} suggest-topic-key --content "test"`, { env });
-  if (!out.includes('topic_key')) throw new Error('suggest-topic-key unexpected output');
+  if (!out.includes('topic_key')) {
+    throw new Error('suggest-topic-key unexpected output');
+  }
 });
 
 smokeTestWithDb('check-dup', path.join(TMP_DIR, 'smoke-dup.db'), (env) => {
   const out = run(`${CLI} check-dup --content "test"`, { env });
-  if (!out.includes('potential_duplicates')) throw new Error('check-dup unexpected output');
+  if (!out.includes('potential_duplicates')) {
+    throw new Error('check-dup unexpected output');
+  }
 });
 
 smokeTestWithDb('save-prompt', path.join(TMP_DIR, 'smoke-sp.db'), (env) => {
@@ -215,7 +292,9 @@ console.log('\nWorkflow commands (temp DB):');
 smokeTestWithDb('save-workflow + get-workflow', path.join(TMP_DIR, 'smoke-wf.db'), (env) => {
   run(`${CLI} save-workflow --id "test-flow" --name "test-flow" --scope project`, { env });
   const out = run(`${CLI} get-workflow --id "test-flow"`, { env });
-  if (!out.includes('test-flow')) throw new Error('get-workflow did not return workflow');
+  if (!out.includes('test-flow')) {
+    throw new Error('get-workflow did not return workflow');
+  }
 });
 
 smokeTestWithDb('record-step + step-outcome', path.join(TMP_DIR, 'smoke-step.db'), (env) => {
@@ -228,13 +307,17 @@ console.log('\nCode index commands (temp DB):');
 smokeTestWithDb('index-repo + search-code', path.join(TMP_DIR, 'smoke-code.db'), (env, projectDir) => {
   run(`${CLI} index-repo --path "${projectDir}" --name smoke-repo`, { env });
   const out = run(`${CLI} search-code --repo smoke-repo --query "foo"`, { env });
-  if (!out.includes('foo') && !out.includes('No results')) throw new Error('search-code unexpected output');
+  if (!out.includes('foo') && !out.includes('No results')) {
+    throw new Error('search-code unexpected output');
+  }
 });
 
 smokeTestWithDb('index-repo + list-code-repos', path.join(TMP_DIR, 'smoke-list.db'), (env, projectDir) => {
   run(`${CLI} index-repo --path "${projectDir}" --name list-repo`, { env });
   const out = run(`${CLI} list-code-repos`, { env });
-  if (!out.includes('list-repo')) throw new Error('list-code-repos did not include indexed repo');
+  if (!out.includes('list-repo')) {
+    throw new Error('list-code-repos did not include indexed repo');
+  }
 });
 
 smokeTestWithDb('outline', path.join(TMP_DIR, 'smoke-outline.db'), (env, projectDir) => {
@@ -309,7 +392,7 @@ smokeTestWithDb('layer-violations', path.join(TMP_DIR, 'smoke-lv.db'), (env, pro
 
 smokeTestWithDb('churn', path.join(TMP_DIR, 'smoke-churn.db'), (env, projectDir) => {
   run(`${CLI} index-repo --path "${projectDir}" --name churn-repo`, { env });
-  // churn needs git history, will return error for temp dir — that's OK
+  // Churn needs git history, will return error for temp dir — that's OK
   run(`${CLI} churn --repo churn-repo --file index.js`, { env });
 });
 
@@ -357,7 +440,9 @@ console.log('\nDoc index commands (temp DB):');
 smokeTestWithDb('index-docs + doc-search', path.join(TMP_DIR, 'smoke-doc.db'), (env, _projectDir, docsDir) => {
   run(`${CLI} index-docs --path "${docsDir}" --name smoke-docs`, { env });
   const out = run(`${CLI} doc-search --repo smoke-docs --query "Section One"`, { env });
-  if (!out.includes('results') && !out.includes('No results')) throw new Error('doc-search unexpected output');
+  if (!out.includes('results') && !out.includes('No results')) {
+    throw new Error('doc-search unexpected output');
+  }
 });
 
 smokeTestWithDb('doc-outline', path.join(TMP_DIR, 'smoke-docol.db'), (env, _projectDir, docsDir) => {
@@ -412,7 +497,7 @@ smokeTestWithDb('doc-duplicates', path.join(TMP_DIR, 'smoke-dd.db'), (env, _proj
 
 smokeTestWithDb('tutorial-path', path.join(TMP_DIR, 'smoke-tp.db'), (env, _projectDir, docsDir) => {
   run(`${CLI} index-docs --path "${docsDir}" --name tp-docs`, { env });
-  // tutorial-path requires --section
+  // Tutorial-path requires --section
   run(`${CLI} tutorial-path --repo tp-docs --query "test"`, { env });
 });
 
@@ -432,7 +517,7 @@ smokeTestWithDb('symbol-cluster', path.join(TMP_DIR, 'smoke-sc.db'), (env) => {
 
 smokeTestWithDb('link-symbol', path.join(TMP_DIR, 'smoke-ls.db'), (env) => {
   run(`${CLI} save --content "link test" --type learning --scope project --title "link"`, { env });
-  // link-symbol requires --memory-id
+  // Link-symbol requires --memory-id
   run(`${CLI} link-symbol --memory-id 1 --symbol "testFunction" --file test.js --repo test-repo`, { env });
 });
 
@@ -456,8 +541,10 @@ smokeTestWithDb('stale-links', path.join(TMP_DIR, 'smoke-sl.db'), (env) => {
 console.log('\nSession commands (temp DB):');
 smokeTestWithDb('session-start + session-end', path.join(TMP_DIR, 'smoke-session.db'), (env) => {
   const startOut = run(`${CLI} session-start --project TestProject`, { env });
-  if (!startOut.includes('sessionId')) throw new Error('session-start did not return sessionId');
-  // session-end requires --id
+  if (!startOut.includes('sessionId')) {
+    throw new Error('session-start did not return sessionId');
+  }
+  // Session-end requires --id
   run(`${CLI} session-end --id 1 --project TestProject --turns 5 --topics "smoke,test"`, { env });
 });
 
@@ -477,17 +564,23 @@ smokeTestWithDb('compact', path.join(TMP_DIR, 'smoke-compact.db'), (env) => {
 console.log('\nMaintenance / project commands (temp DB):');
 smokeTestWithDb('init', path.join(TMP_DIR, 'smoke-init.db'), (env) => {
   const out = run(`${CLI} init`, { env });
-  if (!out.includes('ok')) throw new Error('init did not return ok');
+  if (!out.includes('ok')) {
+    throw new Error('init did not return ok');
+  }
 });
 
 smokeTestWithDb('list-projects', path.join(TMP_DIR, 'smoke-lp.db'), (env) => {
   const out = run(`${CLI} list-projects`, { env });
-  if (!out.includes('projects')) throw new Error('list-projects unexpected output');
+  if (!out.includes('projects')) {
+    throw new Error('list-projects unexpected output');
+  }
 });
 
 smokeTestWithDb('list-workspaces', path.join(TMP_DIR, 'smoke-lw.db'), (env) => {
   const out = run(`${CLI} list-workspaces`, { env });
-  if (!out.includes('workspaces')) throw new Error('list-workspaces unexpected output');
+  if (!out.includes('workspaces')) {
+    throw new Error('list-workspaces unexpected output');
+  }
 });
 
 smokeTestWithDb('create-workspace + archive-workspace', path.join(TMP_DIR, 'smoke-ws.db'), (env) => {
@@ -523,8 +616,12 @@ console.log(`\n${'='.repeat(50)}`);
 console.log(`Smoke tests: ${passed} passed, ${failed} failed`);
 if (failures.length > 0) {
   console.log('\nFailed tests:');
-  for (const f of failures) console.log(`  - ${f}`);
+  for (const f of failures) {
+    console.log(`  - ${f}`);
+  }
 }
 console.log(`${'='.repeat(50)}\n`);
 
-if (failed > 0) process.exit(1);
+if (failed > 0) {
+  process.exit(1);
+}

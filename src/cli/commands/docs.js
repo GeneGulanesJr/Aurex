@@ -42,11 +42,17 @@ function register(commands, deps) {
   commands['doc-coverage'] = (args) => {
     const codeRepo = args.repo;
     const docRepo = args['doc-repo'] || codeRepo;
-    if (!codeRepo) return jsonErrNoExit('Missing --repo');
+    if (!codeRepo) {
+      return jsonErrNoExit('Missing --repo');
+    }
     const codeRepoRow = sqlJson('SELECT id FROM code_repos WHERE name = ?', [codeRepo]);
-    if (!codeRepoRow.length) return jsonErrNoExit(`Code repo "${codeRepo}" not found. Run index-repo first.`);
+    if (!codeRepoRow.length) {
+      return jsonErrNoExit(`Code repo "${codeRepo}" not found. Run index-repo first.`);
+    }
     const docRepoRow = sqlJson('SELECT id FROM doc_repos WHERE name = ?', [docRepo]);
-    if (!docRepoRow.length) return jsonErrNoExit(`Doc repo "${docRepo}" not found. Run index-docs first.`);
+    if (!docRepoRow.length) {
+      return jsonErrNoExit(`Doc repo "${docRepo}" not found. Run index-docs first.`);
+    }
     return docIndexer.getDocCoverage(getDb(), codeRepoRow[0].id, docRepoRow[0].id);
   };
   commands['stale-pages'] = (args) =>
@@ -56,7 +62,9 @@ function register(commands, deps) {
   commands['index-docs'] = async (args) => {
     const docPath = args.path;
     const name = args.name;
-    if (!docPath || !name) return jsonErrNoExit('Usage: index-docs --path P --name X [--ignore GLOB]');
+    if (!docPath || !name) {
+      return jsonErrNoExit('Usage: index-docs --path P --name X [--ignore GLOB]');
+    }
     return docIndexer.indexDocs(getDb(), path.resolve(docPath), name, args.ignore || null);
   };
   commands['reindex-docs'] = async (args) =>
@@ -67,7 +75,9 @@ function register(commands, deps) {
       dispatchDeps,
     );
   commands['doc-search'] = (args) => {
-    if (!args.query) return jsonErrNoExit('Missing --query. Usage: doc-search --query Q --repo X');
+    if (!args.query) {
+      return jsonErrNoExit('Missing --query. Usage: doc-search --query Q --repo X');
+    }
     return _dispatchDoc(
       'doc-search',
       args.repo,
@@ -87,7 +97,9 @@ function register(commands, deps) {
       dispatchDeps,
     );
   commands.backlinks = (args) => {
-    if (!args.path) return jsonErrNoExit('Missing --path. Usage: backlinks --repo X --path F');
+    if (!args.path) {
+      return jsonErrNoExit('Missing --path. Usage: backlinks --repo X --path F');
+    }
     return _dispatchDoc('backlinks', args.repo, (r) => docIndexer.getBacklinks(getDb(), r.id, args.path), dispatchDeps);
   };
   commands['broken-links'] = (args) =>
@@ -100,7 +112,9 @@ function register(commands, deps) {
   commands.glossary = (args) =>
     _dispatchDoc('glossary', args.repo, (r) => docIndexer.lookupTerm(getDb(), r.id, args.term || null), dispatchDeps);
   commands['tutorial-path'] = (args) => {
-    if (!args.section) return jsonErrNoExit('Missing --section. Usage: tutorial-path --section S --repo X');
+    if (!args.section) {
+      return jsonErrNoExit('Missing --section. Usage: tutorial-path --section S --repo X');
+    }
     return _dispatchDoc(
       'tutorial-path',
       args.repo,
@@ -109,7 +123,9 @@ function register(commands, deps) {
     );
   };
   commands['code-examples'] = (args) => {
-    if (!args.query) return jsonErrNoExit('Missing --query. Usage: code-examples --query Q --repo X');
+    if (!args.query) {
+      return jsonErrNoExit('Missing --query. Usage: code-examples --query Q --repo X');
+    }
     return _dispatchDoc(
       'code-examples',
       args.repo,

@@ -12,6 +12,7 @@ The `memory-layer` extension **enforces** structured retrieval over raw file rea
 If a repo isn't indexed yet, the tool will tell you exactly how to index it.
 
 **Enforcement rules:**
+
 - `read` on a code file in an indexed repo **without** offset/limit → BLOCKED. Use `memory-code outline` first.
 - `read` on a code file **with** offset/limit → ALLOWED (editing targeted lines).
 - `bash` grep/rg/find on source code in an indexed repo → BLOCKED. Use `memory-code` instead.
@@ -20,6 +21,7 @@ If a repo isn't indexed yet, the tool will tell you exactly how to index it.
 ## 2. Persistent Memory — Automatic
 
 Memory is handled automatically by the `memory-layer` extension. It:
+
 - **Injects context** at session start (decisions, preferences, recent memories)
 - **Re-injects context after compaction** — `/compact` no longer destroys memory awareness
 - **Auto-detects decisions** — pattern-matches assistant messages for decisions, bugfixes, discoveries, and auto-saves them
@@ -33,6 +35,7 @@ Memory is handled automatically by the `memory-layer` extension. It:
 - **Auto-dreams every 10 sessions** — runs the Dream Cycle to clean stale memories (not just old). Targets superseded, zero-recall auto-saved, stale corrections, and replaced configs. Age alone is NOT a signal.
 
 ### When to use the tools
+
 - **`memory-save`** — Decisions, bugfixes, architecture constraints, patterns, discoveries. Always search first.
 - **`memory-update`** — Correct or refine an existing memory in-place by ID. Use instead of saving a correction entry.
 - **`memory-delete`** — Remove stale, incorrect, or duplicate memories by ID (soft-delete, recoverable).
@@ -43,7 +46,9 @@ Memory is handled automatically by the `memory-layer` extension. It:
 - **`memory-sync-code-trust`** — After git pulls / branch switches, to sync trust scores with changed symbols.
 
 ### Content format
+
 Use **What/Why/Where/Learned** in the content field:
+
 ```
 **What**: …
 **Why**: …
@@ -52,6 +57,7 @@ Use **What/Why/Where/Learned** in the content field:
 ```
 
 ### No manual protocol needed
+
 The extension handles session start, context loading, and session shutdown automatically. No bash calls to memory-store.js needed during sessions.
 
 Full feature docs: `~/.pi/agent/skills/memory-layer/SKILL.md`
@@ -61,6 +67,7 @@ Full feature docs: `~/.pi/agent/skills/memory-layer/SKILL.md`
 Pi's footer shows `cache` usage — but this is **NOT** the persistent memory layer. There are two separate systems:
 
 ### API Prompt Cache (what the footer shows)
+
 - Controlled by: `PI_CACHE_RETENTION` environment variable
 - Purpose: LLM provider's own token reuse to **save cost**
 - Scope: **Per-session, time-limited** (Anthropic: 5min default / 1h with `long`; OpenAI: in-memory / 24h with `long`)
@@ -68,6 +75,7 @@ Pi's footer shows `cache` usage — but this is **NOT** the persistent memory la
 - This is purely an API-level optimization you generally don't need to think about
 
 ### Memory Layer (persistent across all sessions)
+
 - Stored in: `~/.pi/memory/memory.db` (SQLite)
 - Purpose: **Permanent knowledge** — stores decisions, code index, docs across all your projects forever
 - Scope: **All sessions, all time** (only cleaned by Dream Cycle if stale/superseded)

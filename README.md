@@ -8,7 +8,11 @@ Persistent memory for the [Pi coding agent](https://github.com/earendil-works/pi
 
 ## Architecture
 
-![PiMemory Architecture](memory-layer-architecture.png)
+LaPis is a **modular monolith** for Pi memory: one Pi extension and one local Node.js backend, with strict internal boundaries between extension adapters, CLI routing, feature services, and shared platform/storage infrastructure.
+
+![LaPis Modular Memory Architecture](memory-layer-architecture.png)
+
+The README diagram is the high-level view. For dependency rules, module ownership, and deeper diagrams, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/MODULE_MAP.md`](docs/MODULE_MAP.md).
 
 ## Development
 

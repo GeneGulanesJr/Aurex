@@ -103,7 +103,9 @@ function createCodeIndexRepository(deps) {
       );
     },
     listRepos() {
-      return sqlJson('SELECT name, path, file_count, symbol_count, indexed_at, updated_at FROM code_repos ORDER BY updated_at DESC');
+      return sqlJson(
+        'SELECT name, path, file_count, symbol_count, indexed_at, updated_at FROM code_repos ORDER BY updated_at DESC',
+      );
     },
     removeRepoByName(name) {
       const repo = this.findRepoByName(name);
@@ -114,15 +116,17 @@ function createCodeIndexRepository(deps) {
       return true;
     },
     findSymbolSource({ repoName, filePath, symbolName }) {
-      return sqlJson(
-        `SELECT s.*, f.content
+      return (
+        sqlJson(
+          `SELECT s.*, f.content
          FROM code_symbols s
          JOIN code_files f ON f.id = s.file_id
          JOIN code_repos r ON r.id = s.repo_id
          WHERE r.name = ? AND s.file_path = ? AND s.name = ?
          LIMIT 1`,
-        [repoName, filePath, symbolName],
-      )[0] || null;
+          [repoName, filePath, symbolName],
+        )[0] || null
+      );
     },
   });
 }

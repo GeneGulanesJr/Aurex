@@ -22,7 +22,10 @@ function softDeleteObservation(deps, id) {
   const { sqlRun } = deps;
   sqlRun("UPDATE observations SET deleted_at = datetime('now') WHERE id = ?", [parseInt(id, 10)]);
   try {
-    sqlRun("INSERT INTO observations_fts(observations_fts, rowid, title, content, type, project, topic_key) VALUES ('delete', ?, '', '', '', '', '')", [parseInt(id, 10)]);
+    sqlRun(
+      "INSERT INTO observations_fts(observations_fts, rowid, title, content, type, project, topic_key) VALUES ('delete', ?, '', '', '', '', '')",
+      [parseInt(id, 10)],
+    );
   } catch (_) {}
 }
 
@@ -54,13 +57,33 @@ function updateObservation(deps, { id, title, content, type, project, scope, top
   const { sqlJson, sqlRun } = deps;
   const sets = [];
   const params = [];
-  if (title) { sets.push('title = ?'); params.push(title); }
-  if (content) { sets.push('content = ?'); params.push(content); }
-  if (type) { sets.push('type = ?'); params.push(type); }
-  if (project) { sets.push('project = ?'); params.push(project); }
-  if (scope) { sets.push('scope = ?'); params.push(scope); }
-  if (topicKey) { sets.push('topic_key = ?'); params.push(topicKey); }
-  if (sets.length === 0) return null;
+  if (title) {
+    sets.push('title = ?');
+    params.push(title);
+  }
+  if (content) {
+    sets.push('content = ?');
+    params.push(content);
+  }
+  if (type) {
+    sets.push('type = ?');
+    params.push(type);
+  }
+  if (project) {
+    sets.push('project = ?');
+    params.push(project);
+  }
+  if (scope) {
+    sets.push('scope = ?');
+    params.push(scope);
+  }
+  if (topicKey) {
+    sets.push('topic_key = ?');
+    params.push(topicKey);
+  }
+  if (sets.length === 0) {
+    return null;
+  }
   params.push(parseInt(id, 10));
   sqlRun(`UPDATE observations SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = ?`, params);
   return sqlJson(
@@ -81,18 +104,22 @@ function getTimeline(deps, { id, before, after }) {
 
 function insertUserPrompt(deps, { sessionId, content, project }) {
   const { sqlJson } = deps;
-  return sqlJson(
-    `INSERT INTO user_prompts (session_id, content, project) VALUES (?, ?, ?) RETURNING id, created_at`,
-    [String(sessionId), content, project],
-  );
+  return sqlJson(`INSERT INTO user_prompts (session_id, content, project) VALUES (?, ?, ?) RETURNING id, created_at`, [
+    String(sessionId),
+    content,
+    project,
+  ]);
 }
 
 function insertCapturePassiveObservation(deps, { sessionId, summary, content }) {
   const { sqlJson } = deps;
-  return sqlJson(
-    'INSERT INTO observations (session_id, type, title, content, scope) VALUES (?, ?, ?, ?, ?)',
-    [String(sessionId), 'learning', summary, content, 'project'],
-  );
+  return sqlJson('INSERT INTO observations (session_id, type, title, content, scope) VALUES (?, ?, ?, ?, ?)', [
+    String(sessionId),
+    'learning',
+    summary,
+    content,
+    'project',
+  ]);
 }
 
 function getObservationStats(deps) {
@@ -102,13 +129,22 @@ function getObservationStats(deps) {
   const sessions = sqlJson('SELECT COUNT(*) as cnt FROM session_log')[0].cnt;
   const links = sqlJson('SELECT COUNT(*) as cnt FROM symbol_links')[0].cnt;
   const workflows = sqlJson('SELECT COUNT(*) as cnt FROM procedural_memory')[0].cnt;
-  return { total_observations: obs, total_prompts: prompts, total_sessions: sessions, total_symbol_links: links, total_workflows: workflows };
+  return {
+    total_observations: obs,
+    total_prompts: prompts,
+    total_sessions: sessions,
+    total_symbol_links: links,
+    total_workflows: workflows,
+  };
 }
 
 function countObservationsByProjectAndType(deps, project) {
   const { sqlJson } = deps;
   if (project) {
-    return sqlJson('SELECT COUNT(*) as cnt FROM observations WHERE project = ? AND deleted_at IS NULL AND type != ?', [project, 'skill'])[0].cnt;
+    return sqlJson('SELECT COUNT(*) as cnt FROM observations WHERE project = ? AND deleted_at IS NULL AND type != ?', [
+      project,
+      'skill',
+    ])[0].cnt;
   }
   return sqlJson('SELECT COUNT(*) as cnt FROM observations WHERE deleted_at IS NULL AND type != ?', ['skill'])[0].cnt;
 }

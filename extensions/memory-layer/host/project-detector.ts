@@ -1,14 +1,18 @@
-import path from "node:path";
-import { RepoInfo, state } from "../state";
-import { mem, memCmd } from "./memory-client";
+import path from 'node:path';
+import { RepoInfo, state } from '../state';
+import { mem, memCmd } from './memory-client';
 
 export { type RepoInfo };
 
 export async function getKnownRepos(): Promise<RepoInfo[]> {
   const now = Date.now();
-  if (state.cachedRepos && now - state.repoCacheTime < 5 * 60 * 1000) {return state.cachedRepos;}
-  const result = await memCmd("list-code-repos");
-  if (!result || !(result as any).repos) {return state.cachedRepos || [];}
+  if (state.cachedRepos && now - state.repoCacheTime < 5 * 60 * 1000) {
+    return state.cachedRepos;
+  }
+  const result = await memCmd('list-code-repos');
+  if (!result || !(result as any).repos) {
+    return state.cachedRepos || [];
+  }
   state.cachedRepos = (result as any).repos as RepoInfo[];
   state.repoCacheTime = now;
   return state.cachedRepos;
@@ -16,7 +20,7 @@ export async function getKnownRepos(): Promise<RepoInfo[]> {
 
 export function isRepoStale(repo: RepoInfo): boolean {
   try {
-    const fs = require("fs");
+    const fs = require('fs');
     const stat = fs.statSync(repo.path);
     const indexedTime = new Date(repo.indexed_at).getTime();
     const mtime = Math.max(stat.mtimeMs, stat.ctimeMs);
@@ -31,11 +35,13 @@ export async function detectProject(cwd: string): Promise<string> {
 
   let knownProjects: string[] = [];
   try {
-    const result = await mem("list-projects", {});
+    const result = await mem('list-projects', {});
     if (result && (result as any).projects) {
       knownProjects = ((result as any).projects as any[]).map((p: any) => p.project);
     }
-  } catch (_) { /* DB may not exist yet */ }
+  } catch (_) {
+    /* DB may not exist yet */
+  }
 
   try {
     const codeRepos = await getKnownRepos();
@@ -46,7 +52,7 @@ export async function detectProject(cwd: string): Promise<string> {
       while (dir !== root && dir !== path.dirname(dir)) {
         for (const repo of codeRepos) {
           if (dir.toLowerCase() === repo.path.toLowerCase()) {
-            const depth = dir.split("/").length;
+            const depth = dir.split('/').length;
             if (!bestRepo || depth > bestRepo.depth) {
               bestRepo = { repo, depth };
             }
@@ -54,18 +60,24 @@ export async function detectProject(cwd: string): Promise<string> {
         }
         dir = path.dirname(dir);
       }
-      if (bestRepo) {return bestRepo.repo.name;}
+      if (bestRepo) {
+        return bestRepo.repo.name;
+      }
     }
-  } catch (_) { /* Code repos may not be available */ }
+  } catch (_) {
+    /* Code repos may not be available */
+  }
 
   let dir = resolved;
   const root = path.parse(dir).root;
   while (dir !== root && dir !== path.dirname(dir)) {
     const name = path.basename(dir);
-    const match = knownProjects.find(p => p && p.toLowerCase() === name.toLowerCase());
-    if (match) {return match;}
+    const match = knownProjects.find((p) => p && p.toLowerCase() === name.toLowerCase());
+    if (match) {
+      return match;
+    }
     dir = path.dirname(dir);
   }
 
-  return path.basename(resolved) || "unknown";
+  return path.basename(resolved) || 'unknown';
 }

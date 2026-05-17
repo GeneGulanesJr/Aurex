@@ -89,9 +89,7 @@ describe('wire-format.js', () => {
     });
 
     it('should handle values with pipe and backslash', () => {
-      const rows = [
-        { name: 'foo|bar', kind: 'func\\tion' },
-      ];
+      const rows = [{ name: 'foo|bar', kind: 'func\\tion' }];
       const compact = wireFormat._encodeList(rows);
       const decoded = wireFormat._decodeList(compact);
       expect(decoded[0].name).toBe('foo|bar');
@@ -160,12 +158,18 @@ describe('wire-format.js', () => {
 
   describe('_isHomogeneous', () => {
     it('should detect homogeneous lists', () => {
-      const rows = [{ a: 1, b: 2 }, { a: 3, b: 4 }];
+      const rows = [
+        { a: 1, b: 2 },
+        { a: 3, b: 4 },
+      ];
       expect(wireFormat._isHomogeneous(rows)).toBe(true);
     });
 
     it('should reject non-homogeneous lists', () => {
-      const rows = [{ a: 1, b: 2 }, { a: 3, c: 4 }];
+      const rows = [
+        { a: 1, b: 2 },
+        { a: 3, c: 4 },
+      ];
       expect(wireFormat._isHomogeneous(rows)).toBe(false);
     });
 
@@ -182,7 +186,10 @@ describe('wire-format.js', () => {
   describe('_findEncodableList', () => {
     it('should find the largest homogeneous array', () => {
       const data = {
-        files: [{ name: 'a', kind: 'fn' }, { name: 'b', kind: 'cls' }],
+        files: [
+          { name: 'a', kind: 'fn' },
+          { name: 'b', kind: 'cls' },
+        ],
         other: [{ x: 1 }, { x: 2 }, { x: 3 }],
       };
       const result = wireFormat._findEncodableList(data);

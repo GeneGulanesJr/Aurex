@@ -85,9 +85,15 @@ describe('Error patterns and DB isolation', () => {
 
       // Cleanup: close the created DB and delete temp file
       dbModule.resetDb();
-      try { fs.unlinkSync(tmpPath); } catch (_) {}
-      try { fs.unlinkSync(`${tmpPath}-wal`); } catch (_) {}
-      try { fs.unlinkSync(`${tmpPath}-shm`); } catch (_) {}
+      try {
+        fs.unlinkSync(tmpPath);
+      } catch (_) {}
+      try {
+        fs.unlinkSync(`${tmpPath}-wal`);
+      } catch (_) {}
+      try {
+        fs.unlinkSync(`${tmpPath}-shm`);
+      } catch (_) {}
 
       // Restore global singleton
       resetConfigCache();
@@ -111,9 +117,15 @@ describe('Error patterns and DB isolation', () => {
       expect(dbModule.DB_PATH).toBe(globalPath);
 
       // Cleanup
-      try { fs.unlinkSync(tmpPath); } catch (_) {}
-      try { fs.unlinkSync(`${tmpPath}-wal`); } catch (_) {}
-      try { fs.unlinkSync(`${tmpPath}-shm`); } catch (_) {}
+      try {
+        fs.unlinkSync(tmpPath);
+      } catch (_) {}
+      try {
+        fs.unlinkSync(`${tmpPath}-wal`);
+      } catch (_) {}
+      try {
+        fs.unlinkSync(`${tmpPath}-shm`);
+      } catch (_) {}
     });
   });
 

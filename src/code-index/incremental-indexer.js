@@ -9,14 +9,16 @@ const { extractSymbolsFromFile } = require('./symbol-extractor');
 const { buildImportEdges, buildCallEdges, buildComplexityMetrics } = require('./edge-extractor');
 
 function emitProgress(args, phase, detail, stats) {
-  if (!args || !args.progress) { return; }
+  if (!args || !args.progress) {
+    return;
+  }
   const payload = { progress: true, phase, ...detail };
   if (stats) {
     payload.files_total = stats.files_total;
     payload.files_done = stats.files_done;
     payload.symbols = stats.symbols;
   }
-  process.stderr.write(JSON.stringify(payload) + '\n');
+  process.stderr.write(`${JSON.stringify(payload)}\n`);
 }
 
 function getHeadCommit(repoPath) {
@@ -30,10 +32,7 @@ function getHeadCommit(repoPath) {
 }
 
 async function readFileRecord(filePath) {
-  const [content, stats] = await Promise.all([
-    fs.promises.readFile(filePath, 'utf-8'),
-    fs.promises.stat(filePath),
-  ]);
+  const [content, stats] = await Promise.all([fs.promises.readFile(filePath, 'utf-8'), fs.promises.stat(filePath)]);
   return { filePath, content, stats };
 }
 
@@ -77,24 +76,45 @@ function insertSymbols(repository, repoId, fileId, filePath, symbols) {
 }
 
 function rebuildDerivedIndexes(db, repoId, args, totalFiles, fileCount, symbolCount) {
-  emitProgress(args, 'analysis', { message: 'Building import graph...' }, { files_total: totalFiles, files_done: fileCount, symbols: symbolCount });
+  emitProgress(
+    args,
+    'analysis',
+    { message: 'Building import graph...' },
+    { files_total: totalFiles, files_done: fileCount, symbols: symbolCount },
+  );
 
   let importEdges = 0;
   let callEdges = 0;
   let complexityCount = 0;
   try {
     const ig = buildImportEdges(db, repoId);
-    if (ig.success) { importEdges = ig.edges; }
+    if (ig.success) {
+      importEdges = ig.edges;
+    }
   } catch (_) {}
-  emitProgress(args, 'analysis', { message: 'Building call graph...' }, { files_total: totalFiles, files_done: fileCount, symbols: symbolCount });
+  emitProgress(
+    args,
+    'analysis',
+    { message: 'Building call graph...' },
+    { files_total: totalFiles, files_done: fileCount, symbols: symbolCount },
+  );
   try {
     const cg = buildCallEdges(db, repoId);
-    if (cg.success) { callEdges = cg.calls; }
+    if (cg.success) {
+      callEdges = cg.calls;
+    }
   } catch (_) {}
-  emitProgress(args, 'analysis', { message: 'Computing complexity...' }, { files_total: totalFiles, files_done: fileCount, symbols: symbolCount });
+  emitProgress(
+    args,
+    'analysis',
+    { message: 'Computing complexity...' },
+    { files_total: totalFiles, files_done: fileCount, symbols: symbolCount },
+  );
   try {
     const cc = buildComplexityMetrics(db, repoId);
-    if (cc.success) { complexityCount = cc.symbols; }
+    if (cc.success) {
+      complexityCount = cc.symbols;
+    }
   } catch (_) {}
 
   return { importEdges, callEdges, complexityCount };
@@ -107,7 +127,9 @@ async function indexRepository(deps, repoPath, repoName) {
   const registry = deps.parserRegistry || createParserRegistry();
 
   if (!(await registry.ensureReady())) {
-    return { error: `WASM tree-sitter parser not available. Run: cd ${path.resolve(__dirname, '..', '..')} && npm install web-tree-sitter` };
+    return {
+      error: `WASM tree-sitter parser not available. Run: cd ${path.resolve(__dirname, '..', '..')} && npm install web-tree-sitter`,
+    };
   }
 
   const absPath = path.resolve(repoPath);
@@ -132,19 +154,28 @@ async function indexRepository(deps, repoPath, repoName) {
     const batch = files.slice(i, i + batchSize);
     const batchNum = Math.floor(i / batchSize) + 1;
     const totalBatches = Math.ceil(totalFiles / batchSize);
-    emitProgress(args, 'parsing', { message: `Parsing files batch ${batchNum}/${totalBatches}...` }, { files_total: totalFiles, files_done: fileCount, symbols: symbolCount });
+    emitProgress(
+      args,
+      'parsing',
+      { message: `Parsing files batch ${batchNum}/${totalBatches}...` },
+      { files_total: totalFiles, files_done: fileCount, symbols: symbolCount },
+    );
 
-    const reads = await Promise.all(batch.map(async (fp) => {
-      try {
-        return await readFileRecord(fp);
-      } catch (e) {
-        skipped.push({ file: fp, error: e.message });
-        return null;
-      }
-    }));
+    const reads = await Promise.all(
+      batch.map(async (fp) => {
+        try {
+          return await readFileRecord(fp);
+        } catch (e) {
+          skipped.push({ file: fp, error: e.message });
+          return null;
+        }
+      }),
+    );
 
     for (const record of reads) {
-      if (!record) { continue; }
+      if (!record) {
+        continue;
+      }
       try {
         const fileId = repository.insertFile(fileRecordToParams(repoId, record));
         const symbols = extractSymbolsFromFile(record.filePath, registry);
@@ -176,7 +207,12 @@ async function indexRepository(deps, repoPath, repoName) {
     skipped,
   };
 
-  emitProgress(args, 'done', { message: `Indexed ${fileCount} files, ${symbolCount} symbols` }, { files_total: totalFiles, files_done: fileCount, symbols: symbolCount });
+  emitProgress(
+    args,
+    'done',
+    { message: `Indexed ${fileCount} files, ${symbolCount} symbols` },
+    { files_total: totalFiles, files_done: fileCount, symbols: symbolCount },
+  );
   return result;
 }
 
@@ -214,7 +250,12 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
   for (let i = 0; i < files.length; i++) {
     const filePath = files[i];
     if (i % 50 === 0) {
-      emitProgress(args, 'parsing', { message: `Reindexing file ${i + 1}/${totalFiles}...` }, { files_total: totalFiles, files_done: i, symbols: symbolCount });
+      emitProgress(
+        args,
+        'parsing',
+        { message: `Reindexing file ${i + 1}/${totalFiles}...` },
+        { files_total: totalFiles, files_done: i, symbols: symbolCount },
+      );
     }
 
     try {
@@ -251,7 +292,12 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
   repository.updateRepoStats({ repoId: existing.id, headCommit: null });
   const derived = rebuildDerivedIndexes(db, existing.id, args, totalFiles, totalFiles, symbolCount);
 
-  emitProgress(args, 'done', { message: `Reindexed: ${reindexed} files, ${symbolCount} symbols` }, { files_total: totalFiles, files_done: totalFiles, symbols: symbolCount });
+  emitProgress(
+    args,
+    'done',
+    { message: `Reindexed: ${reindexed} files, ${symbolCount} symbols` },
+    { files_total: totalFiles, files_done: totalFiles, symbols: symbolCount },
+  );
 
   return {
     success: true,
