@@ -40,7 +40,7 @@ Memory is handled automatically by the `memory-layer` extension. It:
 - **`memory-get`** — To read the full content of a specific memory.
 - **`memory-related`** — To find all memories linked to the same code symbol.
 - **`memory-load-context`** — Deep-dive into everything memory knows about a specific topic.
-- **`memory-sync-code-trust`** — After git pulls / branch switches, to sync trust scores with changed symbols.
+- **`memory-sync-code-trust`** — After git pulls / branch switches, to sync trust scores with changed symbols. Compares stored HEAD vs current HEAD automatically using the built-in code index.
 
 ### Content format
 Use **What/Why/Where/Learned** in the content field:
@@ -53,27 +53,3 @@ Use **What/Why/Where/Learned** in the content field:
 
 ### No manual protocol needed
 The extension handles session start, context loading, and session shutdown automatically. No bash calls to memory-store.js needed during sessions.
-
-Full feature docs: `~/.pi/agent/skills/memory-layer/SKILL.md`
-
-## 3. Important: Two Different "Cache" Systems
-
-Pi's footer shows `cache` usage — but this is **NOT** the persistent memory layer. There are two separate systems:
-
-### API Prompt Cache (what the footer shows)
-- Controlled by: `PI_CACHE_RETENTION` environment variable
-- Purpose: LLM provider's own token reuse to **save cost**
-- Scope: **Per-session, time-limited** (Anthropic: 5min default / 1h with `long`; OpenAI: in-memory / 24h with `long`)
-- The `cache` number in the footer = tokens served from this short-lived cache
-- This is purely an API-level optimization you generally don't need to think about
-
-### Memory Layer (persistent across all sessions)
-- Stored in: `~/.pi/memory/memory.db` (SQLite)
-- Purpose: **Permanent knowledge** — stores decisions, code index, docs across all your projects forever
-- Scope: **All sessions, all time** (only cleaned by Dream Cycle if stale/superseded)
-- Accessed via: `/memory-search`, auto-saved decisions, symbol links
-- **This is the "real" cache** — your persistent assistant memory
-
-**Why the confusion?** The `PI_CACHE_RENTENTION` name suggests it controls Pi's memory retention, but it only controls the LLM API's prompt cache (a cost-saving feature). The memory layer has no retention setting — it's permanent by design.
-
-> **Bottom line:** The `cache` stat in the footer is transient API optimization. The memory layer (`memory-*` tools) is your permanent knowledge base that grows across sessions.
