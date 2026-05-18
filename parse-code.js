@@ -1233,6 +1233,105 @@ function _extractHtmlSymbols(filePath, source) {
   return symbols;
 }
 
+// ── CSS / SCSS regex-based extractor ───────────────────────
+
+const _CSS_CUSTOM_PROP_RE = /^\s*(--[\w-]+)\s*:/gm;
+const _CSS_KEYFRAMES_RE = /@keyframes\s+([\w-]+)/g;
+const _CSS_MEDIA_RE = /@media\s+([^{]+)/g;
+const _CSS_SELECTOR_RE = /^([.#]?[\w][\w-]*(?:\s*,\s*[.#]?[\w][\w-]*)*)\s*\{/gm;
+const _SCSS_VAR_RE = /^\s*\$([\w-]+)\s*:/gm;
+const _SCSS_MIXIN_RE = /@mixin\s+([\w-]+)/g;
+const _SCSS_INCLUDE_RE = /@include\s+([\w-]+)/g;
+const _SCSS_EXTEND_RE = /@extend\s+([.#][\w-]+)/g;
+const _SCSS_USE_RE = /@(?:use|forward)\s+['"]([^'"]+)['"]/g;
+
+function _extractCssSymbols(filePath, source) {
+  const symbols = [];
+  const seen = new Set();
+  const isScss = filePath.endsWith('.scss');
+
+  function add(name, kind, startLine, signature) {
+    const key = `${name}:${kind}:${startLine}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    symbols.push({
+      name,
+      kind,
+      language: isScss ? 'scss' : 'css',
+      file: filePath,
+      qualified_name: name,
+      signature: signature || '',
+      start_line: startLine,
+      end_line: startLine,
+      start_byte: 0,
+      end_byte: 0,
+      docstring: '',
+      body_preview: '',
+      parent_name: '',
+    });
+  }
+
+  function getLine(index) {
+    return source.substring(0, index).split('\n').length;
+  }
+
+  // CSS custom properties (--my-var)
+  for (const match of source.matchAll(_CSS_CUSTOM_PROP_RE)) {
+    add(match[1], 'custom_property', getLine(match.index), match[0].trim());
+  }
+
+  // @keyframes
+  for (const match of source.matchAll(_CSS_KEYFRAMES_RE)) {
+    add(match[1], 'keyframes', getLine(match.index), match[0].trim());
+  }
+
+  // @media queries
+  for (const match of source.matchAll(_CSS_MEDIA_RE)) {
+    const condition = match[1].trim();
+    add(`@media ${condition}`, 'media_query', getLine(match.index), match[0].trim());
+  }
+
+  // CSS selectors (top-level — lines starting with selector before {)
+  for (const match of source.matchAll(_CSS_SELECTOR_RE)) {
+    const selector = match[1].trim();
+    // Skip @-rules, comments, properties, and empty selectors
+    if (!selector || selector.startsWith('@') || selector.startsWith('//') || selector.startsWith('/*')) continue;
+    // Skip property-like patterns (word: value;) that aren't class/id selectors
+    if (/^\s*[\w-]+\s*:/.test(selector) && !selector.startsWith('.') && !selector.startsWith('#')) continue;
+    add(selector, 'selector', getLine(match.index), selector);
+  }
+
+  // SCSS-specific patterns
+  if (isScss) {
+    // $variables
+    for (const match of source.matchAll(_SCSS_VAR_RE)) {
+      add(`$${match[1]}`, 'scss_variable', getLine(match.index), match[0].trim());
+    }
+
+    // @mixin definitions
+    for (const match of source.matchAll(_SCSS_MIXIN_RE)) {
+      add(match[1], 'mixin', getLine(match.index), match[0].trim());
+    }
+
+    // @include references
+    for (const match of source.matchAll(_SCSS_INCLUDE_RE)) {
+      add(match[1], 'include', getLine(match.index), match[0].trim());
+    }
+
+    // @extend references
+    for (const match of source.matchAll(_SCSS_EXTEND_RE)) {
+      add(match[1], 'extend', getLine(match.index), match[0].trim());
+    }
+
+    // @use / @forward
+    for (const match of source.matchAll(_SCSS_USE_RE)) {
+      add(match[1], 'import', getLine(match.index), match[0].trim());
+    }
+  }
+
+  return symbols;
+}
+
 /**
  * Extract call expressions from a file using AST parsing.
  * Returns array of { callee, line, is_method, receiver, full_path }.
