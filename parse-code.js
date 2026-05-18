@@ -16,7 +16,15 @@
 const path = require('path');
 const fs = require('fs');
 const { SKIP_CALLEE_NAMES } = require('./utils');
-const _wtsPath = path.resolve(__dirname, 'node_modules', 'web-tree-sitter', 'web-tree-sitter.cjs');
+
+// Resolve web-tree-sitter from the nearest node_modules (handles npm hoisting).
+// Falls back to the legacy __dirname-relative path for backward compatibility.
+let _wtsPath;
+try {
+  _wtsPath = require.resolve('web-tree-sitter/web-tree-sitter.cjs', { paths: [__dirname] });
+} catch {
+  _wtsPath = path.resolve(__dirname, 'node_modules', 'web-tree-sitter', 'web-tree-sitter.cjs');
+}
 
 const GRAMMAR_DIR = path.resolve(__dirname, 'grammars');
 
