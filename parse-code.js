@@ -82,6 +82,7 @@ async function init() {
       const uniqueEntries = [...new Map(grammarEntries).entries()];
 
       for (const [key, wasmFile] of uniqueEntries) {
+        if (!wasmFile || !key) continue; // Skip regex-based extractors (no WASM grammar)
         const wasmPath = path.join(GRAMMAR_DIR, wasmFile);
         if (!fs.existsSync(wasmPath)) {
           // Skip silently — grammar not bundled
@@ -161,6 +162,10 @@ function _getLangConfig(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   const langConfig = LANGUAGE_MAP[ext];
   if (!langConfig) {return null;}
+  // Regex-based extractors don't need a tree-sitter parser
+  if (langConfig.extractor === 'regex') {
+    return { langConfig, parser: null };
+  }
   const parser = _parsers[langConfig.parserKey];
   if (!parser) {return null;}
   return { langConfig, parser };
@@ -1131,6 +1136,100 @@ function _extractSqlSymbols(filePath, sourceStr, parser) {
 
   walk(root);
   tree.delete();
+  return symbols;
+}
+
+// ── HTML regex-based extractor ──────────────────────────────
+
+const _HTML_ID_RE = /\bid\s*=\s*["']([^"']+)["']/g;
+const _HTML_CLASS_RE = /\bclass\s*=\s*["']([^"']+)["']/g;
+const _HTML_SCRIPT_RE = /<script[^>]*>([\s\S]*?)<\/script\s*>/gi;
+const _HTML_STYLE_RE = /<style[^>]*>([\s\S]*?)<\/style\s*>/gi;
+const _HTML_CUSTOM_ELEMENT_RE = /<\/?([A-Z][A-Za-z0-9]*|([a-z]+-[a-z][a-z0-9-]*))/g;
+
+const _STANDARD_HTML_TAGS = new Set([
+  'div', 'span', 'p', 'a', 'img', 'input', 'button', 'form', 'table',
+  'tr', 'td', 'th', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+  'head', 'body', 'html', 'title', 'meta', 'link', 'script', 'style',
+  'header', 'footer', 'main', 'section', 'article', 'aside', 'nav',
+  'pre', 'code', 'br', 'hr', 'label', 'select', 'option', 'textarea',
+  'template', 'slot', 'iframe', 'canvas', 'video', 'audio', 'source',
+  'noscript', 'details', 'summary', 'dialog', 'figure', 'figcaption',
+]);
+
+function _extractHtmlSymbols(filePath, source) {
+  const symbols = [];
+  const seen = new Set();
+
+  function add(name, kind, startLine, signature) {
+    const key = `${name}:${kind}:${startLine}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    symbols.push({
+      name,
+      kind,
+      language: 'html',
+      file: filePath,
+      qualified_name: name,
+      signature: signature || '',
+      start_line: startLine,
+      end_line: startLine,
+      start_byte: 0,
+      end_byte: 0,
+      docstring: '',
+      body_preview: '',
+      parent_name: '',
+    });
+  }
+
+  function getLine(index) {
+    return source.substring(0, index).split('\n').length;
+  }
+
+  // Extract id attributes
+  for (const match of source.matchAll(_HTML_ID_RE)) {
+    const name = match[1].trim();
+    if (!name) continue;
+    add(name, 'id', getLine(match.index), `id="${name}"`);
+  }
+
+  // Extract class attributes (split on whitespace, record each class)
+  for (const match of source.matchAll(_HTML_CLASS_RE)) {
+    const raw = match[1].trim();
+    if (!raw) continue;
+    const line = getLine(match.index);
+    for (const cls of raw.split(/\s+/)) {
+      if (cls) add(cls, 'css_class', line, `class="${cls}"`);
+    }
+  }
+
+  // Extract custom element / component tags (PascalCase or kebab-case)
+  for (const match of source.matchAll(_HTML_CUSTOM_ELEMENT_RE)) {
+    const tagName = match[1];
+    if (_STANDARD_HTML_TAGS.has(tagName.toLowerCase())) continue;
+    add(tagName, 'component', getLine(match.index), `<${tagName}>`);
+  }
+
+  // Extract inline <script> blocks
+  for (const match of source.matchAll(_HTML_SCRIPT_RE)) {
+    const body = match[1].trim();
+    if (!body) continue;
+    const startLine = getLine(match.index);
+    const preview = body.split('\n').slice(0, 3).join('\n');
+    const sig = preview.length > 200 ? `${preview.slice(0, 197)}...` : preview;
+    add(`[inline-script:${startLine}]`, 'script', startLine, sig);
+  }
+
+  // Extract inline <style> blocks
+  for (const match of source.matchAll(_HTML_STYLE_RE)) {
+    const body = match[1].trim();
+    if (!body) continue;
+    const startLine = getLine(match.index);
+    const preview = body.split('\n').slice(0, 3).join('\n');
+    const sig = preview.length > 200 ? `${preview.slice(0, 197)}...` : preview;
+    add(`[inline-style:${startLine}]`, 'style', startLine, sig);
+  }
+
   return symbols;
 }
 
