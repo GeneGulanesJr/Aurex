@@ -4,7 +4,7 @@ const path = require('path');
 const { getLanguageForFile, canParseFile } = require('../src/code-index/parser-registry');
 const { normalizeSymbol, extractSymbolsFromFile } = require('../src/code-index/symbol-extractor');
 const { sourceSliceFromRow } = require('../src/code-index/source-retrieval');
-const { reindexRepository } = require('../src/code-index/incremental-indexer');
+const { parsePhase, reindexRepository } = require('../src/code-index/incremental-indexer');
 const { scanRepository } = require('../src/code-index/scanner');
 
 describe('code-index parser registry', () => {
@@ -20,6 +20,61 @@ describe('code-index parser registry', () => {
   it('only reports bundled code extensions as parseable', () => {
     expect(canParseFile('/repo/app.cjs')).toBe(true);
     expect(canParseFile('/repo/notes.txt')).toBe(false);
+  });
+});
+
+describe('code-index parse progress', () => {
+  it('reports what parsing sub-step is currently running', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lapis-parse-progress-'));
+    const filePath = path.join(tmp, 'app.js');
+    fs.writeFileSync(filePath, 'function app() { return 1; }');
+    const progress = [];
+    const originalWrite = process.stderr.write;
+    process.stderr.write = (chunk, encoding, cb) => {
+      progress.push(JSON.parse(String(chunk)));
+      if (typeof cb === 'function') {
+        cb();
+      }
+      return true;
+    };
+
+    try {
+      await parsePhase(
+        [filePath],
+        {
+          parserRegistry: {
+            canParseFile: () => true,
+            parseContent: () => [
+              {
+                name: 'app',
+                kind: 'function',
+                signature: 'function app()',
+                qualified_name: 'app',
+                start_line: 1,
+                end_line: 1,
+                start_byte: 0,
+                end_byte: 28,
+                language: 'javascript',
+              },
+            ],
+          },
+          repository: {
+            withTransaction: (fn) => fn(),
+            insertFile: () => 123,
+            insertSymbol: () => {},
+          },
+        },
+        7,
+        { progress: true, repoRoot: tmp, noWorkers: true },
+      );
+    } finally {
+      process.stderr.write = originalWrite;
+    }
+
+    expect(progress.map((p) => p.step)).toEqual(
+      expect.arrayContaining(['read-files', 'extract-symbols', 'store-index']),
+    );
+    expect(progress.some((p) => p.current_file === 'app.js')).toBe(true);
   });
 });
 
@@ -115,6 +170,7 @@ describe('code-index scanner', () => {
 
     expect(result.files).toEqual([path.join(tmp, 'app.js')]);
     expect(result.skipReport.unsupportedExt).toBe(1);
-    expect(progress.at(-1)).toMatchObject({ done: true, codeFiles: 1 });
+    expect(progress[progress.length - 1]).toMatchObject({ done: true, codeFiles: 1 });
+    expect(progress.some((p) => p.currentPath === 'app.js' && p.currentKind === 'file')).toBe(true);
   });
 });
