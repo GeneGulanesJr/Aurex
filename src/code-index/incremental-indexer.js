@@ -116,13 +116,43 @@ function rebuildDerivedIndexes(db, repoId, args, totalFiles, fileCount, symbolCo
   return { importEdges, callEdges, complexityCount };
 }
 
-async function scanPhase(repoPath, options) {
+function formatSkipReport(report) {
+  const lines = [];
+  const topN = (obj, n = 5) => Object.entries(obj).sort((a, b) => b[1] - a[1]).slice(0, n);
+  if (Object.keys(report.builtIn).length > 0) {
+    const top = topN(report.builtIn);
+    lines.push(`  Built-in skip: ${top.map(([d]) => d).join(', ')}...`);
+  }
+  if (Object.keys(report.gitignore).length > 0) {
+    const top = topN(report.gitignore);
+    lines.push(`  .gitignore: ${top.map(([d]) => d).join(', ')}...`);
+  }
+  if (Object.keys(report.memorycodeignore).length > 0) {
+    const top = topN(report.memorycodeignore);
+    lines.push(`  .memorycodeignore: ${top.map(([d]) => d).join(', ')}...`);
+  }
+  if (report.unsupportedExt > 0) {
+    lines.push(`  Non-code files: ${report.unsupportedExt} skipped`);
+  }
+  return lines.join('\n');
+}
+
+async function scanPhase(repoPath, options, args) {
   const absPath = path.resolve(repoPath);
   if (!fs.existsSync(absPath)) {
     return { error: `Path not found: ${absPath}` };
   }
-  const files = scanRepository(absPath, options);
-  return { files, absPath };
+  const dirCount = { skipped: 0 };
+  const scanResult = scanRepository(absPath, {
+    ...options,
+    onProgress: (relativePath, reason) => {
+      dirCount.skipped++;
+      if (dirCount.skipped <= 8 || dirCount.skipped % 50 === 0) {
+        emitProgress(args, 'discovery', { message: `Skipping [${reason}]: ${relativePath}` });
+      }
+    },
+  });
+  return { files: scanResult.files, absPath, skipReport: scanResult.skipReport };
 }
 
 async function parsePhase(files, deps, repoId, args) {
@@ -257,6 +287,7 @@ async function indexRepository(deps, repoPath, repoName) {
   const args = deps.args || {};
   const repository = deps.repository || createCodeIndexRepository(require('../../db'));
   const registry = deps.parserRegistry || createParserRegistry();
+  const t0 = Date.now();
 
   if (!(await registry.ensureReady())) {
     return {
@@ -264,23 +295,40 @@ async function indexRepository(deps, repoPath, repoName) {
     };
   }
 
-  emitProgress(args, 'init', { message: 'Initializing parser and walking files...' });
-  const scanResult = await scanPhase(repoPath);
+  emitProgress(args, 'init', { message: 'Scanning files...' });
+  const scanResult = await scanPhase(repoPath, {}, args);
   if (scanResult.error) {
     return { error: scanResult.error };
   }
-  const { files, absPath } = scanResult;
-  emitProgress(args, 'discovery', { message: `Found ${files.length} code files to index`, files_total: files.length });
+  const { files, absPath, skipReport } = scanResult;
+  const scanMs = Date.now() - t0;
+  const skipSummary = formatSkipReport(skipReport);
+
+  emitProgress(args, 'discovery', {
+    message: `Found ${files.length} code files to index (${scanMs}ms)`,
+    files_total: files.length,
+    detail: skipSummary,
+  });
+  if (skipSummary) {
+    emitProgress(args, 'discovery', { message: skipSummary });
+  }
 
   const repoId = repository.upsertRepo({ name: repoName, path: absPath });
   repository.clearRepoIndex(repoId);
 
+  emitProgress(args, 'parsing', { message: 'Parsing files...', files_total: files.length });
+  const parseT0 = Date.now();
   const parseResult = await parsePhase(files, { parserRegistry: registry, repository }, repoId, args);
+  const parseMs = Date.now() - parseT0;
 
+  emitProgress(args, 'analysis', { message: 'Building derived indexes...' });
+  const derivedT0 = Date.now();
   const headCommit = getHeadCommit(absPath);
   repository.updateRepoStats({ repoId, headCommit });
   const derived = await derivedPhase(db, repoId, args, files.length, parseResult.fileCount, parseResult.symbolCount);
+  const derivedMs = Date.now() - derivedT0;
 
+  const totalMs = Date.now() - t0;
   const result = {
     success: true,
     repo: repoName,
@@ -295,12 +343,14 @@ async function indexRepository(deps, repoPath, repoName) {
     file_count: parseResult.fileCount,
     symbol_count: parseResult.symbolCount,
     skipped: parseResult.skipped,
+    skip_report: skipReport,
+    timing_ms: { scan: scanMs, parse: parseMs, derived: derivedMs, total: totalMs },
   };
 
   emitProgress(
     args,
     'done',
-    { message: `Indexed ${parseResult.fileCount} files, ${parseResult.symbolCount} symbols` },
+    { message: `Done: ${parseResult.fileCount} files, ${parseResult.symbolCount} symbols (${(totalMs / 1000).toFixed(1)}s)` },
     { files_total: files.length, files_done: parseResult.fileCount, symbols: parseResult.symbolCount },
   );
   return result;
@@ -311,6 +361,7 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
   const args = deps.args || {};
   const repository = deps.repository || createCodeIndexRepository(require('../../db'));
   const registry = deps.parserRegistry || createParserRegistry();
+  const t0 = Date.now();
 
   const existing = repository.findRepoByName(repo);
   if (!existing) {
@@ -328,8 +379,18 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
 
   emitProgress(args, 'init', { message: `Reindexing "${repo}" (incremental)...` });
 
-  const files = scanRepository(existing.path);
-  emitProgress(args, 'discovery', { message: `Found ${files.length} code files to check`, files_total: files.length });
+  const scanResult = scanRepository(existing.path);
+  const files = scanResult.files;
+  const skipReport = scanResult.skipReport;
+  const skipSummary = formatSkipReport(skipReport);
+  emitProgress(args, 'discovery', {
+    message: `Found ${files.length} code files to check`,
+    files_total: files.length,
+    detail: skipSummary,
+  });
+  if (skipSummary) {
+    emitProgress(args, 'discovery', { message: skipSummary });
+  }
 
   const existingFiles = new Map(repository.listFiles(existing.id).map((file) => [file.path, file]));
   let reindexed = 0;
@@ -343,7 +404,7 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
       emitProgress(
         args,
         'parsing',
-        { message: `Reindexing file ${i + 1}/${totalFiles}...` },
+        { message: `Checking file ${i + 1}/${totalFiles}...` },
         { files_total: totalFiles, files_done: i, symbols: symbolCount },
       );
     }
@@ -379,13 +440,15 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
     repository.deleteFile(fileInfo.id);
   }
 
+  emitProgress(args, 'analysis', { message: 'Building derived indexes...' });
   repository.updateRepoStats({ repoId: existing.id, headCommit: null });
   const derived = rebuildDerivedIndexes(db, existing.id, args, totalFiles, totalFiles, symbolCount);
 
+  const totalMs = Date.now() - t0;
   emitProgress(
     args,
     'done',
-    { message: `Reindexed: ${reindexed} files, ${symbolCount} symbols` },
+    { message: `Reindexed: ${reindexed} changed, ${unchanged} unchanged (${(totalMs / 1000).toFixed(1)}s)` },
     { files_total: totalFiles, files_done: totalFiles, symbols: symbolCount },
   );
 
@@ -403,6 +466,8 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
     import_edges: derived.importEdges,
     call_edges: derived.callEdges,
     complexity_symbols: derived.complexityCount,
+    skip_report: skipReport,
+    timing_ms: { total: totalMs },
   };
 }
 

@@ -62,6 +62,8 @@ function scanRepository(repoPath, options = {}) {
   const extraIgnoreDirs = options.ignoreDirs || [];
   const gitignoreIg = loadGitignoreRules(repoPath);
   const memorycodeignoreIg = loadMemorycodeignoreRules(repoPath);
+  const skipReport = { builtIn: {}, gitignore: {}, memorycodeignore: {}, unsupportedExt: 0 };
+  const ignoreFiles = options.onProgress || null;
 
   function walk(dir) {
     let entries;
@@ -73,17 +75,25 @@ function scanRepository(repoPath, options = {}) {
 
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
+      const relativePath = path.relative(repoPath, fullPath);
       if (entry.isDirectory()) {
         if (shouldSkipDir(entry.name, extraIgnoreDirs)) {
-          // Skip
-        } else if ((gitignoreIg && gitignoreIg.ignores(path.relative(repoPath, fullPath))) || 
-                   (memorycodeignoreIg && memorycodeignoreIg.ignores(path.relative(repoPath, fullPath)))) {
-          // Skip
+          skipReport.builtIn[entry.name] = (skipReport.builtIn[entry.name] || 0) + 1;
+          if (ignoreFiles) ignoreFiles(relativePath, 'built-in');
+        } else if (gitignoreIg && gitignoreIg.ignores(relativePath)) {
+          skipReport.gitignore[entry.name] = (skipReport.gitignore[entry.name] || 0) + 1;
+          if (ignoreFiles) ignoreFiles(relativePath, '.gitignore');
+        } else if (memorycodeignoreIg && memorycodeignoreIg.ignores(relativePath)) {
+          skipReport.memorycodeignore[entry.name] = (skipReport.memorycodeignore[entry.name] || 0) + 1;
+          if (ignoreFiles) ignoreFiles(relativePath, '.memorycodeignore');
         } else {
           walk(fullPath);
         }
-      } else if (entry.isFile() && isCodeFile(fullPath)) {
-        const relativePath = path.relative(repoPath, fullPath);
+      } else if (entry.isFile()) {
+        if (!isCodeFile(fullPath)) {
+          skipReport.unsupportedExt++;
+          return;
+        }
         const shouldSkip = (gitignoreIg && gitignoreIg.ignores(relativePath)) || 
                            (memorycodeignoreIg && memorycodeignoreIg.ignores(relativePath));
         if (!shouldSkip) {
@@ -94,7 +104,7 @@ function scanRepository(repoPath, options = {}) {
   }
 
   walk(repoPath);
-  return results;
+  return { files: results, skipReport };
 }
 
 module.exports = { isCodeFile, scanRepository, shouldSkipDir, loadGitignoreRules };
