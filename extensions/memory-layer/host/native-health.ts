@@ -1,9 +1,23 @@
 import { state } from '../state';
 import path from 'node:path';
+import fs from 'node:fs';
 import { execSync } from 'node:child_process';
 
-function getLapisRoot(): string {
-  return path.resolve(__dirname, '..', '..', '..', '..');
+function findLapisRoot(): string {
+  let dir = __dirname;
+  for (let i = 0; i < 10; i++) {
+    const pkgPath = path.join(dir, 'package.json');
+    try {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+      if (pkg.name === 'lapis') {
+        return dir;
+      }
+    } catch {}
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return path.resolve(__dirname, '..', '..', '..');
 }
 
 export async function ensureNativeModules(): Promise<void> {
@@ -17,10 +31,10 @@ export async function ensureNativeModules(): Promise<void> {
     return;
   } catch {}
 
-  const lapisRoot = getLapisRoot();
+  const lapisRoot = findLapisRoot();
   console.log(`[memory-layer] Installing dependencies in ${lapisRoot}...`);
   try {
-    execSync('npm install --production', {
+    execSync('npm install --omit=dev', {
       cwd: lapisRoot,
       stdio: 'pipe',
       timeout: 120_000,

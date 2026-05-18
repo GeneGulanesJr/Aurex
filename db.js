@@ -82,11 +82,27 @@ function safeInt(val, fallback) {
   return Number.isFinite(n) && n === Math.floor(n) ? n : fallback;
 }
 
+function findLapisRoot() {
+  let dir = __dirname;
+  for (let i = 0; i < 10; i++) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf-8'));
+      if (pkg.name === 'lapis') {
+        return dir;
+      }
+    } catch {}
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return __dirname;
+}
+
 function tryNpmInstall() {
-  const lapisRoot = path.resolve(__dirname);
+  const lapisRoot = findLapisRoot();
   console.log(`[db] Auto-installing dependencies in ${lapisRoot}...`);
   try {
-    require('child_process').execSync('npm install --production', {
+    require('child_process').execSync('npm install --omit=dev', {
       cwd: lapisRoot,
       stdio: 'pipe',
       timeout: 120_000,
