@@ -1,6 +1,6 @@
-function listWorkspaces(deps) {
+async function listWorkspaces(deps) {
   const { sqlJson } = deps;
-  const workspaces = sqlJson(`
+  const workspaces = await sqlJson(`
     SELECT w.id, w.name, w.created_at, w.archived_at,
            COUNT(CASE WHEN o.deleted_at IS NULL AND o.type != 'skill' THEN 1 END) as memory_count,
            MAX(o.created_at) as last_active
@@ -12,36 +12,36 @@ function listWorkspaces(deps) {
   return { workspaces, total: workspaces.length };
 }
 
-function createWorkspace(deps, name) {
+async function createWorkspace(deps, name) {
   const { sqlJson, sqlRun } = deps;
   if (!name) {
     return { error: 'Missing --name' };
   }
   try {
-    sqlRun('INSERT INTO workspaces (name) VALUES (?)', [name]);
-    const row = sqlJson('SELECT id, name, created_at FROM workspaces WHERE name = ?', [name]);
+    await sqlRun('INSERT INTO workspaces (name) VALUES (?)', [name]);
+    const row = await sqlJson('SELECT id, name, created_at FROM workspaces WHERE name = ?', [name]);
     return { success: true, workspace: row[0] };
   } catch {
     return { error: `Workspace already exists: ${name}` };
   }
 }
 
-function archiveWorkspace(deps, name) {
+async function archiveWorkspace(deps, name) {
   const { sqlJson, sqlRun } = deps;
   if (!name) {
     return { error: 'Missing --name' };
   }
-  const existing = sqlJson('SELECT id FROM workspaces WHERE name = ? AND archived_at IS NULL', [name]);
+  const existing = await sqlJson('SELECT id FROM workspaces WHERE name = ? AND archived_at IS NULL', [name]);
   if (existing.length === 0) {
     return { error: `Workspace not found or already archived: ${name}` };
   }
-  sqlRun("UPDATE workspaces SET archived_at = datetime('now') WHERE id = ?", [existing[0].id]);
+  await sqlRun("UPDATE workspaces SET archived_at = datetime('now') WHERE id = ?", [existing[0].id]);
   return { success: true, workspace: name, archived: true };
 }
 
-function listProjects(deps) {
+async function listProjects(deps) {
   const { sqlJson } = deps;
-  const rows = sqlJson(`
+  const rows = await sqlJson(`
     SELECT project, COUNT(*) as memory_count,
            MAX(created_at) as last_active
     FROM observations

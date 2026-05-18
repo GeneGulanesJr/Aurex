@@ -3,15 +3,15 @@ const contextService = require('../services/context');
 const dedupService = require('../services/dedup');
 const obsDA = require('../data-access/observations');
 
-function search(deps, args) {
-  return searchService.search(
+async function search(deps, args) {
+  return await searchService.search(
     { sqlJson: deps.sqlJson, sqlRun: deps.sqlRun, jsonErrNoExit: deps.jsonErrNoExit, searchCode: deps.searchCode },
     args,
   );
 }
 
-function context(deps, args) {
-  return contextService.context(
+async function context(deps, args) {
+  return await contextService.context(
     {
       sqlJson: deps.sqlJson,
       sqlRun: deps.sqlRun,
@@ -25,12 +25,18 @@ function context(deps, args) {
   );
 }
 
-function checkDuplicate(deps, args) {
-  return dedupService.checkDuplicate({ sqlJson: deps.sqlJson }, args.title, args.type, args.project, args['topic-key']);
+async function checkDuplicate(deps, args) {
+  return await dedupService.checkDuplicate(
+    { sqlJson: deps.sqlJson },
+    args.title,
+    args.type,
+    args.project,
+    args['topic-key'],
+  );
 }
 
-function markDuplicate(deps, args) {
-  return dedupService.markDuplicate(
+async function markDuplicate(deps, args) {
+  return await dedupService.markDuplicate(
     {
       sqlJson: deps.sqlJson,
       sqlRun: deps.sqlRun,

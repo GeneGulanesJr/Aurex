@@ -1,7 +1,7 @@
 const { DEDUP, RESULT_LIMITS } = require('../../constants');
 const { getConfig } = require('../../config');
 
-function trigramOverlap(a, b) {
+async function trigramOverlap(a, b) {
   const trigrams = (s) => {
     const t = new Set();
     const lower = s.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -27,7 +27,7 @@ function trigramOverlap(a, b) {
   return shared / Math.max(ta.size, tb.size);
 }
 
-function checkDuplicate(deps, title, type, project, topicKey) {
+async function checkDuplicate(deps, title, type, project, topicKey) {
   const { sqlJson } = deps;
   let q = `
     SELECT id, title, topic_key, created_at
@@ -46,7 +46,7 @@ function checkDuplicate(deps, title, type, project, topicKey) {
     q += ' ORDER BY created_at DESC';
   }
   q += ` LIMIT ${RESULT_LIMITS.DEDUP_CANDIDATES}`;
-  const candidates = sqlJson(q, params);
+  const candidates = await sqlJson(q, params);
 
   const duplicates = [];
   const warningThreshold = getConfig().dedup.warning_threshold;
@@ -64,7 +64,7 @@ function checkDuplicate(deps, title, type, project, topicKey) {
   return { potential_duplicates: duplicates };
 }
 
-function markDuplicate(deps, args) {
+async function markDuplicate(deps, args) {
   const { sqlRun, softDeleteObservation } = deps;
   const source = parseInt(args.source);
   const target = parseInt(args.target);
@@ -73,11 +73,11 @@ function markDuplicate(deps, args) {
     return { error: 'Missing --source and --target' };
   }
 
-  sqlRun(
+  await sqlRun(
     'INSERT OR REPLACE INTO observation_relations (source_id, target_id, relation, confidence) VALUES (?, ?, ?, ?)',
     [source, target, 'duplicate', confidence],
   );
-  softDeleteObservation(target);
+  await softDeleteObservation(target);
   return { ok: true, merged: { kept: source, removed: target } };
 }
 

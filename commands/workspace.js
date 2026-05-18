@@ -1,10 +1,10 @@
 const wsDA = require('../data-access/workspaces');
 
-function listWorkspaces(deps) {
+async function listWorkspaces(deps) {
   return wsDA.listWorkspaces(deps);
 }
 
-function createWorkspace(deps, args) {
+async function createWorkspace(deps, args) {
   const name = args.name;
   if (!name) {
     return { error: 'Missing --name' };
@@ -12,7 +12,7 @@ function createWorkspace(deps, args) {
   return wsDA.createWorkspace(deps, name);
 }
 
-function archiveWorkspace(deps, args) {
+async function archiveWorkspace(deps, args) {
   const name = args.name;
   if (!name) {
     return { error: 'Missing --name' };
@@ -20,7 +20,7 @@ function archiveWorkspace(deps, args) {
   return wsDA.archiveWorkspace(deps, name);
 }
 
-function listProjects(deps) {
+async function listProjects(deps) {
   return wsDA.listProjects(deps);
 }
 

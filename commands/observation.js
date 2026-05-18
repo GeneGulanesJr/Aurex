@@ -23,9 +23,9 @@ function getMemoryRepository(deps) {
   };
 }
 
-function save(deps, args) {
+async function save(deps, args) {
   const memoryRepository = getMemoryRepository(deps);
-  return obsService.save(
+  return await obsService.save(
     {
       ...deps,
       insertObservation: (params) => memoryRepository.insertObservation(params),
@@ -39,36 +39,36 @@ function save(deps, args) {
   );
 }
 
-function get(deps, args) {
+async function get(deps, args) {
   const { jsonErrNoExit } = deps;
   const id = args.id;
   if (!id) {
     return jsonErrNoExit('Missing --id');
   }
   const memoryRepository = getMemoryRepository(deps);
-  const rows = memoryRepository.getObservation(id);
+  const rows = await memoryRepository.getObservation(id);
   if (rows.length === 0) {
     return { error: 'Observation not found' };
   }
 
   const obs = rows[0];
-  const links = memoryRepository.getSymbolLinksForMemory(id);
+  const links = await memoryRepository.getSymbolLinksForMemory(id);
   if (links.length > 0) {
     obs.symbols = links;
   }
-  const recallResult = memoryRepository.getRecallCountForMemory(id);
+  const recallResult = await memoryRepository.getRecallCountForMemory(id);
   obs.recall_count = recallResult[0].cnt;
   return obs;
 }
 
-function update(deps, args) {
+async function update(deps, args) {
   const { jsonErrNoExit } = deps;
   const id = args.id;
   if (!id) {
     return jsonErrNoExit('Missing --id');
   }
   const memoryRepository = getMemoryRepository(deps);
-  const result = memoryRepository.updateObservation({
+  const result = await memoryRepository.updateObservation({
     id,
     title: args.title,
     content: args.content,
@@ -83,26 +83,26 @@ function update(deps, args) {
   return result.length > 0 ? result[0] : { error: 'Observation not found' };
 }
 
-function del(deps, args) {
+async function del(deps, args) {
   const id = args.id;
   const hard = args.hard === 'true' || args.hard === true;
   if (!id) {
     return deps.jsonErrNoExit('Missing --id');
   }
   const memoryRepository = getMemoryRepository(deps);
-  const existing = memoryRepository.getObservation(id);
+  const existing = await memoryRepository.getObservation(id);
   if (!existing || existing.length === 0) {
     return deps.jsonErrNoExit('Observation not found');
   }
   if (hard) {
-    memoryRepository.hardDeleteObservation(id);
+    await memoryRepository.hardDeleteObservation(id);
     return { ok: true, hardDeleted: true };
   }
-  memoryRepository.softDeleteObservation(id);
+  await memoryRepository.softDeleteObservation(id);
   return { ok: true, hardDeleted: false };
 }
 
-function timeline(deps, args) {
+async function timeline(deps, args) {
   const id = parseInt(args.id);
   const before = parseInt(args.before || '5', 10);
   const after = parseInt(args.after || '5', 10);
@@ -113,26 +113,26 @@ function timeline(deps, args) {
   return memoryRepository.getTimeline({ id, before, after });
 }
 
-function suggestTopicKey(args) {
+async function suggestTopicKey(args) {
   return obsService.suggestTopicKey(args);
 }
 
-function savePrompt(deps, args) {
+async function savePrompt(deps, args) {
   const { jsonErrNoExit } = deps;
   const content = args.content;
   const project = args.project || null;
-  const sessionId = args['session-id'] || sessionsService.findLatestSession(project);
+  const sessionId = args['session-id'] || (await sessionsService.findLatestSession(project));
   if (!content) {
     return jsonErrNoExit('Missing --content');
   }
   const memoryRepository = getMemoryRepository(deps);
-  const rows = memoryRepository.insertUserPrompt({ sessionId, content, project });
+  const rows = await memoryRepository.insertUserPrompt({ sessionId, content, project });
   return { id: rows[0].id, created_at: rows[0].created_at };
 }
 
-function capturePassive(deps, args) {
+async function capturePassive(deps, args) {
   const memoryRepository = getMemoryRepository(deps);
-  return obsService.capturePassive(
+  return await obsService.capturePassive(
     {
       ...deps,
       insertCapturePassiveObservation: (params) => memoryRepository.insertCapturePassiveObservation(params),
@@ -142,7 +142,7 @@ function capturePassive(deps, args) {
   );
 }
 
-function getStats(deps) {
+async function getStats(deps) {
   const memoryRepository = getMemoryRepository(deps);
   return memoryRepository.getObservationStats();
 }

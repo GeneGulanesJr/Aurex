@@ -2,7 +2,7 @@ const { getConfig } = require('../../config');
 const { RESULT_LIMITS, RANKING, CONTEXT } = require('../../constants');
 const { TRUST_RECALL_JOINS, TYPE_PRIORITY_CASE } = require('./search');
 
-function context(deps, args) {
+async function context(deps, args) {
   const { sqlJson, jsonErrNoExit } = deps;
   const insertRecallLog = deps.insertRecallLog || (() => {});
   const countObservationsByProjectAndType = deps.countObservationsByProjectAndType || (() => 0);
@@ -31,7 +31,7 @@ function context(deps, args) {
       )
     : [];
 
-  const personal = sqlJson(`
+  const personal = await sqlJson(`
     SELECT id, title, type, scope, topic_key, created_at
     FROM observations
     WHERE scope = 'personal' AND deleted_at IS NULL
@@ -115,7 +115,7 @@ function context(deps, args) {
     `;
     obsParams = [project, limit];
   }
-  const observations = sqlJson(obsQuery, obsParams);
+  const observations = await sqlJson(obsQuery, obsParams);
 
   const workflows = project
     ? sqlJson(

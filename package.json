@@ -80,7 +80,7 @@
     "check": "oxlint && oxfmt --check"
   },
   "dependencies": {
-    "better-sqlite3": "^12.9.0",
+    "@libsql/client": "^0.17.3",
     "web-tree-sitter": "^0.26.8"
   },
   "devDependencies": {

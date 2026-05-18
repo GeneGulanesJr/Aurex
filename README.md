@@ -213,7 +213,7 @@ All options are optional — only include the ones you want to change. Missing v
 
 ## Requirements
 
-- **Node.js ≥ 22.5** (built-in `node:sqlite`) or Node.js with `better-sqlite3`
+- **Node.js** with `@libsql/client` for async local SQLite/libSQL access
 - No Python dependency — code parsing uses web-tree-sitter (WASM) in-process
 - No API keys or cloud services needed
 
