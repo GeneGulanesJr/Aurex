@@ -1,35 +1,47 @@
-import { execFileSync } from 'node:child_process';
-import { PKG_ROOT, state } from '../state';
+import { state } from '../state';
+import path from 'node:path';
+import fs from 'node:fs';
+import { execSync } from 'node:child_process';
+
+function findLapisRoot(): string {
+  let dir = __dirname;
+  for (let i = 0; i < 10; i++) {
+    const pkgPath = path.join(dir, 'package.json');
+    try {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+      if (pkg.name === 'lapis') {
+        return dir;
+      }
+    } catch {}
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return path.resolve(__dirname, '..', '..', '..');
+}
 
 export async function ensureNativeModules(): Promise<void> {
   if (state.nativeChecked) {
     return;
   }
   state.nativeChecked = true;
+
   try {
-    require.resolve('better-sqlite3');
-    const mod = require('better-sqlite3');
-    if (typeof mod !== 'function') {
-      throw new Error('not a function');
-    }
-  } catch {
-    console.error('[memory-layer] better-sqlite3 not compiled, attempting rebuild...');
-    try {
-      execFileSync('npm', ['rebuild', 'better-sqlite3'], {
-        cwd: PKG_ROOT,
-        encoding: 'utf8',
-        timeout: 120000,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-      console.error('[memory-layer] better-sqlite3 rebuilt successfully');
-    } catch (rebuildErr) {
-      console.error(
-        '[memory-layer] Failed to rebuild better-sqlite3:',
-        rebuildErr instanceof Error ? rebuildErr.message : String(rebuildErr),
-      );
-      console.error(
-        '[memory-layer] Install build tools (build-essential / Xcode CLI tools) and run: npm rebuild better-sqlite3',
-      );
-    }
+    require.resolve('@libsql/client');
+    return;
+  } catch {}
+
+  const lapisRoot = findLapisRoot();
+  console.log(`[memory-layer] Installing dependencies in ${lapisRoot}...`);
+  try {
+    execSync('npm install --omit=dev', {
+      cwd: lapisRoot,
+      stdio: 'pipe',
+      timeout: 120_000,
+    });
+    console.log('[memory-layer] Dependencies installed successfully.');
+  } catch (e: any) {
+    console.error(`[memory-layer] Auto-install failed: ${e.message}`);
+    console.warn(`[memory-layer] Please run manually: cd ${lapisRoot} && npm install`);
   }
 }

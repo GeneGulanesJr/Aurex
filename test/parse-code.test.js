@@ -74,6 +74,17 @@ describe('parse-code (WASM tree-sitter)', () => {
       expect(fn.docstring).toContain('greeter');
     });
 
+    it('should extract JSX components from .jsx files', () => {
+      const tmpFile = path.join('/tmp', 'test-comp.jsx');
+      fs.writeFileSync(tmpFile, 'export function Card({ title }) {\n  return <section>{title}</section>;\n}');
+      const symbols = codeParser.parseFile(tmpFile);
+      fs.unlinkSync(tmpFile);
+
+      const fn = symbols.find((sym) => sym.name === 'Card');
+      expect(fn).toBeDefined();
+      expect(fn.language).toBe('javascript');
+    });
+
     it('should return output with all required fields', () => {
       const tmpFile = path.join('/tmp', 'test-schema.js');
       fs.writeFileSync(tmpFile, 'function myFunc(x) { return x; }');

@@ -211,7 +211,7 @@ describe('accuracy: extractImportBindings', () => {
 });
 
 describe('accuracy: end-to-end cross-file resolution', () => {
-  const Database = require('better-sqlite3');
+  const Database = require('libsql');
   const codeAnalysis = require('../code-analysis');
   const TEST_DB_PATH = path.join(TMP_DIR, 'accuracy-test.db');
   const TEST_REPO_DIR = path.join(TMP_DIR, 'test-repo');

@@ -99,14 +99,27 @@ export async function memStreaming(
       });
 
       let stdout = '';
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const resetTimer = () => {
+        if (timer) {
+          clearTimeout(timer);
+        }
+        timer = setTimeout(() => {
+          child.kill();
+          reject(new Error(`${cmd} timed out after ${timeout}ms without output`));
+        }, timeout + 5000);
+      };
+      resetTimer();
 
       child.stdout.on('data', (chunk: Buffer) => {
         stdout += chunk.toString('utf8');
+        resetTimer();
       });
 
       if (onProgress) {
         const rl = createInterface({ input: child.stderr! });
         rl.on('line', (line: string) => {
+          resetTimer();
           try {
             const parsed = JSON.parse(line);
             if (parsed.progress) {
@@ -125,13 +138,10 @@ export async function memStreaming(
         });
       }
 
-      const timer = setTimeout(() => {
-        child.kill();
-        reject(new Error(`${cmd} timed out after ${timeout}ms`));
-      }, timeout + 5000);
-
       child.on('close', (code) => {
-        clearTimeout(timer);
+        if (timer) {
+          clearTimeout(timer);
+        }
         if (code !== 0 && !stdout.trim()) {
           reject(new Error(`${cmd} exited with code ${code}`));
           return;
@@ -145,7 +155,9 @@ export async function memStreaming(
       });
 
       child.on('error', (err) => {
-        clearTimeout(timer);
+        if (timer) {
+          clearTimeout(timer);
+        }
         reject(err);
       });
     });

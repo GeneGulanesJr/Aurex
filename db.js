@@ -1,7 +1,7 @@
 /**
  * Db.js — Database layer for Pi Memory Layer
  *
- * SQLite backend via node:sqlite (Node ≥ 22.5) or better-sqlite3.
+ * SQLite backend via libSQL, installed through @libsql/client.
  * Zero external Python deps. Zero MCP servers.
  */
 
@@ -27,7 +27,7 @@ const SCHEMA_PATH = path.resolve(__dirname, 'schema.sql');
 
 /* ── module state ─────────────────────────────────────────── */
 let _db = null;
-let _engine = null; // 'node-sqlite' | 'better-sqlite3'
+let _engine = null; // 'libsql'
 
 function getDb() {
   return _db;
@@ -82,62 +82,70 @@ function safeInt(val, fallback) {
   return Number.isFinite(n) && n === Math.floor(n) ? n : fallback;
 }
 
-function tryNodeSqlite() {
+function findLapisRoot() {
+  let dir = __dirname;
+  for (let i = 0; i < 10; i++) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf-8'));
+      if (pkg.name === 'lapis') {
+        return dir;
+      }
+    } catch {}
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return __dirname;
+}
+
+function tryNpmInstall() {
+  const lapisRoot = findLapisRoot();
+  console.log(`[db] Auto-installing dependencies in ${lapisRoot}...`);
+  try {
+    require('child_process').execSync('npm install --omit=dev', {
+      cwd: lapisRoot,
+      stdio: 'pipe',
+      timeout: 120_000,
+    });
+    console.log('[db] Dependencies installed successfully.');
+    return true;
+  } catch (e) {
+    console.error(`[db] Auto-install failed: ${e.message}`);
+    return false;
+  }
+}
+
+function tryLibsql() {
   try {
     const cfg = getConfig();
-    const mod = require('node:sqlite');
-    const d = new mod.DatabaseSync(cfg.db_path);
-    // FTS5 is required for search — skip node:sqlite if unavailable
-    try {
-      d.exec('CREATE VIRTUAL TABLE IF NOT EXISTS _fts5_check USING fts5(x)');
-      d.exec('DROP TABLE IF EXISTS _fts5_check');
-    } catch (_) {
-      d.close();
-      return null;
-    }
+    const Database = require('libsql');
+    const d = new Database(cfg.db_path);
     d.exec('PRAGMA journal_mode=WAL;');
+    d.exec('PRAGMA synchronous=NORMAL;');
+    d.exec('PRAGMA temp_store=MEMORY;');
     d.exec(`PRAGMA busy_timeout=${safeInt(cfg.busy_timeout_ms, 5000)};`);
     d.exec(`PRAGMA wal_autocheckpoint=${safeInt(cfg.wal_autocheckpoint, 1000)};`);
     d.exec('PRAGMA foreign_keys=ON;');
     return d;
-  } catch (_) {
-    return null;
-  }
-}
-
-function tryBetterSqlite3() {
-  try {
-    const cfg = getConfig();
-    const Database = require('better-sqlite3');
-    const d = new Database(cfg.db_path);
-    d.pragma('journal_mode = WAL');
-    d.pragma(`busy_timeout = ${safeInt(cfg.busy_timeout_ms, 5000)}`);
-    d.pragma(`wal_autocheckpoint = ${safeInt(cfg.wal_autocheckpoint, 1000)}`);
-    d.pragma('foreign_keys = ON');
-    return d;
   } catch (e) {
-    console.error(`[db] better-sqlite3 failed: ${e.message}`);
+    console.error(`[db] libsql failed: ${e.message}`);
     return null;
   }
 }
 
 function openDb() {
-  const betterDb = tryBetterSqlite3();
-  if (betterDb) {
-    _engine = 'better-sqlite3';
-    _db = betterDb;
-    return betterDb;
+  let libsqlDb = tryLibsql();
+  if (!libsqlDb) {
+    if (tryNpmInstall()) {
+      libsqlDb = tryLibsql();
+    }
   }
-  const nodeDb = tryNodeSqlite();
-  if (nodeDb) {
-    _engine = 'node-sqlite';
-    _db = nodeDb;
-    return nodeDb;
+  if (libsqlDb) {
+    _engine = 'libsql';
+    _db = libsqlDb;
+    return libsqlDb;
   }
-  const msg =
-    `No SQLite backend found.\n` +
-    `  Option 1: cd ${__dirname} && npm install better-sqlite3\n` +
-    `  Option 2: Use Node.js ≥ 22.5 with FTS5 support (built-in node:sqlite)`;
+  const msg = `No libSQL backend found.\n  Run: cd ${__dirname} && npm install @libsql/client\n`;
   throw new Error(msg);
 }
 

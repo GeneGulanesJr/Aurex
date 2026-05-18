@@ -15,8 +15,8 @@ function analyzeBuildImportGraph(db, repoId) {
   return withRepo(db, 'import-graph', () => legacy.buildImportGraph(db, repoId));
 }
 
-function analyzeBuildCallGraph(db, repoId) {
-  return withRepo(db, 'call-graph', () => legacy.buildCallGraph(db, repoId));
+function analyzeBuildCallGraph(db, repoId, opts = {}) {
+  return withRepo(db, 'call-graph', () => legacy.buildCallGraph(db, repoId, opts));
 }
 
 function analyzeGetImportGraph(db, repoId, opts = {}) {

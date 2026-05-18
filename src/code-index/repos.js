@@ -3,9 +3,23 @@ function first(rows) {
 }
 
 function createCodeIndexRepository(deps) {
-  const { sqlJson, sqlRun } = deps;
+  const { sqlJson, sqlRun, withTransaction: tx } = deps;
+
+  function _withTransaction(fn) {
+    if (tx) {
+      return tx(fn);
+    }
+    const dbModule = require('../../db');
+    if (dbModule.withTransaction) {
+      return dbModule.withTransaction(fn);
+    }
+    return fn();
+  }
 
   return Object.freeze({
+    withTransaction(fn) {
+      return _withTransaction(fn);
+    },
     findRepoByName(name) {
       return first(sqlJson('SELECT * FROM code_repos WHERE name = ? LIMIT 1', [name]));
     },
@@ -35,29 +49,112 @@ function createCodeIndexRepository(deps) {
       }
       return this.createRepo({ name, path });
     },
-    clearRepoIndex(repoId) {
-      sqlRun('DELETE FROM code_symbols WHERE repo_id = ?', [repoId]);
-      sqlRun('DELETE FROM code_files WHERE repo_id = ?', [repoId]);
-      sqlRun('DELETE FROM churn_metrics WHERE repo_id = ?', [repoId]);
+    clearRepoIndex(repoId, options = {}) {
+      const batchSize = Math.max(1, Number(options.batchSize) || 1000);
+      const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
+      const emit = (message, extra = {}) => {
+        if (onProgress) {
+          onProgress({ message, ...extra });
+        }
+      };
+      const deleteByIdBatch = ({ label, selectSql, selectParams = [] }) => {
+        let deleted = 0;
+        emit(`Clearing ${label.name}...`, { deleted });
+        for (;;) {
+          const rows = sqlJson(selectSql, [...selectParams, batchSize]);
+          if (!rows.length) {
+            break;
+          }
+          const ids = rows.map((row) => row.id);
+          const placeholders = ids.map(() => '?').join(', ');
+          sqlRun(`DELETE FROM ${label.table} WHERE id IN (${placeholders})`, ids);
+          deleted += ids.length;
+          emit(`Cleared ${deleted} ${label.name}`, { deleted });
+          if (ids.length < batchSize) {
+            break;
+          }
+        }
+        return deleted;
+      };
+
+      const totals = {};
+      _withTransaction(() => {
+        totals.symbolComplexity = deleteByIdBatch({
+          label: { table: 'symbol_complexity', name: 'complexity rows' },
+          selectSql:
+            'SELECT sc.id FROM symbol_complexity sc JOIN code_symbols s ON s.id = sc.symbol_id WHERE s.repo_id = ? LIMIT ?',
+          selectParams: [repoId],
+        });
+        totals.calls = deleteByIdBatch({
+          label: { table: 'code_calls', name: 'call edges' },
+          selectSql: 'SELECT id FROM code_calls WHERE repo_id = ? LIMIT ?',
+          selectParams: [repoId],
+        });
+        totals.imports = deleteByIdBatch({
+          label: { table: 'code_imports', name: 'import edges' },
+          selectSql: 'SELECT id FROM code_imports WHERE repo_id = ? LIMIT ?',
+          selectParams: [repoId],
+        });
+        totals.churn = deleteByIdBatch({
+          label: { table: 'churn_metrics', name: 'churn rows' },
+          selectSql: 'SELECT id FROM churn_metrics WHERE repo_id = ? LIMIT ?',
+          selectParams: [repoId],
+        });
+        totals.symbols = deleteByIdBatch({
+          label: { table: 'code_symbols', name: 'symbols' },
+          selectSql: 'SELECT id FROM code_symbols WHERE repo_id = ? LIMIT ?',
+          selectParams: [repoId],
+        });
+        totals.files = deleteByIdBatch({
+          label: { table: 'code_files', name: 'files' },
+          selectSql: 'SELECT id FROM code_files WHERE repo_id = ? LIMIT ?',
+          selectParams: [repoId],
+        });
+      });
+      return totals;
     },
     listFiles(repoId) {
       return sqlJson('SELECT * FROM code_files WHERE repo_id = ?', [repoId]);
     },
     insertFile(params) {
+      const values = [
+        params.repoId,
+        params.path,
+        params.language,
+        params.content,
+        params.contentHash,
+        params.mtime,
+        params.sizeBytes,
+        params.lineCount,
+      ];
+      try {
+        const rows = sqlJson(
+          'INSERT INTO code_files (repo_id, path, language, content, content_hash, mtime, size_bytes, line_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
+          values,
+        );
+        if (rows && rows[0] && rows[0].id) {
+          return rows[0].id;
+        }
+      } catch {
+        // Older SQLite-compatible engines may not support RETURNING.
+        // The fallback insert-then-lookup path keeps indexing portable.
+      }
       sqlRun(
         'INSERT INTO code_files (repo_id, path, language, content, content_hash, mtime, size_bytes, line_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [
-          params.repoId,
-          params.path,
-          params.language,
-          params.content,
-          params.contentHash,
-          params.mtime,
-          params.sizeBytes,
-          params.lineCount,
-        ],
+        values,
       );
       return sqlJson('SELECT id FROM code_files WHERE repo_id = ? AND path = ?', [params.repoId, params.path])[0].id;
+    },
+    insertFileBatch(records) {
+      const ids = [];
+      const self = this;
+      _withTransaction(() => {
+        for (const params of records) {
+          const id = self.insertFile(params);
+          ids.push(id);
+        }
+      });
+      return ids;
     },
     updateFile(fileId, params) {
       sqlRun(
@@ -95,6 +192,14 @@ function createCodeIndexRepository(deps) {
           params.parentName || '',
         ],
       );
+    },
+    insertSymbolBatch(symbols) {
+      const self = this;
+      _withTransaction(() => {
+        for (const sym of symbols) {
+          self.insertSymbol(sym);
+        }
+      });
     },
     updateRepoStats({ repoId, headCommit }) {
       sqlRun(

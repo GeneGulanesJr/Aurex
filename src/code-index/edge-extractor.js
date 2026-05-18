@@ -4,8 +4,8 @@ function buildImportEdges(db, repoId) {
   return codeAnalysis.buildImportGraph(db, repoId);
 }
 
-function buildCallEdges(db, repoId) {
-  return codeAnalysis.buildCallGraph(db, repoId);
+function buildCallEdges(db, repoId, opts) {
+  return codeAnalysis.buildCallGraph(db, repoId, opts);
 }
 
 function buildComplexityMetrics(db, repoId) {

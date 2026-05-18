@@ -16,7 +16,7 @@ const path = require('path');
 function requireNativeDb(db, featureName) {
   if (!db || typeof db.prepare !== 'function') {
     return {
-      error: `This operation requires a native SQLite backend (node:sqlite or better-sqlite3). The CLI fallback does not support ${featureName}.`,
+      error: `This operation requires a native SQLite backend via libSQL (@libsql/client). The CLI fallback does not support ${featureName}.`,
     };
   }
   return null;
@@ -26,7 +26,7 @@ function withDb(fn, featureName) {
   return function _guarded(db, ...args) {
     if (!db || typeof db.prepare !== 'function') {
       return {
-        error: `This operation requires a native SQLite backend (node:sqlite or better-sqlite3). The CLI fallback does not support ${featureName}.`,
+        error: `This operation requires a native SQLite backend via libSQL (@libsql/client). The CLI fallback does not support ${featureName}.`,
       };
     }
     return fn(db, ...args);
@@ -43,7 +43,20 @@ const IGNORE_DIRS_DOCS = new Set([...IGNORE_DIRS_COMMON, '.svn', '.hg', '__pycac
 
 /* ── file extension sets ────────────────────────────────────── */
 
-const CODE_EXTENSIONS = new Set(['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts', '.tsx', '.go', '.rs', '.py', '.pyw']);
+const CODE_EXTENSIONS = new Set([
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+  '.ts',
+  '.mts',
+  '.cts',
+  '.tsx',
+  '.go',
+  '.rs',
+  '.py',
+  '.pyw',
+]);
 
 const MD_EXTENSIONS = new Set(['.md', '.mdx']);
 

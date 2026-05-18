@@ -16,6 +16,7 @@ const {
   RESULT_LIMITS,
   UNTETECTED_CONFIDENCE,
   PR_RISK,
+  CALL_GRAPH,
 } = require('../../constants');
 const { requireNativeDb: _requireNativeDb, SKIP_CALLEE_NAMES: _SKIP_CALLEE_NAMES } = require('../../utils');
 
@@ -213,20 +214,28 @@ function buildImportGraph(db, repoId) {
     `INSERT OR IGNORE INTO code_imports (repo_id, source_file_id, target_module, target_file_id, import_type, line_number) VALUES (?, ?, ?, ?, ?, ?)`,
   );
 
-  const files = db.prepare('SELECT id, path, content FROM code_files WHERE repo_id = ?').all(repoId);
+  const files = db.prepare('SELECT id, path FROM code_files WHERE repo_id = ?').all(repoId);
+  const contentStmt = db.prepare('SELECT content FROM code_files WHERE id = ?');
   let totalEdges = 0;
 
-  for (const file of files) {
-    if (!file.content) {
-      continue;
+  const runInTx = typeof db.transaction === 'function'
+    ? (fn) => db.transaction(fn)()
+    : (fn) => { db.exec('BEGIN'); try { const r = fn(); db.exec('COMMIT'); return r; } catch (e) { db.exec('ROLLBACK'); throw e; } };
+
+  runInTx(() => {
+    for (const file of files) {
+      const contentRow = contentStmt.get(file.id);
+      if (!contentRow || !contentRow.content) {
+        continue;
+      }
+      const imports = extractImportsFromSource(contentRow.content);
+      for (const imp of imports) {
+        const targetFileId = resolveImportTarget(db, repoId, file.path, imp.target_module);
+        insertStmt.run(repoId, file.id, imp.target_module, targetFileId, imp.import_type, imp.line_number);
+        totalEdges++;
+      }
     }
-    const imports = extractImportsFromSource(file.content);
-    for (const imp of imports) {
-      const targetFileId = resolveImportTarget(db, repoId, file.path, imp.target_module);
-      insertStmt.run(repoId, file.id, imp.target_module, targetFileId, imp.import_type, imp.line_number);
-      totalEdges++;
-    }
-  }
+  });
 
   return { success: true, edges: totalEdges };
 }
@@ -310,32 +319,28 @@ function getImportGraph(db, repoId, opts) {
 // CALL GRAPH
 // ══════════════════════════════════════════════════════════
 
-function buildCallGraph(db, repoId) {
+function buildCallGraph(db, repoId, opts = {}) {
   const guard = _requireNativeDb(db);
   if (guard) {
     return guard;
   }
+  const { onProgress } = opts;
+
   db.prepare('DELETE FROM code_calls WHERE repo_id = ?').run(repoId);
 
   const insertStmt = db.prepare(
     `INSERT OR IGNORE INTO code_calls (repo_id, caller_symbol_id, callee_name, callee_symbol_id, confidence, line_number) VALUES (?, ?, ?, ?, ?, ?)`,
   );
 
-  const symbols = db
-    .prepare(`
-    SELECT cs.id, cs.name, cs.file_id, cs.file_path, cs.start_byte, cs.end_byte, cs.start_line, cs.end_line,
-           cs.parent_name, cs.kind, cs.qualified_name, cf.content as file_content
-    FROM code_symbols cs JOIN code_files cf ON cf.id = cs.file_id WHERE cs.repo_id = ?
-  `)
-    .all(repoId);
-
   const allSymbols = db
     .prepare(
-      'SELECT id, name, file_id, file_path, parent_name, kind, qualified_name FROM code_symbols WHERE repo_id = ?',
+      'SELECT id, name, file_id, file_path, parent_name, kind, qualified_name, start_byte, end_byte, start_line, end_line FROM code_symbols WHERE repo_id = ?',
     )
     .all(repoId);
+
   const symbolsByName = new Map();
   const symbolsByQualified = new Map();
+  const symbolsByFile = new Map();
   for (const sym of allSymbols) {
     if (!symbolsByName.has(sym.name)) {
       symbolsByName.set(sym.name, []);
@@ -347,21 +352,21 @@ function buildCallGraph(db, repoId) {
       }
       symbolsByQualified.get(sym.qualified_name).push(sym);
     }
-  }
-
-  let totalCalls = 0;
-
-  const fileImportsCache = {};
-  const fileBindingsCache = {};
-
-  // Pre-load per-file symbol maps to eliminate N+1 queries in resolveCallee
-  const symbolsByFile = new Map();
-  for (const sym of allSymbols) {
     if (!symbolsByFile.has(sym.file_id)) {
       symbolsByFile.set(sym.file_id, []);
     }
     symbolsByFile.get(sym.file_id).push(sym);
   }
+
+  const fileRows = db
+    .prepare('SELECT id, path, size_bytes FROM code_files WHERE repo_id = ?')
+    .all(repoId);
+  const fileById = new Map();
+  for (const f of fileRows) {
+    fileById.set(f.id, f);
+  }
+  const contentStmt = db.prepare('SELECT content FROM code_files WHERE id = ?');
+
   const symbolsByFileAndName = new Map();
   for (const [fileId, syms] of symbolsByFile) {
     const byName = new Map();
@@ -373,14 +378,12 @@ function buildCallGraph(db, repoId) {
     }
     symbolsByFileAndName.set(fileId, byName);
   }
-  // Pre-load class → parent_name map for super dispatch
   const classParentMap = new Map();
   for (const sym of allSymbols) {
     if (sym.kind === 'class' && sym.parent_name) {
       classParentMap.set(sym.name, sym.parent_name);
     }
   }
-  // Pre-load parent_name → child symbols for method dispatch
   const methodsByParent = new Map();
   for (const sym of allSymbols) {
     if (sym.parent_name) {
@@ -401,6 +404,10 @@ function buildCallGraph(db, repoId) {
     }
     methodsByParentAndName.set(parent, byName);
   }
+
+  let totalCalls = 0;
+  const fileImportsCache = {};
+  const fileBindingsCache = {};
 
   function getFileSymbol(fileId, name, kind) {
     const byName = symbolsByFileAndName.get(fileId);
@@ -552,69 +559,131 @@ function buildCallGraph(db, repoId) {
     return { calleeSymbolId, confidence };
   }
 
-  for (const sym of symbols) {
-    if (!sym.file_content || sym.end_byte <= sym.start_byte) {
-      continue;
+  function findEnclosingSymbol(line, fileSymbols) {
+    for (const sym of fileSymbols) {
+      if (line >= sym.start_line && line <= sym.end_line) {
+        return sym;
+      }
     }
+    return null;
+  }
 
-    let astCallees = [];
-    try {
-      const allCallees = codeParser.extractCallees(sym.file_path);
-      astCallees = allCallees.filter((c) => c.line >= sym.start_line && c.line <= sym.end_line);
-    } catch (_) {
-      astCallees = [];
+  function processRegexFallback(sym, fileContent) {
+    if (sym.end_byte <= sym.start_byte) {
+      return;
+    }
+    const body = Buffer.from(fileContent, 'utf-8').toString('utf-8', sym.start_byte, sym.end_byte);
+    if (!body || body.length < 2) {
+      return;
     }
 
     const seen = new Set();
+    const callPatterns = [
+      /\b([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g,
+      /\.([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g,
+      /\bnew\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g,
+    ];
 
-    if (astCallees.length > 0) {
-      for (const c of astCallees) {
-        if (_SKIP_CALLEE_NAMES.has(c.callee)) {
+    for (const pattern of callPatterns) {
+      let match;
+      pattern.lastIndex = 0;
+      while ((match = pattern.exec(body)) !== null) {
+        const calleeName = match[1];
+        if (_SKIP_CALLEE_NAMES.has(calleeName)) {
           continue;
         }
-        const key = `${c.callee}:${c.line}`;
-        if (seen.has(key)) {
+        if (seen.has(calleeName)) {
           continue;
         }
-        seen.add(key);
+        seen.add(calleeName);
 
-        const { calleeSymbolId, confidence } = resolveCallee(c.callee, sym, c.receiver || null, sym.file_content);
-        insertStmt.run(repoId, sym.id, c.callee, calleeSymbolId, confidence, c.line);
+        const { calleeSymbolId, confidence } = resolveCallee(calleeName, sym, null, fileContent);
+        const lineNum = sym.start_line + body.substring(0, match.index).split('\n').length - 1;
+        insertStmt.run(repoId, sym.id, calleeName, calleeSymbolId, confidence, lineNum);
         totalCalls++;
-      }
-    } else {
-      const body = Buffer.from(sym.file_content, 'utf-8').toString('utf-8', sym.start_byte, sym.end_byte);
-      if (!body || body.length < 2) {
-        continue;
-      }
-
-      const callPatterns = [
-        /\b([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g,
-        /\.([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g,
-        /\bnew\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g,
-      ];
-
-      for (const pattern of callPatterns) {
-        let match;
-        pattern.lastIndex = 0;
-        while ((match = pattern.exec(body)) !== null) {
-          const calleeName = match[1];
-          if (_SKIP_CALLEE_NAMES.has(calleeName)) {
-            continue;
-          }
-          if (seen.has(calleeName)) {
-            continue;
-          }
-          seen.add(calleeName);
-
-          const { calleeSymbolId, confidence } = resolveCallee(calleeName, sym, null, sym.file_content);
-          const lineNum = sym.start_line + body.substring(0, match.index).split('\n').length - 1;
-          insertStmt.run(repoId, sym.id, calleeName, calleeSymbolId, confidence, lineNum);
-          totalCalls++;
-        }
       }
     }
   }
+
+  const totalFiles = symbolsByFile.size;
+  let processedFiles = 0;
+
+  const runInTx = typeof db.transaction === 'function'
+    ? (fn) => db.transaction(fn)()
+    : (fn) => { db.exec('BEGIN'); try { const r = fn(); db.exec('COMMIT'); return r; } catch (e) { db.exec('ROLLBACK'); throw e; } };
+
+  runInTx(() => {
+    for (const [fileId, fileSymbols] of symbolsByFile) {
+      const meta = fileById.get(fileId);
+      if (!meta) {
+        processedFiles++;
+        continue;
+      }
+
+      const contentRow = contentStmt.get(fileId);
+      if (!contentRow || !contentRow.content) {
+        processedFiles++;
+        continue;
+      }
+
+      const fileContent = contentRow.content;
+      const filePath = meta.path;
+      const fileSize = fileContent.length;
+
+      let fileCallees = [];
+      if (fileSize <= CALL_GRAPH.MAX_FILE_CONTENT_BYTES) {
+        try {
+          const extractFn = codeParser.extractCalleesFromContent || codeParser.extractCallees;
+          fileCallees = extractFn(filePath, fileContent);
+        } catch (_) {
+          fileCallees = [];
+        }
+      }
+
+      if (fileCallees.length > 0) {
+        const calleeByLine = new Map();
+        for (const c of fileCallees) {
+          if (!calleeByLine.has(c.line)) {
+            calleeByLine.set(c.line, []);
+          }
+          calleeByLine.get(c.line).push(c);
+        }
+
+        for (const sym of fileSymbols) {
+          const seen = new Set();
+          for (let line = sym.start_line; line <= sym.end_line; line++) {
+            const lineCallees = calleeByLine.get(line);
+            if (!lineCallees) {
+              continue;
+            }
+            for (const c of lineCallees) {
+              if (_SKIP_CALLEE_NAMES.has(c.callee)) {
+                continue;
+              }
+              const key = `${c.callee}:${c.line}`;
+              if (seen.has(key)) {
+                continue;
+              }
+              seen.add(key);
+
+              const { calleeSymbolId, confidence } = resolveCallee(c.callee, sym, c.receiver || null, fileContent);
+              insertStmt.run(repoId, sym.id, c.callee, calleeSymbolId, confidence, c.line);
+              totalCalls++;
+            }
+          }
+        }
+      } else {
+        for (const sym of fileSymbols) {
+          processRegexFallback(sym, fileContent);
+        }
+      }
+
+      processedFiles++;
+      if (onProgress && processedFiles % CALL_GRAPH.PROGRESS_INTERVAL_FILES === 0) {
+        onProgress({ filesProcessed: processedFiles, totalFiles, callsFound: totalCalls });
+      }
+    }
+  });
 
   return { success: true, calls: totalCalls };
 }

@@ -2,7 +2,7 @@ const { createParserRegistry } = require('./parser-registry');
 
 function normalizeSymbol(symbol, fallbackFilePath) {
   return {
-    file_path: symbol.file_path || fallbackFilePath,
+    file_path: symbol.file_path || symbol.file || fallbackFilePath,
     name: symbol.name,
     kind: symbol.kind,
     signature: symbol.signature || '',
@@ -18,11 +18,15 @@ function normalizeSymbol(symbol, fallbackFilePath) {
   };
 }
 
-function extractSymbolsFromFile(filePath, registry = createParserRegistry()) {
-  if (!registry.canParseFile(filePath)) {
+function extractSymbolsFromFile(filePath, registry, content) {
+  const reg = registry || createParserRegistry();
+  if (!reg.canParseFile(filePath)) {
     return [];
   }
-  return registry.parseFile(filePath).map((symbol) => normalizeSymbol(symbol, filePath));
+  if (content !== undefined) {
+    return reg.parseContent(filePath, content).map((symbol) => normalizeSymbol(symbol, filePath));
+  }
+  return reg.parseFile(filePath).map((symbol) => normalizeSymbol(symbol, filePath));
 }
 
 module.exports = { extractSymbolsFromFile, normalizeSymbol };

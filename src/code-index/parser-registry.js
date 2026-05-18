@@ -4,6 +4,7 @@ const { CODE_EXTENSIONS } = require('../../utils');
 
 const LANGUAGE_BY_EXTENSION = Object.freeze({
   '.js': 'javascript',
+  '.jsx': 'javascript',
   '.mjs': 'javascript',
   '.cjs': 'javascript',
   '.ts': 'typescript',
@@ -42,8 +43,14 @@ function createParserRegistry(parser = codeParser) {
     parseFile(filePath) {
       return parser.parseFile(filePath);
     },
+    parseContent(filePath, content) {
+      return parser.parseContent(filePath, content);
+    },
     extractCallees(filePath) {
       return parser.extractCallees(filePath);
+    },
+    extractCalleesFromContent(filePath, content) {
+      return parser.extractCalleesFromContent(filePath, content);
     },
   });
 }
