@@ -1,7 +1,11 @@
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { getLanguageForFile, canParseFile } = require('../src/code-index/parser-registry');
 const { normalizeSymbol, extractSymbolsFromFile } = require('../src/code-index/symbol-extractor');
 const { sourceSliceFromRow } = require('../src/code-index/source-retrieval');
 const { reindexRepository } = require('../src/code-index/incremental-indexer');
+const { scanRepository } = require('../src/code-index/scanner');
 
 describe('code-index parser registry', () => {
   it('maps supported file extensions to parser languages', () => {
@@ -97,5 +101,20 @@ describe('code-index incremental reindexer', () => {
     expect(result.files_removed).toBe(1);
     expect(calls).toContainEqual(['deleteFile', 10]);
     expect(calls).toContainEqual(['updateRepoStats', 7]);
+  });
+});
+
+describe('code-index scanner', () => {
+  it('continues scanning after unsupported files and reports discovery progress', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lapis-scan-'));
+    fs.writeFileSync(path.join(tmp, 'README.md'), '# docs');
+    fs.writeFileSync(path.join(tmp, 'app.js'), 'function app() { return 1; }');
+    const progress = [];
+
+    const result = scanRepository(tmp, { onScanProgress: (stats) => progress.push(stats) });
+
+    expect(result.files).toEqual([path.join(tmp, 'app.js')]);
+    expect(result.skipReport.unsupportedExt).toBe(1);
+    expect(progress.at(-1)).toMatchObject({ done: true, codeFiles: 1 });
   });
 });

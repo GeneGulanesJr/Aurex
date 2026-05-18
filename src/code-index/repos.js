@@ -17,6 +17,9 @@ function createCodeIndexRepository(deps) {
   }
 
   return Object.freeze({
+    withTransaction(fn) {
+      return _withTransaction(fn);
+    },
     findRepoByName(name) {
       return first(sqlJson('SELECT * FROM code_repos WHERE name = ? LIMIT 1', [name]));
     },
@@ -55,18 +58,31 @@ function createCodeIndexRepository(deps) {
       return sqlJson('SELECT * FROM code_files WHERE repo_id = ?', [repoId]);
     },
     insertFile(params) {
+      const values = [
+        params.repoId,
+        params.path,
+        params.language,
+        params.content,
+        params.contentHash,
+        params.mtime,
+        params.sizeBytes,
+        params.lineCount,
+      ];
+      try {
+        const rows = sqlJson(
+          'INSERT INTO code_files (repo_id, path, language, content, content_hash, mtime, size_bytes, line_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
+          values,
+        );
+        if (rows && rows[0] && rows[0].id) {
+          return rows[0].id;
+        }
+      } catch {
+        // Older SQLite-compatible engines may not support RETURNING.
+        // The fallback insert-then-lookup path keeps indexing portable.
+      }
       sqlRun(
         'INSERT INTO code_files (repo_id, path, language, content, content_hash, mtime, size_bytes, line_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [
-          params.repoId,
-          params.path,
-          params.language,
-          params.content,
-          params.contentHash,
-          params.mtime,
-          params.sizeBytes,
-          params.lineCount,
-        ],
+        values,
       );
       return sqlJson('SELECT id FROM code_files WHERE repo_id = ? AND path = ?', [params.repoId, params.path])[0].id;
     },

@@ -22,6 +22,24 @@ function emitProgress(args, phase, detail, stats) {
   process.stderr.write(`${JSON.stringify(payload)}\n`);
 }
 
+function progressPath(filePath, repoRoot) {
+  if (!repoRoot) {
+    return filePath;
+  }
+  const relative = path.relative(repoRoot, filePath);
+  return relative && !relative.startsWith('..') ? relative : filePath;
+}
+
+function shouldEmitFileProgress(done, total) {
+  if (done <= 5 || done === total) {
+    return true;
+  }
+  if (total <= 100) {
+    return done % 10 === 0;
+  }
+  return done % 25 === 0;
+}
+
 function getHeadCommit(repoPath) {
   try {
     return require('child_process')
@@ -118,7 +136,10 @@ function rebuildDerivedIndexes(db, repoId, args, totalFiles, fileCount, symbolCo
 
 function formatSkipReport(report) {
   const lines = [];
-  const topN = (obj, n = 5) => Object.entries(obj).sort((a, b) => b[1] - a[1]).slice(0, n);
+  const topN = (obj, n = 5) =>
+    Object.entries(obj)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, n);
   if (Object.keys(report.builtIn).length > 0) {
     const top = topN(report.builtIn);
     lines.push(`  Built-in skip: ${top.map(([d]) => d).join(', ')}...`);
@@ -151,6 +172,13 @@ async function scanPhase(repoPath, options, args) {
         emitProgress(args, 'discovery', { message: `Skipping [${reason}]: ${relativePath}` });
       }
     },
+    onScanProgress: (stats) => {
+      const suffix = stats.done ? 'complete' : 'in progress';
+      emitProgress(args, 'discovery', {
+        message: `Discovery ${suffix}: ${stats.codeFiles} code files, ${stats.entriesSeen} entries, ${stats.dirsVisited} dirs`,
+        files_done: stats.codeFiles,
+      });
+    },
   });
   return { files: scanResult.files, absPath, skipReport: scanResult.skipReport };
 }
@@ -160,6 +188,7 @@ async function parsePhase(files, deps, repoId, args) {
   const repository = deps.repository || createCodeIndexRepository(require('../../db'));
   const batchSize = RESULT_LIMITS.INDEX_BATCH_SIZE;
   const totalFiles = files.length;
+  const repoRoot = args.repoRoot || args.repoPath || null;
 
   let useWorkers = totalFiles >= WORKER_POOL.MIN_FILES_FOR_PARALLEL && !args.noWorkers;
   let pool = null;
@@ -217,56 +246,78 @@ async function parsePhase(files, deps, repoId, args) {
       }
 
       const batchSymbols = [];
-      for (const record of validReads) {
-        try {
-          const fileId = repository.insertFile(fileRecordToParams(repoId, record));
-          let symbols;
-          if (symbolMap) {
-            symbols = symbolMap.get(record.filePath) || [];
-          } else {
-            symbols = extractSymbolsFromFile(record.filePath, registry, record.content);
-          }
+      const writeRecords = (insideTransaction = false) => {
+        for (const record of validReads) {
+          try {
+            const fileId = repository.insertFile(fileRecordToParams(repoId, record));
+            let symbols;
+            if (symbolMap) {
+              symbols = symbolMap.get(record.filePath) || [];
+            } else {
+              symbols = extractSymbolsFromFile(record.filePath, registry, record.content);
+            }
 
-          if (symbols.length === 0 && record.content.trim().length > 0) {
-            const hasExports = /\bexport\s/.test(record.content);
-            const hasFunction = /\bfunction\b|\b=>\s|\bdef\s|\bfunc\s|\bfn\s/.test(record.content);
-            if (hasExports || hasFunction) {
-              skipped.push({
-                file: record.filePath,
-                error: 'Parse returned 0 symbols despite containing exports/functions',
-                zeroSymbolFile: true,
+            if (symbols.length === 0 && record.content.trim().length > 0) {
+              const hasExports = /\bexport\s/.test(record.content);
+              const hasFunction = /\bfunction\b|\b=>\s|\bdef\s|\bfunc\s|\bfn\s/.test(record.content);
+              if (hasExports || hasFunction) {
+                skipped.push({
+                  file: record.filePath,
+                  error: 'Parse returned 0 symbols despite containing exports/functions',
+                  zeroSymbolFile: true,
+                });
+              }
+            }
+
+            for (const sym of symbols) {
+              batchSymbols.push({
+                repoId,
+                fileId,
+                filePath: record.filePath,
+                name: sym.name,
+                kind: sym.kind,
+                signature: sym.signature,
+                qualifiedName: sym.qualified_name,
+                startLine: sym.start_line,
+                endLine: sym.end_line,
+                startByte: sym.start_byte,
+                endByte: sym.end_byte,
+                docstring: sym.docstring || '',
+                bodyPreview: sym.body_preview || '',
+                language: sym.language,
+                parentName: sym.parent_name || '',
               });
             }
+            symbolCount += symbols.length;
+            fileCount++;
+            if (shouldEmitFileProgress(fileCount, totalFiles)) {
+              emitProgress(
+                args,
+                'parsing',
+                { message: `Indexed ${fileCount}/${totalFiles}: ${progressPath(record.filePath, repoRoot)}` },
+                { files_total: totalFiles, files_done: fileCount, symbols: symbolCount },
+              );
+            }
+          } catch (e) {
+            skipped.push({ file: record.filePath, error: e.message });
           }
-
-          for (const sym of symbols) {
-            batchSymbols.push({
-              repoId,
-              fileId,
-              filePath: record.filePath,
-              name: sym.name,
-              kind: sym.kind,
-              signature: sym.signature,
-              qualifiedName: sym.qualified_name,
-              startLine: sym.start_line,
-              endLine: sym.end_line,
-              startByte: sym.start_byte,
-              endByte: sym.end_byte,
-              docstring: sym.docstring || '',
-              bodyPreview: sym.body_preview || '',
-              language: sym.language,
-              parentName: sym.parent_name || '',
-            });
-          }
-          symbolCount += symbols.length;
-          fileCount++;
-        } catch (e) {
-          skipped.push({ file: record.filePath, error: e.message });
         }
-      }
 
-      if (batchSymbols.length > 0) {
-        repository.insertSymbolBatch(batchSymbols);
+        if (batchSymbols.length > 0) {
+          if (insideTransaction) {
+            for (const sym of batchSymbols) {
+              repository.insertSymbol(sym);
+            }
+          } else {
+            repository.insertSymbolBatch(batchSymbols);
+          }
+        }
+      };
+
+      if (typeof repository.withTransaction === 'function') {
+        repository.withTransaction(() => writeRecords(true));
+      } else {
+        writeRecords(false);
       }
     }
   } finally {
@@ -318,7 +369,10 @@ async function indexRepository(deps, repoPath, repoName) {
 
   emitProgress(args, 'parsing', { message: 'Parsing files...', files_total: files.length });
   const parseT0 = Date.now();
-  const parseResult = await parsePhase(files, { parserRegistry: registry, repository }, repoId, args);
+  const parseResult = await parsePhase(files, { parserRegistry: registry, repository }, repoId, {
+    ...args,
+    repoRoot: absPath,
+  });
   const parseMs = Date.now() - parseT0;
 
   emitProgress(args, 'analysis', { message: 'Building derived indexes...' });
@@ -350,7 +404,9 @@ async function indexRepository(deps, repoPath, repoName) {
   emitProgress(
     args,
     'done',
-    { message: `Done: ${parseResult.fileCount} files, ${parseResult.symbolCount} symbols (${(totalMs / 1000).toFixed(1)}s)` },
+    {
+      message: `Done: ${parseResult.fileCount} files, ${parseResult.symbolCount} symbols (${(totalMs / 1000).toFixed(1)}s)`,
+    },
     { files_total: files.length, files_done: parseResult.fileCount, symbols: parseResult.symbolCount },
   );
   return result;
@@ -379,7 +435,9 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
 
   emitProgress(args, 'init', { message: `Reindexing "${repo}" (incremental)...` });
 
-  const scanResult = scanRepository(existing.path);
+  const scanResult = fs.existsSync(existing.path)
+    ? await scanPhase(existing.path, {}, args)
+    : { files: [], skipReport: { builtIn: {}, gitignore: {}, memorycodeignore: {}, unsupportedExt: 0 } };
   const files = scanResult.files;
   const skipReport = scanResult.skipReport;
   const skipSummary = formatSkipReport(skipReport);
@@ -414,24 +472,42 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
       const prev = existingFiles.get(filePath);
       if (prev && prev.mtime === stats.mtimeMs) {
         unchanged++;
-        continue;
-      }
-
-      const content = fs.readFileSync(filePath, 'utf-8');
-      const record = { filePath, content, stats };
-      let fileId;
-      if (prev) {
-        repository.clearFileSymbols(prev.id);
-        repository.updateFile(prev.id, fileRecordToParams(existing.id, record));
-        fileId = prev.id;
       } else {
-        fileId = repository.insertFile(fileRecordToParams(existing.id, record));
-      }
+        const content = fs.readFileSync(filePath, 'utf-8');
+        const record = { filePath, content, stats };
+        const writeChangedFile = () => {
+          let fileId;
+          if (prev) {
+            repository.clearFileSymbols(prev.id);
+            repository.updateFile(prev.id, fileRecordToParams(existing.id, record));
+            fileId = prev.id;
+          } else {
+            fileId = repository.insertFile(fileRecordToParams(existing.id, record));
+          }
 
-      const symbols = extractSymbolsFromFile(filePath, registry, content);
-      symbolCount += insertSymbols(repository, existing.id, fileId, filePath, symbols);
-      reindexed++;
+          const symbols = extractSymbolsFromFile(filePath, registry, content);
+          symbolCount += insertSymbols(repository, existing.id, fileId, filePath, symbols);
+          reindexed++;
+        };
+        if (typeof repository.withTransaction === 'function') {
+          repository.withTransaction(writeChangedFile);
+        } else {
+          writeChangedFile();
+        }
+      }
     } catch (_) {}
+
+    const done = i + 1;
+    if (shouldEmitFileProgress(done, totalFiles)) {
+      emitProgress(
+        args,
+        'parsing',
+        {
+          message: `Checked ${done}/${totalFiles}: ${progressPath(filePath, existing.path)} (${reindexed} changed, ${unchanged} unchanged)`,
+        },
+        { files_total: totalFiles, files_done: done, symbols: symbolCount },
+      );
+    }
   }
 
   const currentFilesSet = new Set(files);
