@@ -49,10 +49,69 @@ function createCodeIndexRepository(deps) {
       }
       return this.createRepo({ name, path });
     },
-    clearRepoIndex(repoId) {
-      sqlRun('DELETE FROM code_symbols WHERE repo_id = ?', [repoId]);
-      sqlRun('DELETE FROM code_files WHERE repo_id = ?', [repoId]);
-      sqlRun('DELETE FROM churn_metrics WHERE repo_id = ?', [repoId]);
+    clearRepoIndex(repoId, options = {}) {
+      const batchSize = Math.max(1, Number(options.batchSize) || 1000);
+      const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
+      const emit = (message, extra = {}) => {
+        if (onProgress) {
+          onProgress({ message, ...extra });
+        }
+      };
+      const deleteByIdBatch = ({ label, selectSql, selectParams = [] }) => {
+        let deleted = 0;
+        emit(`Clearing ${label.name}...`, { deleted });
+        for (;;) {
+          const rows = sqlJson(selectSql, [...selectParams, batchSize]);
+          if (!rows.length) {
+            break;
+          }
+          const ids = rows.map((row) => row.id);
+          const placeholders = ids.map(() => '?').join(', ');
+          sqlRun(`DELETE FROM ${label.table} WHERE id IN (${placeholders})`, ids);
+          deleted += ids.length;
+          emit(`Cleared ${deleted} ${label.name}`, { deleted });
+          if (ids.length < batchSize) {
+            break;
+          }
+        }
+        return deleted;
+      };
+
+      const totals = {};
+      _withTransaction(() => {
+        totals.symbolComplexity = deleteByIdBatch({
+          label: { table: 'symbol_complexity', name: 'complexity rows' },
+          selectSql:
+            'SELECT sc.id FROM symbol_complexity sc JOIN code_symbols s ON s.id = sc.symbol_id WHERE s.repo_id = ? LIMIT ?',
+          selectParams: [repoId],
+        });
+        totals.calls = deleteByIdBatch({
+          label: { table: 'code_calls', name: 'call edges' },
+          selectSql: 'SELECT id FROM code_calls WHERE repo_id = ? LIMIT ?',
+          selectParams: [repoId],
+        });
+        totals.imports = deleteByIdBatch({
+          label: { table: 'code_imports', name: 'import edges' },
+          selectSql: 'SELECT id FROM code_imports WHERE repo_id = ? LIMIT ?',
+          selectParams: [repoId],
+        });
+        totals.churn = deleteByIdBatch({
+          label: { table: 'churn_metrics', name: 'churn rows' },
+          selectSql: 'SELECT id FROM churn_metrics WHERE repo_id = ? LIMIT ?',
+          selectParams: [repoId],
+        });
+        totals.symbols = deleteByIdBatch({
+          label: { table: 'code_symbols', name: 'symbols' },
+          selectSql: 'SELECT id FROM code_symbols WHERE repo_id = ? LIMIT ?',
+          selectParams: [repoId],
+        });
+        totals.files = deleteByIdBatch({
+          label: { table: 'code_files', name: 'files' },
+          selectSql: 'SELECT id FROM code_files WHERE repo_id = ? LIMIT ?',
+          selectParams: [repoId],
+        });
+      });
+      return totals;
     },
     listFiles(repoId) {
       return sqlJson('SELECT * FROM code_files WHERE repo_id = ?', [repoId]);

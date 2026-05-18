@@ -442,7 +442,21 @@ async function indexRepository(deps, repoPath, repoName) {
     step: 'clear-index',
     message: `Step 3/5: clearing existing index rows for ${repoName}...`,
   });
-  repository.clearRepoIndex(repoId);
+  const clearT0 = Date.now();
+  const clearTotals = repository.clearRepoIndex(repoId, {
+    onProgress: (progress) => {
+      emitProgress(args, 'reset-index', {
+        step: 'clear-index',
+        message: `Step 3/5: ${progress.message}`,
+        rows_deleted: progress.deleted,
+      });
+    },
+  });
+  emitProgress(args, 'reset-index', {
+    step: 'clear-index',
+    message: `Step 3/5: cleared existing index rows for ${repoName} (${Date.now() - clearT0}ms)`,
+    clear_totals: clearTotals,
+  });
 
   emitProgress(args, 'parsing', {
     step: 'parse-and-store',
@@ -509,7 +523,6 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
   }
 
   if (mode === 'full') {
-    repository.clearRepoIndex(existing.id);
     return indexRepository({ ...deps, repository, parserRegistry: registry }, existing.path, repo);
   }
 
