@@ -6,6 +6,7 @@ const { normalizeSymbol, extractSymbolsFromFile } = require('../src/code-index/s
 const { sourceSliceFromRow } = require('../src/code-index/source-retrieval');
 const { parsePhase, reindexRepository } = require('../src/code-index/incremental-indexer');
 const { scanRepository } = require('../src/code-index/scanner');
+const { createCodeIndexRepository } = require('../src/code-index/repos');
 
 describe('code-index parser registry', () => {
   it('maps supported file extensions to parser languages', () => {
@@ -125,6 +126,65 @@ describe('code-index symbol extractor', () => {
 
     expect(extractSymbolsFromFile('/repo/app.js', registry)).toHaveLength(1);
     expect(extractSymbolsFromFile('/repo/app.js', registry)[0].name).toBe('answer');
+  });
+});
+
+describe('code-index repository clearing', () => {
+  it('clears derived index rows in batches before source rows and emits progress', () => {
+    const calls = [];
+    const progress = [];
+    const rowsBySql = new Map();
+    const key = (sql) => sql.replace(/\s+/g, ' ').trim();
+
+    function queueRows(sql, batches) {
+      rowsBySql.set(
+        key(sql),
+        batches.map((batch) => batch.map((id) => ({ id }))),
+      );
+    }
+
+    queueRows(
+      'SELECT sc.id FROM symbol_complexity sc JOIN code_symbols s ON s.id = sc.symbol_id WHERE s.repo_id = ? LIMIT ?',
+      [[1, 2], []],
+    );
+    queueRows('SELECT id FROM code_calls WHERE repo_id = ? LIMIT ?', [[3], []]);
+    queueRows('SELECT id FROM code_imports WHERE repo_id = ? LIMIT ?', [[]]);
+    queueRows('SELECT id FROM churn_metrics WHERE repo_id = ? LIMIT ?', [[]]);
+    queueRows('SELECT id FROM code_symbols WHERE repo_id = ? LIMIT ?', [[4], []]);
+    queueRows('SELECT id FROM code_files WHERE repo_id = ? LIMIT ?', [[5], []]);
+
+    const repository = createCodeIndexRepository({
+      sqlJson(sql) {
+        const batches = rowsBySql.get(key(sql));
+        if (!batches) {
+          throw new Error(`unexpected query: ${sql}`);
+        }
+        return batches.shift() || [];
+      },
+      sqlRun(sql, params) {
+        calls.push([sql, params]);
+      },
+      withTransaction(fn) {
+        calls.push(['BEGIN']);
+        const result = fn();
+        calls.push(['COMMIT']);
+        return result;
+      },
+    });
+
+    const totals = repository.clearRepoIndex(42, { batchSize: 2, onProgress: (p) => progress.push(p.message) });
+
+    expect(totals).toMatchObject({ symbolComplexity: 2, calls: 1, symbols: 1, files: 1 });
+    expect(calls.map((call) => (Array.isArray(call) ? call[0] : call))).toEqual([
+      'BEGIN',
+      'DELETE FROM symbol_complexity WHERE id IN (?, ?)',
+      'DELETE FROM code_calls WHERE id IN (?)',
+      'DELETE FROM code_symbols WHERE id IN (?)',
+      'DELETE FROM code_files WHERE id IN (?)',
+      'COMMIT',
+    ]);
+    expect(progress).toContain('Cleared 2 complexity rows');
+    expect(progress).toContain('Cleared 1 symbols');
   });
 });
 
