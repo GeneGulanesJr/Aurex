@@ -10,7 +10,7 @@
  *   await codeParser.init();
  *   const symbols = codeParser.parseFile('/path/to/file.js');
  *
- * Supported: .js/.mjs/.cjs, .ts/.mts/.cts, .tsx, .sql
+ * Supported: .js/.jsx/.mjs/.cjs, .ts/.mts/.cts, .tsx, .sql
  */
 
 const path = require('path');
@@ -23,6 +23,7 @@ const GRAMMAR_DIR = path.resolve(__dirname, 'grammars');
 // Language map: file extension → { grammarFile, languageName, parserKey }
 const LANGUAGE_MAP = {
   '.js': { grammarFile: 'javascript.wasm', languageName: 'javascript', parserKey: 'javascript' },
+  '.jsx': { grammarFile: 'javascript.wasm', languageName: 'javascript', parserKey: 'javascript' },
   '.mjs': { grammarFile: 'javascript.wasm', languageName: 'javascript', parserKey: 'javascript' },
   '.cjs': { grammarFile: 'javascript.wasm', languageName: 'javascript', parserKey: 'javascript' },
   '.ts': { grammarFile: 'typescript.wasm', languageName: 'typescript', parserKey: 'typescript' },
@@ -182,6 +183,36 @@ function _getLineFromOffset(content, offset) {
   return content.substring(0, offset).split('\n').length;
 }
 
+function _fallbackLanguageFromExtension(ext) {
+  if (ext === '.tsx') {
+    return 'typescript';
+  }
+  if (ext === '.jsx') {
+    return 'javascript';
+  }
+  return ext.slice(1);
+}
+
+function _fallbackJsTsKind(content, match) {
+  if (match[1]) {
+    return 'function';
+  }
+  if (!match[2]) {
+    return 'constant';
+  }
+  const declaration = content.substring(match.index, match.index + 20);
+  if (declaration.includes('class ')) {
+    return 'class';
+  }
+  if (declaration.includes('interface ')) {
+    return 'interface';
+  }
+  if (declaration.includes('enum ')) {
+    return 'enum';
+  }
+  return 'type';
+}
+
 function _fallbackExtractSymbols(filePath, content) {
   const ext = path.extname(filePath).toLowerCase();
   const symbols = [];
@@ -194,7 +225,7 @@ function _fallbackExtractSymbols(filePath, content) {
     symbols.push({
       name,
       kind,
-      language: ext === '.tsx' ? 'typescript' : ext.slice(1),
+      language: _fallbackLanguageFromExtension(ext),
       file: filePath,
       signature: signature.length > 200 ? `${signature.slice(0, 197)}...` : signature,
       qualified_name: name,
@@ -208,21 +239,19 @@ function _fallbackExtractSymbols(filePath, content) {
     });
   }
 
-  const jsTsExts = new Set(['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts', '.tsx']);
+  const jsTsExts = new Set(['.js', '.jsx', '.mjs', '.cjs', '.ts', '.mts', '.cts', '.tsx']);
   if (jsTsExts.has(ext)) {
-    const re = /(?:^|\n)\s*(?:export\s+(?:default\s+)?)?(?:async\s+)?(?:function\s+(\w+)|(?:class|interface|type|enum)\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=[^;\n]*)/g;
+    const re =
+      /(?:^|\n)\s*(?:export\s+(?:default\s+)?)?(?:async\s+)?(?:function\s+(\w+)|(?:class|interface|type|enum)\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=[^;\n]*)/g;
     let match;
     while ((match = re.exec(content)) !== null) {
       const name = match[1] || match[2] || match[3];
-      if (!name) continue;
-      const kind = match[1] ? 'function' : match[2] ? (
-        content.substring(match.index, match.index + 20).includes('class ') ? 'class' :
-        content.substring(match.index, match.index + 20).includes('interface ') ? 'interface' :
-        content.substring(match.index, match.index + 20).includes('enum ') ? 'enum' : 'type'
-      ) : 'constant';
-      const line = _getLineFromOffset(content, match.index);
-      const sig = match[0].trim().split('\n')[0];
-      add(name, kind, line, sig, match.index);
+      if (name) {
+        const kind = _fallbackJsTsKind(content, match);
+        const line = _getLineFromOffset(content, match.index);
+        const sig = match[0].trim().split('\n')[0];
+        add(name, kind, line, sig, match.index);
+      }
     }
   } else if (ext === '.py' || ext === '.pyw') {
     const re = /^(?:async\s+)?(?:def|class)\s+(\w+)/gm;
@@ -251,7 +280,12 @@ function _fallbackExtractSymbols(filePath, content) {
     const enumRe = /(?:^|\n)\s*(?:pub\s+)?enum\s+(\w+)/g;
     const traitRe = /(?:^|\n)\s*(?:pub\s+)?trait\s+(\w+)/g;
     let match;
-    for (const [regex, kind] of [[fnRe, 'function'], [structRe, 'class'], [enumRe, 'enum'], [traitRe, 'interface']]) {
+    for (const [regex, kind] of [
+      [fnRe, 'function'],
+      [structRe, 'class'],
+      [enumRe, 'enum'],
+      [traitRe, 'interface'],
+    ]) {
       while ((match = regex.exec(content)) !== null) {
         const line = _getLineFromOffset(content, match.index);
         add(match[1], kind, line, match[0].trim(), match.index);

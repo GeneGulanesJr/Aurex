@@ -4,6 +4,7 @@ const { CODE_EXTENSIONS } = require('../../utils');
 
 const LANGUAGE_BY_EXTENSION = Object.freeze({
   '.js': 'javascript',
+  '.jsx': 'javascript',
   '.mjs': 'javascript',
   '.cjs': 'javascript',
   '.ts': 'typescript',

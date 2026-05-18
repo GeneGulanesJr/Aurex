@@ -171,6 +171,7 @@ describe('utils.js', () => {
   describe('CODE_EXTENSIONS', () => {
     it('should include common code extensions', () => {
       expect(utils.CODE_EXTENSIONS.has('.js')).toBe(true);
+      expect(utils.CODE_EXTENSIONS.has('.jsx')).toBe(true);
       expect(utils.CODE_EXTENSIONS.has('.ts')).toBe(true);
       expect(utils.CODE_EXTENSIONS.has('.py')).toBe(true);
       expect(utils.CODE_EXTENSIONS.has('.go')).toBe(true);
