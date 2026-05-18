@@ -1346,19 +1346,36 @@ function _walkCallees(root, _SKIP) {
     if (node.type === 'call_expression') {
       const calleeNode = node.child(0);
       if (calleeNode) {
-        if (calleeNode.type === 'identifier') {
+        if (calleeNode.type === 'identifier' || calleeNode.type === 'import') {
           const name = calleeNode.text;
           if (!_SKIP.has(name)) {
             const key = `${name}:${node.startPosition.row + 1}`;
             if (!seen.has(key)) {
               seen.add(key);
-              callees.push({
+              const entry = {
                 callee: name,
                 line: node.startPosition.row + 1,
                 is_method: false,
                 receiver: null,
                 full_path: name,
-              });
+              };
+              // Capture require('module') and import('module') paths
+              if (name === 'require' || name === 'import') {
+                const argsNode = node.childForFieldName('arguments');
+                if (argsNode) {
+                  for (const ac of argsNode.children) {
+                    if (ac.type === 'string') {
+                      entry.module_path = ac.text.replace(/^["']|["']$/g, '');
+                      break;
+                    }
+                  }
+                }
+              }
+              // Mark eval()/Function() as dynamic
+              if (name === 'eval' || name === 'Function') {
+                entry.is_dynamic = true;
+              }
+              callees.push(entry);
             }
           }
         } else if (calleeNode.type === 'member_expression') {
@@ -1375,13 +1392,29 @@ function _walkCallees(root, _SKIP) {
                   receiver = objNode.text;
                 }
                 const full_path = receiver ? `${receiver}.${name}` : name;
-                callees.push({
+                const entry = {
                   callee: name,
                   line: node.startPosition.row + 1,
                   is_method: true,
                   receiver,
                   full_path,
-                });
+                };
+                // Capture require('module') path
+                if (name === 'require') {
+                  const argsNode = node.childForFieldName('arguments');
+                  if (argsNode) {
+                    for (const ac of argsNode.children) {
+                      if (ac.type === 'string') {
+                        entry.module_path = ac.text.replace(/^["']|["']$/g, '');
+                        break;
+                      }
+                    }
+                  }
+                }
+                if (name === 'eval' || name === 'Function') {
+                  entry.is_dynamic = true;
+                }
+                callees.push(entry);
               }
             }
           }
@@ -1405,6 +1438,61 @@ function _walkCallees(root, _SKIP) {
             });
           }
           break;
+        }
+      }
+    }
+
+    // Dynamic import() — import('./path')
+    if (node.type === 'import_expression') {
+      for (const child of node.children) {
+        if (child.type === 'string') {
+          const modPath = child.text.replace(/^["']|["']$/g, '');
+          const key = `import:${modPath}:${node.startPosition.row + 1}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            callees.push({
+              callee: 'import',
+              line: node.startPosition.row + 1,
+              is_method: false,
+              receiver: null,
+              full_path: 'import',
+              module_path: modPath,
+            });
+          }
+          break;
+        }
+      }
+    }
+
+    // Tagged template literals — styled.button`...`, html`...`
+    if (node.type === 'tagged_template_expression') {
+      const tag = node.child(0);
+      if (tag) {
+        let name = '';
+        if (tag.type === 'identifier') {
+          name = tag.text;
+        } else if (tag.type === 'member_expression') {
+          const parts = [];
+          for (const c of tag.children) {
+            if (c.type === 'identifier' || c.type === 'property_identifier') {
+              parts.push(c.text);
+            }
+          }
+          name = parts.join('.');
+        }
+        if (name) {
+          const key = `tagged:${name}:${node.startPosition.row + 1}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            callees.push({
+              callee: name,
+              line: node.startPosition.row + 1,
+              is_method: false,
+              receiver: null,
+              full_path: name,
+              is_tagged_template: true,
+            });
+          }
         }
       }
     }

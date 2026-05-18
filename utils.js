@@ -155,8 +155,6 @@ const SKIP_CALLEE_NAMES = new Set([
   'await',
   'async',
   'export',
-  'import',
-  'from',
   'const',
   'let',
   'var',
