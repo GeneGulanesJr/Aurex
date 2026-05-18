@@ -133,6 +133,15 @@ function info() {
  * Synchronous — must call init() first.
  */
 function _routeToExtractor(filePath, source, parser, langConfig) {
+  if (langConfig.extractor === 'regex') {
+    if (langConfig.languageName === 'html') {
+      return _extractHtmlSymbols(filePath, source);
+    }
+    if (langConfig.languageName === 'css' || langConfig.languageName === 'scss') {
+      return _extractCssSymbols(filePath, source);
+    }
+    return [];
+  }
   if (langConfig.languageName === 'sql') {
     return _extractSqlSymbols(filePath, source, parser);
   }
