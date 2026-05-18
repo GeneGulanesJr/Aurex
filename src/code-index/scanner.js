@@ -65,13 +65,14 @@ function scanRepository(repoPath, options = {}) {
   const skipReport = { builtIn: {}, gitignore: {}, memorycodeignore: {}, unsupportedExt: 0 };
   const ignoreFiles = options.onProgress || null;
   const reportScanProgress = options.onScanProgress || null;
-  const scanStats = { dirsVisited: 0, entriesSeen: 0, codeFiles: 0 };
+  const scanStats = { dirsVisited: 0, entriesSeen: 0, codeFiles: 0, currentPath: '.', currentKind: 'directory' };
 
-  function maybeReportScanProgress() {
+  function maybeReportScanProgress(force = false) {
     if (!reportScanProgress) {
       return;
     }
     if (
+      force ||
       scanStats.entriesSeen <= 10 ||
       scanStats.entriesSeen % 500 === 0 ||
       (scanStats.codeFiles > 0 && scanStats.codeFiles % 100 === 0)
@@ -82,6 +83,11 @@ function scanRepository(repoPath, options = {}) {
 
   function walk(dir) {
     scanStats.dirsVisited++;
+    scanStats.currentPath = path.relative(repoPath, dir) || '.';
+    scanStats.currentKind = 'directory';
+    if (scanStats.dirsVisited <= 5 || scanStats.dirsVisited % 50 === 0) {
+      maybeReportScanProgress(true);
+    }
     let entries;
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -93,6 +99,8 @@ function scanRepository(repoPath, options = {}) {
       scanStats.entriesSeen++;
       const fullPath = path.join(dir, entry.name);
       const relativePath = path.relative(repoPath, fullPath);
+      scanStats.currentPath = relativePath;
+      scanStats.currentKind = entry.isDirectory() ? 'directory' : 'file';
       if (entry.isDirectory()) {
         if (shouldSkipDir(entry.name, extraIgnoreDirs)) {
           skipReport.builtIn[entry.name] = (skipReport.builtIn[entry.name] || 0) + 1;
