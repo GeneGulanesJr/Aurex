@@ -43,7 +43,20 @@ const IGNORE_DIRS_DOCS = new Set([...IGNORE_DIRS_COMMON, '.svn', '.hg', '__pycac
 
 /* ── file extension sets ────────────────────────────────────── */
 
-const CODE_EXTENSIONS = new Set(['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts', '.tsx', '.go', '.rs', '.py', '.pyw']);
+const CODE_EXTENSIONS = new Set([
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+  '.ts',
+  '.mts',
+  '.cts',
+  '.tsx',
+  '.go',
+  '.rs',
+  '.py',
+  '.pyw',
+]);
 
 const MD_EXTENSIONS = new Set(['.md', '.mdx']);
 

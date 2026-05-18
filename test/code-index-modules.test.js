@@ -11,6 +11,7 @@ const { createCodeIndexRepository } = require('../src/code-index/repos');
 describe('code-index parser registry', () => {
   it('maps supported file extensions to parser languages', () => {
     expect(getLanguageForFile('/repo/app.js')).toBe('javascript');
+    expect(getLanguageForFile('/repo/app.jsx')).toBe('javascript');
     expect(getLanguageForFile('/repo/app.tsx')).toBe('typescript');
     expect(getLanguageForFile('/repo/main.py')).toBe('python');
     expect(getLanguageForFile('/repo/main.go')).toBe('go');
@@ -224,13 +225,14 @@ describe('code-index scanner', () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lapis-scan-'));
     fs.writeFileSync(path.join(tmp, 'README.md'), '# docs');
     fs.writeFileSync(path.join(tmp, 'app.js'), 'function app() { return 1; }');
+    fs.writeFileSync(path.join(tmp, 'Component.jsx'), 'export function Component() { return <div />; }');
     const progress = [];
 
     const result = scanRepository(tmp, { onScanProgress: (stats) => progress.push(stats) });
 
-    expect(result.files).toEqual([path.join(tmp, 'app.js')]);
+    expect(result.files.sort()).toEqual([path.join(tmp, 'Component.jsx'), path.join(tmp, 'app.js')].sort());
     expect(result.skipReport.unsupportedExt).toBe(1);
-    expect(progress[progress.length - 1]).toMatchObject({ done: true, codeFiles: 1 });
+    expect(progress[progress.length - 1]).toMatchObject({ done: true, codeFiles: 2 });
     expect(progress.some((p) => p.currentPath === 'app.js' && p.currentKind === 'file')).toBe(true);
   });
 });
