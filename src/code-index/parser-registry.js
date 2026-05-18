@@ -42,8 +42,14 @@ function createParserRegistry(parser = codeParser) {
     parseFile(filePath) {
       return parser.parseFile(filePath);
     },
+    parseContent(filePath, content) {
+      return parser.parseContent(filePath, content);
+    },
     extractCallees(filePath) {
       return parser.extractCallees(filePath);
+    },
+    extractCalleesFromContent(filePath, content) {
+      return parser.extractCalleesFromContent(filePath, content);
     },
   });
 }

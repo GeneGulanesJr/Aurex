@@ -553,7 +553,10 @@ function buildCallGraph(db, repoId) {
 
     let astCallees = [];
     try {
-      const allCallees = codeParser.extractCallees(sym.file_path);
+      const extractFn = codeParser.extractCalleesFromContent || codeParser.extractCallees;
+      const allCallees = sym.file_content
+        ? extractFn(sym.file_path, sym.file_content)
+        : codeParser.extractCallees(sym.file_path);
       astCallees = allCallees.filter((c) => c.line >= sym.start_line && c.line <= sym.end_line);
     } catch (_) {
       astCallees = [];

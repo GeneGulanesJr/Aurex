@@ -120,35 +120,24 @@ function rebuildDerivedIndexes(db, repoId, args, totalFiles, fileCount, symbolCo
   return { importEdges, callEdges, complexityCount };
 }
 
-async function indexRepository(deps, repoPath, repoName) {
-  const { db } = deps;
-  const args = deps.args || {};
-  const repository = deps.repository || createCodeIndexRepository(require('../../db'));
-  const registry = deps.parserRegistry || createParserRegistry();
-
-  if (!(await registry.ensureReady())) {
-    return {
-      error: `WASM tree-sitter parser not available. Run: cd ${path.resolve(__dirname, '..', '..')} && npm install web-tree-sitter`,
-    };
-  }
-
+async function scanPhase(repoPath, options) {
   const absPath = path.resolve(repoPath);
   if (!fs.existsSync(absPath)) {
     return { error: `Path not found: ${absPath}` };
   }
+  const files = scanRepository(absPath, options);
+  return { files, absPath };
+}
 
-  emitProgress(args, 'init', { message: 'Initializing parser and walking files...' });
-  const files = scanRepository(absPath);
-  emitProgress(args, 'discovery', { message: `Found ${files.length} code files to index`, files_total: files.length });
-
-  const repoId = repository.upsertRepo({ name: repoName, path: absPath });
-  repository.clearRepoIndex(repoId);
+async function parsePhase(files, deps, repoId, args) {
+  const registry = deps.parserRegistry || createParserRegistry();
+  const repository = deps.repository || createCodeIndexRepository(require('../../db'));
+  const batchSize = RESULT_LIMITS.INDEX_BATCH_SIZE;
+  const totalFiles = files.length;
 
   let symbolCount = 0;
   let fileCount = 0;
   const skipped = [];
-  const totalFiles = files.length;
-  const batchSize = RESULT_LIMITS.INDEX_BATCH_SIZE;
 
   for (let i = 0; i < files.length; i += batchSize) {
     const batch = files.slice(i, i + batchSize);
@@ -172,46 +161,111 @@ async function indexRepository(deps, repoPath, repoName) {
       }),
     );
 
+    const batchSymbols = [];
     for (const record of reads) {
       if (!record) {
         continue;
       }
       try {
         const fileId = repository.insertFile(fileRecordToParams(repoId, record));
-        const symbols = extractSymbolsFromFile(record.filePath, registry);
-        symbolCount += insertSymbols(repository, repoId, fileId, record.filePath, symbols);
+        const symbols = extractSymbolsFromFile(record.filePath, registry, record.content);
+
+        if (symbols.length === 0 && record.content.trim().length > 0) {
+          const hasExports = /\bexport\s/.test(record.content);
+          const hasFunction = /\bfunction\b|\b=>\s|\bdef\s|\bfunc\s|\bfn\s/.test(record.content);
+          if (hasExports || hasFunction) {
+            skipped.push({ file: record.filePath, error: 'Parse returned 0 symbols despite containing exports/functions', zeroSymbolFile: true });
+          }
+        }
+
+        for (const sym of symbols) {
+          batchSymbols.push({
+            repoId,
+            fileId,
+            filePath: record.filePath,
+            name: sym.name,
+            kind: sym.kind,
+            signature: sym.signature,
+            qualifiedName: sym.qualified_name,
+            startLine: sym.start_line,
+            endLine: sym.end_line,
+            startByte: sym.start_byte,
+            endByte: sym.end_byte,
+            docstring: sym.docstring || '',
+            bodyPreview: sym.body_preview || '',
+            language: sym.language,
+            parentName: sym.parent_name || '',
+          });
+        }
+        symbolCount += symbols.length;
         fileCount++;
       } catch (e) {
         skipped.push({ file: record.filePath, error: e.message });
       }
     }
+
+    if (batchSymbols.length > 0) {
+      repository.insertSymbolBatch(batchSymbols);
+    }
   }
+
+  return { fileCount, symbolCount, skipped };
+}
+
+async function derivedPhase(db, repoId, args, totalFiles, fileCount, symbolCount) {
+  return rebuildDerivedIndexes(db, repoId, args, totalFiles, fileCount, symbolCount);
+}
+
+async function indexRepository(deps, repoPath, repoName) {
+  const { db } = deps;
+  const args = deps.args || {};
+  const repository = deps.repository || createCodeIndexRepository(require('../../db'));
+  const registry = deps.parserRegistry || createParserRegistry();
+
+  if (!(await registry.ensureReady())) {
+    return {
+      error: `WASM tree-sitter parser not available. Run: cd ${path.resolve(__dirname, '..', '..')} && npm install web-tree-sitter`,
+    };
+  }
+
+  emitProgress(args, 'init', { message: 'Initializing parser and walking files...' });
+  const scanResult = await scanPhase(repoPath);
+  if (scanResult.error) {
+    return { error: scanResult.error };
+  }
+  const { files, absPath } = scanResult;
+  emitProgress(args, 'discovery', { message: `Found ${files.length} code files to index`, files_total: files.length });
+
+  const repoId = repository.upsertRepo({ name: repoName, path: absPath });
+  repository.clearRepoIndex(repoId);
+
+  const parseResult = await parsePhase(files, { parserRegistry: registry, repository }, repoId, args);
 
   const headCommit = getHeadCommit(absPath);
   repository.updateRepoStats({ repoId, headCommit });
-  const derived = rebuildDerivedIndexes(db, repoId, args, totalFiles, fileCount, symbolCount);
+  const derived = await derivedPhase(db, repoId, args, files.length, parseResult.fileCount, parseResult.symbolCount);
 
   const result = {
     success: true,
     repo: repoName,
     path: absPath,
-    files_indexed: fileCount,
-    symbols_extracted: symbolCount,
-    files_skipped: skipped.length,
+    files_indexed: parseResult.fileCount,
+    symbols_extracted: parseResult.symbolCount,
+    files_skipped: parseResult.skipped.length,
     import_edges: derived.importEdges,
     call_edges: derived.callEdges,
     complexity_symbols: derived.complexityCount,
     name: repoName,
-    file_count: fileCount,
-    symbol_count: symbolCount,
-    skipped,
+    file_count: parseResult.fileCount,
+    symbol_count: parseResult.symbolCount,
+    skipped: parseResult.skipped,
   };
 
   emitProgress(
     args,
     'done',
-    { message: `Indexed ${fileCount} files, ${symbolCount} symbols` },
-    { files_total: totalFiles, files_done: fileCount, symbols: symbolCount },
+    { message: `Indexed ${parseResult.fileCount} files, ${parseResult.symbolCount} symbols` },
+    { files_total: files.length, files_done: parseResult.fileCount, symbols: parseResult.symbolCount },
   );
   return result;
 }
@@ -277,7 +331,7 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
         fileId = repository.insertFile(fileRecordToParams(existing.id, record));
       }
 
-      const symbols = extractSymbolsFromFile(filePath, registry);
+      const symbols = extractSymbolsFromFile(filePath, registry, content);
       symbolCount += insertSymbols(repository, existing.id, fileId, filePath, symbols);
       reindexed++;
     } catch (_) {}
@@ -322,6 +376,9 @@ module.exports = {
   getHeadCommit,
   indexRepository,
   insertSymbols,
+  parsePhase,
   rebuildDerivedIndexes,
   reindexRepository,
+  scanPhase,
+  derivedPhase,
 };

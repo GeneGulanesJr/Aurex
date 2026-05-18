@@ -81,6 +81,7 @@
   },
   "dependencies": {
     "@libsql/client": "^0.17.3",
+    "ignore": "^7.0.5",
     "web-tree-sitter": "^0.26.8"
   },
   "devDependencies": {

@@ -3,7 +3,18 @@ function first(rows) {
 }
 
 function createCodeIndexRepository(deps) {
-  const { sqlJson, sqlRun } = deps;
+  const { sqlJson, sqlRun, withTransaction: tx } = deps;
+
+  function _withTransaction(fn) {
+    if (tx) {
+      return tx(fn);
+    }
+    const dbModule = require('../../db');
+    if (dbModule.withTransaction) {
+      return dbModule.withTransaction(fn);
+    }
+    return fn();
+  }
 
   return Object.freeze({
     findRepoByName(name) {
@@ -59,6 +70,17 @@ function createCodeIndexRepository(deps) {
       );
       return sqlJson('SELECT id FROM code_files WHERE repo_id = ? AND path = ?', [params.repoId, params.path])[0].id;
     },
+    insertFileBatch(records) {
+      const ids = [];
+      const self = this;
+      _withTransaction(() => {
+        for (const params of records) {
+          const id = self.insertFile(params);
+          ids.push(id);
+        }
+      });
+      return ids;
+    },
     updateFile(fileId, params) {
       sqlRun(
         'UPDATE code_files SET content = ?, content_hash = ?, mtime = ?, size_bytes = ?, line_count = ?, language = ? WHERE id = ?',
@@ -95,6 +117,14 @@ function createCodeIndexRepository(deps) {
           params.parentName || '',
         ],
       );
+    },
+    insertSymbolBatch(symbols) {
+      const self = this;
+      _withTransaction(() => {
+        for (const sym of symbols) {
+          self.insertSymbol(sym);
+        }
+      });
     },
     updateRepoStats({ repoId, headCommit }) {
       sqlRun(
