@@ -42,6 +42,12 @@ const LANGUAGE_MAP = {
   '.pyw': { grammarFile: 'tree-sitter-python.wasm', languageName: 'python', parserKey: 'python' },
   '.go': { grammarFile: 'tree-sitter-go.wasm', languageName: 'go', parserKey: 'go' },
   '.rs': { grammarFile: 'tree-sitter-rust.wasm', languageName: 'rust', parserKey: 'rust' },
+  '.sh': { grammarFile: null, languageName: 'bash', extractor: 'regex' },
+  '.bash': { grammarFile: null, languageName: 'bash', extractor: 'regex' },
+  '.json': { grammarFile: null, languageName: 'json', extractor: 'regex' },
+  '.jsonc': { grammarFile: null, languageName: 'json', extractor: 'regex' },
+  '.yaml': { grammarFile: null, languageName: 'yaml', extractor: 'regex' },
+  '.yml': { grammarFile: null, languageName: 'yaml', extractor: 'regex' },
   '.html': { grammarFile: null, languageName: 'html', extractor: 'regex' },
   '.css': { grammarFile: null, languageName: 'css', extractor: 'regex' },
   '.scss': { grammarFile: null, languageName: 'scss', extractor: 'regex' },
@@ -140,6 +146,15 @@ function _routeToExtractor(filePath, source, parser, langConfig) {
     }
     if (langConfig.languageName === 'css' || langConfig.languageName === 'scss') {
       return _extractCssSymbols(filePath, source);
+    }
+    if (langConfig.languageName === 'bash') {
+      return _extractBashSymbols(filePath, source);
+    }
+    if (langConfig.languageName === 'json') {
+      return _extractJsonSymbols(filePath, source);
+    }
+    if (langConfig.languageName === 'yaml') {
+      return _extractYamlSymbols(filePath, source);
     }
     return [];
   }
@@ -1365,6 +1380,70 @@ function _extractCssSymbols(filePath, source) {
     }
   }
 
+  return symbols;
+}
+
+// ── Config / shell regex-based extractors ──────────────────
+
+function _makeRegexSymbol(filePath, source, language) {
+  const symbols = [];
+  const seen = new Set();
+  function add(name, kind, index, signature) {
+    const startLine = source.substring(0, index).split('\n').length;
+    const key = `${name}:${kind}:${startLine}`;
+    if (seen.has(key)) {return;}
+    seen.add(key);
+    symbols.push({
+      name,
+      kind,
+      language,
+      file: filePath,
+      qualified_name: name,
+      signature: signature || '',
+      start_line: startLine,
+      end_line: startLine,
+      start_byte: index,
+      end_byte: index + String(signature || name).length,
+      docstring: '',
+      body_preview: '',
+      parent_name: '',
+    });
+  }
+  return { symbols, add };
+}
+
+function _extractBashSymbols(filePath, source) {
+  const { symbols, add } = _makeRegexSymbol(filePath, source, 'bash');
+  const functionRe = /^\s*(?:function\s+)?([A-Za-z_][\w-]*)\s*(?:\(\))?\s*\{/gm;
+  const varRe = /^\s*(?:export\s+)?([A-Z_][A-Z0-9_]*)=/gm;
+  for (const match of source.matchAll(functionRe)) {
+    add(match[1], 'function', match.index, match[0].trim());
+  }
+  for (const match of source.matchAll(varRe)) {
+    add(match[1], 'env_var', match.index, match[0].trim());
+  }
+  return symbols;
+}
+
+function _extractJsonSymbols(filePath, source) {
+  const { symbols, add } = _makeRegexSymbol(filePath, source, 'json');
+  const keyRe = /"([^"\n]+)"\s*:/g;
+  for (const match of source.matchAll(keyRe)) {
+    const key = match[1];
+    if (key.length <= 80) {
+      add(key, 'config_key', match.index, match[0].trim());
+    }
+  }
+  return symbols;
+}
+
+function _extractYamlSymbols(filePath, source) {
+  const { symbols, add } = _makeRegexSymbol(filePath, source, 'yaml');
+  const keyRe = /^(\s*)([A-Za-z0-9_.-]+)\s*:/gm;
+  for (const match of source.matchAll(keyRe)) {
+    const depth = Math.floor((match[1] || '').length / 2);
+    add(match[2], depth === 0 ? 'config_section' : 'config_key', match.index, match[0].trim());
+  }
   return symbols;
 }
 

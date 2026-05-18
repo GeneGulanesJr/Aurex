@@ -100,6 +100,11 @@ function createCodeIndexRepository(deps) {
           selectSql: 'SELECT id FROM churn_metrics WHERE repo_id = ? LIMIT ?',
           selectParams: [repoId],
         });
+        totals.diagnostics = deleteByIdBatch({
+          label: { table: 'code_file_diagnostics', name: 'diagnostic rows' },
+          selectSql: 'SELECT id FROM code_file_diagnostics WHERE repo_id = ? LIMIT ?',
+          selectParams: [repoId],
+        });
         totals.symbols = deleteByIdBatch({
           label: { table: 'code_symbols', name: 'symbols' },
           selectSql: 'SELECT id FROM code_symbols WHERE repo_id = ? LIMIT ?',
@@ -163,11 +168,59 @@ function createCodeIndexRepository(deps) {
       );
     },
     deleteFile(fileId) {
+      const rows = sqlJson('SELECT repo_id, path FROM code_files WHERE id = ? LIMIT 1', [fileId]);
       sqlRun('DELETE FROM code_symbols WHERE file_id = ?', [fileId]);
+      if (rows.length) {
+        sqlRun('DELETE FROM code_file_diagnostics WHERE repo_id = ? AND file_path = ?', [rows[0].repo_id, rows[0].path]);
+      }
       sqlRun('DELETE FROM code_files WHERE id = ?', [fileId]);
     },
     clearFileSymbols(fileId) {
       sqlRun('DELETE FROM code_symbols WHERE file_id = ?', [fileId]);
+    },
+    upsertFileDiagnostic(params) {
+      sqlRun(
+        `INSERT INTO code_file_diagnostics
+          (repo_id, file_path, status, message, symbol_count, content_hash, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+         ON CONFLICT(repo_id, file_path) DO UPDATE SET
+          status = excluded.status,
+          message = excluded.message,
+          symbol_count = excluded.symbol_count,
+          content_hash = excluded.content_hash,
+          updated_at = datetime('now')`,
+        [
+          params.repoId,
+          params.filePath,
+          params.status,
+          params.message || '',
+          params.symbolCount || 0,
+          params.contentHash || null,
+        ],
+      );
+    },
+    deleteFileDiagnostic(repoId, filePath) {
+      sqlRun('DELETE FROM code_file_diagnostics WHERE repo_id = ? AND file_path = ?', [repoId, filePath]);
+    },
+    listDiagnostics(repoId, limit = 50) {
+      return sqlJson(
+        `SELECT file_path, status, message, symbol_count, content_hash, updated_at
+         FROM code_file_diagnostics
+         WHERE repo_id = ?
+         ORDER BY CASE status WHEN 'error' THEN 0 WHEN 'zero_symbols' THEN 1 ELSE 2 END, updated_at DESC
+         LIMIT ?`,
+        [repoId, limit],
+      );
+    },
+    summarizeDiagnostics(repoId) {
+      return sqlJson(
+        `SELECT status, COUNT(*) AS count
+         FROM code_file_diagnostics
+         WHERE repo_id = ?
+         GROUP BY status
+         ORDER BY status`,
+        [repoId],
+      );
     },
     insertSymbol(params) {
       sqlRun(

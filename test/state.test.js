@@ -71,8 +71,10 @@ describe('state utilities', () => {
       expect(isCodeFile('README.md')).toBe(false);
     });
 
-    it('should not recognize JSON files', () => {
-      expect(isCodeFile('package.json')).toBe(false);
+    it('should recognize config files', () => {
+      expect(isCodeFile('package.json')).toBe(true);
+      expect(isCodeFile('workflow.yaml')).toBe(true);
+      expect(isCodeFile('script.sh')).toBe(true);
     });
 
     it('should handle uppercase extensions', () => {

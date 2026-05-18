@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 const { RESULT_LIMITS, WORKER_POOL } = require('../../constants');
 const { hashContent } = require('../../utils');
 const { createCodeIndexRepository } = require('./repos');
@@ -42,14 +43,54 @@ function shouldEmitFileProgress(done, total) {
 
 function getHeadCommit(repoPath) {
   try {
-    return require('child_process')
-      .execSync('git rev-parse HEAD', {
-        cwd: repoPath,
-        encoding: 'utf-8',
-        timeout: 5000,
-        stdio: ['ignore', 'pipe', 'ignore'],
-      })
-      .trim();
+    return execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: repoPath,
+      encoding: 'utf-8',
+      timeout: 5000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+function getGitDelta(repoPath, baseCommit) {
+  if (!baseCommit) {
+    return null;
+  }
+  const currentHead = getHeadCommit(repoPath);
+  if (!currentHead || currentHead === baseCommit) {
+    return null;
+  }
+  try {
+    const output = execFileSync('git', ['diff', '--name-status', `${baseCommit}..HEAD`], {
+      cwd: repoPath,
+      encoding: 'utf-8',
+      timeout: 15000,
+      maxBuffer: 10 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const changed = new Set();
+    const deleted = new Set();
+    const renamed = [];
+    for (const line of output.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        continue;
+      }
+      const parts = trimmed.split('\t');
+      const status = parts[0];
+      if (status.startsWith('D') && parts[1]) {
+        deleted.add(path.resolve(repoPath, parts[1]));
+      } else if (status.startsWith('R') && parts[1] && parts[2]) {
+        deleted.add(path.resolve(repoPath, parts[1]));
+        changed.add(path.resolve(repoPath, parts[2]));
+        renamed.push({ from: parts[1], to: parts[2], status });
+      } else if (parts[1]) {
+        changed.add(path.resolve(repoPath, parts[1]));
+      }
+    }
+    return { currentHead, changed: [...changed], deleted: [...deleted], renamed };
   } catch {
     return null;
   }
@@ -72,6 +113,20 @@ function fileRecordToParams(repoId, record) {
     sizeBytes: record.stats.size,
     lineCount: lines.length,
   };
+}
+
+function recordDiagnostic(repository, repoId, record, status, message, symbolCount = 0) {
+  if (typeof repository.upsertFileDiagnostic !== 'function') {
+    return;
+  }
+  repository.upsertFileDiagnostic({
+    repoId,
+    filePath: record.filePath,
+    status,
+    message,
+    symbolCount,
+    contentHash: record.content ? hashContent(record.content) : null,
+  });
 }
 
 function insertSymbols(repository, repoId, fileId, filePath, symbols) {
@@ -266,6 +321,7 @@ async function parsePhase(files, deps, repoId, args) {
             return await readFileRecord(fp);
           } catch (e) {
             skipped.push({ file: fp, error: e.message });
+            recordDiagnostic(repository, repoId, { filePath: fp, content: '' }, 'error', e.message, 0);
             return null;
           }
         }),
@@ -292,6 +348,14 @@ async function parsePhase(files, deps, repoId, args) {
           for (const record of validReads) {
             const symbols = symbolMap.get(record.filePath) || [];
             validateSymbols(record, symbols);
+            recordDiagnostic(
+              repository,
+              repoId,
+              record,
+              symbols.length === 0 && record.content.trim().length > 0 ? 'zero_symbols' : 'ok',
+              symbols.length === 0 && record.content.trim().length > 0 ? 'No symbols extracted from non-empty file' : '',
+              symbols.length,
+            );
             parsedRecords.push({ record, symbols });
           }
         } catch (e) {
@@ -308,6 +372,14 @@ async function parsePhase(files, deps, repoId, args) {
         for (const record of validReads) {
           const symbols = extractSymbolsFromFile(record.filePath, registry, record.content);
           validateSymbols(record, symbols);
+          recordDiagnostic(
+            repository,
+            repoId,
+            record,
+            symbols.length === 0 && record.content.trim().length > 0 ? 'zero_symbols' : 'ok',
+            symbols.length === 0 && record.content.trim().length > 0 ? 'No symbols extracted from non-empty file' : '',
+            symbols.length,
+          );
           parsedRecords.push({ record, symbols });
           parsedInBatch++;
           const absoluteDone = i + parsedInBatch;
@@ -377,6 +449,7 @@ async function parsePhase(files, deps, repoId, args) {
             }
           } catch (e) {
             skipped.push({ file: record.filePath, error: e.message });
+            recordDiagnostic(repository, repoId, record, 'error', e.message, 0);
           }
         }
 
@@ -541,14 +614,27 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
   });
   emitProgress(args, 'discovery', { step: 'discover-files', message: 'Step 2/5: discovering code files to check...' });
 
-  const scanResult = fs.existsSync(existing.path)
-    ? await scanPhase(existing.path, {}, args)
-    : { files: [], skipReport: { builtIn: {}, gitignore: {}, memorycodeignore: {}, unsupportedExt: 0 } };
+  const gitDelta = fs.existsSync(existing.path) ? getGitDelta(existing.path, existing.head_commit) : null;
+  const gitChangedFiles = gitDelta
+    ? gitDelta.changed.filter((filePath) => fs.existsSync(filePath) && registry.canParseFile(filePath))
+    : null;
+  const gitDeletedFiles = gitDelta ? gitDelta.deleted : [];
+  const scanResult = gitDelta
+    ? {
+        files: gitChangedFiles,
+        skipReport: { builtIn: {}, gitignore: {}, memorycodeignore: {}, unsupportedExt: 0 },
+        source: 'git-diff',
+      }
+    : fs.existsSync(existing.path)
+      ? await scanPhase(existing.path, {}, args)
+      : { files: [], skipReport: { builtIn: {}, gitignore: {}, memorycodeignore: {}, unsupportedExt: 0 } };
   const files = scanResult.files;
   const skipReport = scanResult.skipReport;
   const skipSummary = formatSkipReport(skipReport);
   emitProgress(args, 'discovery', {
-    message: `Found ${files.length} code files to check`,
+    message: gitDelta
+      ? `Git diff from ${existing.head_commit.slice(0, 8)} to ${gitDelta.currentHead.slice(0, 8)} found ${files.length} changed code files and ${gitDeletedFiles.length} deleted files`
+      : `Found ${files.length} code files to check`,
     files_total: files.length,
     detail: skipSummary,
   });
@@ -603,6 +689,14 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
             message: `Step 3/5: extracting symbols from changed file ${progressPath(filePath, existing.path)}`,
           });
           const symbols = extractSymbolsFromFile(filePath, registry, record.content);
+          recordDiagnostic(
+            repository,
+            existing.id,
+            record,
+            symbols.length === 0 && record.content.trim().length > 0 ? 'zero_symbols' : 'ok',
+            symbols.length === 0 && record.content.trim().length > 0 ? 'No symbols extracted from non-empty file' : '',
+            symbols.length,
+          );
           emitProgress(args, 'parsing', {
             step: 'store-index',
             current_file: progressPath(filePath, existing.path),
@@ -619,6 +713,7 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
       }
     } catch (e) {
       skipped.push({ file: filePath, error: e.message });
+      recordDiagnostic(repository, existing.id, { filePath, content: '' }, 'error', e.message, 0);
     }
 
     const done = i + 1;
@@ -637,7 +732,9 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
   }
 
   const currentFilesSet = new Set(files);
-  const staleFiles = [...existingFiles.entries()].filter(([filePath]) => !currentFilesSet.has(filePath));
+  const staleFiles = gitDelta
+    ? [...existingFiles.entries()].filter(([filePath]) => gitDeletedFiles.includes(filePath))
+    : [...existingFiles.entries()].filter(([filePath]) => !currentFilesSet.has(filePath));
   for (const [, fileInfo] of staleFiles) {
     repository.deleteFile(fileInfo.id);
   }
@@ -651,7 +748,7 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
     step: 'derived-indexes',
     message: 'Step 5/5: rebuilding derived indexes (imports, calls, complexity)...',
   });
-  repository.updateRepoStats({ repoId: existing.id, headCommit: getHeadCommit(existing.path) });
+  repository.updateRepoStats({ repoId: existing.id, headCommit: gitDelta?.currentHead || getHeadCommit(existing.path) });
   const derived = rebuildDerivedIndexes(db, existing.id, args, totalFiles, totalFiles, symbolCount);
 
   const totalMs = Date.now() - t0;
@@ -676,6 +773,11 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
     files_removed: staleFiles.length,
     files_skipped: skipped.length,
     symbols_extracted: symbolCount,
+    strategy: gitDelta ? 'git-diff' : 'scan-hash',
+    derived_scope: 'repo',
+    git_base: gitDelta ? existing.head_commit : null,
+    git_head: gitDelta ? gitDelta.currentHead : null,
+    git_renames: gitDelta ? gitDelta.renamed : [],
     import_edges: derived.importEdges,
     call_edges: derived.callEdges,
     complexity_symbols: derived.complexityCount,
@@ -685,10 +787,85 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
   };
 }
 
+async function getCodeRepoHealth(deps, repo) {
+  const repository = deps.repository || createCodeIndexRepository(require('../../db'));
+  const registry = deps.parserRegistry || createParserRegistry();
+  const existing = repository.findRepoByName(repo);
+  if (!existing) {
+    return { error: `Repo not found: ${repo}` };
+  }
+
+  const pathExists = fs.existsSync(existing.path);
+  const currentHead = pathExists ? getHeadCommit(existing.path) : null;
+  const stale = Boolean(existing.head_commit && currentHead && existing.head_commit !== currentHead);
+  const diagnostics = repository.summarizeDiagnostics(existing.id);
+  const diagnosticCounts = Object.fromEntries(diagnostics.map((row) => [row.status, row.count]));
+  const recentDiagnostics = repository.listDiagnostics(existing.id, RESULT_LIMITS.DEFAULT_SEARCH_LIMIT);
+  let scan = null;
+
+  if (pathExists) {
+    const scanResult = scanRepository(existing.path, {});
+    const parseableFiles = scanResult.files.filter((filePath) => registry.canParseFile(filePath));
+    scan = {
+      code_files_found: scanResult.files.length,
+      parseable_files_found: parseableFiles.length,
+      unsupported_files_skipped: scanResult.skipReport.unsupportedExt,
+      skip_report: scanResult.skipReport,
+      indexed_file_delta: parseableFiles.length - existing.file_count,
+    };
+  }
+
+  const parseQuality =
+    existing.file_count > 0
+      ? Math.max(0, 1 - ((diagnosticCounts.error || 0) + (diagnosticCounts.zero_symbols || 0)) / existing.file_count)
+      : 1;
+  const healthScore = Math.round((((pathExists ? 1 : 0) + (stale ? 0 : 1) + parseQuality) / 3) * 100) / 100;
+
+  return {
+    ok: true,
+    repo,
+    path: existing.path,
+    path_exists: pathExists,
+    indexed_files: existing.file_count,
+    indexed_symbols: existing.symbol_count,
+    indexed_at: existing.indexed_at,
+    updated_at: existing.updated_at,
+    indexed_head: existing.head_commit,
+    current_head: currentHead,
+    stale,
+    diagnostics: diagnosticCounts,
+    recent_diagnostics: recentDiagnostics,
+    scan,
+    health_score: healthScore,
+    recommendations: buildHealthRecommendations({ pathExists, stale, diagnosticCounts, scan }),
+  };
+}
+
+function buildHealthRecommendations({ pathExists, stale, diagnosticCounts, scan }) {
+  const recommendations = [];
+  if (!pathExists) {
+    recommendations.push('Indexed path no longer exists; remove or reindex this repo.');
+  }
+  if (stale) {
+    recommendations.push('Repo HEAD changed since indexing; run reindex-repo.');
+  }
+  if ((diagnosticCounts.error || 0) > 0) {
+    recommendations.push('Some files failed to read or index; inspect recent_diagnostics.');
+  }
+  if ((diagnosticCounts.zero_symbols || 0) > 0) {
+    recommendations.push('Some non-empty files produced zero symbols; parser coverage may need improvement.');
+  }
+  if (scan && scan.indexed_file_delta !== 0) {
+    recommendations.push('Discovered file count differs from indexed count; run reindex-repo.');
+  }
+  return recommendations;
+}
+
 module.exports = {
   emitProgress,
   fileRecordToParams,
   getHeadCommit,
+  getCodeRepoHealth,
   indexRepository,
   insertSymbols,
   parsePhase,

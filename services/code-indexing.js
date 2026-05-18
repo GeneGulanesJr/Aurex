@@ -1,5 +1,5 @@
 const { createParserRegistry } = require('../src/code-index/parser-registry');
-const { indexRepository, reindexRepository } = require('../src/code-index/incremental-indexer');
+const { getCodeRepoHealth, indexRepository, reindexRepository } = require('../src/code-index/incremental-indexer');
 
 function parseCodeFile(filePath) {
   return createParserRegistry().parseFile(filePath);
@@ -17,4 +17,8 @@ async function reindexRepoInternal(deps, repo, mode) {
   return reindexRepository(deps, repo, mode);
 }
 
-module.exports = { parseCodeFile, ensureParserAvailable, indexRepoInternal, reindexRepoInternal };
+async function codeRepoHealthInternal(deps, repo) {
+  return getCodeRepoHealth(deps, repo);
+}
+
+module.exports = { parseCodeFile, ensureParserAvailable, indexRepoInternal, reindexRepoInternal, codeRepoHealthInternal };

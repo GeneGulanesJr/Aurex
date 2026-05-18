@@ -20,12 +20,12 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
       'Analyze code in indexed repos — import graphs, call hierarchies, blast radius, dead code, complexity, hotspots, cycles, ' +
       'importance, coupling, extraction candidates, class hierarchy, file outlines, churn, and signal chains. ' +
       'Requires the repo to be indexed first (use mode `index-repo`). ' +
-      'Modes: callers, callees, blast-radius, dead-code, complexity, deps, outline, churn, hotspots, cycles, importance, coupling, extractable, hierarchy, signal-chains, layer-violations, index-repo, reindex-repo.',
+      'Modes: callers, callees, blast-radius, dead-code, complexity, deps, outline, churn, hotspots, cycles, importance, coupling, extractable, hierarchy, signal-chains, layer-violations, health, index-repo, reindex-repo.',
     parameters: Type.Object({
       mode: Type.Optional(
         Type.String({
           description:
-            'Analysis mode: callers|callees|blast-radius|dead-code|complexity|deps|outline|churn|hotspots|cycles|importance|coupling|extractable|hierarchy|signal-chains|layer-violations|index-repo|reindex-repo',
+            'Analysis mode: callers|callees|blast-radius|dead-code|complexity|deps|outline|churn|hotspots|cycles|importance|coupling|extractable|hierarchy|signal-chains|layer-violations|health|index-repo|reindex-repo',
           enum: [
             'callers',
             'callees',
@@ -43,6 +43,7 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
             'hierarchy',
             'signal-chains',
             'layer-violations',
+            'health',
             'index-repo',
             'reindex-repo',
           ],
@@ -108,6 +109,7 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
           hierarchy: 'hierarchy',
           'signal-chains': 'signal-chains',
           'layer-violations': 'layer-violations',
+          health: 'health-code-repo',
           'index-repo': 'index-repo',
           'reindex-repo': 'reindex-repo',
         };
@@ -224,6 +226,17 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
           return toolTextResult(fmt || 'Indexing completed.', result ?? {});
         }
 
+        if (mode === 'health') {
+          const result = await deps.mem(cmd, args);
+          if (!result) {
+            return toolTextResult('Index health check failed.', {}, true);
+          }
+          if (result.error) {
+            return toolTextResult(`Error: ${result.error}`, result ?? {}, true);
+          }
+          return toolTextResult(formatHealthResult(result), result ?? {});
+        }
+
         const codeRepos = await deps.getKnownRepos();
         const repoMatch = codeRepos.find((r) => r.name.toLowerCase() === params.repo?.toLowerCase());
         if (!repoMatch) {
@@ -291,8 +304,28 @@ function codeHelpText(): string {
     '- memory-code callers --repo <repo> --symbol MyClass.method',
     '- memory-code reindex-repo --path . --name <repo>',
     '',
-    'Modes: callers, callees, blast-radius, dead-code, complexity, deps, outline, churn, hotspots, cycles, importance, coupling, extractable, hierarchy, signal-chains, layer-violations, index-repo, reindex-repo.',
+    'Modes: callers, callees, blast-radius, dead-code, complexity, deps, outline, churn, hotspots, cycles, importance, coupling, extractable, hierarchy, signal-chains, layer-violations, health, index-repo, reindex-repo.',
   ].join('\n');
+}
+
+function formatHealthResult(result: any): string {
+  const diagnostics = result.diagnostics || {};
+  const lines = [
+    `# Index Health: ${result.repo}`,
+    '',
+    `Score: ${result.health_score}`,
+    `Indexed: ${result.indexed_files} files, ${result.indexed_symbols} symbols`,
+    `Fresh: ${result.stale ? 'no' : 'yes'}`,
+  ];
+  if (result.scan) {
+    const delta = result.scan.indexed_file_delta;
+    lines.push(`Discovered: ${result.scan.parseable_files_found} parseable files (${delta >= 0 ? '+' : ''}${delta} vs indexed)`);
+  }
+  lines.push(`Diagnostics: ok=${diagnostics.ok || 0}, zero_symbols=${diagnostics.zero_symbols || 0}, error=${diagnostics.error || 0}`);
+  if ((result.recommendations || []).length) {
+    lines.push('', 'Recommendations:', ...(result.recommendations || []).map((r: string) => `- ${r}`));
+  }
+  return lines.join('\n');
 }
 
 function validateCodeParams(mode: string, params: Record<string, any>): string | null {

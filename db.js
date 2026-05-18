@@ -242,6 +242,10 @@ const _CRITICAL_TABLES = [
     'CREATE TABLE IF NOT EXISTS code_files (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE, path TEXT NOT NULL, language TEXT NOT NULL, content TEXT NOT NULL, content_hash TEXT NOT NULL, mtime REAL, size_bytes INTEGER DEFAULT 0, line_count INTEGER DEFAULT 0, UNIQUE(repo_id, path))',
   ],
   [
+    'code_file_diagnostics',
+    "CREATE TABLE IF NOT EXISTS code_file_diagnostics (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE, file_path TEXT NOT NULL, status TEXT NOT NULL, message TEXT DEFAULT '', symbol_count INTEGER DEFAULT 0, content_hash TEXT, updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE(repo_id, file_path))",
+  ],
+  [
     'code_symbols',
     "CREATE TABLE IF NOT EXISTS code_symbols (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE, file_id INTEGER NOT NULL REFERENCES code_files(id) ON DELETE CASCADE, name TEXT NOT NULL, kind TEXT NOT NULL, signature TEXT, file_path TEXT NOT NULL, start_line INTEGER NOT NULL, end_line INTEGER NOT NULL, start_byte INTEGER NOT NULL, end_byte INTEGER NOT NULL, docstring TEXT DEFAULT '', body_preview TEXT DEFAULT '', language TEXT NOT NULL, parent_name TEXT DEFAULT '', qualified_name TEXT NOT NULL, indexed_at TEXT NOT NULL DEFAULT (datetime('now')))",
   ],
@@ -308,6 +312,10 @@ function _createTableIndexes(name, db) {
   const indexMap = {
     code_repos: [],
     code_files: ['CREATE INDEX IF NOT EXISTS idx_cf_repo ON code_files(repo_id)'],
+    code_file_diagnostics: [
+      'CREATE INDEX IF NOT EXISTS idx_cfd_repo ON code_file_diagnostics(repo_id)',
+      'CREATE INDEX IF NOT EXISTS idx_cfd_status ON code_file_diagnostics(repo_id, status)',
+    ],
     code_symbols: [
       'CREATE INDEX IF NOT EXISTS idx_cs_repo ON code_symbols(repo_id)',
       'CREATE INDEX IF NOT EXISTS idx_cs_name ON code_symbols(name)',
@@ -363,7 +371,7 @@ function runMigrations() {
     console.error('[db] Failed to read user_version:', e.message);
   }
 
-  if (version >= 7) {
+  if (version >= 8) {
     return { migrated: false, version };
   }
 
@@ -374,6 +382,7 @@ function runMigrations() {
     { to: 5, run: runMigrationV5 },
     { to: 6, run: runMigrationV6 },
     { to: 7, run: runMigrationV7 },
+    { to: 8, run: runMigrationV8 },
   ];
 
   const fromVersion = version;
@@ -594,6 +603,31 @@ function runMigrationV7() {
     });
   } catch (e) {
     errors.push(`V7: ${e.message}`);
+  }
+  return errors;
+}
+
+function runMigrationV8() {
+  const errors = [];
+  try {
+    withTransaction(() => {
+      sqlRaw(`CREATE TABLE IF NOT EXISTS code_file_diagnostics (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE,
+        file_path TEXT NOT NULL,
+        status TEXT NOT NULL,
+        message TEXT DEFAULT '',
+        symbol_count INTEGER DEFAULT 0,
+        content_hash TEXT,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(repo_id, file_path)
+      )`);
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_cfd_repo ON code_file_diagnostics(repo_id)');
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_cfd_status ON code_file_diagnostics(repo_id, status)');
+      sqlRaw('PRAGMA user_version = 8');
+    });
+  } catch (e) {
+    errors.push(`V8: ${e.message}`);
   }
   return errors;
 }

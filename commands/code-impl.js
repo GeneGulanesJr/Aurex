@@ -25,6 +25,15 @@ function reindexRepo(args) {
   );
 }
 
+function codeRepoHealth(args) {
+  const repo = args.repo;
+  if (!repo) {
+    const { jsonErrNoExit } = require('../db');
+    return jsonErrNoExit('Usage: health-code-repo --repo <repo-name>');
+  }
+  return codeIndexingService.codeRepoHealthInternal({ db: require('../db').getDb(), args }, repo);
+}
+
 function searchCode(args) {
   const query = args.query;
   if (!query) {
@@ -63,4 +72,4 @@ function removeCodeRepo(args) {
   return codeSearchService.removeCodeRepoInternal(repo);
 }
 
-module.exports = { indexRepo, reindexRepo, searchCode, getCodeSource, listCodeRepos, removeCodeRepo };
+module.exports = { indexRepo, reindexRepo, codeRepoHealth, searchCode, getCodeSource, listCodeRepos, removeCodeRepo };

@@ -10,7 +10,7 @@
 --   doc-index repository: doc_repos, doc_files, doc_sections, doc FTS, links, terms, code blocks.
 --   trust-sync repository: symbol_links and trust_adjustments because they bridge memories and code symbols.
 --   analytics repository: read-only aggregate queries across feature-owned tables.
-PRAGMA user_version = 7;
+PRAGMA user_version = 8;
 
 -- ═══════════════════════════════════════════════════════════
 -- MEMORY REPOSITORY: WORKSPACES  (v4 — formal project isolation)
@@ -244,6 +244,20 @@ CREATE TABLE IF NOT EXISTS code_files (
   line_count    INTEGER DEFAULT 0,
   UNIQUE(repo_id, path)
 );
+
+CREATE TABLE IF NOT EXISTS code_file_diagnostics (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id     INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE,
+  file_path   TEXT NOT NULL,
+  status      TEXT NOT NULL,
+  message     TEXT DEFAULT '',
+  symbol_count INTEGER DEFAULT 0,
+  content_hash TEXT,
+  updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(repo_id, file_path)
+);
+CREATE INDEX IF NOT EXISTS idx_cfd_repo ON code_file_diagnostics(repo_id);
+CREATE INDEX IF NOT EXISTS idx_cfd_status ON code_file_diagnostics(repo_id, status);
 
 -- ═══════════════════════════════════════════════════════════
 -- CODE-INDEX REPOSITORY: CODE SYMBOLS  (v3 — extracted by tree-sitter AST)

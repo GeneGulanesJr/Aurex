@@ -152,6 +152,7 @@ describe('code-index repository clearing', () => {
     queueRows('SELECT id FROM code_calls WHERE repo_id = ? LIMIT ?', [[3], []]);
     queueRows('SELECT id FROM code_imports WHERE repo_id = ? LIMIT ?', [[]]);
     queueRows('SELECT id FROM churn_metrics WHERE repo_id = ? LIMIT ?', [[]]);
+    queueRows('SELECT id FROM code_file_diagnostics WHERE repo_id = ? LIMIT ?', [[6], []]);
     queueRows('SELECT id FROM code_symbols WHERE repo_id = ? LIMIT ?', [[4], []]);
     queueRows('SELECT id FROM code_files WHERE repo_id = ? LIMIT ?', [[5], []]);
 
@@ -176,11 +177,12 @@ describe('code-index repository clearing', () => {
 
     const totals = repository.clearRepoIndex(42, { batchSize: 2, onProgress: (p) => progress.push(p.message) });
 
-    expect(totals).toMatchObject({ symbolComplexity: 2, calls: 1, symbols: 1, files: 1 });
+    expect(totals).toMatchObject({ symbolComplexity: 2, calls: 1, diagnostics: 1, symbols: 1, files: 1 });
     expect(calls.map((call) => (Array.isArray(call) ? call[0] : call))).toEqual([
       'BEGIN',
       'DELETE FROM symbol_complexity WHERE id IN (?, ?)',
       'DELETE FROM code_calls WHERE id IN (?)',
+      'DELETE FROM code_file_diagnostics WHERE id IN (?)',
       'DELETE FROM code_symbols WHERE id IN (?)',
       'DELETE FROM code_files WHERE id IN (?)',
       'COMMIT',

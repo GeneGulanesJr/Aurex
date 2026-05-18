@@ -52,6 +52,7 @@ LaPis stores data locally in the configured SQLite database. It can store:
 - Edited-file checkpoints containing file paths and brief progress metadata.
 - Auto-detected assistant decisions, bugfix notes, discoveries, and constraints inferred from assistant messages.
 - Indexed code/documentation metadata for repositories explicitly indexed with `memory-code` and `memory-doc`.
+- Code index diagnostics, including parse errors, zero-symbol files, freshness, and index health signals.
 - Symbol links and trust scores used to reduce confidence when linked code changes.
 
 ## Dream Cycle

@@ -113,6 +113,7 @@ The Dream Cycle runs every 10 sessions and reviews memory quality. It removes or
 | -------------------------------------- | ------------------------------------- |
 | `index-repo --path`                    | Index a local folder with tree-sitter |
 | `reindex-repo --repo`                  | Incremental reindex via mtime         |
+| `health-code-repo --repo`              | Report freshness, diagnostics, and index quality |
 | `search-code --query`                  | FTS5 BM25 search over code symbols    |
 | `get-code-source --repo --file --name` | Byte-accurate source retrieval        |
 | `list-code-repos`                      | List indexed code repos               |
