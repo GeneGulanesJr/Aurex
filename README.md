@@ -58,6 +58,12 @@ pi install git:github.com/GeneGulanesJr/LaPis
 
 Restart Pi and memory auto-wires on session start. Use `pi update --extensions` to keep it up to date.
 
+LaPis does not install npm dependencies at runtime. If you are running from a local clone or developing the extension, install dependencies explicitly:
+
+```bash
+npm install
+```
+
 ## What it does
 
 - **Remembers across sessions** — decisions, bugfixes, patterns, discoveries persist
@@ -70,6 +76,22 @@ Restart Pi and memory auto-wires on session start. Use `pi update --extensions` 
 - **Zero servers** — single Node.js CLI + SQLite, called on demand by Pi. Zero Python dependency.
 - **Dream Cycle** — every 10 sessions, cleans superseded, zero-recall, stale corrections, and replaced configs
 - **Update & delete** — update memories in-place instead of spawning correction entries
+
+## What LaPis stores
+
+LaPis stores memory locally in SQLite, by default at `~/.pi/memory/memory.db`. It does not require cloud services or API keys.
+
+The memory layer can store:
+
+- Explicit memories saved through `memory-save` or the `save` CLI command.
+- Search/context recall metadata used to rank useful memories.
+- Session start/end records and session summaries.
+- Edited-file checkpoints, limited to file paths and brief progress metadata.
+- Auto-detected assistant decisions, bugfix notes, discoveries, and constraints inferred from assistant messages.
+- Code and documentation indexes for repositories you explicitly index with `memory-code` / `memory-doc`.
+- Symbol links and trust scores that decay when linked code changes and improve when linked code stays stable.
+
+The Dream Cycle runs every 10 sessions and reviews memory quality. It removes or consolidates superseded memories, stale zero-recall auto memories, correction entries that should have been in-place updates, replaced setup/config memories, low-value auto titles, and related topic duplicates before running database compaction.
 
 ## Commands (called by Pi automatically)
 

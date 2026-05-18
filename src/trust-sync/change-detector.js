@@ -1,4 +1,4 @@
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 
 /**
  * Detects changed symbols by comparing stored head_commit against current HEAD.
@@ -17,7 +17,7 @@ function detectChangedSymbols(deps, repoName) {
   // Get current HEAD commit
   let currentHead = null;
   try {
-    currentHead = execSync('git rev-parse HEAD', {
+    currentHead = execFileSync('git', ['rev-parse', 'HEAD'], {
       cwd: repoPath,
       encoding: 'utf-8',
       timeout: 5000,
@@ -44,8 +44,8 @@ function detectChangedSymbols(deps, repoName) {
   // Get changed files via git diff
   let changedFiles = [];
   try {
-    const diffArgs = baseCommit ? `diff --name-only ${baseCommit}..HEAD` : 'diff --name-only HEAD~1 HEAD';
-    const output = execSync(`git ${diffArgs}`, {
+    const diffRange = baseCommit ? `${baseCommit}..HEAD` : 'HEAD~1..HEAD';
+    const output = execFileSync('git', ['diff', '--name-only', diffRange], {
       cwd: repoPath,
       encoding: 'utf-8',
       timeout: 10000,

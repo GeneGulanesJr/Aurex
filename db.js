@@ -98,23 +98,6 @@ function findLapisRoot() {
   return __dirname;
 }
 
-function tryNpmInstall() {
-  const lapisRoot = findLapisRoot();
-  console.log(`[db] Auto-installing dependencies in ${lapisRoot}...`);
-  try {
-    require('child_process').execSync('npm install --omit=dev', {
-      cwd: lapisRoot,
-      stdio: 'pipe',
-      timeout: 120_000,
-    });
-    console.log('[db] Dependencies installed successfully.');
-    return true;
-  } catch (e) {
-    console.error(`[db] Auto-install failed: ${e.message}`);
-    return false;
-  }
-}
-
 function tryLibsql() {
   try {
     const cfg = getConfig();
@@ -134,18 +117,16 @@ function tryLibsql() {
 }
 
 function openDb() {
-  let libsqlDb = tryLibsql();
-  if (!libsqlDb) {
-    if (tryNpmInstall()) {
-      libsqlDb = tryLibsql();
-    }
-  }
+  const libsqlDb = tryLibsql();
   if (libsqlDb) {
     _engine = 'libsql';
     _db = libsqlDb;
     return libsqlDb;
   }
-  const msg = `No libSQL backend found.\n  Run: cd ${__dirname} && npm install @libsql/client\n`;
+  const lapisRoot = findLapisRoot();
+  const msg =
+    `No libSQL backend found. LaPis does not install dependencies at runtime.\n` +
+    `  Run: cd ${lapisRoot} && npm install\n`;
   throw new Error(msg);
 }
 

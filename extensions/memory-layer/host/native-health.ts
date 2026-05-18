@@ -1,7 +1,6 @@
 import { state } from '../state';
 import path from 'node:path';
 import fs from 'node:fs';
-import { execSync } from 'node:child_process';
 
 function findLapisRoot(): string {
   let dir = __dirname;
@@ -32,16 +31,8 @@ export async function ensureNativeModules(): Promise<void> {
   } catch {}
 
   const lapisRoot = findLapisRoot();
-  console.log(`[memory-layer] Installing dependencies in ${lapisRoot}...`);
-  try {
-    execSync('npm install --omit=dev', {
-      cwd: lapisRoot,
-      stdio: 'pipe',
-      timeout: 120_000,
-    });
-    console.log('[memory-layer] Dependencies installed successfully.');
-  } catch (e: any) {
-    console.error(`[memory-layer] Auto-install failed: ${e.message}`);
-    console.warn(`[memory-layer] Please run manually: cd ${lapisRoot} && npm install`);
-  }
+  console.warn(
+    `[memory-layer] Missing @libsql/client. LaPis will not install dependencies at runtime. ` +
+      `Run manually: cd ${lapisRoot} && npm install`,
+  );
 }
