@@ -45,6 +45,7 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
       force: Type.Optional(Type.Boolean({ description: 'Force save even if duplicate detected', default: false })),
     }),
     async execute(_id, params, _signal, _onUpdate, _ctx) {
+      try {
       deps.state.memoriesSavedThisSession++;
       const result = await deps.mem('save', {
         title: params.title,
@@ -61,34 +62,43 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
       }
 
       if (result.auto_merged) {
+        const sim = result.similarity != null ? (result.similarity * 100).toFixed(0) : '?';
         return {
           content: [
             {
               type: 'text',
-              text: `✅ Memory saved [#${result.id}] ${result.title}\n🔄 Auto-merged: superseded older [#${result.superseded_id}] "${result.superseded_title}" (${(result.similarity * 100).toFixed(0)}% similar)`,
+              text: `✅ Memory saved [#${result.id}] ${result.title}\n🔄 Auto-merged: superseded older [#${result.superseded_id}] "${result.superseded_title ?? ''}" (${sim}% similar)`,
             },
           ],
-          details: result,
+          details: result ?? {},
         };
       }
 
       if (result.status === 'potential_duplicate') {
+        const matches = (result.matches as any[]) || [];
         return {
           content: [
             {
               type: 'text',
-              text: `⚠️ Potential duplicate detected:\n${(result.matches as any[]).map((m: any) => `  - [#${m.id}] ${m.title} (${m.similarity}% similar)`).join('\n')}\n\nUse force=true to save anyway.`,
+              text: `⚠️ Potential duplicate detected:\n${matches.map((m: any) => `  - [#${m.id}] ${m.title} (${m.similarity}% similar)`).join('\n')}\n\nUse force=true to save anyway.`,
             },
           ],
-          details: result,
+          details: result ?? {},
           isError: false,
         };
       }
 
       return {
         content: [{ type: 'text', text: `✅ Memory saved: [#${result.id}] ${result.title}` }],
-        details: result,
+        details: result ?? {},
       };
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Unexpected error: ${err instanceof Error ? err.message : String(err)}` }],
+          details: {},
+          isError: true,
+        };
+      }
     },
   });
 
@@ -110,6 +120,7 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
       limit: Type.Optional(Type.Number({ description: 'Max results (default 10)', default: 10 })),
     }),
     async execute(_id, params, _signal, _onUpdate, _ctx) {
+      try {
       let result = deps.state.currentProject
         ? await deps.mem('search', {
             query: params.query,
@@ -137,19 +148,26 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
 
       const results = (result.results as any[]) || [];
       if (results.length === 0) {
-        return { content: [{ type: 'text', text: 'No memories found.' }], details: result };
+        return { content: [{ type: 'text', text: 'No memories found.' }], details: result ?? {} };
       }
 
       const lines = results.map((r: any) => {
         const score = r._score ? ` (${r._score.toFixed(2)})` : '';
-        const trust = r.trust_score && r.trust_score < 0.5 ? ' ⚠️' : '';
+        const trust = r.trust_score != null && r.trust_score < 0.5 ? ' ⚠️' : '';
         return `- [#${r.id}] [${r.type}] ${r.title}${score}${trust}${r.snippet ? `\n  ${r.snippet}` : ''}`;
       });
 
       return {
         content: [{ type: 'text', text: `Found ${results.length} memories:\n${lines.join('\n')}` }],
-        details: result,
+        details: result ?? {},
       };
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Unexpected error: ${err instanceof Error ? err.message : String(err)}` }],
+          details: {},
+          isError: true,
+        };
+      }
     },
   });
 
@@ -161,6 +179,7 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
       id: Type.Number({ description: 'Memory observation ID' }),
     }),
     async execute(_id, params, _signal, _onUpdate, _ctx) {
+      try {
       const result = await deps.mem('get', { id: String(params.id) });
       if (!result || result.error) {
         return { content: [{ type: 'text', text: `Memory #${params.id} not found.` }], details: {}, isError: true };
@@ -172,8 +191,15 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
             text: `## #${result.id} — ${result.title}\nType: ${result.type} | Scope: ${result.scope} | Project: ${result.project}\n\n${result.content}`,
           },
         ],
-        details: result,
+        details: result ?? {},
       };
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Unexpected error: ${err instanceof Error ? err.message : String(err)}` }],
+          details: {},
+          isError: true,
+        };
+      }
     },
   });
 
@@ -198,6 +224,7 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
       topic_key: Type.Optional(Type.String({ description: 'New topic key (optional)' })),
     }),
     async execute(_id, params, _signal, _onUpdate, _ctx) {
+      try {
       const args: Record<string, string> = { id: String(params.id) };
       if (params.title) {
         args.title = params.title;
@@ -227,8 +254,15 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
       }
       return {
         content: [{ type: 'text', text: `✅ Memory updated: [#${result.id}] ${result.title}` }],
-        details: result,
+        details: result ?? {},
       };
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Unexpected error: ${err instanceof Error ? err.message : String(err)}` }],
+          details: {},
+          isError: true,
+        };
+      }
     },
   });
 
@@ -242,6 +276,7 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
       id: Type.Number({ description: 'Memory observation ID to delete' }),
     }),
     async execute(_id, params, _signal, _onUpdate, _ctx) {
+      try {
       const result = await deps.mem('delete', { id: String(params.id) });
       if (!result || result.error) {
         return {
@@ -256,8 +291,15 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
         content: [
           { type: 'text', text: `🗑️ Memory #${params.id} deleted${result.hardDeleted ? ' (hard)' : ' (soft)'}` },
         ],
-        details: result,
+        details: result ?? {},
       };
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Unexpected error: ${err instanceof Error ? err.message : String(err)}` }],
+          details: {},
+          isError: true,
+        };
+      }
     },
   });
 
@@ -271,22 +313,30 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
       id: Type.Number({ description: 'Memory ID to find related memories for' }),
     }),
     async execute(_id, params, _signal, _onUpdate, _ctx) {
+      try {
       const result = await deps.mem('related', { id: String(params.id) });
       if (!result) {
         return { content: [{ type: 'text', text: 'Failed to find related memories.' }], details: {}, isError: true };
       }
       const related = (result.related as any[]) || [];
       if (related.length === 0) {
-        return { content: [{ type: 'text', text: 'No related memories found.' }], details: result };
+        return { content: [{ type: 'text', text: 'No related memories found.' }], details: result ?? {} };
       }
       const lines = related.flatMap((r: any) => [
         `### ${r.symbol}`,
-        ...r.memories.map((m: any) => `- [#${m.id}] [${m.type}] ${m.title}`),
+        ...(r.memories || []).map((m: any) => `- [#${m.id}] [${m.type}] ${m.title}`),
       ]);
       return {
         content: [{ type: 'text', text: `Related memories for #${params.id}:\n${lines.join('\n')}` }],
-        details: result,
+        details: result ?? {},
       };
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Unexpected error: ${err instanceof Error ? err.message : String(err)}` }],
+          details: {},
+          isError: true,
+        };
+      }
     },
   });
 
@@ -305,6 +355,7 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
       ),
     }),
     async execute(_id, params, _signal, _onUpdate, _ctx) {
+      try {
       if (!deps.state.currentProject) {
         return {
           content: [{ type: 'text', text: "No project detected — can't load context." }],
@@ -326,7 +377,7 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
 
       const observations = (result.observations as any[]) || [];
       if (observations.length === 0) {
-        return { content: [{ type: 'text', text: `No memories found for topic "${params.query}".` }], details: result };
+        return { content: [{ type: 'text', text: `No memories found for topic "${params.query}".` }], details: result ?? {} };
       }
 
       const lines = observations.map((o: any) => {
@@ -334,15 +385,23 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
         return `- [#${o.id}] [${o.type}] ${o.title}${trust}`;
       });
 
+      const totalMemories = result.stats?.total_memories ?? observations.length;
       return {
         content: [
           {
             type: 'text',
-            text: `## Topic Context: "${params.query}"\n**${result.stats.total_memories}** total memories in **${deps.state.currentProject}**, showing ${observations.length} matching "${params.query}":\n\n${lines.join('\n')}`,
+            text: `## Topic Context: "${params.query}"\n**${totalMemories}** total memories in **${deps.state.currentProject}**, showing ${observations.length} matching "${params.query}":\n\n${lines.join('\n')}`,
           },
         ],
-        details: result,
+        details: result ?? {},
       };
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Unexpected error: ${err instanceof Error ? err.message : String(err)}` }],
+          details: {},
+          isError: true,
+        };
+      }
     },
   });
 
@@ -358,6 +417,7 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
       repo: Type.String({ description: 'Repository name (must be indexed)' }),
     }),
     async execute(_id, params, _signal, _onUpdate, _ctx) {
+      try {
       const result = await deps.mem('sync-code-trust', {
         repo: params.repo,
       });
@@ -366,11 +426,10 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
         return { content: [{ type: 'text', text: 'Failed to sync trust scores.' }], details: {}, isError: true };
       }
 
-      // Early-exit messages (HEAD unchanged, no indexed symbols, etc.)
       if (result.message) {
         return {
           content: [{ type: 'text', text: result.message }],
-          details: result,
+          details: result ?? {},
         };
       }
 
@@ -391,12 +450,19 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
         lines.push(`\n### 🔒 Unchanged (already max trust): ${result.unchanged.length}`);
       }
 
-      lines.push(`\n**Total links checked:** ${result.total}`);
+      lines.push(`\n**Total links checked:** ${result.total ?? 0}`);
 
       return {
         content: [{ type: 'text', text: lines.join('\n') || 'No changes detected.' }],
-        details: result,
+        details: result ?? {},
       };
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Unexpected error: ${err instanceof Error ? err.message : String(err)}` }],
+          details: {},
+          isError: true,
+        };
+      }
     },
   });
 

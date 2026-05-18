@@ -1,24 +1,29 @@
+function safePop(val: any): string {
+  if (typeof val === 'string') return val.split('/').pop() ?? val;
+  return String(val ?? '');
+}
+
 function formatCodeResult(mode: string, result: any): string {
   switch (mode) {
     case 'callers':
     case 'callees': {
       const items = result.callers || result.callees || [];
       const dir = mode === 'callers' ? 'Callers of' : 'Callees from';
-      const lines = items.map((c: any) => `  [depth ${c.depth}] ${c.name} (${c.file_path})`);
-      return `**${dir} ${result.symbol}:**\n${lines.length ? lines.join('\n') : '(none found)'}`;
+      const lines = items.map((c: any) => `  [depth ${c.depth ?? '?'}] ${c.name ?? '?'} (${c.file_path ?? '?'})`);
+      return `**${dir} ${result.symbol ?? '?'}:**\n${lines.length ? lines.join('\n') : '(none found)'}`;
     }
     case 'blast-radius': {
       const aFiles = result.affected_files || [];
       const callers = result.callers || [];
       const importers = result.file_importers || [];
       return [
-        `**Blast radius of ${result.symbol}** (${result.file})`,
+        `**Blast radius of ${result.symbol ?? '?'}** (${result.file ?? '?'})`,
         `Affected files: ${aFiles.length}`,
         callers.length
-          ? `\nCallers:\n${callers.map((c: any) => `  [depth ${c.depth}] ${c.name} (${c.file_path})`).join('\n')}`
+          ? `\nCallers:\n${callers.map((c: any) => `  [depth ${c.depth ?? '?'}] ${c.name ?? '?'} (${c.file_path ?? '?'})`).join('\n')}`
           : '',
         importers.length
-          ? `\nFile importers:\n${importers.map((f: any) => `  [depth ${f.depth}] ${f.path}`).join('\n')}`
+          ? `\nFile importers:\n${importers.map((f: any) => `  [depth ${f.depth ?? '?'}] ${f.path ?? '?'}`).join('\n')}`
           : '',
       ]
         .filter(Boolean)
@@ -29,10 +34,10 @@ function formatCodeResult(mode: string, result: any): string {
       const deadSyms = result.dead_symbols || [];
       return [
         `**Dead code analysis** — ${deadFiles.length} dead files, ${deadSyms.length} dead symbols`,
-        deadFiles.length ? `Dead files:\n${deadFiles.map((f: any) => `  ${f.path}`).join('\n')}` : '',
+        deadFiles.length ? `Dead files:\n${deadFiles.map((f: any) => `  ${f.path ?? '?'}`).join('\n')}` : '',
         deadSyms
           .slice(0, 20)
-          .map((s: any) => `  [${s.confidence}] ${s.name} (${s.file}) — ${s.signals.join(', ')}`)
+          .map((s: any) => `  [${s.confidence ?? '?'}] ${s.name ?? '?'} (${s.file ?? '?'}) — ${(s.signals || []).join(', ')}`)
           .join('\n'),
       ]
         .filter(Boolean)
@@ -48,12 +53,12 @@ function formatCodeResult(mode: string, result: any): string {
             .slice(0, 10)
             .map(
               (r: any) =>
-                `  🔴 ${r.name} (${r.file_path?.split('/').pop()}): cyclomatic=${r.cyclomatic} nesting=${r.nesting_depth}`,
+                `  🔴 ${r.name ?? '?'} (${safePop(r.file_path)}): cyclomatic=${r.cyclomatic ?? '?'} nesting=${r.nesting_depth ?? '?'}`,
             ),
-          ...med.slice(0, 5).map((r: any) => `  🟡 ${r.name}: cyclomatic=${r.cyclomatic}`),
+          ...med.slice(0, 5).map((r: any) => `  🟡 ${r.name ?? '?'}: cyclomatic=${r.cyclomatic ?? '?'}`),
         ].join('\n');
       }
-      return `**${result.name}** (${result.file_path?.split('/').pop()}): cyclomatic=${result.cyclomatic} nesting=${result.nesting_depth} params=${result.param_count} lines=${result.lines_of_code} — ${result.assessment}`;
+      return `**${result.name ?? '?'}** (${safePop(result.file_path)}): cyclomatic=${result.cyclomatic ?? '?'} nesting=${result.nesting_depth ?? '?'} params=${result.param_count ?? '?'} lines=${result.lines_of_code ?? '?'} — ${result.assessment ?? '?'}`;
     }
     case 'deps': {
       const edges = result.edges || [];
@@ -61,32 +66,32 @@ function formatCodeResult(mode: string, result: any): string {
       const up = result.upstream || [];
       if (down.length || up.length) {
         return [
-          down.length ? `**Downstream:**\n${down.map((d: any) => `  [${d.depth}] ${d.path}`).join('\n')}` : '',
-          up.length ? `**Upstream:**\n${up.map((u: any) => `  [${u.depth}] ${u.path}`).join('\n')}` : '',
+          down.length ? `**Downstream:**\n${down.map((d: any) => `  [${d.depth ?? '?'}] ${d.path ?? '?'}`).join('\n')}` : '',
+          up.length ? `**Upstream:**\n${up.map((u: any) => `  [${u.depth ?? '?'}] ${u.path ?? '?'}`).join('\n')}` : '',
         ]
           .filter(Boolean)
           .join('\n');
       }
       return `**Import graph:** ${edges.length} edges\n${edges
         .slice(0, 20)
-        .map((e: any) => `  ${e.source} → ${e.target} (${e.type})`)
+        .map((e: any) => `  ${e.source ?? '?'} → ${e.target ?? '?'} (${e.type ?? '?'})`)
         .join('\n')}`;
     }
     case 'outline': {
       const outline = result;
       if (outline.classes) {
         const lines = outline.classes.map((c: any) => {
-          const methods = c.methods
+          const methods = (c.methods || [])
             .map(
               (m: any) =>
-                `    ${m.assessment ? `[${m.assessment}] ` : ''}${m.kind} ${m.name}${m.signature ? `: ${m.signature.slice(0, 60)}` : ''}`,
+                `    ${m.assessment ? `[${m.assessment}] ` : ''}${m.kind ?? '?'} ${m.name ?? '?'}${m.signature ? `: ${m.signature.slice(0, 60)}` : ''}`,
             )
             .join('\n');
-          return `  📦 ${c.name}\n${methods}`;
+          return `  📦 ${c.name ?? '?'}\n${methods}`;
         });
         const standalone = (outline.standalone || []).map(
           (s: any) =>
-            `  ${s.assessment ? `[${s.assessment}] ` : ''}${s.kind} ${s.name}${s.signature ? `: ${s.signature.slice(0, 60)}` : ''}`,
+            `  ${s.assessment ? `[${s.assessment}] ` : ''}${s.kind ?? '?'} ${s.name ?? '?'}${s.signature ? `: ${s.signature.slice(0, 60)}` : ''}`,
         );
         return `**File outline**\n${[...lines, ...standalone].join('\n')}`;
       }
@@ -97,14 +102,14 @@ function formatCodeResult(mode: string, result: any): string {
         return `Error: ${result.error}`;
       }
       if (result.repo) {
-        return `**${result.repo}** churn (${result.window_days}d): ${result.total_files_changed} files changed\n${(
+        return `**${result.repo}** churn (${result.window_days ?? '?'}d): ${result.total_files_changed ?? 0} files changed\n${(
           result.top_files || []
         )
           .slice(0, 10)
-          .map((f: any) => `  ${f.file}: ${f.commits} commits (${f.churn_per_week}/wk)`)
+          .map((f: any) => `  ${f.file ?? '?'}: ${f.commits ?? 0} commits (${f.churn_per_week ?? '?'}/wk)`)
           .join('\n')}`;
       }
-      return `**Churn:** ${result.commits} commits, ${result.unique_authors} authors (${result.churn_per_week}/wk)\n  First: ${result.first_seen} | Last: ${result.last_modified}`;
+      return `**Churn:** ${result.commits ?? 0} commits, ${result.unique_authors ?? 0} authors (${result.churn_per_week ?? '?'}/wk)\n  First: ${result.first_seen ?? '?'} | Last: ${result.last_modified ?? '?'}`;
     }
     case 'hotspots': {
       if (!result.hotspots?.length) {
@@ -113,7 +118,7 @@ function formatCodeResult(mode: string, result: any): string {
       return result.hotspots
         .map(
           (h: any, i: number) =>
-            `${i + 1}. **${h.name}** (${h.kind}) — ${h.file_path.split('/').pop()}\n   Risk: ${h.risk} | Score: ${h.hotspot_score} | Complexity: ${h.cyclomatic} | Commits: ${h.commits} | Churn: ${h.churn_per_week}/wk`,
+            `${i + 1}. **${h.name ?? '?'}** (${h.kind ?? '?'}) — ${safePop(h.file_path)}\n   Risk: ${h.risk ?? '?'} | Score: ${h.hotspot_score ?? '?'} | Complexity: ${h.cyclomatic ?? '?'} | Commits: ${h.commits ?? 0} | Churn: ${h.churn_per_week ?? '?'}/wk`,
         )
         .join('\n\n');
     }
@@ -124,7 +129,7 @@ function formatCodeResult(mode: string, result: any): string {
       return result.cycles
         .map(
           (c: any, i: number) =>
-            `${i + 1}. **Cycle ${i + 1}** (${c.size} files)\n   Files: ${c.files.map((f: string) => f.split('/').pop()).join(' → ')}\n   Edges: ${c.edges.map((e: any) => `${e.from.split('/').pop()} → ${e.to.split('/').pop()}`).join(', ')}`,
+            `${i + 1}. **Cycle ${i + 1}** (${c.size ?? '?'} files)\n   Files: ${(c.files || []).map((f: string) => safePop(f)).join(' → ')}\n   Edges: ${(c.edges || []).map((e: any) => `${safePop(e.from)} → ${safePop(e.to)}`).join(', ')}`,
         )
         .join('\n\n');
     }
@@ -132,10 +137,10 @@ function formatCodeResult(mode: string, result: any): string {
       if (!result.importance?.length) {
         return 'No symbols found.';
       }
-      return `Top ${result.importance.length} of ${result.total_symbols} symbols by PageRank:\n\n${result.importance
+      return `Top ${result.importance.length} of ${result.total_symbols ?? result.importance.length} symbols by PageRank:\n\n${result.importance
         .map(
           (s: any, i: number) =>
-            `${i + 1}. **${s.name}** (${s.kind}) — ${s.file_path.split('/').pop()} — PageRank: ${s.pagerank}`,
+            `${i + 1}. **${s.name ?? '?'}** (${s.kind ?? '?'}) — ${safePop(s.file_path)} — PageRank: ${s.pagerank ?? '?'}`,
         )
         .join('\n')}`;
     }
@@ -145,8 +150,8 @@ function formatCodeResult(mode: string, result: any): string {
       }
       return result.metrics
         .map((m: any) => {
-          const short = m.file_path.split('/').pop();
-          return `**${short}** (${m.category})\n   Ca=${m.afferent} Ce=${m.efferent} I=${m.instability}`;
+          const short = safePop(m.file_path);
+          return `**${short}** (${m.category ?? '?'})\n   Ca=${m.afferent ?? 0} Ce=${m.efferent ?? 0} I=${m.instability ?? '?'}`;
         })
         .join('\n\n');
     }
@@ -157,7 +162,7 @@ function formatCodeResult(mode: string, result: any): string {
       return result.candidates
         .map(
           (c: any, i: number) =>
-            `${i + 1}. **${c.name}** (${c.kind}) — ${c.file_path.split('/').pop()}\n   Score: ${c.extraction_score} | Complexity: ${c.cyclomatic} | Callers: ${c.caller_file_count} files\n   Called from: ${c.caller_files.map((f: string) => f.split('/').pop()).join(', ')}`,
+            `${i + 1}. **${c.name ?? '?'}** (${c.kind ?? '?'}) — ${safePop(c.file_path)}\n   Score: ${c.extraction_score ?? '?'} | Complexity: ${c.cyclomatic ?? '?'} | Callers: ${c.caller_file_count ?? 0} files\n   Called from: ${(c.caller_files || []).map((f: string) => safePop(f)).join(', ')}`,
         )
         .join('\n\n');
     }
@@ -165,12 +170,12 @@ function formatCodeResult(mode: string, result: any): string {
       if (result.error) {
         return `Error: ${result.error}`;
       }
-      let out = `**${result.name}** (${result.kind}) — ${result.file_path.split('/').pop()}`;
+      let out = `**${result.name ?? '?'}** (${result.kind ?? '?'}) — ${safePop(result.file_path)}`;
       if (result.ancestors?.length) {
-        out += `\n\nAncestors: ${result.ancestors.map((a: any) => `${a.name} (${a.kind})`).join(' → ')}`;
+        out += `\n\nAncestors: ${result.ancestors.map((a: any) => `${a.name ?? '?'} (${a.kind ?? '?'})`).join(' → ')}`;
       }
       if (result.descendants?.length) {
-        out += `\n\nMembers: ${result.descendants.map((d: any) => `${d.name} (${d.kind})`).join(', ')}`;
+        out += `\n\nMembers: ${result.descendants.map((d: any) => `${d.name ?? '?'} (${d.kind ?? '?'})`).join(', ')}`;
       }
       if (!result.ancestors?.length && !result.descendants?.length) {
         out += `\n\n(No parent classes or child members found)`;
@@ -184,9 +189,9 @@ function formatCodeResult(mode: string, result: any): string {
       return result.chains
         .map((c: any) => {
           const gw = c.gateway || c;
-          const label = gw.method ? `${gw.method} ${gw.path}` : gw.name;
-          return `▶ **${label}** (${gw.kind})\n${c.chain
-            .map((s: any, i: number) => `${'  '.repeat(i + 1)}→ ${s.name} (${s.kind || 'fn'})`)
+          const label = gw.method ? `${gw.method} ${gw.path ?? ''}` : (gw.name ?? '?');
+          return `▶ **${label}** (${gw.kind ?? '?'})\n${(c.chain || [])
+            .map((s: any, i: number) => `${'  '.repeat(i + 1)}→ ${s.name ?? '?'} (${s.kind || 'fn'})`)
             .join('\n')}`;
         })
         .join('\n\n');
@@ -204,7 +209,7 @@ function formatCodeResult(mode: string, result: any): string {
       return result.violations
         .map(
           (v: any) =>
-            `❌ **${v.source_layer}** → **${v.target_layer}**: ${v.source.split('/').pop()} imports ${v.target.split('/').pop()}\n   Rule: ${v.rule}`,
+            `❌ **${v.source_layer ?? '?'}** → **${v.target_layer ?? '?'}**: ${safePop(v.source)} imports ${safePop(v.target)}\n   Rule: ${v.rule ?? '?'}`,
         )
         .join('\n\n');
     }
@@ -243,7 +248,7 @@ function formatDocResult(mode: string, result: any): string {
       const items = result.results || [];
       return `**Doc search:** ${items.length} results\n${items
         .slice(0, 15)
-        .map((r: any) => `  [${r.role}] (L${r.level}) ${r.title} — ${r.file_path}`)
+        .map((r: any) => `  [${r.role ?? '?'}] (L${r.level ?? '?'}) ${r.title ?? '?'} — ${r.file_path ?? '?'}`)
         .join('\n')}`;
     }
     case 'outline': {
@@ -262,13 +267,13 @@ function formatDocResult(mode: string, result: any): string {
     }
     case 'backlinks': {
       const bl = result.backlinks || [];
-      return `**Backlinks:** ${bl.length}\n${bl.map((b: any) => `  ← ${b.source_file}#${b.source_title} ("${b.link_text}")`).join('\n')}`;
+      return `**Backlinks:** ${bl.length}\n${bl.map((b: any) => `  ← ${b.source_file ?? '?'}#${b.source_title ?? '?'} ("${b.link_text ?? ''}")`).join('\n')}`;
     }
     case 'broken-links': {
       const bad = result.broken_links || [];
       return `**Broken links:** ${bad.length}\n${bad
         .slice(0, 20)
-        .map((l: any) => `  ${l.source_file}: "${l.link_text}" → ${l.target_path}`)
+        .map((l: any) => `  ${l.source_file ?? '?'}: "${l.link_text ?? ''}" → ${l.target_path ?? '?'}`)
         .join('\n')}`;
     }
     case 'glossary': {
@@ -278,34 +283,34 @@ function formatDocResult(mode: string, result: any): string {
       if (Array.isArray(result)) {
         return `**Glossary:** ${result.length} terms\n${result
           .slice(0, 20)
-          .map((t: any) => `  **${t.term}** — ${t.definition.slice(0, 80)}`)
+          .map((t: any) => `  **${t.term ?? '?'}** — ${(t.definition ?? '').slice(0, 80)}`)
           .join('\n')}`;
       }
-      return `**${result.term}** — ${result.definition}`;
+      return `**${result.term ?? '?'}** — ${result.definition ?? ''}`;
     }
     case 'tutorial-path': {
       const chain = result.chain || [];
-      return `**Tutorial path:**\n${chain.map((c: any, i: number) => `  ${i + 1}. ${c.title} (section #${c.section_id})`).join('\n')}`;
+      return `**Tutorial path:**\n${chain.map((c: any, i: number) => `  ${i + 1}. ${c.title ?? '?'} (section #${c.section_id ?? '?'})`).join('\n')}`;
     }
     case 'code-examples': {
       const examples = result.results || [];
-      return `**Code examples:** ${examples.length}\n${examples.map((e: any) => `  ${e.section_title} (${e.file_path}) [${e.lang}]:\n${e.content.slice(0, 150)}...`).join('\n\n')}`;
+      return `**Code examples:** ${examples.length}\n${examples.map((e: any) => `  ${e.section_title ?? '?'} (${e.file_path ?? '?'}) [${e.lang ?? '?'}]:\n${(e.content ?? '').slice(0, 150)}...`).join('\n\n')}`;
     }
     case 'orphans': {
       if (!result.orphans?.length) {
         return 'No orphan sections found — all sections have inbound links.';
       }
-      return `Found ${result.total} orphan sections:\n\n${result.orphans
-        .map((s: any) => `- **${s.title}** (L${s.level}) — ${s.file_path.split('/').pop()} [${s.role || 'other'}]`)
+      return `Found ${result.total ?? result.orphans.length} orphan sections:\n\n${result.orphans
+        .map((s: any) => `- **${s.title ?? '?'}** (L${s.level ?? '?'}) — ${safePop(s.file_path)} [${s.role || 'other'}]`)
         .join('\n')}`;
     }
     case 'coverage': {
       return (
-        `Doc coverage: ${result.coverage_pct}% (${result.documented}/${result.total_symbols} symbols documented)\n\n` +
-        `**Documented** (showing up to 20):\n${result.documented_list
-          .map((s: any) => `  ✅ ${s.name} (${s.kind}) — ${s.file_path.split('/').pop()}`)
-          .join('\n')}\n\n**Undocumented** (showing up to 20):\n${result.undocumented_list
-          .map((s: any) => `  ❌ ${s.name} (${s.kind}) — ${s.file_path.split('/').pop()}`)
+        `Doc coverage: ${result.coverage_pct ?? '?'}% (${result.documented ?? 0}/${result.total_symbols ?? 0} symbols documented)\n\n` +
+        `**Documented** (showing up to 20):\n${(result.documented_list || [])
+          .map((s: any) => `  ✅ ${s.name ?? '?'} (${s.kind ?? '?'}) — ${safePop(s.file_path)}`)
+          .join('\n')}\n\n**Undocumented** (showing up to 20):\n${(result.undocumented_list || [])
+          .map((s: any) => `  ❌ ${s.name ?? '?'} (${s.kind ?? '?'}) — ${safePop(s.file_path)}`)
           .join('\n')}`
       );
     }
@@ -318,7 +323,7 @@ function formatDocResult(mode: string, result: any): string {
         out += `**Stale pages** (${result.stale.length} modified since index):\n${result.stale
           .map(
             (s: any) =>
-              `  📝 ${s.path} (indexed: ${new Date(s.indexed_mtime).toISOString().slice(0, 19)}, current: ${new Date(s.current_mtime).toISOString().slice(0, 19)})`,
+              `  📝 ${s.path ?? '?'} (indexed: ${s.indexed_mtime ? new Date(s.indexed_mtime).toISOString().slice(0, 19) : '?'}, current: ${s.current_mtime ? new Date(s.current_mtime).toISOString().slice(0, 19) : '?'})`,
           )
           .join('\n')}`;
       }
@@ -327,19 +332,19 @@ function formatDocResult(mode: string, result: any): string {
           out += '\n';
         }
         out += `**Missing pages** (${result.missing.length} deleted since index):\n${result.missing
-          .map((s: any) => `  🗑️ ${s.path}`)
+          .map((s: any) => `  🗑️ ${s.path ?? '?'}`)
           .join('\n')}`;
       }
-      return out;
+      return out || 'No stale or missing pages found.';
     }
     case 'duplicates': {
       if (!result.duplicates?.length) {
         return 'No duplicate sections found.';
       }
-      return `Found ${result.total_duplicate_groups} duplicate groups:\n\n${result.duplicates
+      return `Found ${result.total_duplicate_groups ?? result.duplicates.length} duplicate groups:\n\n${result.duplicates
         .map(
           (d: any) =>
-            `**Hash ${d.content_hash.slice(0, 8)}...** (${d.count} copies)\n${d.sections.map((s: any) => `  - "${s.title}" in ${s.file_path.split('/').pop()}`).join('\n')}`,
+            `**Hash ${(d.content_hash ?? '').slice(0, 8)}...** (${d.count ?? '?'} copies)\n${(d.sections || []).map((s: any) => `  - "${s.title ?? '?'}" in ${safePop(s.file_path)}`).join('\n')}`,
         )
         .join('\n\n')}`;
     }

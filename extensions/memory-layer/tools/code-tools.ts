@@ -86,6 +86,7 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
       ),
     }),
     async execute(_id, params, _signal, onUpdate, _ctx) {
+      try {
       const cmdMap: Record<string, string> = {
         callers: 'call-hierarchy',
         callees: 'call-hierarchy',
@@ -185,14 +186,15 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
           return { content: [{ type: 'text', text: 'Indexing failed or timed out.' }], details: {}, isError: true };
         }
         if (result.error) {
-          return { content: [{ type: 'text', text: `Error: ${result.error}` }], details: result, isError: true };
+          return { content: [{ type: 'text', text: `Error: ${result.error}` }], details: result ?? {}, isError: true };
         }
-        const fmt = deps.formatCodeResult(params.mode, result);
-        return { content: [{ type: 'text', text: fmt }], details: result };
+        let fmt: string | undefined | null;
+        try { fmt = deps.formatCodeResult(params.mode, result); } catch { fmt = ''; }
+        return { content: [{ type: 'text', text: fmt ?? '' }], details: result ?? {} };
       }
 
       const codeRepos = await deps.getKnownRepos();
-      const repoMatch = codeRepos.find((r) => r.name.toLowerCase() === params.repo.toLowerCase());
+      const repoMatch = codeRepos.find((r) => r.name.toLowerCase() === params.repo?.toLowerCase());
       if (!repoMatch) {
         const available = codeRepos.map((r) => r.name).join(', ') || 'none';
         const cwd = process.cwd();
@@ -232,11 +234,19 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
         return { content: [{ type: 'text', text: 'Analysis failed.' }], details: {}, isError: true };
       }
       if (result.error) {
-        return { content: [{ type: 'text', text: `Error: ${result.error}` }], details: result, isError: true };
+        return { content: [{ type: 'text', text: `Error: ${result.error}` }], details: result ?? {}, isError: true };
       }
 
-      const fmt = deps.formatCodeResult(params.mode, result);
-      return { content: [{ type: 'text', text: fmt }], details: result };
+      let fmt: string | undefined | null;
+      try { fmt = deps.formatCodeResult(params.mode, result); } catch { fmt = ''; }
+      return { content: [{ type: 'text', text: fmt ?? '' }], details: result ?? {} };
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Unexpected error: ${err instanceof Error ? err.message : String(err)}` }],
+          details: {},
+          isError: true,
+        };
+      }
     },
   });
 }

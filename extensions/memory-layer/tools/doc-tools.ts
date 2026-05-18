@@ -62,6 +62,7 @@ export function registerDocTools(pi: ExtensionAPI, deps: DocDeps) {
       ignore: Type.Optional(Type.String({ description: 'Glob pattern to ignore during doc indexing' })),
     }),
     async execute(_id, params, _signal, _onUpdate, _ctx) {
+      try {
       const cmdMap: Record<string, string> = {
         search: 'doc-search',
         outline: 'doc-outline',
@@ -132,14 +133,15 @@ export function registerDocTools(pi: ExtensionAPI, deps: DocDeps) {
           return { content: [{ type: 'text', text: 'Doc indexing failed or timed out.' }], details: {}, isError: true };
         }
         if (result.error) {
-          return { content: [{ type: 'text', text: `Error: ${result.error}` }], details: result, isError: true };
+          return { content: [{ type: 'text', text: `Error: ${result.error}` }], details: result ?? {}, isError: true };
         }
-        const fmt = deps.formatDocResult(params.mode, result);
-        return { content: [{ type: 'text', text: fmt }], details: result };
+        let fmt: string | undefined | null;
+        try { fmt = deps.formatDocResult(params.mode, result); } catch { fmt = ''; }
+        return { content: [{ type: 'text', text: fmt ?? '' }], details: result ?? {} };
       }
 
       const docRepos = await deps.getKnownRepos();
-      const docRepoMatch = docRepos.find((r) => r.name.toLowerCase() === params.repo.toLowerCase());
+      const docRepoMatch = docRepos.find((r) => r.name.toLowerCase() === params.repo?.toLowerCase());
       if (!docRepoMatch) {
         const available = docRepos.map((r) => r.name).join(', ') || 'none';
         const cwd = process.cwd();
@@ -160,11 +162,19 @@ export function registerDocTools(pi: ExtensionAPI, deps: DocDeps) {
         return { content: [{ type: 'text', text: 'Doc query failed.' }], details: {}, isError: true };
       }
       if (result.error) {
-        return { content: [{ type: 'text', text: `Error: ${result.error}` }], details: result, isError: true };
+        return { content: [{ type: 'text', text: `Error: ${result.error}` }], details: result ?? {}, isError: true };
       }
 
-      const fmt = deps.formatDocResult(params.mode, result);
-      return { content: [{ type: 'text', text: fmt }], details: result };
+      let fmt: string | undefined | null;
+      try { fmt = deps.formatDocResult(params.mode, result); } catch { fmt = ''; }
+      return { content: [{ type: 'text', text: fmt ?? '' }], details: result ?? {} };
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Unexpected error: ${err instanceof Error ? err.message : String(err)}` }],
+          details: {},
+          isError: true,
+        };
+      }
     },
   });
 }
