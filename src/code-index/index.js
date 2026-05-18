@@ -11,4 +11,5 @@ module.exports = {
   ...require('./scanner'),
   ...require('./source-retrieval'),
   ...require('./symbol-extractor'),
+  ...require('./worker-pool'),
 };

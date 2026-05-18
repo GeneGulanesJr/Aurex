@@ -1,12 +1,13 @@
 const fs = require('fs');
 const path = require('path');
-const { RESULT_LIMITS } = require('../../constants');
+const { RESULT_LIMITS, WORKER_POOL } = require('../../constants');
 const { hashContent } = require('../../utils');
 const { createCodeIndexRepository } = require('./repos');
 const { scanRepository } = require('./scanner');
 const { createParserRegistry, getLanguageForFile } = require('./parser-registry');
 const { extractSymbolsFromFile } = require('./symbol-extractor');
 const { buildImportEdges, buildCallEdges, buildComplexityMetrics } = require('./edge-extractor');
+const { createParsePool } = require('./worker-pool');
 
 function emitProgress(args, phase, detail, stats) {
   if (!args || !args.progress) {
@@ -121,77 +122,117 @@ async function parsePhase(files, deps, repoId, args) {
   const batchSize = RESULT_LIMITS.INDEX_BATCH_SIZE;
   const totalFiles = files.length;
 
+  let useWorkers = totalFiles >= WORKER_POOL.MIN_FILES_FOR_PARALLEL && !args.noWorkers;
+  let pool = null;
+
+  if (useWorkers) {
+    try {
+      pool = await createParsePool();
+      emitProgress(args, 'init', { message: `Using ${pool.numWorkers} worker threads for parallel parsing` });
+    } catch (e) {
+      emitProgress(args, 'init', { message: `Worker pool failed (${e.message}), falling back to sequential parsing` });
+      pool = null;
+      useWorkers = false;
+    }
+  }
+
   let symbolCount = 0;
   let fileCount = 0;
   const skipped = [];
 
-  for (let i = 0; i < files.length; i += batchSize) {
-    const batch = files.slice(i, i + batchSize);
-    const batchNum = Math.floor(i / batchSize) + 1;
-    const totalBatches = Math.ceil(totalFiles / batchSize);
-    emitProgress(
-      args,
-      'parsing',
-      { message: `Parsing files batch ${batchNum}/${totalBatches}...` },
-      { files_total: totalFiles, files_done: fileCount, symbols: symbolCount },
-    );
+  try {
+    for (let i = 0; i < files.length; i += batchSize) {
+      const batch = files.slice(i, i + batchSize);
+      const batchNum = Math.floor(i / batchSize) + 1;
+      const totalBatches = Math.ceil(totalFiles / batchSize);
+      emitProgress(
+        args,
+        'parsing',
+        { message: `Parsing files batch ${batchNum}/${totalBatches}${useWorkers ? ' (parallel)' : ''}...` },
+        { files_total: totalFiles, files_done: fileCount, symbols: symbolCount },
+      );
 
-    const reads = await Promise.all(
-      batch.map(async (fp) => {
-        try {
-          return await readFileRecord(fp);
-        } catch (e) {
-          skipped.push({ file: fp, error: e.message });
-          return null;
-        }
-      }),
-    );
-
-    const batchSymbols = [];
-    for (const record of reads) {
-      if (!record) {
-        continue;
-      }
-      try {
-        const fileId = repository.insertFile(fileRecordToParams(repoId, record));
-        const symbols = extractSymbolsFromFile(record.filePath, registry, record.content);
-
-        if (symbols.length === 0 && record.content.trim().length > 0) {
-          const hasExports = /\bexport\s/.test(record.content);
-          const hasFunction = /\bfunction\b|\b=>\s|\bdef\s|\bfunc\s|\bfn\s/.test(record.content);
-          if (hasExports || hasFunction) {
-            skipped.push({ file: record.filePath, error: 'Parse returned 0 symbols despite containing exports/functions', zeroSymbolFile: true });
+      const reads = await Promise.all(
+        batch.map(async (fp) => {
+          try {
+            return await readFileRecord(fp);
+          } catch (e) {
+            skipped.push({ file: fp, error: e.message });
+            return null;
           }
-        }
+        }),
+      );
 
-        for (const sym of symbols) {
-          batchSymbols.push({
-            repoId,
-            fileId,
-            filePath: record.filePath,
-            name: sym.name,
-            kind: sym.kind,
-            signature: sym.signature,
-            qualifiedName: sym.qualified_name,
-            startLine: sym.start_line,
-            endLine: sym.end_line,
-            startByte: sym.start_byte,
-            endByte: sym.end_byte,
-            docstring: sym.docstring || '',
-            bodyPreview: sym.body_preview || '',
-            language: sym.language,
-            parentName: sym.parent_name || '',
-          });
+      const validReads = reads.filter((r) => r !== null);
+
+      let symbolMap;
+      if (useWorkers && pool) {
+        try {
+          const workerInputs = validReads.map((r) => ({ filePath: r.filePath, content: r.content }));
+          const workerResults = await pool.parseAll(workerInputs);
+          symbolMap = new Map(workerResults.map((r) => [r.filePath, r.symbols]));
+        } catch (e) {
+          emitProgress(args, 'parsing', { message: `Worker error (${e.message}), falling back to sequential` });
+          symbolMap = null;
         }
-        symbolCount += symbols.length;
-        fileCount++;
-      } catch (e) {
-        skipped.push({ file: record.filePath, error: e.message });
+      }
+
+      const batchSymbols = [];
+      for (const record of validReads) {
+        try {
+          const fileId = repository.insertFile(fileRecordToParams(repoId, record));
+          let symbols;
+          if (symbolMap) {
+            symbols = symbolMap.get(record.filePath) || [];
+          } else {
+            symbols = extractSymbolsFromFile(record.filePath, registry, record.content);
+          }
+
+          if (symbols.length === 0 && record.content.trim().length > 0) {
+            const hasExports = /\bexport\s/.test(record.content);
+            const hasFunction = /\bfunction\b|\b=>\s|\bdef\s|\bfunc\s|\bfn\s/.test(record.content);
+            if (hasExports || hasFunction) {
+              skipped.push({
+                file: record.filePath,
+                error: 'Parse returned 0 symbols despite containing exports/functions',
+                zeroSymbolFile: true,
+              });
+            }
+          }
+
+          for (const sym of symbols) {
+            batchSymbols.push({
+              repoId,
+              fileId,
+              filePath: record.filePath,
+              name: sym.name,
+              kind: sym.kind,
+              signature: sym.signature,
+              qualifiedName: sym.qualified_name,
+              startLine: sym.start_line,
+              endLine: sym.end_line,
+              startByte: sym.start_byte,
+              endByte: sym.end_byte,
+              docstring: sym.docstring || '',
+              bodyPreview: sym.body_preview || '',
+              language: sym.language,
+              parentName: sym.parent_name || '',
+            });
+          }
+          symbolCount += symbols.length;
+          fileCount++;
+        } catch (e) {
+          skipped.push({ file: record.filePath, error: e.message });
+        }
+      }
+
+      if (batchSymbols.length > 0) {
+        repository.insertSymbolBatch(batchSymbols);
       }
     }
-
-    if (batchSymbols.length > 0) {
-      repository.insertSymbolBatch(batchSymbols);
+  } finally {
+    if (pool) {
+      await pool.terminate();
     }
   }
 
