@@ -45,7 +45,7 @@ function getHeadCommit(repoPath) {
     return require('child_process')
       .execSync('git rev-parse HEAD', { cwd: repoPath, encoding: 'utf-8', timeout: 5000 })
       .trim();
-  } catch (_) {
+  } catch {
     return null;
   }
 }
@@ -106,7 +106,7 @@ function rebuildDerivedIndexes(db, repoId, args, totalFiles, fileCount, symbolCo
     if (ig.success) {
       importEdges = ig.edges;
     }
-  } catch (_) {}
+  } catch {}
   emitProgress(args, 'analysis', { step: 'build-call-graph', message: 'Step 5/5: building call graph...' }, stats);
   try {
     const cg = buildCallEdges(db, repoId, {
@@ -125,7 +125,7 @@ function rebuildDerivedIndexes(db, repoId, args, totalFiles, fileCount, symbolCo
     if (cg.success) {
       callEdges = cg.calls;
     }
-  } catch (_) {}
+  } catch {}
   emitProgress(
     args,
     'analysis',
@@ -137,7 +137,7 @@ function rebuildDerivedIndexes(db, repoId, args, totalFiles, fileCount, symbolCo
     if (cc.success) {
       complexityCount = cc.symbols;
     }
-  } catch (_) {}
+  } catch {}
 
   return { importEdges, callEdges, complexityCount };
 }
@@ -597,7 +597,7 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
           writeChangedFile();
         }
       }
-    } catch (_) {}
+    } catch {}
 
     const done = i + 1;
     if (shouldEmitFileProgress(done, totalFiles)) {
