@@ -208,14 +208,16 @@ function buildImportGraph(db, repoId) {
     `INSERT OR IGNORE INTO code_imports (repo_id, source_file_id, target_module, target_file_id, import_type, line_number) VALUES (?, ?, ?, ?, ?, ?)`,
   );
 
-  const files = db.prepare('SELECT id, path, content FROM code_files WHERE repo_id = ?').all(repoId);
+  const files = db.prepare('SELECT id, path FROM code_files WHERE repo_id = ?').all(repoId);
+  const contentStmt = db.prepare('SELECT content FROM code_files WHERE id = ?');
   let totalEdges = 0;
 
   for (const file of files) {
-    if (!file.content) {
+    const contentRow = contentStmt.get(file.id);
+    if (!contentRow || !contentRow.content) {
       continue;
     }
-    const imports = extractImportsFromSource(file.content);
+    const imports = extractImportsFromSource(contentRow.content);
     for (const imp of imports) {
       const targetFileId = resolveImportTarget(db, repoId, file.path, imp.target_module);
       insertStmt.run(repoId, file.id, imp.target_module, targetFileId, imp.import_type, imp.line_number);
@@ -345,12 +347,13 @@ function buildCallGraph(db, repoId, opts = {}) {
   }
 
   const fileRows = db
-    .prepare('SELECT id, path, content, size_bytes FROM code_files WHERE repo_id = ?')
+    .prepare('SELECT id, path, size_bytes FROM code_files WHERE repo_id = ?')
     .all(repoId);
   const fileById = new Map();
   for (const f of fileRows) {
     fileById.set(f.id, f);
   }
+  const contentStmt = db.prepare('SELECT content FROM code_files WHERE id = ?');
 
   const symbolsByFileAndName = new Map();
   for (const [fileId, syms] of symbolsByFile) {
@@ -594,14 +597,20 @@ function buildCallGraph(db, repoId, opts = {}) {
   let processedFiles = 0;
 
   for (const [fileId, fileSymbols] of symbolsByFile) {
-    const fileRow = fileById.get(fileId);
-    if (!fileRow || !fileRow.content) {
+    const meta = fileById.get(fileId);
+    if (!meta) {
       processedFiles++;
       continue;
     }
 
-    const fileContent = fileRow.content;
-    const filePath = fileRow.path;
+    const contentRow = contentStmt.get(fileId);
+    if (!contentRow || !contentRow.content) {
+      processedFiles++;
+      continue;
+    }
+
+    const fileContent = contentRow.content;
+    const filePath = meta.path;
     const fileSize = fileContent.length;
 
     let fileCallees = [];
