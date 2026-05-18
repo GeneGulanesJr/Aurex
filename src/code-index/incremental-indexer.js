@@ -91,7 +91,16 @@ function rebuildDerivedIndexes(db, repoId, args, totalFiles, fileCount, symbolCo
   } catch (_) {}
   emitProgress(args, 'analysis', { message: 'Building call graph...' }, stats);
   try {
-    const cg = buildCallEdges(db, repoId);
+    const cg = buildCallEdges(db, repoId, {
+      onProgress: (p) => {
+        emitProgress(
+          args,
+          'analysis',
+          { message: `Building call graph... ${p.filesProcessed}/${p.totalFiles} files, ${p.callsFound} calls` },
+          stats,
+        );
+      },
+    });
     if (cg.success) {
       callEdges = cg.calls;
     }

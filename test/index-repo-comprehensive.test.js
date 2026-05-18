@@ -349,4 +349,47 @@ describe('index-repo (comprehensive)', () => {
       expect(result).toBeDefined();
     });
   });
+
+  describe('large repo call graph scalability', () => {
+    const name = repoName('large');
+    let tmpRepo;
+    const FILE_COUNT = 50;
+    const FUNCS_PER_FILE = 10;
+
+    beforeAll(() => {
+      tmpRepo = path.join('/tmp', `test-idx-large-${Date.now()}`);
+      const files = {};
+      for (let i = 0; i < FILE_COUNT; i++) {
+        const lines = [];
+        for (let j = 0; j < FUNCS_PER_FILE; j++) {
+          const callee = j > 0 ? `func${i}_${j - 1}` : 'console.log';
+          lines.push(`function func${i}_${j}() {`);
+          lines.push(`  ${callee}();`);
+          lines.push('}');
+          lines.push('');
+        }
+        if (i > 0) {
+          lines.unshift(`const { func${i - 1}_0 } = require("./file${i - 1}");`);
+          lines.unshift('');
+        }
+        files[`file${i}.js`] = lines.join('\n');
+      }
+      writeTmpRepo(tmpRepo, files);
+    });
+
+    afterAll(() => {
+      cleanupRepo(name);
+      try {
+        fs.rmSync(tmpRepo, { recursive: true });
+      } catch (_) {}
+    });
+
+    it('should complete indexing a repo with many files and symbols', () => {
+      const result = run(`index-repo --path "${tmpRepo}" --name ${name}`);
+      expect(result.success).toBe(true);
+      expect(result.files_indexed).toBe(FILE_COUNT);
+      expect(result.symbols_extracted).toBeGreaterThanOrEqual(FILE_COUNT * FUNCS_PER_FILE);
+      expect(result.call_edges).toBeGreaterThanOrEqual(1);
+    }, 60000);
+  });
 });

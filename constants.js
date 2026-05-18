@@ -180,6 +180,11 @@ const WORKER_POOL = {
   MAX_WORKERS: 4,
 };
 
+const CALL_GRAPH = {
+  MAX_FILE_CONTENT_BYTES: 2_000_000,
+  PROGRESS_INTERVAL_FILES: 50,
+};
+
 module.exports = {
   TRUST_DELTA,
   DEDUP,
@@ -198,4 +203,5 @@ module.exports = {
   UNTETECTED_CONFIDENCE,
   CAPTURE_PASSIVE,
   WORKER_POOL,
+  CALL_GRAPH,
 };
