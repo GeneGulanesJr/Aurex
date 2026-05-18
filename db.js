@@ -121,6 +121,8 @@ function tryLibsql() {
     const Database = require('libsql');
     const d = new Database(cfg.db_path);
     d.exec('PRAGMA journal_mode=WAL;');
+    d.exec('PRAGMA synchronous=NORMAL;');
+    d.exec('PRAGMA temp_store=MEMORY;');
     d.exec(`PRAGMA busy_timeout=${safeInt(cfg.busy_timeout_ms, 5000)};`);
     d.exec(`PRAGMA wal_autocheckpoint=${safeInt(cfg.wal_autocheckpoint, 1000)};`);
     d.exec('PRAGMA foreign_keys=ON;');
