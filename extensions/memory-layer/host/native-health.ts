@@ -20,7 +20,7 @@ export async function ensureNativeModules(): Promise<void> {
   const lapisRoot = getLapisRoot();
   console.log(`[memory-layer] Installing dependencies in ${lapisRoot}...`);
   try {
-    execSync('npm install --ignore-scripts', {
+    execSync('npm install --production', {
       cwd: lapisRoot,
       stdio: 'pipe',
       timeout: 120_000,

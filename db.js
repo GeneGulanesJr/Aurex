@@ -82,6 +82,23 @@ function safeInt(val, fallback) {
   return Number.isFinite(n) && n === Math.floor(n) ? n : fallback;
 }
 
+function tryNpmInstall() {
+  const lapisRoot = path.resolve(__dirname);
+  console.log(`[db] Auto-installing dependencies in ${lapisRoot}...`);
+  try {
+    require('child_process').execSync('npm install --production', {
+      cwd: lapisRoot,
+      stdio: 'pipe',
+      timeout: 120_000,
+    });
+    console.log('[db] Dependencies installed successfully.');
+    return true;
+  } catch (e) {
+    console.error(`[db] Auto-install failed: ${e.message}`);
+    return false;
+  }
+}
+
 function tryLibsql() {
   try {
     const cfg = getConfig();
@@ -99,7 +116,12 @@ function tryLibsql() {
 }
 
 function openDb() {
-  const libsqlDb = tryLibsql();
+  let libsqlDb = tryLibsql();
+  if (!libsqlDb) {
+    if (tryNpmInstall()) {
+      libsqlDb = tryLibsql();
+    }
+  }
   if (libsqlDb) {
     _engine = 'libsql';
     _db = libsqlDb;
