@@ -88,7 +88,7 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
         Type.String({ description: 'JSON layer rules config (or use .pimemory-layers.jsonc file)' }),
       ),
     }),
-    async execute(_id, params, _signal, onUpdate, _ctx) {
+    async execute(_id, params, _signal, onUpdate, ctx) {
       params = params ?? {};
       try {
         const cmdMap: Record<string, string> = {
@@ -189,13 +189,22 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
         }
 
         if (mode === 'index-repo' || mode === 'reindex-repo') {
+          const ui = (ctx as any)?.ui;
           const result = await deps.memStreaming(cmd, args, (msg: string) => {
             try {
               onUpdate({ type: 'progress', message: msg });
-            } catch {
-              /* Ignore if onUpdate not supported */
+            } catch {}
+            if (ui?.setStatus) {
+              try {
+                ui.setStatus('memory-index', `📦 ${msg}`);
+              } catch {}
             }
           });
+          if (ui?.setStatus) {
+            try {
+              ui.clearStatus ? ui.clearStatus('memory-index') : ui.setStatus('memory-index', '');
+            } catch {}
+          }
           if (!result) {
             return toolTextResult('Indexing failed or timed out.', {}, true);
           }
