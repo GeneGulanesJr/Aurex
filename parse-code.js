@@ -120,30 +120,7 @@ function info() {
  * Returns [] if parser not initialized or file cannot be parsed.
  * Synchronous — must call init() first.
  */
-function parseFile(filePath) {
-  if (!_ready) {
-    return [];
-  }
-
-  const ext = path.extname(filePath).toLowerCase();
-  const langConfig = LANGUAGE_MAP[ext];
-  if (!langConfig) {
-    return [];
-  }
-
-  const parser = _parsers[langConfig.parserKey];
-  if (!parser) {
-    return [];
-  }
-
-  let source;
-  try {
-    source = fs.readFileSync(filePath, 'utf-8');
-  } catch (e) {
-    console.error(`[parse-code] Failed to read ${filePath}: ${e.message}`);
-    return [];
-  }
-
+function _routeToExtractor(filePath, source, parser, langConfig) {
   if (langConfig.languageName === 'sql') {
     return _extractSqlSymbols(filePath, source, parser);
   }
@@ -157,6 +134,132 @@ function parseFile(filePath) {
     return _extractRustSymbols(filePath, source, parser);
   }
   return _extractJsTsSymbols(filePath, source, parser, langConfig.languageName);
+}
+
+function _getLangConfig(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  const langConfig = LANGUAGE_MAP[ext];
+  if (!langConfig) return null;
+  const parser = _parsers[langConfig.parserKey];
+  if (!parser) return null;
+  return { langConfig, parser };
+}
+
+function parseContent(filePath, content) {
+  if (!_ready) return [];
+  const cfg = _getLangConfig(filePath);
+  if (!cfg) return [];
+
+  const symbols = _routeToExtractor(filePath, content, cfg.parser, cfg.langConfig);
+  if (symbols.length === 0 && content.trim().length > 0) {
+    return _fallbackExtractSymbols(filePath, content);
+  }
+  return symbols;
+}
+
+function parseFile(filePath) {
+  if (!_ready) {
+    return [];
+  }
+
+  const cfg = _getLangConfig(filePath);
+  if (!cfg) {
+    return [];
+  }
+
+  let source;
+  try {
+    source = fs.readFileSync(filePath, 'utf-8');
+  } catch (e) {
+    console.error(`[parse-code] Failed to read ${filePath}: ${e.message}`);
+    return [];
+  }
+
+  return parseContent(filePath, source);
+}
+
+function _getLineFromOffset(content, offset) {
+  return content.substring(0, offset).split('\n').length;
+}
+
+function _fallbackExtractSymbols(filePath, content) {
+  const ext = path.extname(filePath).toLowerCase();
+  const symbols = [];
+  const seen = new Set();
+
+  function add(name, kind, line, signature, startByte) {
+    const key = `${name}:${kind}:${startByte}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    symbols.push({
+      name,
+      kind,
+      language: ext === '.tsx' ? 'typescript' : ext.slice(1),
+      file: filePath,
+      signature: signature.length > 200 ? `${signature.slice(0, 197)}...` : signature,
+      qualified_name: name,
+      start_line: line,
+      end_line: line,
+      start_byte: startByte,
+      end_byte: startByte + signature.length,
+      docstring: '',
+      body_preview: '',
+      parent_name: '',
+    });
+  }
+
+  const jsTsExts = new Set(['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts', '.tsx']);
+  if (jsTsExts.has(ext)) {
+    const re = /(?:^|\n)\s*(?:export\s+(?:default\s+)?)?(?:async\s+)?(?:function\s+(\w+)|(?:class|interface|type|enum)\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=[^;\n]*)/g;
+    let match;
+    while ((match = re.exec(content)) !== null) {
+      const name = match[1] || match[2] || match[3];
+      if (!name) continue;
+      const kind = match[1] ? 'function' : match[2] ? (
+        content.substring(match.index, match.index + 20).includes('class ') ? 'class' :
+        content.substring(match.index, match.index + 20).includes('interface ') ? 'interface' :
+        content.substring(match.index, match.index + 20).includes('enum ') ? 'enum' : 'type'
+      ) : 'constant';
+      const line = _getLineFromOffset(content, match.index);
+      const sig = match[0].trim().split('\n')[0];
+      add(name, kind, line, sig, match.index);
+    }
+  } else if (ext === '.py' || ext === '.pyw') {
+    const re = /^(?:async\s+)?(?:def|class)\s+(\w+)/gm;
+    let match;
+    while ((match = re.exec(content)) !== null) {
+      const name = match[1];
+      const kind = match[0].includes('def ') ? 'function' : 'class';
+      const line = _getLineFromOffset(content, match.index);
+      add(name, kind, line, match[0].trim(), match.index);
+    }
+  } else if (ext === '.go') {
+    const funcRe = /^func\s+(?:\([^)]*\)\s*)?(\w+)/gm;
+    const typeRe = /^type\s+(\w+)/gm;
+    let match;
+    while ((match = funcRe.exec(content)) !== null) {
+      const line = _getLineFromOffset(content, match.index);
+      add(match[1], 'function', line, match[0].trim(), match.index);
+    }
+    while ((match = typeRe.exec(content)) !== null) {
+      const line = _getLineFromOffset(content, match.index);
+      add(match[1], 'type', line, match[0].trim(), match.index);
+    }
+  } else if (ext === '.rs') {
+    const fnRe = /(?:^|\n)\s*(?:pub\s+)?(?:async\s+)?fn\s+(\w+)/g;
+    const structRe = /(?:^|\n)\s*(?:pub\s+)?struct\s+(\w+)/g;
+    const enumRe = /(?:^|\n)\s*(?:pub\s+)?enum\s+(\w+)/g;
+    const traitRe = /(?:^|\n)\s*(?:pub\s+)?trait\s+(\w+)/g;
+    let match;
+    for (const [regex, kind] of [[fnRe, 'function'], [structRe, 'class'], [enumRe, 'enum'], [traitRe, 'interface']]) {
+      while ((match = regex.exec(content)) !== null) {
+        const line = _getLineFromOffset(content, match.index);
+        add(match[1], kind, line, match[0].trim(), match.index);
+      }
+    }
+  }
+
+  return symbols;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -983,33 +1086,7 @@ function _extractSqlSymbols(filePath, sourceStr, parser) {
  * - receiver: the object part of a member call (e.g., 'this', 'super', 'obj', or null for direct calls)
  * - full_path: the complete callee text (e.g., 'this.method', 'obj.method', 'foo')
  */
-function extractCallees(filePath) {
-  if (!_ready) {
-    return [];
-  }
-  const ext = path.extname(filePath).toLowerCase();
-  const langConfig = LANGUAGE_MAP[ext];
-  if (!langConfig || langConfig.languageName === 'sql') {
-    return [];
-  }
-
-  const _SKIP = SKIP_CALLEE_NAMES;
-
-  const parser = _parsers[langConfig.parserKey];
-  if (!parser) {
-    return [];
-  }
-
-  let source;
-  try {
-    source = fs.readFileSync(filePath, 'utf-8');
-  } catch (e) {
-    console.error(`[parse-code] Failed to read ${filePath}: ${e.message}`);
-    return [];
-  }
-
-  const tree = parser.parse(source);
-  const root = tree.rootNode;
+function _walkCallees(root, _SKIP) {
   const callees = [];
   const seen = new Set();
 
@@ -1086,8 +1163,57 @@ function extractCallees(filePath) {
   }
 
   walk(root);
-  tree.delete();
   return callees;
 }
 
-module.exports = { init, isReady, parseFile, extractCallees, info };
+function extractCalleesFromContent(filePath, content) {
+  if (!_ready) {
+    return [];
+  }
+  const ext = path.extname(filePath).toLowerCase();
+  const langConfig = LANGUAGE_MAP[ext];
+  if (!langConfig || langConfig.languageName === 'sql') {
+    return [];
+  }
+
+  const parser = _parsers[langConfig.parserKey];
+  if (!parser) {
+    return [];
+  }
+
+  const tree = parser.parse(content);
+  const result = _walkCallees(tree.rootNode, SKIP_CALLEE_NAMES);
+  tree.delete();
+  return result;
+}
+
+function extractCallees(filePath) {
+  if (!_ready) {
+    return [];
+  }
+  const ext = path.extname(filePath).toLowerCase();
+  const langConfig = LANGUAGE_MAP[ext];
+  if (!langConfig || langConfig.languageName === 'sql') {
+    return [];
+  }
+
+  const parser = _parsers[langConfig.parserKey];
+  if (!parser) {
+    return [];
+  }
+
+  let source;
+  try {
+    source = fs.readFileSync(filePath, 'utf-8');
+  } catch (e) {
+    console.error(`[parse-code] Failed to read ${filePath}: ${e.message}`);
+    return [];
+  }
+
+  const tree = parser.parse(source);
+  const result = _walkCallees(tree.rootNode, SKIP_CALLEE_NAMES);
+  tree.delete();
+  return result;
+}
+
+module.exports = { init, isReady, parseFile, parseContent, extractCallees, extractCalleesFromContent, info };
