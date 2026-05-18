@@ -54,7 +54,7 @@ function rankObservations(rows, query = '') {
     .sort((a, b) => b._score - a._score);
 }
 
-async function search(deps, args) {
+function search(deps, args) {
   const { sqlJson, sqlRun, jsonErrNoExit } = deps;
   const query = args.query;
   const project = args.project || null;
@@ -100,7 +100,7 @@ async function search(deps, args) {
       }
       q += ' ORDER BY rank LIMIT ?';
       params.push(Math.min(limit * RESULT_LIMITS.SEARCH_MULTIPLIER, RESULT_LIMITS.SEARCH_MAX_ROWS));
-      rows = await sqlJson(q, params);
+      rows = sqlJson(q, params);
     } catch {
       rows = null;
     }
@@ -133,13 +133,13 @@ async function search(deps, args) {
     }
     q += ' ORDER BY o.created_at DESC LIMIT ?';
     params.push(Math.min(limit * RESULT_LIMITS.SEARCH_MULTIPLIER, RESULT_LIMITS.SEARCH_MAX_ROWS));
-    rows = await sqlJson(q, params);
+    rows = sqlJson(q, params);
   }
 
   const ranked = rankObservations(rows, query).slice(0, limit);
 
   if (sessionId && ranked.length > 0) {
-    await insertRecallLog(
+    insertRecallLog(
       { sqlRun },
       ranked.map((r) => ({
         memoryId: r.id,
@@ -151,13 +151,13 @@ async function search(deps, args) {
 
   let codeResults = null;
   if (includeCode && deps.searchCode) {
-    codeResults = await deps.searchCode(query, null, null, limit);
+    codeResults = deps.searchCode(query, null, null, limit);
   }
 
   return { results: ranked, code_results: codeResults };
 }
 
-async function symbolCluster(deps, args) {
+function symbolCluster(deps, args) {
   const { sqlJson, jsonErrNoExit } = deps;
   const symbolId = args.symbol;
   const repo = args.repo || null;
@@ -183,14 +183,14 @@ async function symbolCluster(deps, args) {
   return { symbol: symbolId, memories: sqlJson(q, params) };
 }
 
-async function related(deps, args) {
+function related(deps, args) {
   const { sqlJson, jsonErrNoExit } = deps;
   const id = parseInt(args.id);
   if (isNaN(id)) {
     return jsonErrNoExit('Missing --id');
   }
 
-  const symbols = await sqlJson('SELECT symbol_id, repo FROM symbol_links WHERE memory_id = ? AND symbol_id != ?', [
+  const symbols = sqlJson('SELECT symbol_id, repo FROM symbol_links WHERE memory_id = ? AND symbol_id != ?', [
     String(id),
     '__unlinked__',
   ]);
@@ -202,7 +202,7 @@ async function related(deps, args) {
   if (symbols.length > 0) {
     const symbolIds = symbols.map((s) => s.symbol_id);
     const placeholders = symbolIds.map(() => '?').join(',');
-    const clusters = await sqlJson(
+    const clusters = sqlJson(
       `
       SELECT sl.symbol_id, o.id, o.title, o.type, o.project, o.created_at
       FROM observations o

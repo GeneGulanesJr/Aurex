@@ -2,7 +2,7 @@ const recoveryService = require('../services/recovery');
 const sessionsService = require('../services/sessions');
 const dreamService = require('../services/dream');
 
-async function sessionStart(deps, args) {
+function sessionStart(deps, args) {
   return sessionsService.sessionStart(
     {
       sqlJson: deps.sqlJson,
@@ -17,7 +17,7 @@ async function sessionStart(deps, args) {
   );
 }
 
-async function sessionEnd(deps, args) {
+function sessionEnd(deps, args) {
   return sessionsService.sessionEnd(
     {
       sqlJson: deps.sqlJson,
@@ -28,7 +28,7 @@ async function sessionEnd(deps, args) {
   );
 }
 
-async function sessionSummary(deps, args) {
+function sessionSummary(deps, args) {
   return sessionsService.sessionSummary(
     {
       sqlJson: deps.sqlJson,
@@ -39,15 +39,15 @@ async function sessionSummary(deps, args) {
   );
 }
 
-async function autoRecover(deps, args) {
+function autoRecover(deps, args) {
   return recoveryService.autoRecover(deps, args);
 }
 
-async function recoverOrphans(deps) {
+function recoverOrphans(deps) {
   return recoveryService.recoverOrphans(deps);
 }
 
-async function dream(deps) {
+function dream(deps) {
   return dreamService.dream({
     sqlJson: deps.sqlJson,
     sqlRun: deps.sqlRun,
@@ -55,11 +55,11 @@ async function dream(deps) {
   });
 }
 
-async function compact() {
+function compact() {
   return dreamService.compact();
 }
 
-async function trustRecovery(args) {
+function trustRecovery(args) {
   return dreamService.trustRecovery(args);
 }
 

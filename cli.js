@@ -85,7 +85,7 @@ const args = parseArgs(process.argv);
 const cmd = process.argv[2];
 
 (async () => {
-  await ensureDb();
+  ensureDb();
   const format = args.format || 'json';
 
   if (cmd && commands[cmd]) {
@@ -109,7 +109,7 @@ const cmd = process.argv[2];
     if (ANALYSIS_TOOLS.has(cmd) && !result.error) {
       const repoName = args.repo;
       if (repoName) {
-        const repoRow = await sqlJson('SELECT id, path, head_commit FROM code_repos WHERE name = ?', [repoName]);
+        const repoRow = sqlJson('SELECT id, path, head_commit FROM code_repos WHERE name = ?', [repoName]);
         if (repoRow.length > 0) {
           jsonOut(_wrapAnalysis(cmd, result, repoRow[0], startTime, format, { getDb }));
           return;

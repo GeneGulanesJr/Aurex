@@ -1,7 +1,7 @@
 const { getConfig } = require('../../config');
 const { CAPTURE_PASSIVE } = require('../../constants');
 
-async function save(deps, args) {
+function save(deps, args) {
   const {
     jsonErrNoExit,
     insertObservation,
@@ -17,7 +17,7 @@ async function save(deps, args) {
   const project = args.project || null;
   const scope = args.scope || 'project';
   const topicKey = args['topic-key'] || null;
-  const sessionId = args['session-id'] || (await findLatestSession(project));
+  const sessionId = args['session-id'] || findLatestSession(project);
   const force = args.force === 'true' || args.force === true;
 
   if (!title || !content) {
@@ -25,20 +25,20 @@ async function save(deps, args) {
   }
 
   if (!force) {
-    const dupes = await checkDuplicate(title, type, project, topicKey);
+    const dupes = checkDuplicate(title, type, project, topicKey);
     if (dupes.potential_duplicates.length > 0) {
       const bestMatch = dupes.potential_duplicates[0];
       const dedupCfg = getConfig().dedup;
       if (bestMatch.similarity >= dedupCfg.auto_merge_threshold) {
-        const rows = await insertObservation({ sessionId, type, title, content, project, scope, topicKey });
+        const rows = insertObservation({ sessionId, type, title, content, project, scope, topicKey });
         const newId = rows[0].id;
-        await insertObservationRelation({
+        insertObservationRelation({
           sourceId: newId,
           targetId: bestMatch.id,
           relation: 'duplicate',
           confidence: bestMatch.similarity,
         });
-        await softDeleteObservation(bestMatch.id);
+        softDeleteObservation(bestMatch.id);
         return {
           id: newId,
           title,
@@ -58,11 +58,11 @@ async function save(deps, args) {
     }
   }
 
-  const rows = await insertObservation({ sessionId, type, title, content, project, scope, topicKey });
+  const rows = insertObservation({ sessionId, type, title, content, project, scope, topicKey });
   return { id: rows[0].id, title, created_at: rows[0].created_at };
 }
 
-async function capturePassive(deps, args) {
+function capturePassive(deps, args) {
   const { jsonErrNoExit, insertCapturePassiveObservation, findLatestSession } = deps;
   const content = args.content;
   if (!content) {
@@ -86,19 +86,19 @@ async function capturePassive(deps, args) {
   }
 
   let inserted = 0;
-  const sessionId = await findLatestSession(null);
+  const sessionId = findLatestSession(null);
   for (const item of items) {
     const summary =
       item.length > CAPTURE_PASSIVE.SUMMARY_MAX_LENGTH
         ? `${item.slice(0, CAPTURE_PASSIVE.SUMMARY_MAX_LENGTH - 3)}…`
         : item;
-    await insertCapturePassiveObservation({ sessionId, summary, content: item });
+    insertCapturePassiveObservation({ sessionId, summary, content: item });
     inserted++;
   }
   return { extracted: inserted, items };
 }
 
-async function suggestTopicKey(args) {
+function suggestTopicKey(args) {
   const title = args.title;
   const content = args.content;
   const source = title || content || '';
