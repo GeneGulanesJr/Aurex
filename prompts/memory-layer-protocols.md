@@ -66,6 +66,7 @@ The extension handles session start, context loading, and session shutdown autom
 ## Startup invariant
 
 When LaPis is installed and loaded, assume these behaviors are always active:
+
 - code/doc retrieval should use LaPis tools first
 - raw source reads/searches should be treated as a fallback to be avoided
 - trust-sync should be automatic after git changes
