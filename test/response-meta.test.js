@@ -139,7 +139,7 @@ describe('response-meta.js', () => {
       const repoPath = require('path').resolve(__dirname, '..');
       const result = responseMeta.buildEnvelope({
         toolName: 'getFileOutline',
-        data: { symbols: [{ name: 'test' }] },
+        data: { classes: [{ name: 'MyClass', methods: [] }], standalone: [{ name: 'testFn' }] },
         db: null,
         repoId: 1,
         repoPath,
@@ -151,9 +151,9 @@ describe('response-meta.js', () => {
       expect(result._meta.schema_version).toBe(1);
       expect(result._meta.freshness).toBeDefined();
       expect(result._meta.generated_at).toBeDefined();
-      expect(result._meta.result_count).toBe(1);
+      expect(result._meta.result_count).toBe(2);
       expect(result._meta.confidence).toBe(1.0);
-      expect(result.data).toEqual({ symbols: [{ name: 'test' }] });
+      expect(result.data).toEqual({ classes: [{ name: 'MyClass', methods: [] }], standalone: [{ name: 'testFn' }] });
     });
   });
 });

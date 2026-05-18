@@ -19,6 +19,12 @@ const {
 } = require('../../constants');
 const { requireNativeDb: _requireNativeDb, SKIP_CALLEE_NAMES: _SKIP_CALLEE_NAMES } = require('../../utils');
 
+// Escape SQL LIKE wildcard characters (%, _) in user input.
+// Uses '!' as the ESCAPE character to avoid backslash issues across JS/SQL boundaries.
+function _likeEscape(str) {
+  return str.replace(/!/g, '!!').replace(/%/g, '!%').replace(/_/g, '!_');
+}
+
 // ══════════════════════════════════════════════════════════
 // IMPORT GRAPH
 // ══════════════════════════════════════════════════════════
@@ -233,7 +239,7 @@ function getImportGraph(db, repoId, opts) {
   const { file, direction = 'both', depth = 1 } = opts;
 
   if (depth <= 1 && file) {
-    const fileRow = db.prepare('SELECT id FROM code_files WHERE repo_id = ? AND path LIKE ?').get(repoId, `%${file}%`);
+    const fileRow = db.prepare("SELECT id FROM code_files WHERE repo_id = ? AND path LIKE ? ESCAPE '!'").get(repoId, `%${_likeEscape(file)}%`);
     if (!fileRow) {
       return { error: `File not found: ${file}` };
     }
@@ -257,7 +263,7 @@ function getImportGraph(db, repoId, opts) {
   }
 
   if (depth > 1 && file) {
-    const fileRow = db.prepare('SELECT id FROM code_files WHERE repo_id = ? AND path LIKE ?').get(repoId, `%${file}%`);
+    const fileRow = db.prepare("SELECT id FROM code_files WHERE repo_id = ? AND path LIKE ? ESCAPE '!'").get(repoId, `%${_likeEscape(file)}%`);
     if (!fileRow) {
       return { error: `File not found: ${file}` };
     }
@@ -1060,13 +1066,13 @@ function getFileOutline(db, repoId, filePath) {
     return guard;
   }
   const fileRow = db
-    .prepare('SELECT id FROM code_files WHERE repo_id = ? AND path LIKE ?')
-    .get(repoId, `%${filePath}%`);
+    .prepare("SELECT id FROM code_files WHERE repo_id = ? AND path LIKE ? ESCAPE '!'")
+    .get(repoId, `%${_likeEscape(filePath)}%`);
   if (!fileRow) {
     // Suggest available files that partially match
     const suggestions = db
-      .prepare('SELECT path FROM code_files WHERE repo_id = ? AND path LIKE ? LIMIT 20')
-      .all(repoId, `%${filePath.split('/').pop()}%`);
+      .prepare("SELECT path FROM code_files WHERE repo_id = ? AND path LIKE ? ESCAPE '!' LIMIT 20")
+      .all(repoId, `%${_likeEscape(filePath.split('/').pop())}%`);
     const totalFiles = db.prepare('SELECT COUNT(*) as cnt FROM code_files WHERE repo_id = ?').get(repoId).cnt;
     if (suggestions.length) {
       return {
@@ -1096,9 +1102,9 @@ function getFileOutline(db, repoId, filePath) {
     SELECT cs.id, cs.name, cs.kind, cs.start_line, cs.end_line, cs.signature, cs.qualified_name, cs.parent_name,
            sc.cyclomatic, sc.assessment
     FROM code_symbols cs LEFT JOIN symbol_complexity sc ON sc.symbol_id = cs.id
-    WHERE cs.repo_id = ? AND cs.file_path LIKE ? ORDER BY cs.start_line
+    WHERE cs.repo_id = ? AND cs.file_path LIKE ? ESCAPE '!' ORDER BY cs.start_line
   `)
-    .all(repoId, `%${filePath}%`);
+    .all(repoId, `%${_likeEscape(filePath)}%`);
 
   const classes = [];
   const standalone = [];
