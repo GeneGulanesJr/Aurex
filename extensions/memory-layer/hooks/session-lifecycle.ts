@@ -75,7 +75,7 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionDeps) {
 }
 
 export function registerSessionCompact(pi: ExtensionAPI, deps: SessionDeps) {
-  pi.on('session_compact', async (_event, ctx) => {
+  pi.on('session_compact', async (_event, _ctx) => {
     if (!deps.state.currentProject) {
       return;
     }

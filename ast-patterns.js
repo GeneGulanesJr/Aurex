@@ -397,17 +397,16 @@ function scanAstPatterns(db, repoId, opts = {}) {
   // Add custom DSL patterns
   for (const raw of customPatterns) {
     const parsed = parseCustomPattern(raw);
-    if (parsed.error) {
-      continue;
+    if (!parsed.error) {
+      detectors.push({
+        id: `custom:${raw}`,
+        category: 'custom',
+        description: `Custom pattern: ${raw}`,
+        severity: 'info',
+        detect: parsed.detect,
+        source: 'custom',
+      });
     }
-    detectors.push({
-      id: `custom:${raw}`,
-      category: 'custom',
-      description: `Custom pattern: ${raw}`,
-      severity: 'info',
-      detect: parsed.detect,
-      source: 'custom',
-    });
   }
 
   if (detectors.length === 0) {

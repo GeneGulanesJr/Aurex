@@ -29,7 +29,7 @@ describe('services/trust: syncCodeTrust', () => {
     const Module = require('module');
     const originalLoad = Module._load;
     // We can't easily mock execSync in unit tests, so test the early-exit path
-    // by simulating detectChangedSymbols returning HEAD unchanged
+    // By simulating detectChangedSymbols returning HEAD unchanged
     const result = syncCodeTrust(deps, { repo: 'my-repo' });
     // Since we can't mock execSync, the test verifies the repo lookup path
     // In real usage, execSync would return the same commit
@@ -76,6 +76,6 @@ describe('services/trust: syncCodeTrust', () => {
     };
 
     // Since we can't mock execSync in unit tests, we test the trust policy integration
-    // directly through evaluateTrustSync (covered in trust-sync.test.js)
+    // Directly through evaluateTrustSync (covered in trust-sync.test.js)
   });
 });

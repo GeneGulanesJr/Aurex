@@ -202,7 +202,11 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
           });
           if (ui?.setStatus) {
             try {
-              ui.clearStatus ? ui.clearStatus('memory-index') : ui.setStatus('memory-index', '');
+              if (ui.clearStatus) {
+                ui.clearStatus('memory-index');
+              } else {
+                ui.setStatus('memory-index', '');
+              }
             } catch {}
           }
           if (!result) {

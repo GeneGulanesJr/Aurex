@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { MEMORY_REMINDER_INTERVAL, MemResult, state } from '../state';
-import { mem } from '../host/memory-client';
 import { getKnownRepos, isRepoStale } from '../host/project-detector';
+import { mem } from '../host/memory-client';
 import path from 'node:path';
 
 interface ContextDeps {

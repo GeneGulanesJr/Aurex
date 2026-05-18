@@ -15,9 +15,7 @@ function extractCodeBlocks(content, sectionByteStart) {
       lang = line.replace(/^```\s*/, '').trim();
       blockContent = [];
       blockStartLine = i;
-      continue;
-    }
-    if (inBlock && line.match(/^```\s*$/)) {
+    } else if (inBlock && line.match(/^```\s*$/)) {
       inBlock = false;
       const blockText = blockContent.join('\n');
       const preBytes = lines.slice(0, blockStartLine).reduce((s, l) => s + l.length + 1, 0);
@@ -28,9 +26,7 @@ function extractCodeBlocks(content, sectionByteStart) {
         byte_start: sectionByteStart + preBytes,
         byte_end: sectionByteStart + closingFenceBytes,
       });
-      continue;
-    }
-    if (inBlock) {
+    } else if (inBlock) {
       blockContent.push(line);
     }
   }

@@ -1,5 +1,5 @@
 function safePop(val: any): string {
-  if (typeof val === 'string') return val.split('/').pop() ?? val;
+  if (typeof val === 'string') {return val.split('/').pop() ?? val;}
   return String(val ?? '');
 }
 

@@ -45,7 +45,7 @@ function extractMessageText(msg: any): string {
 }
 
 export function registerPassiveCapture(pi: ExtensionAPI, deps: PassiveCaptureDeps) {
-  pi.on('tool_result', async (event, ctx) => {
+  pi.on('tool_result', async (event, _ctx) => {
     if (event.toolName === 'edit' || event.toolName === 'write') {
       const input = event.input as { path?: string };
       if (!input?.path || !deps.state.currentProject) {

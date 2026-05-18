@@ -148,16 +148,16 @@ function _routeToExtractor(filePath, source, parser, langConfig) {
 function _getLangConfig(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   const langConfig = LANGUAGE_MAP[ext];
-  if (!langConfig) return null;
+  if (!langConfig) {return null;}
   const parser = _parsers[langConfig.parserKey];
-  if (!parser) return null;
+  if (!parser) {return null;}
   return { langConfig, parser };
 }
 
 function parseContent(filePath, content) {
-  if (!_ready) return [];
+  if (!_ready) {return [];}
   const cfg = _getLangConfig(filePath);
-  if (!cfg) return [];
+  if (!cfg) {return [];}
 
   const symbols = _routeToExtractor(filePath, content, cfg.parser, cfg.langConfig);
   if (symbols.length === 0 && content.trim().length > 0) {
@@ -228,7 +228,7 @@ function _fallbackExtractSymbols(filePath, content) {
 
   function add(name, kind, line, signature, startByte) {
     const key = `${name}:${kind}:${startByte}`;
-    if (seen.has(key)) return;
+    if (seen.has(key)) {return;}
     seen.add(key);
     symbols.push({
       name,
