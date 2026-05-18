@@ -1,0 +1,253 @@
+# Memory System Ignore Patterns
+# This file tells the memory indexing system which files to skip for performance
+
+# Dependencies and package managers
+node_modules/
+bower_components/
+jspm_packages/
+vendor/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+Package.swift
+Podfile/
+Podfile.lock
+Gemfile.lock
+composer.lock
+requirements.txt
+poetry.lock
+Pipfile.lock
+Cargo.lock
+mix.lock
+.lock-wscript/
+*.tsbuildinfo
+
+# Build outputs and compiled files
+dist/
+build/
+out/
+target/
+bin/
+obj/
+lib/
+*.[oa]
+*.so
+*.dll
+*.exe
+*.class
+*.jar
+*.war
+*.ear
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.csproj
+*.vbproj
+*.sln
+*.vcxproj
+*.xcodeproj/
+*.xcworkspace/
+.idea/
+*.iml
+*.class
+*.war
+*.ear
+
+# Runtime data and logs
+logs/
+*.log
+tmp/
+temp/
+cache/
+.*cache/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+.env
+.env.*
+!.env.example  # Keep example env files
+
+# Test artifacts and coverage
+coverage/
+*.lcov
+.test-results/
+nyc_output/
+jest-cache/
+.nyc_output/
+.jest-test-results/
+.htmlcov/
+.tox/
+.hypothesis/
+.pytest_cache/
+.coveragelog
+.coverage*
+htmlcov/
+*.cover
+*.gcda
+*.gcno
+
+# Documentation (adjust based on needs)
+# Uncomment if documentation should be indexed
+# docs/
+# *.md
+# *.txt
+# *.rst
+# *.adoc
+# *.pdf
+
+# Large binary and media files
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.ico
+*.mp3
+*.mp4
+*.avi
+*.mov
+*.wmv
+*.flv
+*.webm
+*.wav
+*.ogg
+*.zip
+*.tar
+*.gz
+*.7z
+*.rar
+*.pdf
+*.exe
+*.dmg
+*.iso
+*.crx
+*.xpi
+*.vsix
+*.vsixmanifest
+*.nupkg
+*.snupkg
+*.nuspec
+
+# Generated and temporary files
+*.map
+*.bak
+*.backup
+*.orig
+*.tmp
+*.temp
+*.temp.*
+*~
+*.swp
+*.swo
+*.swn
+.*.swp
+.idea/
+*.orig
+*~
+.#*
+*#
+.*#
+.#*
+*#
+
+# Lock files (usually not needed for code intelligence)
+*.lock
+.lock-wscript
+
+# Package files (often large and not core logic)
+*.csproj
+*.vbproj
+*.vcxproj
+*.xcodeproj/
+*.xcworkspace/
+*.sln
+*.suo
+*.user
+*.users
+*.cache
+*.csproj.*
+*.vcxproj.*
+*.xcodeproj.*
+*.xcworkspace.*
+
+# IDE and editor metadata
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+*.sublime-session
+*.stTheme-cache
+*.sublime-metadata
+*.sublime-settings
+*.sublime-build
+.project
+.classpath
+.settings/
+.cproject
+*.launch
+*.launch.settings
+*.sublime-workspace
+*.sublime-project
+
+# OS and system files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.tmp
+*.temp
+.TemporaryItems
+.Trashes
+.networkTrash
+.TemporaryItems
+.apdisk
+
+# Specific large directories that often cause issues
+benchmark/
+bench/
+.sass-cache/
+.node-repl_history
+*.tsbuildinfo
+*.tsbuildinfo
+out/
+coverage/
+docs/
+api-docs/
+storybook/
+.storybook/
+storybook-static/
+
+# Database files
+*.sqlite
+*.sqlite3
+*.mdb
+*.accdb
+*.ldb
+*.laccdb
+
+# Temporary and scratch files
+*.tmp
+*.temp
+*.temp.*
+*~
+*.orig
+*.bak
+*.backup
+*.old
+*.wip
+*.swap
+*.swp
+*.log
+*.log.*
+*.bak
+*.old
+*.tmp
+*.temp
+*.temp.*
+*~

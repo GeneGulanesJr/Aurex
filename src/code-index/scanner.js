@@ -10,7 +10,7 @@ function isCodeFile(filePath) {
   return CODE_EXTENSIONS.has(path.extname(filePath).toLowerCase());
 }
 
-function loadGitignoreRules(repoPath) {
+function loadIgnoreRules(repoPath, filename) {
   let ig;
   try {
     ig = require('ignore')();
@@ -21,9 +21,9 @@ function loadGitignoreRules(repoPath) {
   let added = false;
 
   function tryLoad(dir) {
-    const gitignorePath = path.join(dir, '.gitignore');
+    const ignorePath = path.join(dir, filename);
     try {
-      const content = fs.readFileSync(gitignorePath, 'utf-8');
+      const content = fs.readFileSync(ignorePath, 'utf-8');
       ig.add(content);
       added = true;
     } catch {}
@@ -49,10 +49,19 @@ function loadGitignoreRules(repoPath) {
   return added ? ig : null;
 }
 
+function loadGitignoreRules(repoPath) {
+  return loadIgnoreRules(repoPath, '.gitignore');
+}
+
+function loadMemorycodeignoreRules(repoPath) {
+  return loadIgnoreRules(repoPath, '.memorycodeignore');
+}
+
 function scanRepository(repoPath, options = {}) {
   const results = [];
   const extraIgnoreDirs = options.ignoreDirs || [];
-  const ig = loadGitignoreRules(repoPath);
+  const gitignoreIg = loadGitignoreRules(repoPath);
+  const memorycodeignoreIg = loadMemorycodeignoreRules(repoPath);
 
   function walk(dir) {
     let entries;
@@ -67,25 +76,17 @@ function scanRepository(repoPath, options = {}) {
       if (entry.isDirectory()) {
         if (shouldSkipDir(entry.name, extraIgnoreDirs)) {
           // Skip
-        } else if (ig) {
-          const relativePath = path.relative(repoPath, fullPath);
-          if (relativePath && ig.ignores(relativePath)) {
-            // Skip
-          } else {
-            walk(fullPath);
-          }
+        } else if ((gitignoreIg && gitignoreIg.ignores(path.relative(repoPath, fullPath))) || 
+                   (memorycodeignoreIg && memorycodeignoreIg.ignores(path.relative(repoPath, fullPath)))) {
+          // Skip
         } else {
           walk(fullPath);
         }
       } else if (entry.isFile() && isCodeFile(fullPath)) {
-        if (ig) {
-          const relativePath = path.relative(repoPath, fullPath);
-          if (relativePath && ig.ignores(relativePath)) {
-            // Skip
-          } else {
-            results.push(fullPath);
-          }
-        } else {
+        const relativePath = path.relative(repoPath, fullPath);
+        const shouldSkip = (gitignoreIg && gitignoreIg.ignores(relativePath)) || 
+                           (memorycodeignoreIg && memorycodeignoreIg.ignores(relativePath));
+        if (!shouldSkip) {
           results.push(fullPath);
         }
       }
