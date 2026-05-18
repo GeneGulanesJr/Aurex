@@ -105,7 +105,7 @@ function openDb() {
     _db = libsqlDb;
     return libsqlDb;
   }
-  const msg = `No libSQL backend found.\n` + `  Run: cd ${__dirname} && npm install @libsql/client\n`;
+  const msg = `No libSQL backend found.\n  Run: cd ${__dirname} && npm install @libsql/client\n`;
   throw new Error(msg);
 }
 

@@ -37,7 +37,10 @@ function formatCodeResult(mode: string, result: any): string {
         deadFiles.length ? `Dead files:\n${deadFiles.map((f: any) => `  ${f.path ?? '?'}`).join('\n')}` : '',
         deadSyms
           .slice(0, 20)
-          .map((s: any) => `  [${s.confidence ?? '?'}] ${s.name ?? '?'} (${s.file ?? '?'}) — ${(s.signals || []).join(', ')}`)
+          .map(
+            (s: any) =>
+              `  [${s.confidence ?? '?'}] ${s.name ?? '?'} (${s.file ?? '?'}) — ${(s.signals || []).join(', ')}`,
+          )
           .join('\n'),
       ]
         .filter(Boolean)
@@ -66,7 +69,9 @@ function formatCodeResult(mode: string, result: any): string {
       const up = result.upstream || [];
       if (down.length || up.length) {
         return [
-          down.length ? `**Downstream:**\n${down.map((d: any) => `  [${d.depth ?? '?'}] ${d.path ?? '?'}`).join('\n')}` : '',
+          down.length
+            ? `**Downstream:**\n${down.map((d: any) => `  [${d.depth ?? '?'}] ${d.path ?? '?'}`).join('\n')}`
+            : '',
           up.length ? `**Upstream:**\n${up.map((u: any) => `  [${u.depth ?? '?'}] ${u.path ?? '?'}`).join('\n')}` : '',
         ]
           .filter(Boolean)
@@ -301,7 +306,9 @@ function formatDocResult(mode: string, result: any): string {
         return 'No orphan sections found — all sections have inbound links.';
       }
       return `Found ${result.total ?? result.orphans.length} orphan sections:\n\n${result.orphans
-        .map((s: any) => `- **${s.title ?? '?'}** (L${s.level ?? '?'}) — ${safePop(s.file_path)} [${s.role || 'other'}]`)
+        .map(
+          (s: any) => `- **${s.title ?? '?'}** (L${s.level ?? '?'}) — ${safePop(s.file_path)} [${s.role || 'other'}]`,
+        )
         .join('\n')}`;
     }
     case 'coverage': {
