@@ -170,7 +170,7 @@ describe('code-index scanner', () => {
 
     expect(result.files).toEqual([path.join(tmp, 'app.js')]);
     expect(result.skipReport.unsupportedExt).toBe(1);
-    expect(progress.at(-1)).toMatchObject({ done: true, codeFiles: 1 });
+    expect(progress[progress.length - 1]).toMatchObject({ done: true, codeFiles: 1 });
     expect(progress.some((p) => p.currentPath === 'app.js' && p.currentKind === 'file')).toBe(true);
   });
 });
