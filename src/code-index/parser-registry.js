@@ -15,6 +15,9 @@ const LANGUAGE_BY_EXTENSION = Object.freeze({
   '.pyw': 'python',
   '.go': 'go',
   '.rs': 'rust',
+  '.html': 'html',
+  '.css': 'css',
+  '.scss': 'scss',
 });
 
 function getLanguageForFile(filePath) {

@@ -56,6 +56,9 @@ const CODE_EXTENSIONS = new Set([
   '.rs',
   '.py',
   '.pyw',
+  '.html',
+  '.css',
+  '.scss',
 ]);
 
 const MD_EXTENSIONS = new Set(['.md', '.mdx']);
