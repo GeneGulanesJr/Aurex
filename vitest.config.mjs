@@ -1,10 +1,9 @@
-import { defineConfig } from 'vitest/config';
-
-export default defineConfig({
+export default {
   resolve: {
     extensions: ['.ts', '.js', '.mjs', '.cjs', '.json'],
   },
   test: {
+    exclude: ['**/node_modules/**', '**/.git/**', '**/.worktrees/**'],
     globals: true,
     testTimeout: 30000,
     hookTimeout: 30000,
@@ -16,4 +15,4 @@ export default defineConfig({
     // Or reindex the same doc repos simultaneously.
     fileParallelism: false,
   },
-});
+};

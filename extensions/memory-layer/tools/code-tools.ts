@@ -1,7 +1,7 @@
 import { mem, memStreaming } from '../host/memory-client';
 import { normalizeToolResult, stringifyToolError, toolTextResult } from './tool-result';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
-import { Type } from 'typebox';
+import { Type } from './schema';
 import { formatCodeResult } from './format-code-result';
 import { getKnownRepos } from '../host/project-detector';
 

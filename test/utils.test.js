@@ -104,9 +104,9 @@ describe('utils.js', () => {
 
     it('should find code files in src but skip node_modules', () => {
       const files = utils.walkDirForCode(tmpDir);
-      expect(files.length).toBe(2);
+      expect(files.length).toBe(3);
       const basenames = files.map((f) => path.basename(f)).sort();
-      expect(basenames).toEqual(['app.ts', 'index.js']);
+      expect(basenames).toEqual(['app.ts', 'index.js', 'style.css']);
     });
 
     it('should skip hidden directories', () => {

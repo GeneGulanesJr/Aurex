@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { state, trustIcon } from '../state';
-import { Type } from 'typebox';
+import { Type } from './schema';
 import { mem, memCmd } from '../host/memory-client';
 
 interface MemoryDeps {

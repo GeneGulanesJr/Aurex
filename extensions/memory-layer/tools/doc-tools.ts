@@ -1,6 +1,6 @@
 import { normalizeToolResult, stringifyToolError, toolTextResult } from './tool-result';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
-import { Type } from 'typebox';
+import { Type } from './schema';
 import { formatDocResult } from './format-doc-result';
 import { getKnownRepos } from '../host/project-detector';
 import { mem } from '../host/memory-client';

@@ -43,7 +43,12 @@ function shouldEmitFileProgress(done, total) {
 function getHeadCommit(repoPath) {
   try {
     return require('child_process')
-      .execSync('git rev-parse HEAD', { cwd: repoPath, encoding: 'utf-8', timeout: 5000 })
+      .execSync('git rev-parse HEAD', {
+        cwd: repoPath,
+        encoding: 'utf-8',
+        timeout: 5000,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      })
       .trim();
   } catch {
     return null;
@@ -555,6 +560,8 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
   let reindexed = 0;
   let unchanged = 0;
   let symbolCount = 0;
+  let hashed = 0;
+  const skipped = [];
   const totalFiles = files.length;
 
   for (let i = 0; i < files.length; i++) {
@@ -573,21 +580,21 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
     }
 
     try {
-      const stats = fs.statSync(filePath);
+      const record = await readFileRecord(filePath);
+      const fileParams = fileRecordToParams(existing.id, record);
+      hashed++;
       const prev = existingFiles.get(filePath);
-      if (prev && prev.mtime === stats.mtimeMs) {
+      if (prev && prev.content_hash === fileParams.contentHash) {
         unchanged++;
       } else {
-        const content = fs.readFileSync(filePath, 'utf-8');
-        const record = { filePath, content, stats };
         const writeChangedFile = () => {
           let fileId;
           if (prev) {
             repository.clearFileSymbols(prev.id);
-            repository.updateFile(prev.id, fileRecordToParams(existing.id, record));
+            repository.updateFile(prev.id, fileParams);
             fileId = prev.id;
           } else {
-            fileId = repository.insertFile(fileRecordToParams(existing.id, record));
+            fileId = repository.insertFile(fileParams);
           }
 
           emitProgress(args, 'parsing', {
@@ -595,7 +602,7 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
             current_file: progressPath(filePath, existing.path),
             message: `Step 3/5: extracting symbols from changed file ${progressPath(filePath, existing.path)}`,
           });
-          const symbols = extractSymbolsFromFile(filePath, registry, content);
+          const symbols = extractSymbolsFromFile(filePath, registry, record.content);
           emitProgress(args, 'parsing', {
             step: 'store-index',
             current_file: progressPath(filePath, existing.path),
@@ -610,7 +617,9 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
           writeChangedFile();
         }
       }
-    } catch {}
+    } catch (e) {
+      skipped.push({ file: filePath, error: e.message });
+    }
 
     const done = i + 1;
     if (shouldEmitFileProgress(done, totalFiles)) {
@@ -642,7 +651,7 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
     step: 'derived-indexes',
     message: 'Step 5/5: rebuilding derived indexes (imports, calls, complexity)...',
   });
-  repository.updateRepoStats({ repoId: existing.id, headCommit: null });
+  repository.updateRepoStats({ repoId: existing.id, headCommit: getHeadCommit(existing.path) });
   const derived = rebuildDerivedIndexes(db, existing.id, args, totalFiles, totalFiles, symbolCount);
 
   const totalMs = Date.now() - t0;
@@ -660,13 +669,17 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
     name: repo,
     file_count: reindexed + unchanged,
     symbol_count: symbolCount,
+    files_checked: totalFiles,
+    files_hashed: hashed,
     files_reindexed: reindexed,
     files_unchanged: unchanged,
     files_removed: staleFiles.length,
+    files_skipped: skipped.length,
     symbols_extracted: symbolCount,
     import_edges: derived.importEdges,
     call_edges: derived.callEdges,
     complexity_symbols: derived.complexityCount,
+    skipped,
     skip_report: skipReport,
     timing_ms: { total: totalMs },
   };

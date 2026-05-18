@@ -7,6 +7,7 @@ const { sourceSliceFromRow } = require('../src/code-index/source-retrieval');
 const { parsePhase, reindexRepository } = require('../src/code-index/incremental-indexer');
 const { scanRepository } = require('../src/code-index/scanner');
 const { createCodeIndexRepository } = require('../src/code-index/repos');
+const { hashContent } = require('../utils');
 
 describe('code-index parser registry', () => {
   it('maps supported file extensions to parser languages', () => {
@@ -201,6 +202,85 @@ describe('code-index source retrieval', () => {
 });
 
 describe('code-index incremental reindexer', () => {
+  it('uses content hashes instead of mtime alone when deciding changed files', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lapis-hash-reindex-'));
+    const filePath = path.join(tmp, 'app.js');
+    fs.writeFileSync(filePath, 'function app() { return 2; }');
+    const stat = fs.statSync(filePath);
+    const calls = [];
+    const repository = {
+      findRepoByName: () => ({ id: 7, name: 'repo', path: tmp }),
+      listFiles: () => [{ id: 10, path: filePath, mtime: stat.mtimeMs, content_hash: 'stale-hash' }],
+      clearFileSymbols: (fileId) => calls.push(['clearFileSymbols', fileId]),
+      updateFile: (fileId, params) => calls.push(['updateFile', fileId, params.contentHash]),
+      insertSymbol: (params) => calls.push(['insertSymbol', params.name]),
+      deleteFile: (fileId) => calls.push(['deleteFile', fileId]),
+      updateRepoStats: (params) => calls.push(['updateRepoStats', params.repoId]),
+      withTransaction: (fn) => fn(),
+    };
+    const parserRegistry = {
+      ensureReady: async () => true,
+      canParseFile: () => true,
+      parseContent: () => [
+        {
+          name: 'app',
+          kind: 'function',
+          signature: 'function app()',
+          qualified_name: 'app',
+          start_line: 1,
+          end_line: 1,
+          start_byte: 0,
+          end_byte: 28,
+          language: 'javascript',
+        },
+      ],
+    };
+
+    const result = await reindexRepository({ db: {}, repository, parserRegistry, args: {} }, 'repo', 'incremental');
+
+    expect(result.success).toBe(true);
+    expect(result.files_checked).toBe(1);
+    expect(result.files_hashed).toBe(1);
+    expect(result.files_reindexed).toBe(1);
+    expect(result.files_unchanged).toBe(0);
+    expect(calls).toContainEqual(['clearFileSymbols', 10]);
+    expect(calls).toContainEqual(['updateFile', 10, hashContent('function app() { return 2; }')]);
+    expect(calls).toContainEqual(['insertSymbol', 'app']);
+  });
+
+  it('skips parsing when mtime changes but content hash is unchanged', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lapis-hash-unchanged-'));
+    const filePath = path.join(tmp, 'app.js');
+    const content = 'function app() { return 1; }';
+    fs.writeFileSync(filePath, content);
+    const calls = [];
+    const repository = {
+      findRepoByName: () => ({ id: 7, name: 'repo', path: tmp }),
+      listFiles: () => [{ id: 10, path: filePath, mtime: 1, content_hash: hashContent(content) }],
+      clearFileSymbols: (fileId) => calls.push(['clearFileSymbols', fileId]),
+      updateFile: (fileId) => calls.push(['updateFile', fileId]),
+      insertSymbol: (params) => calls.push(['insertSymbol', params.name]),
+      deleteFile: (fileId) => calls.push(['deleteFile', fileId]),
+      updateRepoStats: (params) => calls.push(['updateRepoStats', params.repoId]),
+      withTransaction: (fn) => fn(),
+    };
+    const parserRegistry = {
+      ensureReady: async () => true,
+      canParseFile: () => true,
+      parseContent: () => {
+        throw new Error('unchanged files should not be parsed');
+      },
+    };
+
+    const result = await reindexRepository({ db: {}, repository, parserRegistry, args: {} }, 'repo', 'incremental');
+
+    expect(result.success).toBe(true);
+    expect(result.files_reindexed).toBe(0);
+    expect(result.files_unchanged).toBe(1);
+    expect(calls).not.toContainEqual(['clearFileSymbols', 10]);
+    expect(calls).not.toContainEqual(['updateFile', 10]);
+  });
+
   it('removes deleted files through the CodeIndexRepository interface', async () => {
     const calls = [];
     const repository = {
