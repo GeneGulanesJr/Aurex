@@ -47,4 +47,15 @@ console.log(btn);`;
     const tagged = result.filter((c) => c.full_path === 'styled.button' || c.callee === 'styled.button');
     expect(tagged.length).toBeGreaterThanOrEqual(1);
   });
+
+  it('records dynamic imports as symbols in parseContent', async () => {
+    const parser = await getParser();
+    const code = `const mod = import('./module.js');\nconst other = import('../utils');`;
+    const symbols = parser.parseContent('test.js', code);
+    const dynImports = symbols.filter((s) => s.kind === 'dynamic_import');
+    expect(dynImports.length).toBeGreaterThanOrEqual(2);
+    const paths = dynImports.map((s) => s.name);
+    expect(paths).toContain('./module.js');
+    expect(paths).toContain('../utils');
+  });
 });

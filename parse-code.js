@@ -657,6 +657,42 @@ function _extractJsTsSymbols(filePath, sourceStr, parser, languageName) {
       }
     }
 
+    // Dynamic import() — call_expression with import callee node
+    if (node.type === 'call_expression') {
+      const callee = node.child(0);
+      if (callee && callee.type === 'import') {
+        // Walk arguments node to find the module path string
+        const argsNode = node.childForFieldName('arguments');
+        if (argsNode) {
+          for (const ac of argsNode.children) {
+            if (ac.type === 'string') {
+              const modPath = ac.text.replace(/^["']|["']$/g, '');
+              const key = `${modPath}:dynamic_import:${node.startIndex}`;
+              if (!seen.has(key)) {
+                seen.add(key);
+                symbols.push({
+                  name: modPath,
+                  kind: 'dynamic_import',
+                  language: languageName,
+                  file: filePath,
+                  signature: `import('${modPath}')`,
+                  qualified_name: modPath,
+                  start_line: _getLineNumber(node),
+                  end_line: _getEndLineNumber(node),
+                  start_byte: node.startIndex,
+                  end_byte: node.endIndex,
+                  docstring: '',
+                  body_preview: '',
+                  parent_name: '',
+                });
+              }
+              break;
+            }
+          }
+        }
+      }
+    }
+
     // Walk into all children, incrementing depth for scope-creating nodes
     const childDepth = _SCOPE_NODES.has(node.type) ? depth + 1 : depth;
     for (const child of node.children) {
