@@ -212,18 +212,24 @@ function buildImportGraph(db, repoId) {
   const contentStmt = db.prepare('SELECT content FROM code_files WHERE id = ?');
   let totalEdges = 0;
 
-  for (const file of files) {
-    const contentRow = contentStmt.get(file.id);
-    if (!contentRow || !contentRow.content) {
-      continue;
+  const runInTx = typeof db.transaction === 'function'
+    ? (fn) => db.transaction(fn)()
+    : (fn) => { db.exec('BEGIN'); try { const r = fn(); db.exec('COMMIT'); return r; } catch (e) { db.exec('ROLLBACK'); throw e; } };
+
+  runInTx(() => {
+    for (const file of files) {
+      const contentRow = contentStmt.get(file.id);
+      if (!contentRow || !contentRow.content) {
+        continue;
+      }
+      const imports = extractImportsFromSource(contentRow.content);
+      for (const imp of imports) {
+        const targetFileId = resolveImportTarget(db, repoId, file.path, imp.target_module);
+        insertStmt.run(repoId, file.id, imp.target_module, targetFileId, imp.import_type, imp.line_number);
+        totalEdges++;
+      }
     }
-    const imports = extractImportsFromSource(contentRow.content);
-    for (const imp of imports) {
-      const targetFileId = resolveImportTarget(db, repoId, file.path, imp.target_module);
-      insertStmt.run(repoId, file.id, imp.target_module, targetFileId, imp.import_type, imp.line_number);
-      totalEdges++;
-    }
-  }
+  });
 
   return { success: true, edges: totalEdges };
 }
@@ -596,76 +602,82 @@ function buildCallGraph(db, repoId, opts = {}) {
   const totalFiles = symbolsByFile.size;
   let processedFiles = 0;
 
-  for (const [fileId, fileSymbols] of symbolsByFile) {
-    const meta = fileById.get(fileId);
-    if (!meta) {
-      processedFiles++;
-      continue;
-    }
+  const runInTx = typeof db.transaction === 'function'
+    ? (fn) => db.transaction(fn)()
+    : (fn) => { db.exec('BEGIN'); try { const r = fn(); db.exec('COMMIT'); return r; } catch (e) { db.exec('ROLLBACK'); throw e; } };
 
-    const contentRow = contentStmt.get(fileId);
-    if (!contentRow || !contentRow.content) {
-      processedFiles++;
-      continue;
-    }
-
-    const fileContent = contentRow.content;
-    const filePath = meta.path;
-    const fileSize = fileContent.length;
-
-    let fileCallees = [];
-    if (fileSize <= CALL_GRAPH.MAX_FILE_CONTENT_BYTES) {
-      try {
-        const extractFn = codeParser.extractCalleesFromContent || codeParser.extractCallees;
-        fileCallees = extractFn(filePath, fileContent);
-      } catch (_) {
-        fileCallees = [];
-      }
-    }
-
-    if (fileCallees.length > 0) {
-      const calleeByLine = new Map();
-      for (const c of fileCallees) {
-        if (!calleeByLine.has(c.line)) {
-          calleeByLine.set(c.line, []);
-        }
-        calleeByLine.get(c.line).push(c);
+  runInTx(() => {
+    for (const [fileId, fileSymbols] of symbolsByFile) {
+      const meta = fileById.get(fileId);
+      if (!meta) {
+        processedFiles++;
+        continue;
       }
 
-      for (const sym of fileSymbols) {
-        const seen = new Set();
-        for (let line = sym.start_line; line <= sym.end_line; line++) {
-          const lineCallees = calleeByLine.get(line);
-          if (!lineCallees) {
-            continue;
-          }
-          for (const c of lineCallees) {
-            if (_SKIP_CALLEE_NAMES.has(c.callee)) {
-              continue;
-            }
-            const key = `${c.callee}:${c.line}`;
-            if (seen.has(key)) {
-              continue;
-            }
-            seen.add(key);
+      const contentRow = contentStmt.get(fileId);
+      if (!contentRow || !contentRow.content) {
+        processedFiles++;
+        continue;
+      }
 
-            const { calleeSymbolId, confidence } = resolveCallee(c.callee, sym, c.receiver || null, fileContent);
-            insertStmt.run(repoId, sym.id, c.callee, calleeSymbolId, confidence, c.line);
-            totalCalls++;
-          }
+      const fileContent = contentRow.content;
+      const filePath = meta.path;
+      const fileSize = fileContent.length;
+
+      let fileCallees = [];
+      if (fileSize <= CALL_GRAPH.MAX_FILE_CONTENT_BYTES) {
+        try {
+          const extractFn = codeParser.extractCalleesFromContent || codeParser.extractCallees;
+          fileCallees = extractFn(filePath, fileContent);
+        } catch (_) {
+          fileCallees = [];
         }
       }
-    } else {
-      for (const sym of fileSymbols) {
-        processRegexFallback(sym, fileContent);
+
+      if (fileCallees.length > 0) {
+        const calleeByLine = new Map();
+        for (const c of fileCallees) {
+          if (!calleeByLine.has(c.line)) {
+            calleeByLine.set(c.line, []);
+          }
+          calleeByLine.get(c.line).push(c);
+        }
+
+        for (const sym of fileSymbols) {
+          const seen = new Set();
+          for (let line = sym.start_line; line <= sym.end_line; line++) {
+            const lineCallees = calleeByLine.get(line);
+            if (!lineCallees) {
+              continue;
+            }
+            for (const c of lineCallees) {
+              if (_SKIP_CALLEE_NAMES.has(c.callee)) {
+                continue;
+              }
+              const key = `${c.callee}:${c.line}`;
+              if (seen.has(key)) {
+                continue;
+              }
+              seen.add(key);
+
+              const { calleeSymbolId, confidence } = resolveCallee(c.callee, sym, c.receiver || null, fileContent);
+              insertStmt.run(repoId, sym.id, c.callee, calleeSymbolId, confidence, c.line);
+              totalCalls++;
+            }
+          }
+        }
+      } else {
+        for (const sym of fileSymbols) {
+          processRegexFallback(sym, fileContent);
+        }
+      }
+
+      processedFiles++;
+      if (onProgress && processedFiles % CALL_GRAPH.PROGRESS_INTERVAL_FILES === 0) {
+        onProgress({ filesProcessed: processedFiles, totalFiles, callsFound: totalCalls });
       }
     }
-
-    processedFiles++;
-    if (onProgress && processedFiles % CALL_GRAPH.PROGRESS_INTERVAL_FILES === 0) {
-      onProgress({ filesProcessed: processedFiles, totalFiles, callsFound: totalCalls });
-    }
-  }
+  });
 
   return { success: true, calls: totalCalls };
 }
