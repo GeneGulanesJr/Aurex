@@ -76,12 +76,8 @@ function insertSymbols(repository, repoId, fileId, filePath, symbols) {
 }
 
 function rebuildDerivedIndexes(db, repoId, args, totalFiles, fileCount, symbolCount) {
-  emitProgress(
-    args,
-    'analysis',
-    { message: 'Building import graph...' },
-    { files_total: totalFiles, files_done: fileCount, symbols: symbolCount },
-  );
+  const stats = { files_total: totalFiles, files_done: fileCount, symbols: symbolCount };
+  emitProgress(args, 'analysis', { message: 'Building import graph...' }, stats);
 
   let importEdges = 0;
   let callEdges = 0;
@@ -92,24 +88,14 @@ function rebuildDerivedIndexes(db, repoId, args, totalFiles, fileCount, symbolCo
       importEdges = ig.edges;
     }
   } catch (_) {}
-  emitProgress(
-    args,
-    'analysis',
-    { message: 'Building call graph...' },
-    { files_total: totalFiles, files_done: fileCount, symbols: symbolCount },
-  );
+  emitProgress(args, 'analysis', { message: 'Building call graph...' }, stats);
   try {
     const cg = buildCallEdges(db, repoId);
     if (cg.success) {
       callEdges = cg.calls;
     }
   } catch (_) {}
-  emitProgress(
-    args,
-    'analysis',
-    { message: 'Computing complexity...' },
-    { files_total: totalFiles, files_done: fileCount, symbols: symbolCount },
-  );
+  emitProgress(args, 'analysis', { message: 'Computing complexity...' }, stats);
   try {
     const cc = buildComplexityMetrics(db, repoId);
     if (cc.success) {
