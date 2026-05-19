@@ -10,7 +10,7 @@
 --   doc-index repository: doc_repos, doc_files, doc_sections, doc FTS, links, terms, code blocks.
 --   trust-sync repository: symbol_links and trust_adjustments because they bridge memories and code symbols.
 --   analytics repository: read-only aggregate queries across feature-owned tables.
-PRAGMA user_version = 8;
+PRAGMA user_version = 9;
 
 -- ═══════════════════════════════════════════════════════════
 -- MEMORY REPOSITORY: WORKSPACES  (v4 — formal project isolation)
@@ -226,7 +226,9 @@ CREATE TABLE IF NOT EXISTS code_repos (
   symbol_count  INTEGER DEFAULT 0,
   indexed_at    TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
-  head_commit   TEXT
+  head_commit   TEXT,
+  current_branch TEXT,
+  base_head     TEXT
 );
 
 -- ═══════════════════════════════════════════════════════════
@@ -242,6 +244,7 @@ CREATE TABLE IF NOT EXISTS code_files (
   mtime         REAL,
   size_bytes    INTEGER DEFAULT 0,
   line_count    INTEGER DEFAULT 0,
+  mtime_ns      INTEGER,
   UNIQUE(repo_id, path)
 );
 
@@ -279,13 +282,22 @@ CREATE TABLE IF NOT EXISTS code_symbols (
   language        TEXT NOT NULL,
   parent_name     TEXT DEFAULT '',
   qualified_name  TEXT NOT NULL,
+  stable_symbol_id TEXT DEFAULT '',
+  content_hash    TEXT DEFAULT '',
+  summary         TEXT DEFAULT '',
+  decorators_json TEXT DEFAULT '[]',
+  keywords_json   TEXT DEFAULT '[]',
+  call_references_json TEXT DEFAULT '[]',
+  ecosystem_context TEXT DEFAULT '',
   indexed_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_cs_repo ON code_symbols(repo_id);
 CREATE INDEX IF NOT EXISTS idx_cs_name ON code_symbols(name);
 CREATE INDEX IF NOT EXISTS idx_cs_file ON code_symbols(file_id);
+CREATE INDEX IF NOT EXISTS idx_cs_stable ON code_symbols(repo_id, stable_symbol_id);
 CREATE INDEX IF NOT EXISTS idx_cf_repo ON code_files(repo_id);
+CREATE INDEX IF NOT EXISTS idx_cf_hash ON code_files(repo_id, content_hash);
 
 -- FTS5 for code symbol search
 CREATE VIRTUAL TABLE IF NOT EXISTS code_symbols_fts USING fts5(

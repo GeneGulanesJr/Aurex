@@ -92,7 +92,9 @@ function findLapisRoot() {
       }
     } catch {}
     const parent = path.dirname(dir);
-    if (parent === dir) {break;}
+    if (parent === dir) {
+      break;
+    }
     dir = parent;
   }
   return __dirname;
@@ -235,11 +237,11 @@ const _CRITICAL_TABLES = [
   // V3: code indexing
   [
     'code_repos',
-    "CREATE TABLE IF NOT EXISTS code_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, path TEXT NOT NULL UNIQUE, file_count INTEGER DEFAULT 0, symbol_count INTEGER DEFAULT 0, indexed_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), head_commit TEXT)",
+    "CREATE TABLE IF NOT EXISTS code_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, path TEXT NOT NULL UNIQUE, file_count INTEGER DEFAULT 0, symbol_count INTEGER DEFAULT 0, indexed_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), head_commit TEXT, current_branch TEXT, base_head TEXT)",
   ],
   [
     'code_files',
-    'CREATE TABLE IF NOT EXISTS code_files (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE, path TEXT NOT NULL, language TEXT NOT NULL, content TEXT NOT NULL, content_hash TEXT NOT NULL, mtime REAL, size_bytes INTEGER DEFAULT 0, line_count INTEGER DEFAULT 0, UNIQUE(repo_id, path))',
+    'CREATE TABLE IF NOT EXISTS code_files (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE, path TEXT NOT NULL, language TEXT NOT NULL, content TEXT NOT NULL, content_hash TEXT NOT NULL, mtime REAL, size_bytes INTEGER DEFAULT 0, line_count INTEGER DEFAULT 0, mtime_ns INTEGER, UNIQUE(repo_id, path))',
   ],
   [
     'code_file_diagnostics',
@@ -247,7 +249,7 @@ const _CRITICAL_TABLES = [
   ],
   [
     'code_symbols',
-    "CREATE TABLE IF NOT EXISTS code_symbols (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE, file_id INTEGER NOT NULL REFERENCES code_files(id) ON DELETE CASCADE, name TEXT NOT NULL, kind TEXT NOT NULL, signature TEXT, file_path TEXT NOT NULL, start_line INTEGER NOT NULL, end_line INTEGER NOT NULL, start_byte INTEGER NOT NULL, end_byte INTEGER NOT NULL, docstring TEXT DEFAULT '', body_preview TEXT DEFAULT '', language TEXT NOT NULL, parent_name TEXT DEFAULT '', qualified_name TEXT NOT NULL, indexed_at TEXT NOT NULL DEFAULT (datetime('now')))",
+    "CREATE TABLE IF NOT EXISTS code_symbols (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE, file_id INTEGER NOT NULL REFERENCES code_files(id) ON DELETE CASCADE, name TEXT NOT NULL, kind TEXT NOT NULL, signature TEXT, file_path TEXT NOT NULL, start_line INTEGER NOT NULL, end_line INTEGER NOT NULL, start_byte INTEGER NOT NULL, end_byte INTEGER NOT NULL, docstring TEXT DEFAULT '', body_preview TEXT DEFAULT '', language TEXT NOT NULL, parent_name TEXT DEFAULT '', qualified_name TEXT NOT NULL, stable_symbol_id TEXT DEFAULT '', content_hash TEXT DEFAULT '', summary TEXT DEFAULT '', decorators_json TEXT DEFAULT '[]', keywords_json TEXT DEFAULT '[]', call_references_json TEXT DEFAULT '[]', ecosystem_context TEXT DEFAULT '', indexed_at TEXT NOT NULL DEFAULT (datetime('now')))",
   ],
   // V5: code analysis
   [
@@ -310,8 +312,11 @@ function ensureCriticalTables() {
 
 function _createTableIndexes(name, db) {
   const indexMap = {
-    code_repos: [],
-    code_files: ['CREATE INDEX IF NOT EXISTS idx_cf_repo ON code_files(repo_id)'],
+    code_repos: ['CREATE INDEX IF NOT EXISTS idx_cr_branch ON code_repos(current_branch)'],
+    code_files: [
+      'CREATE INDEX IF NOT EXISTS idx_cf_repo ON code_files(repo_id)',
+      'CREATE INDEX IF NOT EXISTS idx_cf_hash ON code_files(repo_id, content_hash)',
+    ],
     code_file_diagnostics: [
       'CREATE INDEX IF NOT EXISTS idx_cfd_repo ON code_file_diagnostics(repo_id)',
       'CREATE INDEX IF NOT EXISTS idx_cfd_status ON code_file_diagnostics(repo_id, status)',
@@ -320,6 +325,7 @@ function _createTableIndexes(name, db) {
       'CREATE INDEX IF NOT EXISTS idx_cs_repo ON code_symbols(repo_id)',
       'CREATE INDEX IF NOT EXISTS idx_cs_name ON code_symbols(name)',
       'CREATE INDEX IF NOT EXISTS idx_cs_file ON code_symbols(file_id)',
+      'CREATE INDEX IF NOT EXISTS idx_cs_stable ON code_symbols(repo_id, stable_symbol_id)',
     ],
     code_imports: [
       'CREATE INDEX IF NOT EXISTS idx_ci_source ON code_imports(source_file_id)',
@@ -371,7 +377,7 @@ function runMigrations() {
     console.error('[db] Failed to read user_version:', e.message);
   }
 
-  if (version >= 8) {
+  if (version >= 9) {
     return { migrated: false, version };
   }
 
@@ -383,6 +389,7 @@ function runMigrations() {
     { to: 6, run: runMigrationV6 },
     { to: 7, run: runMigrationV7 },
     { to: 8, run: runMigrationV8 },
+    { to: 9, run: runMigrationV9 },
   ];
 
   const fromVersion = version;
@@ -525,6 +532,28 @@ function runMigrationV5() {
   const errors = [];
   try {
     const schema = fs.readFileSync(SCHEMA_PATH, 'utf8');
+    // Newer schema indexes may reference columns added after V5. Add them first
+    // When migrating an older database so the schema replay remains idempotent.
+    for (const [table, column, definition] of [
+      ['code_repos', 'current_branch', 'TEXT'],
+      ['code_repos', 'base_head', 'TEXT'],
+      ['code_files', 'mtime_ns', 'INTEGER'],
+      ['code_symbols', 'stable_symbol_id', "TEXT DEFAULT ''"],
+      ['code_symbols', 'content_hash', "TEXT DEFAULT ''"],
+      ['code_symbols', 'summary', "TEXT DEFAULT ''"],
+      ['code_symbols', 'decorators_json', "TEXT DEFAULT '[]'"],
+      ['code_symbols', 'keywords_json', "TEXT DEFAULT '[]'"],
+      ['code_symbols', 'call_references_json', "TEXT DEFAULT '[]'"],
+      ['code_symbols', 'ecosystem_context', "TEXT DEFAULT ''"],
+    ]) {
+      try {
+        sqlRaw(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+      } catch (err) {
+        if (!/duplicate column|no such table/i.test(err.message)) {
+          throw err;
+        }
+      }
+    }
     // _db.exec() correctly handles complex multi-statement SQL with triggers etc.
     // It cannot run inside a transaction because schema.sql contains PRAGMAs.
     try {
@@ -603,6 +632,40 @@ function runMigrationV7() {
     });
   } catch (e) {
     errors.push(`V7: ${e.message}`);
+  }
+  return errors;
+}
+
+function runMigrationV9() {
+  const errors = [];
+  const addColumn = (table, column, definition) => {
+    try {
+      sqlRaw(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    } catch (e) {
+      if (!/duplicate column/i.test(e.message)) {
+        throw e;
+      }
+    }
+  };
+  try {
+    withTransaction(() => {
+      addColumn('code_repos', 'current_branch', 'TEXT');
+      addColumn('code_repos', 'base_head', 'TEXT');
+      addColumn('code_files', 'mtime_ns', 'INTEGER');
+      addColumn('code_symbols', 'stable_symbol_id', "TEXT DEFAULT ''");
+      addColumn('code_symbols', 'content_hash', "TEXT DEFAULT ''");
+      addColumn('code_symbols', 'summary', "TEXT DEFAULT ''");
+      addColumn('code_symbols', 'decorators_json', "TEXT DEFAULT '[]'");
+      addColumn('code_symbols', 'keywords_json', "TEXT DEFAULT '[]'");
+      addColumn('code_symbols', 'call_references_json', "TEXT DEFAULT '[]'");
+      addColumn('code_symbols', 'ecosystem_context', "TEXT DEFAULT ''");
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_cr_branch ON code_repos(current_branch)');
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_cf_hash ON code_files(repo_id, content_hash)');
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_cs_stable ON code_symbols(repo_id, stable_symbol_id)');
+      sqlRaw('PRAGMA user_version = 9');
+    });
+  } catch (e) {
+    errors.push(`V9: ${e.message}`);
   }
   return errors;
 }
