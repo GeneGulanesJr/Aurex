@@ -183,8 +183,23 @@ function dream(deps) {
   report.phases.staleCorrections = { count: corrections.length };
   totalCleaned += corrections.length;
 
-  // Phase 5: Obsolete setup/config states
+  // Phase 5: Obsolete setup/config states (uses observation_relations for O(n) instead of self-join)
   const obsoleteConfigs = deps.sqlJson(`
+    SELECT o1.id, o1.title, o1.project, o1.type,
+           r.source_id AS newer_id,
+           o2.title AS newer_title
+    FROM observations o1
+    JOIN observation_relations r ON r.target_id = o1.id
+    JOIN observations o2 ON o2.id = r.source_id
+    WHERE r.relation IN ('duplicate', 'supersedes')
+      AND o1.deleted_at IS NULL
+      AND o2.deleted_at IS NULL
+      AND o1.type IN ('decision', 'config', 'architecture')
+      AND (
+        o1.content LIKE '%replaced%' OR o1.content LIKE '%setup%'
+        OR o1.title LIKE '%setup%'
+      )
+    UNION
     SELECT o1.id, o1.title, o1.project, o1.type,
            o2.id AS newer_id, o2.title AS newer_title
     FROM observations o1
@@ -194,13 +209,10 @@ function dream(deps) {
       AND o1.type IN ('decision', 'config', 'architecture')
       AND o2.type IN ('decision', 'config', 'architecture')
     WHERE o1.deleted_at IS NULL
-      AND (
-        (o1.content LIKE '%replaced%' AND o2.content LIKE '%replacing%')
-        OR (o1.content LIKE '%setup%' AND o2.content LIKE '%replaced%')
-        OR (o1.title LIKE '%setup%' AND o2.title LIKE '%overhaul%')
-        OR (o1.title LIKE '%setup%' AND o2.title LIKE '%complete%')
-      )
+      AND o1.topic_key IS NOT NULL AND o1.topic_key != ''
+      AND o1.topic_key = o2.topic_key
       AND o1.created_at < o2.created_at
+    LIMIT 500
   `);
   for (const row of obsoleteConfigs) {
     deps.softDeleteObservation(row.id);

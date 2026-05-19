@@ -85,15 +85,25 @@ export function registerSessionCompact(pi: ExtensionAPI, deps: SessionDeps) {
     }
 
     if (!contextResult && !crossProjectResult) {
-      return;
+      return {
+        message: {
+          customType: 'memory-context',
+          content:
+            '⚠️ **Memory context failed to re-load after compaction.** Memory state may be stale.\n' +
+            'Use `memory-search` and `memory-save` manually if needed.',
+          display: true,
+        },
+      };
     }
 
-    const isNewProject = crossProjectResult !== null;
+    const effectiveContext = contextResult || crossProjectResult;
+
+    const isNewProject = crossProjectResult !== null && !contextResult;
     const effectiveObservations = isNewProject
       ? (crossProjectResult!.observations as any[]) || []
-      : (contextResult!.observations as any[]) || [];
-    const stats = contextResult?.stats as any;
-    const personal = (contextResult?.personal as any[]) || [];
+      : (effectiveContext.observations as any[]) || [];
+    const stats = effectiveContext.stats as any;
+    const personal = (effectiveContext.personal as any[]) || [];
 
     const lines: string[] = ['## Memory Context (re-injected after compaction)', ''];
 

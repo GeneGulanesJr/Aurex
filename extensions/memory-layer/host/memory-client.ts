@@ -124,6 +124,24 @@ export async function memStreaming(
   args: Record<string, string | number | boolean>,
   onProgress?: ProgressCallback,
 ): Promise<MemResult | null> {
+  const dispatch = await getInProcessDispatch();
+  if (dispatch) {
+    try {
+      const stringArgs: Record<string, string> = {};
+      for (const [k, v] of Object.entries(args)) {
+        if (v !== undefined && v !== null && v !== '') {
+          stringArgs[k] = String(v);
+        }
+      }
+      if (onProgress) {
+        onProgress(`Running ${cmd} in-process...`);
+      }
+      return await dispatch(cmd, stringArgs);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`[memory-layer] in-process ${cmd} streaming failed, falling back to child process:`, msg);
+    }
+  }
   const argList: string[] = [cmd, '--progress'];
   for (const [k, v] of Object.entries(args)) {
     if (v === undefined || v === null || v === '') {

@@ -8,7 +8,6 @@ function sessionStart(deps, args) {
       sqlJson: deps.sqlJson,
       sqlRun: deps.sqlRun,
       autoRecoverInternal: (sessionId) => recoveryService.autoRecoverInternal(deps, sessionId),
-      runCompact: dreamService.runCompact,
       _readTierConfig: deps._readTierConfig,
       TOOL_TIERS: deps.TOOL_TIERS,
       commands: deps.commands,
@@ -23,6 +22,7 @@ function sessionEnd(deps, args) {
       sqlJson: deps.sqlJson,
       sqlRun: deps.sqlRun,
       trustRecovery: dreamService.trustRecovery,
+      runCompact: dreamService.runCompact,
     },
     args,
   );

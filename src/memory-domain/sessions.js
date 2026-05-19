@@ -11,7 +11,7 @@ function findLatestSession(project) {
 }
 
 function sessionStart(deps, args) {
-  const { autoRecoverInternal, runCompact } = deps;
+  const { autoRecoverInternal } = deps;
   const project = args.project;
   if (!project) {
     return jsonErrNoExit('Missing --project');
@@ -50,8 +50,6 @@ function sessionStart(deps, args) {
     recoveredSession = autoRecoverInternal(String(incompleteSession[0].id));
   }
 
-  const compacted = runCompact();
-
   const tierConfig = deps._readTierConfig ? deps._readTierConfig() : { tier: 'full' };
   const tier = tierConfig.tier || 'full';
   const TOOL_TIERS = deps.TOOL_TIERS;
@@ -66,7 +64,6 @@ function sessionStart(deps, args) {
     sessionId,
     sessionCount,
     consolidateDue,
-    compacted,
     archiveCandidates,
     recoveredSession,
     hasIncompletePreviousSession: incompleteSession.length > 0,
@@ -94,9 +91,15 @@ function sessionEnd(deps, args) {
     memories,
     parseInt(id, 10),
   ]);
+
+  const compacted = deps.runCompact ? deps.runCompact() : null;
+
   const result = { ok: true, sessionId: parseInt(id, 10) };
   if (trustRecoveryResult) {
     result.trustRecovery = trustRecoveryResult;
+  }
+  if (compacted) {
+    result.compacted = compacted;
   }
   return result;
 }
