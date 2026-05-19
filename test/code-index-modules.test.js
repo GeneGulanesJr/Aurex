@@ -108,6 +108,35 @@ describe('code-index symbol extractor', () => {
     });
   });
 
+  it('enriches symbols with stable metadata and call references', () => {
+    const source = 'function helper() { return 1; }\nfunction main() { return helper(); }\n';
+    const registry = {
+      canParseFile: () => true,
+      parseContent: () => [
+        {
+          name: 'main',
+          kind: 'function',
+          signature: 'function main()',
+          qualified_name: 'main',
+          start_line: 2,
+          end_line: 2,
+          start_byte: Buffer.byteLength('function helper() { return 1; }\n'),
+          end_byte: Buffer.byteLength(source),
+          language: 'javascript',
+        },
+      ],
+      extractCalleesFromContent: () => [{ callee: 'helper', full_path: 'helper', line: 2 }],
+    };
+
+    const [symbol] = extractSymbolsFromFile('/repo/app.js', registry, source);
+
+    expect(symbol.stable_symbol_id).toBe('/repo/app.js::main#function');
+    expect(symbol.content_hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(JSON.parse(symbol.call_references_json)).toEqual(['helper']);
+    expect(JSON.parse(symbol.keywords_json)).toContain('main');
+    expect(symbol.summary).toBe('function main()');
+  });
+
   it('extracts symbols through the parser registry abstraction', () => {
     const registry = {
       canParseFile: () => true,
@@ -200,6 +229,24 @@ describe('code-index source retrieval', () => {
     const endByte = startByte + Buffer.byteLength(expected, 'utf-8');
 
     expect(sourceSliceFromRow({ content, start_byte: startByte, end_byte: endByte })).toBe(expected);
+  });
+});
+
+describe('code-index scanner hardening', () => {
+  it('skips unsafe or noisy files and reports skip reasons', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lapis-scan-hardening-'));
+    fs.mkdirSync(path.join(tmp, 'src'));
+    fs.writeFileSync(path.join(tmp, 'src', 'app.js'), 'function app() {}');
+    fs.writeFileSync(path.join(tmp, '.env.js'), 'TOKEN=secret');
+    fs.writeFileSync(path.join(tmp, 'large.js'), 'x'.repeat(128));
+    fs.writeFileSync(path.join(tmp, 'binary.js'), Buffer.from([0, 1, 2, 3]));
+
+    const result = scanRepository(tmp, { maxFileSize: 32 });
+
+    expect(result.files.map((f) => path.basename(f))).toEqual(['app.js']);
+    expect(result.skipReport.tooLarge).toBe(1);
+    expect(result.skipReport.binary).toBe(1);
+    expect(result.skipReport.secret).toBe(1);
   });
 });
 

@@ -172,7 +172,7 @@ function parseChangedSymbolsJson(args, jsonErrNoExit) {
 
 /**
  * Creates a git trust sync adapter for the extension hook.
- * Now uses the built-in code index — no external jCodeMunch dependency.
+ * Uses the built-in code index for symbol-aware trust updates.
  */
 function createGitTrustSyncAdapter(mem, notify) {
   return async function syncGitOperation(repo) {

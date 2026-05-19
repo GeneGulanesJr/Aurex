@@ -48,6 +48,19 @@ function searchCode(args) {
   );
 }
 
+function rankedContext(args) {
+  const query = args.query;
+  if (!query) {
+    const { jsonErrNoExit } = require('../db');
+    return jsonErrNoExit('Usage: ranked-code-context --query <text> [--repo NAME] [--token-budget N]');
+  }
+  return codeSearchService.rankedContext(query, args.repo || null, {
+    tokenBudget: parseInt(args['token-budget'] || args.tokenBudget || '4000', 10),
+    maxResults: parseInt(args['max-results'] || '20', 10),
+    kind: args.kind || null,
+  });
+}
+
 function getCodeSource(args) {
   const repo = args.repo;
   const file = args.file;
@@ -72,4 +85,13 @@ function removeCodeRepo(args) {
   return codeSearchService.removeCodeRepoInternal(repo);
 }
 
-module.exports = { indexRepo, reindexRepo, codeRepoHealth, searchCode, getCodeSource, listCodeRepos, removeCodeRepo };
+module.exports = {
+  indexRepo,
+  reindexRepo,
+  codeRepoHealth,
+  searchCode,
+  rankedContext,
+  getCodeSource,
+  listCodeRepos,
+  removeCodeRepo,
+};

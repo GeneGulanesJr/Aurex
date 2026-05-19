@@ -2,6 +2,11 @@ const path = require('path');
 const fs = require('fs');
 const { CODE_EXTENSIONS, IGNORE_DIRS_CODE } = require('../../utils');
 
+const DEFAULT_MAX_FILE_SIZE = 1024 * 1024;
+const DEFAULT_MAX_FILES = 20000;
+const SECRET_FILE_RE = /(^|[/\\])(\.env($|\.)|id_rsa$|id_dsa$|id_ecdsa$|id_ed25519$|.*\.(pem|key|p12|pfx)$)/i;
+const PRIORITY_DIRS = ['src/', 'lib/', 'pkg/', 'cmd/', 'internal/', 'app/', 'packages/'];
+
 function shouldSkipDir(dirName, extraIgnoreDirs = []) {
   return dirName.startsWith('.') || IGNORE_DIRS_CODE.has(dirName) || extraIgnoreDirs.includes(dirName);
 }
@@ -57,15 +62,99 @@ function loadMemorycodeignoreRules(repoPath) {
   return loadIgnoreRules(repoPath, '.memorycodeignore');
 }
 
+function tryCreateIgnore(patterns) {
+  if (!patterns || patterns.length === 0) {
+    return null;
+  }
+  try {
+    return require('ignore')().add(patterns);
+  } catch {
+    return null;
+  }
+}
+
+function isBinaryFile(filePath, sampleSize = 8000) {
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    try {
+      const buf = Buffer.alloc(sampleSize);
+      const bytesRead = fs.readSync(fd, buf, 0, sampleSize, 0);
+      if (bytesRead === 0) {
+        return false;
+      }
+      for (let i = 0; i < bytesRead; i++) {
+        if (buf[i] === 0) {
+          return true;
+        }
+      }
+      return false;
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return false;
+  }
+}
+
+function pathIsInside(root, candidate) {
+  const rel = path.relative(root, candidate);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+function prioritySort(root) {
+  return (a, b) => {
+    const ar = path.relative(root, a).replace(/\\/g, '/');
+    const br = path.relative(root, b).replace(/\\/g, '/');
+    const ap = PRIORITY_DIRS.findIndex((prefix) => ar.startsWith(prefix));
+    const bp = PRIORITY_DIRS.findIndex((prefix) => br.startsWith(prefix));
+    const ai = ap === -1 ? PRIORITY_DIRS.length : ap;
+    const bi = bp === -1 ? PRIORITY_DIRS.length : bp;
+    if (ai !== bi) {
+      return ai - bi;
+    }
+    return ar.localeCompare(br);
+  };
+}
+
 function scanRepository(repoPath, options = {}) {
   const results = [];
+  const absRoot = path.resolve(repoPath);
   const extraIgnoreDirs = options.ignoreDirs || [];
-  const gitignoreIg = loadGitignoreRules(repoPath);
-  const memorycodeignoreIg = loadMemorycodeignoreRules(repoPath);
-  const skipReport = { builtIn: {}, gitignore: {}, memorycodeignore: {}, unsupportedExt: 0 };
+  const gitignoreIg = loadGitignoreRules(absRoot);
+  const nestedGitignoreRules = [];
+  const memorycodeignoreIg = loadMemorycodeignoreRules(absRoot);
+  const extraIgnoreIg = tryCreateIgnore(options.extraIgnorePatterns || []);
+  const maxFileSize = Number(options.maxFileSize || DEFAULT_MAX_FILE_SIZE);
+  const maxFiles = Number(options.maxFiles || DEFAULT_MAX_FILES);
+  const followSymlinks = options.followSymlinks === true;
+  const skipReport = {
+    builtIn: {},
+    gitignore: {},
+    memorycodeignore: {},
+    extraIgnore: {},
+    unsupportedExt: 0,
+    tooLarge: 0,
+    binary: 0,
+    secret: 0,
+    symlink: 0,
+    pathTraversal: 0,
+    unreadable: 0,
+    fileLimit: 0,
+  };
   const ignoreFiles = options.onProgress || null;
   const reportScanProgress = options.onScanProgress || null;
   const scanStats = { dirsVisited: 0, entriesSeen: 0, codeFiles: 0, currentPath: '.', currentKind: 'directory' };
+
+  function mark(reason, key, relativePath) {
+    if (typeof skipReport[reason] === 'number') {
+      skipReport[reason]++;
+    } else {
+      skipReport[reason][key] = (skipReport[reason][key] || 0) + 1;
+    }
+    if (ignoreFiles) {
+      ignoreFiles(relativePath, reason);
+    }
+  }
 
   function maybeReportScanProgress(force = false) {
     if (!reportScanProgress) {
@@ -81,9 +170,33 @@ function scanRepository(repoPath, options = {}) {
     }
   }
 
+  function ignoredBy(relativePath, isDir = false) {
+    const rel = relativePath.replace(/\\/g, '/') + (isDir && !relativePath.endsWith(path.sep) ? '/' : '');
+    if (gitignoreIg && (gitignoreIg.ignores(relativePath) || gitignoreIg.ignores(rel))) {
+      return 'gitignore';
+    }
+    for (const rule of nestedGitignoreRules) {
+      if (!relativePath.startsWith(rule.prefix)) {
+        continue;
+      }
+      const local = relativePath.slice(rule.prefix.length).replace(/\\/g, '/');
+      const localDir = local + (isDir && !local.endsWith('/') ? '/' : '');
+      if (local && (rule.ig.ignores(local) || rule.ig.ignores(localDir))) {
+        return 'gitignore';
+      }
+    }
+    if (memorycodeignoreIg && (memorycodeignoreIg.ignores(relativePath) || memorycodeignoreIg.ignores(rel))) {
+      return 'memorycodeignore';
+    }
+    if (extraIgnoreIg && (extraIgnoreIg.ignores(relativePath) || extraIgnoreIg.ignores(rel))) {
+      return 'extraIgnore';
+    }
+    return null;
+  }
+
   function walk(dir) {
     scanStats.dirsVisited++;
-    scanStats.currentPath = path.relative(repoPath, dir) || '.';
+    scanStats.currentPath = path.relative(absRoot, dir) || '.';
     scanStats.currentKind = 'directory';
     if (scanStats.dirsVisited <= 5 || scanStats.dirsVisited % 50 === 0) {
       maybeReportScanProgress(true);
@@ -92,57 +205,94 @@ function scanRepository(repoPath, options = {}) {
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
     } catch {
+      skipReport.unreadable++;
       return;
+    }
+
+    if (entries.some((entry) => entry.isFile() && entry.name === '.gitignore')) {
+      try {
+        const ig = require('ignore')().add(fs.readFileSync(path.join(dir, '.gitignore'), 'utf-8'));
+        const dirRel = path.relative(absRoot, dir);
+        nestedGitignoreRules.push({ prefix: dirRel ? `${dirRel}${path.sep}` : '', ig });
+      } catch {}
     }
 
     for (const entry of entries) {
       scanStats.entriesSeen++;
       const fullPath = path.join(dir, entry.name);
-      const relativePath = path.relative(repoPath, fullPath);
+      const relativePath = path.relative(absRoot, fullPath);
       scanStats.currentPath = relativePath;
       scanStats.currentKind = entry.isDirectory() ? 'directory' : 'file';
+      if (entry.isSymbolicLink() && !followSymlinks) {
+        mark('symlink', entry.name, relativePath);
+        continue;
+      }
+      let resolved = fullPath;
+      try {
+        resolved = fs.realpathSync(fullPath);
+      } catch {}
+      if (!pathIsInside(absRoot, resolved)) {
+        mark('pathTraversal', entry.name, relativePath);
+        continue;
+      }
       if (entry.isDirectory()) {
         if (shouldSkipDir(entry.name, extraIgnoreDirs)) {
-          skipReport.builtIn[entry.name] = (skipReport.builtIn[entry.name] || 0) + 1;
-          if (ignoreFiles) {
-            ignoreFiles(relativePath, 'built-in');
-          }
-        } else if (gitignoreIg && gitignoreIg.ignores(relativePath)) {
-          skipReport.gitignore[entry.name] = (skipReport.gitignore[entry.name] || 0) + 1;
-          if (ignoreFiles) {
-            ignoreFiles(relativePath, '.gitignore');
-          }
-        } else if (memorycodeignoreIg && memorycodeignoreIg.ignores(relativePath)) {
-          skipReport.memorycodeignore[entry.name] = (skipReport.memorycodeignore[entry.name] || 0) + 1;
-          if (ignoreFiles) {
-            ignoreFiles(relativePath, '.memorycodeignore');
-          }
+          mark('builtIn', entry.name, relativePath);
         } else {
-          walk(fullPath);
+          const ignored = ignoredBy(relativePath, true);
+          if (ignored) {
+            mark(ignored, entry.name, relativePath);
+          } else {
+            walk(fullPath);
+          }
         }
       } else if (entry.isFile()) {
         if (!isCodeFile(fullPath)) {
           skipReport.unsupportedExt++;
           maybeReportScanProgress();
-        } else {
-          const shouldSkip =
-            (gitignoreIg && gitignoreIg.ignores(relativePath)) ||
-            (memorycodeignoreIg && memorycodeignoreIg.ignores(relativePath));
-          if (!shouldSkip) {
-            results.push(fullPath);
-            scanStats.codeFiles++;
-            maybeReportScanProgress();
-          }
+          continue;
         }
+        const ignored = ignoredBy(relativePath, false);
+        if (ignored) {
+          mark(ignored, path.extname(entry.name) || entry.name, relativePath);
+          continue;
+        }
+        if (SECRET_FILE_RE.test(relativePath.replace(/\\/g, '/'))) {
+          mark('secret', entry.name, relativePath);
+          continue;
+        }
+        let stats;
+        try {
+          stats = fs.statSync(fullPath);
+        } catch {
+          skipReport.unreadable++;
+          continue;
+        }
+        if (maxFileSize > 0 && stats.size > maxFileSize) {
+          mark('tooLarge', path.extname(entry.name) || entry.name, relativePath);
+          continue;
+        }
+        if (isBinaryFile(fullPath)) {
+          mark('binary', path.extname(entry.name) || entry.name, relativePath);
+          continue;
+        }
+        results.push(fullPath);
+        scanStats.codeFiles++;
+        maybeReportScanProgress();
       }
     }
   }
 
-  walk(repoPath);
+  walk(absRoot);
+  if (results.length > maxFiles) {
+    skipReport.fileLimit = results.length - maxFiles;
+    results.sort(prioritySort(absRoot));
+    results.length = maxFiles;
+  }
   if (reportScanProgress) {
     reportScanProgress({ ...scanStats, done: true });
   }
   return { files: results, skipReport };
 }
 
-module.exports = { isCodeFile, scanRepository, shouldSkipDir, loadGitignoreRules };
+module.exports = { isBinaryFile, isCodeFile, scanRepository, shouldSkipDir, loadGitignoreRules };

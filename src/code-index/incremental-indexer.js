@@ -7,7 +7,14 @@ const { createCodeIndexRepository } = require('./repos');
 const { scanRepository } = require('./scanner');
 const { createParserRegistry, getLanguageForFile } = require('./parser-registry');
 const { extractSymbolsFromFile } = require('./symbol-extractor');
-const { buildImportEdges, buildImportEdgesForFiles, buildCallEdges, buildCallEdgesForFiles, buildComplexityMetrics, buildComplexityMetricsForFiles } = require('./edge-extractor');
+const {
+  buildImportEdges,
+  buildImportEdgesForFiles,
+  buildCallEdges,
+  buildCallEdgesForFiles,
+  buildComplexityMetrics,
+  buildComplexityMetricsForFiles,
+} = require('./edge-extractor');
 const { createParsePool } = require('./worker-pool');
 
 function emitProgress(args, phase, detail, stats) {
@@ -52,6 +59,69 @@ function getHeadCommit(repoPath) {
   } catch {
     return null;
   }
+}
+
+function getCurrentBranch(repoPath) {
+  try {
+    return execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd: repoPath,
+      encoding: 'utf-8',
+      timeout: 5000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+function parseChangedPathsInput(input, repoPath) {
+  if (!input) {
+    return null;
+  }
+  let entries = input;
+  if (typeof input === 'string') {
+    const trimmed = input.trim();
+    if (!trimmed) {
+      return null;
+    }
+    try {
+      entries = JSON.parse(trimmed);
+    } catch {
+      entries = trimmed
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+  }
+  if (!Array.isArray(entries)) {
+    return null;
+  }
+  const changed = new Set();
+  const deleted = new Set();
+  for (const entry of entries) {
+    let status = 'modified';
+    let filePath = entry;
+    if (entry && typeof entry === 'object') {
+      status = entry.status || entry.type || entry.change_type || entry.changeType || status;
+      filePath = entry.path || entry.file || entry.filePath || entry[1];
+    }
+    if (!filePath || typeof filePath !== 'string') {
+      continue;
+    }
+    const abs = path.isAbsolute(filePath) ? path.resolve(filePath) : path.resolve(repoPath, filePath);
+    if (/delete|remove|unlink/i.test(status) || !fs.existsSync(abs)) {
+      deleted.add(abs);
+    } else {
+      changed.add(abs);
+    }
+  }
+  return {
+    changed: [...changed],
+    deleted: [...deleted],
+    renamed: [],
+    currentHead: getHeadCommit(repoPath),
+    source: 'changed-paths',
+  };
 }
 
 function getGitDelta(repoPath, baseCommit) {
@@ -110,6 +180,8 @@ function fileRecordToParams(repoId, record) {
     content: record.content,
     contentHash: hashContent(record.content),
     mtime: record.stats.mtimeMs,
+    mtimeNs:
+      typeof record.stats.mtimeNs === 'bigint' ? Number(record.stats.mtimeNs) : Math.round(record.stats.mtimeMs * 1e6),
     sizeBytes: record.stats.size,
     lineCount: lines.length,
   };
@@ -148,6 +220,13 @@ function insertSymbols(repository, repoId, fileId, filePath, symbols) {
       bodyPreview: sym.body_preview || '',
       language: sym.language,
       parentName: sym.parent_name || '',
+      stableSymbolId: sym.stable_symbol_id || '',
+      contentHash: sym.content_hash || '',
+      summary: sym.summary || '',
+      decoratorsJson: sym.decorators_json || '[]',
+      keywordsJson: sym.keywords_json || '[]',
+      callReferencesJson: sym.call_references_json || '[]',
+      ecosystemContext: sym.ecosystem_context || '',
     });
     count++;
   }
@@ -209,10 +288,15 @@ function rebuildDerivedIndexes(db, repoId, args, totalFiles, fileCount, symbolCo
 }
 
 function rebuildDerivedIncremental(db, repoId, args, stats, changedFileIds, deletedFileIds) {
-  emitProgress(args, 'analysis', {
-    step: 'build-import-graph',
-    message: `Step 5/5: incrementally rebuilding import graph for ${changedFileIds.length + deletedFileIds.length} affected files...`,
-  }, stats);
+  emitProgress(
+    args,
+    'analysis',
+    {
+      step: 'build-import-graph',
+      message: `Step 5/5: incrementally rebuilding import graph for ${changedFileIds.length + deletedFileIds.length} affected files...`,
+    },
+    stats,
+  );
 
   let importEdges = 0;
   let callEdges = 0;
@@ -224,26 +308,41 @@ function rebuildDerivedIncremental(db, repoId, args, stats, changedFileIds, dele
     if (ig.success) importEdges = ig.edges;
   } catch {}
 
-  emitProgress(args, 'analysis', {
-    step: 'build-call-graph',
-    message: `Step 5/5: incrementally rebuilding call graph for affected files...`,
-  }, stats);
+  emitProgress(
+    args,
+    'analysis',
+    {
+      step: 'build-call-graph',
+      message: `Step 5/5: incrementally rebuilding call graph for affected files...`,
+    },
+    stats,
+  );
   try {
     const cg = buildCallEdgesForFiles(db, repoId, changedFileIds, deletedFileIds, {
       onProgress: (p) => {
-        emitProgress(args, 'analysis', {
-          step: 'build-call-graph',
-          message: `Step 5/5: rebuilding call graph... ${p.filesProcessed}/${p.totalFiles} files, ${p.callsFound} calls`,
-        }, stats);
+        emitProgress(
+          args,
+          'analysis',
+          {
+            step: 'build-call-graph',
+            message: `Step 5/5: rebuilding call graph... ${p.filesProcessed}/${p.totalFiles} files, ${p.callsFound} calls`,
+          },
+          stats,
+        );
       },
     });
     if (cg.success) callEdges = cg.calls;
   } catch {}
 
-  emitProgress(args, 'analysis', {
-    step: 'compute-complexity',
-    message: 'Step 5/5: incrementally computing complexity metrics...',
-  }, stats);
+  emitProgress(
+    args,
+    'analysis',
+    {
+      step: 'compute-complexity',
+      message: 'Step 5/5: incrementally computing complexity metrics...',
+    },
+    stats,
+  );
   try {
     const cc = buildComplexityMetricsForFiles(db, repoId, changedFileIds, deletedFileIds);
     if (cc.success) complexityCount = cc.symbols;
@@ -278,8 +377,25 @@ function formatSkipReport(report) {
     const top = topN(report.memorycodeignore);
     lines.push(`  .memorycodeignore: ${top.map(([d]) => d).join(', ')}...`);
   }
+  if (report.extraIgnore && Object.keys(report.extraIgnore).length > 0) {
+    const top = topN(report.extraIgnore);
+    lines.push(`  extra ignore: ${top.map(([d]) => d).join(', ')}...`);
+  }
   if (report.unsupportedExt > 0) {
     lines.push(`  Non-code files: ${report.unsupportedExt} skipped`);
+  }
+  for (const [key, label] of [
+    ['tooLarge', 'Oversize files'],
+    ['binary', 'Binary files'],
+    ['secret', 'Secret-like files'],
+    ['symlink', 'Symlinks'],
+    ['pathTraversal', 'Path escapes'],
+    ['unreadable', 'Unreadable entries'],
+    ['fileLimit', 'Files beyond cap'],
+  ]) {
+    if (report[key] > 0) {
+      lines.push(`  ${label}: ${report[key]} skipped`);
+    }
   }
   return lines.join('\n');
 }
@@ -411,7 +527,9 @@ async function parsePhase(files, deps, repoId, args) {
               repoId,
               record,
               symbols.length === 0 && record.content.trim().length > 0 ? 'zero_symbols' : 'ok',
-              symbols.length === 0 && record.content.trim().length > 0 ? 'No symbols extracted from non-empty file' : '',
+              symbols.length === 0 && record.content.trim().length > 0
+                ? 'No symbols extracted from non-empty file'
+                : '',
               symbols.length,
             );
             parsedRecords.push({ record, symbols });
@@ -489,6 +607,13 @@ async function parsePhase(files, deps, repoId, args) {
                 bodyPreview: sym.body_preview || '',
                 language: sym.language,
                 parentName: sym.parent_name || '',
+                stableSymbolId: sym.stable_symbol_id || '',
+                contentHash: sym.content_hash || '',
+                summary: sym.summary || '',
+                decoratorsJson: sym.decorators_json || '[]',
+                keywordsJson: sym.keywords_json || '[]',
+                callReferencesJson: sym.call_references_json || '[]',
+                ecosystemContext: sym.ecosystem_context || '',
               });
             }
             symbolCount += symbols.length;
@@ -612,7 +737,7 @@ async function indexRepository(deps, repoPath, repoName) {
   });
   const derivedT0 = Date.now();
   const headCommit = getHeadCommit(absPath);
-  repository.updateRepoStats({ repoId, headCommit });
+  repository.updateRepoStats({ repoId, headCommit, currentBranch: getCurrentBranch(absPath), baseHead: headCommit });
   const derived = await derivedPhase(db, repoId, args, files.length, parseResult.fileCount, parseResult.symbolCount);
   const derivedMs = Date.now() - derivedT0;
 
@@ -672,11 +797,16 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
   });
   emitProgress(args, 'discovery', { step: 'discover-files', message: 'Step 2/5: discovering code files to check...' });
 
-  const gitDelta = fs.existsSync(existing.path) ? getGitDelta(existing.path, existing.head_commit) : null;
+  const explicitDelta = fs.existsSync(existing.path)
+    ? parseChangedPathsInput(args.changedPaths || args['changed-paths'] || args.paths, existing.path)
+    : null;
+  const gitDelta =
+    explicitDelta || (fs.existsSync(existing.path) ? getGitDelta(existing.path, existing.head_commit) : null);
   const gitChangedFiles = gitDelta
     ? gitDelta.changed.filter((filePath) => fs.existsSync(filePath) && registry.canParseFile(filePath))
     : null;
   const gitDeletedFiles = gitDelta ? gitDelta.deleted : [];
+  const explicitChangedPathMode = gitDelta && gitDelta.source === 'changed-paths';
   const scanResult = gitDelta
     ? {
         files: gitChangedFiles,
@@ -793,9 +923,10 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
   }
 
   const currentFilesSet = new Set(files);
-  const staleFiles = gitDelta
-    ? [...existingFiles.entries()].filter(([filePath]) => gitDeletedFiles.includes(filePath))
-    : [...existingFiles.entries()].filter(([filePath]) => !currentFilesSet.has(filePath));
+  const staleFiles =
+    gitDelta || explicitChangedPathMode
+      ? [...existingFiles.entries()].filter(([filePath]) => gitDeletedFiles.includes(filePath))
+      : [...existingFiles.entries()].filter(([filePath]) => !currentFilesSet.has(filePath));
   for (const [, fileInfo] of staleFiles) {
     deletedFileIds.push(fileInfo.id);
     repository.deleteFile(fileInfo.id);
@@ -810,8 +941,22 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
     step: 'derived-indexes',
     message: 'Step 5/5: rebuilding derived indexes (imports, calls, complexity)...',
   });
-  repository.updateRepoStats({ repoId: existing.id, headCommit: gitDelta?.currentHead || getHeadCommit(existing.path) });
-  const derived = rebuildDerivedIndexes(db, existing.id, args, totalFiles, totalFiles, symbolCount, changedFileIds, deletedFileIds);
+  repository.updateRepoStats({
+    repoId: existing.id,
+    headCommit: gitDelta?.currentHead || getHeadCommit(existing.path),
+    currentBranch: getCurrentBranch(existing.path),
+    baseHead: existing.head_commit || null,
+  });
+  const derived = rebuildDerivedIndexes(
+    db,
+    existing.id,
+    args,
+    totalFiles,
+    totalFiles,
+    symbolCount,
+    changedFileIds,
+    deletedFileIds,
+  );
 
   const totalMs = Date.now() - t0;
   emitProgress(
@@ -927,6 +1072,8 @@ module.exports = {
   emitProgress,
   fileRecordToParams,
   getHeadCommit,
+  getCurrentBranch,
+  parseChangedPathsInput,
   getCodeRepoHealth,
   indexRepository,
   insertSymbols,

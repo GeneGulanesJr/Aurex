@@ -131,10 +131,11 @@ function createCodeIndexRepository(deps) {
         params.mtime,
         params.sizeBytes,
         params.lineCount,
+        params.mtimeNs || null,
       ];
       try {
         const rows = sqlJson(
-          'INSERT INTO code_files (repo_id, path, language, content, content_hash, mtime, size_bytes, line_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
+          'INSERT INTO code_files (repo_id, path, language, content, content_hash, mtime, size_bytes, line_count, mtime_ns) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
           values,
         );
         if (rows && rows[0] && rows[0].id) {
@@ -145,7 +146,7 @@ function createCodeIndexRepository(deps) {
         // The fallback insert-then-lookup path keeps indexing portable.
       }
       sqlRun(
-        'INSERT INTO code_files (repo_id, path, language, content, content_hash, mtime, size_bytes, line_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO code_files (repo_id, path, language, content, content_hash, mtime, size_bytes, line_count, mtime_ns) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
         values,
       );
       return sqlJson('SELECT id FROM code_files WHERE repo_id = ? AND path = ?', [params.repoId, params.path])[0].id;
@@ -163,15 +164,27 @@ function createCodeIndexRepository(deps) {
     },
     updateFile(fileId, params) {
       sqlRun(
-        'UPDATE code_files SET content = ?, content_hash = ?, mtime = ?, size_bytes = ?, line_count = ?, language = ? WHERE id = ?',
-        [params.content, params.contentHash, params.mtime, params.sizeBytes, params.lineCount, params.language, fileId],
+        'UPDATE code_files SET content = ?, content_hash = ?, mtime = ?, size_bytes = ?, line_count = ?, language = ?, mtime_ns = ? WHERE id = ?',
+        [
+          params.content,
+          params.contentHash,
+          params.mtime,
+          params.sizeBytes,
+          params.lineCount,
+          params.language,
+          params.mtimeNs || null,
+          fileId,
+        ],
       );
     },
     deleteFile(fileId) {
       const rows = sqlJson('SELECT repo_id, path FROM code_files WHERE id = ? LIMIT 1', [fileId]);
       sqlRun('DELETE FROM code_symbols WHERE file_id = ?', [fileId]);
       if (rows.length) {
-        sqlRun('DELETE FROM code_file_diagnostics WHERE repo_id = ? AND file_path = ?', [rows[0].repo_id, rows[0].path]);
+        sqlRun('DELETE FROM code_file_diagnostics WHERE repo_id = ? AND file_path = ?', [
+          rows[0].repo_id,
+          rows[0].path,
+        ]);
       }
       sqlRun('DELETE FROM code_files WHERE id = ?', [fileId]);
     },
@@ -225,8 +238,9 @@ function createCodeIndexRepository(deps) {
     insertSymbol(params) {
       sqlRun(
         `INSERT INTO code_symbols (repo_id, file_id, file_path, name, kind, signature, qualified_name,
-         start_line, end_line, start_byte, end_byte, docstring, body_preview, language, parent_name)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         start_line, end_line, start_byte, end_byte, docstring, body_preview, language, parent_name,
+         stable_symbol_id, content_hash, summary, decorators_json, keywords_json, call_references_json, ecosystem_context)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           params.repoId,
           params.fileId,
@@ -243,6 +257,13 @@ function createCodeIndexRepository(deps) {
           params.bodyPreview || '',
           params.language,
           params.parentName || '',
+          params.stableSymbolId || '',
+          params.contentHash || '',
+          params.summary || '',
+          params.decoratorsJson || '[]',
+          params.keywordsJson || '[]',
+          params.callReferencesJson || '[]',
+          params.ecosystemContext || '',
         ],
       );
     },
@@ -254,10 +275,10 @@ function createCodeIndexRepository(deps) {
         }
       });
     },
-    updateRepoStats({ repoId, headCommit }) {
+    updateRepoStats({ repoId, headCommit, currentBranch, baseHead }) {
       sqlRun(
-        "UPDATE code_repos SET file_count = (SELECT count(*) FROM code_files WHERE repo_id = ?), symbol_count = (SELECT count(*) FROM code_symbols WHERE repo_id = ?), head_commit = COALESCE(?, head_commit), updated_at = datetime('now') WHERE id = ?",
-        [repoId, repoId, headCommit || null, repoId],
+        "UPDATE code_repos SET file_count = (SELECT count(*) FROM code_files WHERE repo_id = ?), symbol_count = (SELECT count(*) FROM code_symbols WHERE repo_id = ?), head_commit = COALESCE(?, head_commit), current_branch = COALESCE(?, current_branch), base_head = COALESCE(?, base_head), updated_at = datetime('now') WHERE id = ?",
+        [repoId, repoId, headCommit || null, currentBranch || null, baseHead || null, repoId],
       );
     },
     listRepos() {

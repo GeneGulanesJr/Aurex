@@ -5,6 +5,7 @@ const USAGE = {
   'reindex-repo': '--repo <repo-name> [--mode full|incremental]',
   'health-code-repo': '--repo <repo-name>',
   'search-code': '--query <text> [--repo NAME] [--kind TYPE] [--max-results N]',
+  'ranked-code-context': '--query <text> [--repo NAME] [--kind TYPE] [--token-budget N] [--max-results N]',
   'get-code-source': '--repo NAME --file PATH --name SYMBOL',
   'list-code-repos': '',
   'remove-code-repo': '--repo <repo-name>',
@@ -15,6 +16,7 @@ function register(commands) {
   commands['reindex-repo'] = (args) => codeCmd.reindexRepo(args);
   commands['health-code-repo'] = (args) => codeCmd.codeRepoHealth(args);
   commands['search-code'] = (args) => codeCmd.searchCode(args);
+  commands['ranked-code-context'] = (args) => codeCmd.rankedContext(args);
   commands['get-code-source'] = (args) => codeCmd.getCodeSource(args);
   commands['list-code-repos'] = () => codeCmd.listCodeRepos();
   commands['remove-code-repo'] = (args) => codeCmd.removeCodeRepo(args);
