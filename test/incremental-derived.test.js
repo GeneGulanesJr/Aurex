@@ -135,7 +135,7 @@ function makeMockDb(tables) {
           return (data.code_files || []).find((f) => f.id === params[0]) || undefined;
         }
         if (normalized.includes('SELECT content FROM code_files WHERE id = ?')) {
-          const f = (data.code_files || []).find((f) => f.id === params[0]);
+          const f = (data.code_files || []).find((cf) => cf.id === params[0]);
           return f ? { content: f.content } : undefined;
         }
         return undefined;
