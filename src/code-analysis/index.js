@@ -22,5 +22,8 @@ module.exports = {
   ...risk,
   ...queryWinnow,
   ...readModel,
+  buildImportGraphForFiles: legacy.buildImportGraphForFiles,
+  buildCallGraphForFiles: legacy.buildCallGraphForFiles,
+  buildComplexityForFiles: legacy.buildComplexityForFiles,
   clearPageRankCache: legacy.clearPageRankCache,
 };

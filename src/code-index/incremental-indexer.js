@@ -7,7 +7,7 @@ const { createCodeIndexRepository } = require('./repos');
 const { scanRepository } = require('./scanner');
 const { createParserRegistry, getLanguageForFile } = require('./parser-registry');
 const { extractSymbolsFromFile } = require('./symbol-extractor');
-const { buildImportEdges, buildCallEdges, buildComplexityMetrics } = require('./edge-extractor');
+const { buildImportEdges, buildImportEdgesForFiles, buildCallEdges, buildCallEdgesForFiles, buildComplexityMetrics, buildComplexityMetricsForFiles } = require('./edge-extractor');
 const { createParsePool } = require('./worker-pool');
 
 function emitProgress(args, phase, detail, stats) {
@@ -154,8 +154,14 @@ function insertSymbols(repository, repoId, fileId, filePath, symbols) {
   return count;
 }
 
-function rebuildDerivedIndexes(db, repoId, args, totalFiles, fileCount, symbolCount) {
+function rebuildDerivedIndexes(db, repoId, args, totalFiles, fileCount, symbolCount, changedFileIds, deletedFileIds) {
   const stats = { files_total: totalFiles, files_done: fileCount, symbols: symbolCount };
+  const useIncremental = Array.isArray(changedFileIds) && Array.isArray(deletedFileIds);
+
+  if (useIncremental) {
+    return rebuildDerivedIncremental(db, repoId, args, stats, changedFileIds, deletedFileIds);
+  }
+
   emitProgress(args, 'analysis', { step: 'build-import-graph', message: 'Step 5/5: building import graph...' }, stats);
 
   let importEdges = 0;
@@ -199,7 +205,59 @@ function rebuildDerivedIndexes(db, repoId, args, totalFiles, fileCount, symbolCo
     }
   } catch {}
 
-  return { importEdges, callEdges, complexityCount };
+  return { importEdges, callEdges, complexityCount, derived_scope: 'repo' };
+}
+
+function rebuildDerivedIncremental(db, repoId, args, stats, changedFileIds, deletedFileIds) {
+  emitProgress(args, 'analysis', {
+    step: 'build-import-graph',
+    message: `Step 5/5: incrementally rebuilding import graph for ${changedFileIds.length + deletedFileIds.length} affected files...`,
+  }, stats);
+
+  let importEdges = 0;
+  let callEdges = 0;
+  let complexityCount = 0;
+  let usedFallback = false;
+
+  try {
+    const ig = buildImportEdgesForFiles(db, repoId, changedFileIds, deletedFileIds);
+    if (ig.success) importEdges = ig.edges;
+  } catch {}
+
+  emitProgress(args, 'analysis', {
+    step: 'build-call-graph',
+    message: `Step 5/5: incrementally rebuilding call graph for affected files...`,
+  }, stats);
+  try {
+    const cg = buildCallEdgesForFiles(db, repoId, changedFileIds, deletedFileIds, {
+      onProgress: (p) => {
+        emitProgress(args, 'analysis', {
+          step: 'build-call-graph',
+          message: `Step 5/5: rebuilding call graph... ${p.filesProcessed}/${p.totalFiles} files, ${p.callsFound} calls`,
+        }, stats);
+      },
+    });
+    if (cg.success) callEdges = cg.calls;
+  } catch {}
+
+  emitProgress(args, 'analysis', {
+    step: 'compute-complexity',
+    message: 'Step 5/5: incrementally computing complexity metrics...',
+  }, stats);
+  try {
+    const cc = buildComplexityMetricsForFiles(db, repoId, changedFileIds, deletedFileIds);
+    if (cc.success) complexityCount = cc.symbols;
+  } catch {}
+
+  return {
+    importEdges,
+    callEdges,
+    complexityCount,
+    derived_scope: 'file',
+    derived_files_changed: changedFileIds.length,
+    derived_files_deleted: deletedFileIds.length,
+    usedFallback,
+  };
 }
 
 function formatSkipReport(report) {
@@ -479,8 +537,8 @@ async function parsePhase(files, deps, repoId, args) {
   return { fileCount, symbolCount, skipped };
 }
 
-async function derivedPhase(db, repoId, args, totalFiles, fileCount, symbolCount) {
-  return rebuildDerivedIndexes(db, repoId, args, totalFiles, fileCount, symbolCount);
+async function derivedPhase(db, repoId, args, totalFiles, fileCount, symbolCount, changedFileIds, deletedFileIds) {
+  return rebuildDerivedIndexes(db, repoId, args, totalFiles, fileCount, symbolCount, changedFileIds, deletedFileIds);
 }
 
 async function indexRepository(deps, repoPath, repoName) {
@@ -649,6 +707,8 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
   let hashed = 0;
   const skipped = [];
   const totalFiles = files.length;
+  const changedFileIds = [];
+  const deletedFileIds = [];
 
   for (let i = 0; i < files.length; i++) {
     const filePath = files[i];
@@ -704,6 +764,7 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
           });
           symbolCount += insertSymbols(repository, existing.id, fileId, filePath, symbols);
           reindexed++;
+          changedFileIds.push(fileId);
         };
         if (typeof repository.withTransaction === 'function') {
           repository.withTransaction(writeChangedFile);
@@ -736,6 +797,7 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
     ? [...existingFiles.entries()].filter(([filePath]) => gitDeletedFiles.includes(filePath))
     : [...existingFiles.entries()].filter(([filePath]) => !currentFilesSet.has(filePath));
   for (const [, fileInfo] of staleFiles) {
+    deletedFileIds.push(fileInfo.id);
     repository.deleteFile(fileInfo.id);
   }
 
@@ -749,7 +811,7 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
     message: 'Step 5/5: rebuilding derived indexes (imports, calls, complexity)...',
   });
   repository.updateRepoStats({ repoId: existing.id, headCommit: gitDelta?.currentHead || getHeadCommit(existing.path) });
-  const derived = rebuildDerivedIndexes(db, existing.id, args, totalFiles, totalFiles, symbolCount);
+  const derived = rebuildDerivedIndexes(db, existing.id, args, totalFiles, totalFiles, symbolCount, changedFileIds, deletedFileIds);
 
   const totalMs = Date.now() - t0;
   emitProgress(
@@ -774,7 +836,7 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
     files_skipped: skipped.length,
     symbols_extracted: symbolCount,
     strategy: gitDelta ? 'git-diff' : 'scan-hash',
-    derived_scope: 'repo',
+    derived_scope: derived.derived_scope || 'repo',
     git_base: gitDelta ? existing.head_commit : null,
     git_head: gitDelta ? gitDelta.currentHead : null,
     git_renames: gitDelta ? gitDelta.renamed : [],
@@ -870,6 +932,7 @@ module.exports = {
   insertSymbols,
   parsePhase,
   rebuildDerivedIndexes,
+  rebuildDerivedIncremental,
   reindexRepository,
   scanPhase,
   derivedPhase,
