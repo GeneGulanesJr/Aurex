@@ -65,6 +65,7 @@ const CODE_EXTENSIONS = new Set([
   '.html',
   '.css',
   '.scss',
+  '.sql',
 ]);
 
 const MD_EXTENSIONS = new Set(['.md', '.mdx']);

@@ -51,7 +51,7 @@ const LANGUAGE_MAP = {
   '.html': { grammarFile: null, languageName: 'html', extractor: 'regex' },
   '.css': { grammarFile: null, languageName: 'css', extractor: 'regex' },
   '.scss': { grammarFile: null, languageName: 'scss', extractor: 'regex' },
-  // SQL grammar not bundled — .sql files use regex parsing when sql.wasm is available
+  '.sql': { grammarFile: 'sql.wasm', languageName: 'sql', parserKey: 'sql', extractor: 'sql' },
 };
 
 // ── Module state ──
@@ -156,6 +156,9 @@ function _routeToExtractor(filePath, source, parser, langConfig) {
     if (langConfig.languageName === 'yaml') {
       return _extractYamlSymbols(filePath, source);
     }
+    if (langConfig.languageName === 'sql') {
+      return _extractSqlSymbolsRegex(filePath, source);
+    }
     return [];
   }
   if (langConfig.languageName === 'sql') {
@@ -180,6 +183,14 @@ function _getLangConfig(filePath) {
   // Regex-based extractors don't need a tree-sitter parser
   if (langConfig.extractor === 'regex') {
     return { langConfig, parser: null };
+  }
+  // SQL: use WASM parser if available, otherwise fall back to regex
+  if (langConfig.extractor === 'sql') {
+    const parser = _parsers[langConfig.parserKey];
+    if (parser) {
+      return { langConfig, parser };
+    }
+    return { langConfig: { ...langConfig, extractor: 'regex' }, parser: null };
   }
   const parser = _parsers[langConfig.parserKey];
   if (!parser) {return null;}
@@ -329,6 +340,23 @@ function _fallbackExtractSymbols(filePath, content) {
       while ((match = regex.exec(content)) !== null) {
         const line = _getLineFromOffset(content, match.index);
         add(match[1], kind, line, match[0].trim(), match.index);
+      }
+    }
+  } else if (ext === '.sql') {
+    const sqlPatterns = [
+      { re: /\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([`\[\]"']?\w+[`\[\]"']?)/gi, kind: 'table' },
+      { re: /\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMP(?:ORARY)?\s+)?VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?([`\[\]"']?\w+[`\[\]"']?)/gi, kind: 'view' },
+      { re: /\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMP(?:ORARY)?\s+)?FUNCTION\s+([`\[\]"']?\w+[`\[\]"']?)/gi, kind: 'function' },
+      { re: /\bCREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+([`\[\]"']?\w+[`\[\]"']?)/gi, kind: 'trigger' },
+      { re: /\bCREATE\s+PROCEDURE\s+([`\[\]"']?\w+[`\[\]"']?)/gi, kind: 'procedure' },
+    ];
+    for (const { re, kind: symKind } of sqlPatterns) {
+      let match;
+      re.lastIndex = 0;
+      while ((match = re.exec(content)) !== null) {
+        const name = match[1].replace(/[`\[\]"']/g, '');
+        const line = _getLineFromOffset(content, match.index);
+        add(name, symKind, line, match[0].trim(), match.index);
       }
     }
   }
@@ -1101,6 +1129,82 @@ function _extractRustSymbols(filePath, sourceStr, parser) {
 
   walk(root, 0);
   tree.delete();
+  return symbols;
+}
+
+function _extractSqlSymbolsRegex(filePath, source) {
+  const symbols = [];
+  const seen = new Set();
+
+  function add(name, kind, startLine, startByte, endByte, sig) {
+    const key = `${name}:${kind}:${startLine}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    const bodyLines = source
+      .substring(startByte, endByte)
+      .split('\n')
+      .slice(1)
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .slice(0, 5);
+    symbols.push({
+      name,
+      kind,
+      language: 'sql',
+      file: filePath,
+      signature: (sig || name).length > 200 ? `${(sig || name).slice(0, 197)}...` : sig || name,
+      qualified_name: name,
+      start_line: startLine,
+      end_line: startLine,
+      start_byte: startByte,
+      end_byte: endByte,
+      docstring: '',
+      body_preview: bodyLines.join('\n'),
+      parent_name: '',
+    });
+  }
+
+  function getLine(idx) {
+    return source.substring(0, idx).split('\n').length;
+  }
+
+  const patterns = [
+    { re: /\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([`\[\]"']?\w+[`\[\]"']?(?:\.[`\[\]"']?\w+[`\[\]"']?)?)/gi, kind: 'table' },
+    { re: /\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMP(?:ORARY)?\s+)?VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?([`\[\]"']?\w+[`\[\]"']?(?:\.[`\[\]"']?\w+[`\[\]"']?)?)/gi, kind: 'view' },
+    { re: /\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?([`\[\]"']?\w+[`\[\]"']?(?:\.[`\[\]"']?\w+[`\[\]"']?)?)/gi, kind: 'index' },
+    { re: /\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMP(?:ORARY)?\s+)?FUNCTION\s+([`\[\]"']?\w+[`\[\]"']?(?:\.[`\[\]"']?\w+[`\[\]"']?)?)/gi, kind: 'function' },
+    { re: /\bCREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+([`\[\]"']?\w+[`\[\]"']?)/gi, kind: 'trigger' },
+    { re: /\bALTER\s+TABLE\s+([`\[\]"']?\w+[`\[\]"']?(?:\.[`\[\]"']?\w+[`\[\]"']?)?)/gi, kind: 'alter' },
+    { re: /\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?([`\[\]"']?\w+[`\[\]"']?(?:\.[`\[\]"']?\w+[`\[\]"']?)?)/gi, kind: 'drop' },
+    { re: /\bINSERT\s+INTO\s+([`\[\]"']?\w+[`\[\]"']?(?:\.[`\[\]"']?\w+[`\[\]"']?)?)/gi, kind: 'insert' },
+    { re: /\bUPDATE\s+([`\[\]"']?\w+[`\[\]"']?(?:\.[`\[\]"']?\w+[`\[\]"']?)?)/gi, kind: 'update' },
+    { re: /\bDELETE\s+FROM\s+([`\[\]"']?\w+[`\[\]"']?(?:\.[`\[\]"']?\w+[`\[\]"']?)?)/gi, kind: 'delete' },
+    { re: /\bCREATE\s+PROCEDURE\s+([`\[\]"']?\w+[`\[\]"']?(?:\.[`\[\]"']?\w+[`\[\]"']?)?)/gi, kind: 'procedure' },
+  ];
+
+  for (const { re, kind } of patterns) {
+    let match;
+    re.lastIndex = 0;
+    while ((match = re.exec(source)) !== null) {
+      const rawName = match[1].replace(/[`\[\]"']/g, '');
+      const line = getLine(match.index);
+      const lineEnd = source.indexOf('\n', match.index);
+      const endByte = lineEnd === -1 ? source.length : lineEnd;
+      const sig = source.substring(match.index, endByte).trim();
+      add(rawName, kind, line, match.index, endByte, sig);
+    }
+  }
+
+  const selectRe = /\bSELECT\b/gi;
+  let selMatch;
+  while ((selMatch = selectRe.exec(source)) !== null) {
+    const line = getLine(selMatch.index);
+    const lineEnd = source.indexOf('\n', selMatch.index);
+    const endByte = lineEnd === -1 ? source.length : lineEnd;
+    const sig = source.substring(selMatch.index, endByte).trim();
+    add(`SELECT:${line}`, 'select', line, selMatch.index, endByte, sig);
+  }
+
   return symbols;
 }
 

@@ -24,6 +24,7 @@ const LANGUAGE_BY_EXTENSION = Object.freeze({
   '.html': 'html',
   '.css': 'css',
   '.scss': 'scss',
+  '.sql': 'sql',
 });
 
 function getLanguageForFile(filePath) {

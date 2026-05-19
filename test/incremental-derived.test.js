@@ -9,8 +9,9 @@ const STORE = path.resolve(__dirname, '..', 'memory-store.js');
 
 let cliAvailable = false;
 try {
-  execSync(`node "${STORE}" list-code-repos`, { encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] });
-  cliAvailable = true;
+  const result = execSync(`node "${STORE}" list-code-repos`, { encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] });
+  const parsed = JSON.parse(result.trim());
+  cliAvailable = parsed && typeof parsed.total === 'number';
 } catch (_) {}
 
 function run(cmd) {
@@ -519,7 +520,7 @@ describeIntegration('health reporting with stale state', () => {
     fs.writeFileSync(path.join(tmpRepo, 'h.js'), 'function hV2() {}');
     run(`reindex-repo --repo ${name} --mode incremental`);
 
-    const health = run(`code-repo-health --repo ${name}`);
+    const health = run(`health-code-repo --repo ${name}`);
     expect(health.ok).toBe(true);
     expect(health.stale).toBe(false);
     expect(typeof health.health_score).toBe('number');
