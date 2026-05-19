@@ -720,8 +720,14 @@ function parseArgs(argv) {
   let key = null;
   for (const arg of argv.slice(3)) {
     if (arg.startsWith('--')) {
-      key = arg.slice(2);
-      args[key] = true;
+      const eqIdx = arg.indexOf('=');
+      if (eqIdx !== -1) {
+        args[arg.slice(2, eqIdx)] = arg.slice(eqIdx + 1);
+        key = null;
+      } else {
+        key = arg.slice(2);
+        args[key] = true;
+      }
     } else if (key) {
       args[key] = arg;
       key = null;
