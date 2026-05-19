@@ -103,10 +103,20 @@ function loadConfig() {
   }
 }
 
+let _configMtime = 0;
+
 function getConfig() {
-  if (!getConfig._cached) {
-    getConfig._cached = loadConfig();
+  try {
+    const stat = fs.statSync(CONFIG_PATH);
+    if (getConfig._cached && stat.mtimeMs <= _configMtime) {
+      return getConfig._cached;
+    }
+    _configMtime = stat.mtimeMs;
+  } catch {}
+  if (getConfig._cached && !_configMtime) {
+    return getConfig._cached;
   }
+  getConfig._cached = loadConfig();
   return getConfig._cached;
 }
 

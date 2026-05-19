@@ -10,19 +10,23 @@ interface PassiveCaptureDeps {
 
 const DECISION_PATTERNS: Array<{ regex: RegExp; type: string; label: string }> = [
   {
-    regex: /\b(I['']ll use|let's use|we should use|going with|switching to|using .* instead of)\b/i,
+    regex: /\b(I['']ll use|let's use|we should use|going with|switching to|using .* instead of)\b.*\b(because|since|reason|to avoid|for better)\b/i,
     type: 'decision',
     label: 'Design decision',
   },
-  { regex: /\b(approach|strategy|architecture|pattern|design):\s/i, type: 'decision', label: 'Architecture choice' },
+  { regex: /\b(approach|strategy|architecture|pattern|design):\s.*\b(implement|chose|selected|decided)\b/i, type: 'decision', label: 'Architecture choice' },
   {
-    regex: /\b(root cause|the bug was|issue is|problem is|fix is|fixed by|workaround is)\b/i,
+    regex: /\b(root cause|the bug was|issue is that|fixed by|workaround is to)\b/i,
     type: 'bugfix',
     label: 'Bug fix',
   },
-  { regex: /\b(I discovered|turns out|found that|interesting:|note that)\b/i, type: 'discovery', label: 'Discovery' },
   {
-    regex: /\b(we need to|cannot|constraint|requirement|limitation is)\b/i,
+    regex: /\b(I discovered that|turns out the reason|found that .* because|note that .* limitation)\b/i,
+    type: 'discovery',
+    label: 'Discovery',
+  },
+  {
+    regex: /\b(cannot .* because|constraint is|requirement is that|limitation:)\b/i,
     type: 'architecture',
     label: 'Constraint identified',
   },
@@ -57,20 +61,6 @@ export function registerPassiveCapture(pi: ExtensionAPI, deps: PassiveCaptureDep
       }
 
       deps.state.editedFiles.add(input.path);
-
-      deps.state.memoriesSavedThisSession++;
-      if (deps.state.memoriesSavedThisSession % 5 !== 0) {
-        return;
-      }
-
-      await deps.mem('save', {
-        title: `Edited ${path.basename(input.path)}`,
-        type: 'accomplished',
-        project: deps.state.currentProject,
-        scope: 'project',
-        force: 'true',
-        content: `**What**: File edited during session\n**Where**: ${input.path}`,
-      });
     }
   });
 
@@ -80,6 +70,10 @@ export function registerPassiveCapture(pi: ExtensionAPI, deps: PassiveCaptureDep
     }
     const text = extractMessageText(event.message);
     if (!text || text.length < 50) {
+      return;
+    }
+
+    if (text.length < 100) {
       return;
     }
 

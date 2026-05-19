@@ -33,12 +33,22 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
       });
     }
 
-    if (!contextResult) {
-      return;
+    if (!contextResult && !crossProjectResult) {
+      return {
+        message: {
+          customType: 'memory-context',
+          content:
+            '⚠️ **Memory context failed to load.** Memory operations may be unreliable this session.\n' +
+            'Use `memory-search` and `memory-save` manually if needed.',
+          display: true,
+        },
+      };
     }
 
+    const effectiveContext = contextResult || crossProjectResult;
+
     const observations =
-      (contextResult.observations as Array<{
+      (effectiveContext.observations as Array<{
         id: number;
         title: string;
         type: string;
@@ -49,20 +59,20 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
       }>) || [];
 
     const personal =
-      (contextResult.personal as Array<{
+      (effectiveContext.personal as Array<{
         id: number;
         title: string;
         type: string;
       }>) || [];
 
-    const stats = contextResult.stats as { total_memories: number; total_personal: number };
-    const topic = contextResult.topic as string | null;
+    const stats = effectiveContext.stats as { total_memories: number; total_personal: number };
+    const topic = effectiveContext.topic as string | null;
 
     if (observations.length === 0 && personal.length === 0 && !crossProjectResult) {
       return;
     }
 
-    const isNewProject = crossProjectResult !== null;
+    const isNewProject = crossProjectResult !== null && !contextResult;
     const effectiveObservations = isNewProject ? (crossProjectResult!.observations as any[]) || [] : observations;
     const effectiveStats = isNewProject ? (crossProjectResult!.stats as any) : stats;
 

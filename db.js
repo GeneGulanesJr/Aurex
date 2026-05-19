@@ -209,17 +209,20 @@ function ensureDb() {
 
   if (!fs.existsSync(dbPath) || fs.statSync(dbPath).size === 0) {
     const schema = fs.readFileSync(SCHEMA_PATH, 'utf8');
-    const statements = schema
-      .split(';')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0 && !s.startsWith('--') && !s.startsWith('PRAGMA'));
-    for (const stmt of statements) {
-      try {
-        _sqlExec(stmt);
-      } catch (e) {
-        // Log schema errors but don't abort — CREATE IF NOT EXISTS is idempotent
-        if (!/already exists|duplicate column/i.test(e.message)) {
-          console.error(`[db] Schema statement error: ${e.message}`);
+    try {
+      _db.exec(schema);
+    } catch (e) {
+      const stmts = schema
+        .split(/;\s*\n/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0 && !s.startsWith('--') && !/^\s*PRAGMA/i.test(s));
+      for (const stmt of stmts) {
+        try {
+          _sqlExec(stmt);
+        } catch (inner) {
+          if (!/already exists|duplicate column/i.test(inner.message)) {
+            console.error(`[db] Schema statement error: ${inner.message}`);
+          }
         }
       }
     }
@@ -554,12 +557,11 @@ function runMigrationV5() {
         }
       }
     }
-    // _db.exec() correctly handles complex multi-statement SQL with triggers etc.
-    // It cannot run inside a transaction because schema.sql contains PRAGMAs.
+    let schemaExecOk = true;
     try {
       _db.exec(schema);
     } catch (e) {
-      // Fall back to statement-by-statement if exec fails
+      schemaExecOk = false;
       const stmts = schema
         .split(/;\s*\n/)
         .map((s) => s.trim())
@@ -573,8 +575,15 @@ function runMigrationV5() {
           }
         }
       }
+      if (errors.length === 0) {
+        schemaExecOk = true;
+      }
     }
-    sqlRaw('PRAGMA user_version = 5');
+    if (schemaExecOk) {
+      sqlRaw('PRAGMA user_version = 5');
+    } else {
+      errors.push('V5: schema exec failed, not advancing user_version');
+    }
   } catch (e) {
     errors.push(`V5: ${e.message}`);
   }

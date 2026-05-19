@@ -4,7 +4,40 @@ import { MEMORY_SCRIPT, MemResult, getTimeout } from '../state';
 
 export type { MemResult };
 
+let _inProcessDispatch: ((cmd: string, args: Record<string, string>) => Promise<MemResult | null>) | null = null;
+
+async function getInProcessDispatch() {
+  if (_inProcessDispatch) return _inProcessDispatch;
+  try {
+    const gateway = require('../../src/cli/gateway');
+    if (typeof gateway.dispatch === 'function') {
+      _inProcessDispatch = gateway.dispatch;
+      return _inProcessDispatch;
+    }
+  } catch {}
+  return null;
+}
+
 export async function mem(cmd: string, args: Record<string, string | number | boolean>): Promise<MemResult | null> {
+  const dispatch = await getInProcessDispatch();
+  if (dispatch) {
+    try {
+      const stringArgs: Record<string, string> = {};
+      for (const [k, v] of Object.entries(args)) {
+        if (v !== undefined && v !== null && v !== '') {
+          stringArgs[k] = String(v);
+        }
+      }
+      return await dispatch(cmd, stringArgs);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`[memory-layer] in-process ${cmd} failed, falling back to child process:`, msg);
+    }
+  }
+  return memViaChildProcess(cmd, args);
+}
+
+async function memViaChildProcess(cmd: string, args: Record<string, string | number | boolean>): Promise<MemResult | null> {
   const argList: string[] = [cmd];
   for (const [k, v] of Object.entries(args)) {
     if (v === undefined || v === null || v === '') {
@@ -47,6 +80,15 @@ export async function mem(cmd: string, args: Record<string, string | number | bo
 }
 
 export async function memCmd(cmd: string): Promise<MemResult | null> {
+  const dispatch = await getInProcessDispatch();
+  if (dispatch) {
+    try {
+      return await dispatch(cmd, {});
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`[memory-layer] in-process ${cmd} failed, falling back to child process:`, msg);
+    }
+  }
   try {
     const out = await new Promise<string>((resolve, reject) => {
       const timeout = getTimeout(cmd);

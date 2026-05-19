@@ -103,6 +103,7 @@ export const state = {
   repoCacheTime: 0 as number,
   sessionId: null as number | null,
   currentProject: null as string | null,
+  projectSessionCount: 0 as number,
   memoriesSavedThisSession: 0 as number,
   nudgeCountThisSession: 0 as number,
   MAX_NUDGES_PER_SESSION: 8 as number,

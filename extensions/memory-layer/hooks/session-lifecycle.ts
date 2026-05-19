@@ -39,6 +39,7 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionDeps) {
     deps.state.lastMemoryToolCall = 0;
     deps.state.lastAutoDecisionSave = 0;
     deps.state.hasInjectedContext = false;
+    deps.state.projectSessionCount = 0;
     deps.state.editedFiles = new Set();
     deps.state.exploredFiles = new Set();
     deps.state.cachedRepos = null;
@@ -58,19 +59,7 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionDeps) {
 
     ctx.ui.setStatus('memory', `🧠 session ${deps.state.sessionId}`);
 
-    if (deps.state.sessionId % 10 === 0) {
-      try {
-        const dreamResult = await deps.memCmd('dream');
-        if (dreamResult && (dreamResult as any).totalCleaned > 0) {
-          ctx.ui.notify(
-            `💤 Dream Cycle: ${(dreamResult as any).totalCleaned} memories cleaned (session #${deps.state.sessionId})`,
-            'info',
-          );
-        }
-      } catch (e) {
-        console.error('[memory-layer] auto-dream failed:', e);
-      }
-    }
+    deps.state.projectSessionCount = (result as any).sessionCount || 0;
   });
 }
 
@@ -210,6 +199,20 @@ export function registerSessionShutdown(pi: ExtensionAPI, deps: SessionDeps) {
         `Memory: session saved (${deps.state.memoriesSavedThisSession} memories, ${deps.state.turnCount} turns)`,
         'info',
       );
+    }
+
+    if (deps.state.projectSessionCount && deps.state.projectSessionCount % 10 === 0) {
+      try {
+        const dreamResult = await deps.memCmd('dream');
+        if (dreamResult && (dreamResult as any).totalCleaned > 0) {
+          ctx.ui.notify(
+            `💤 Dream Cycle: ${(dreamResult as any).totalCleaned} memories cleaned (${deps.state.currentProject})`,
+            'info',
+          );
+        }
+      } catch (e) {
+        console.error('[memory-layer] auto-dream failed:', e);
+      }
     }
   });
 }
