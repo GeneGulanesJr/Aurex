@@ -2,6 +2,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { state, trustIcon } from '../state';
 import { Type } from './schema';
 import { mem, memCmd } from '../host/memory-client';
+import { normalizeToolResult } from './tool-result';
 
 interface MemoryDeps {
   state: typeof state;
@@ -157,10 +158,10 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
           return `- [#${r.id}] [${r.type}] ${r.title}${score}${trust}${r.snippet ? `\n  ${r.snippet}` : ''}`;
         });
 
-        return {
+        return normalizeToolResult({
           content: [{ type: 'text', text: `Found ${results.length} memories:\n${lines.join('\n')}` }],
           details: result ?? {},
-        };
+        });
       } catch (err) {
         return {
           content: [{ type: 'text', text: `Unexpected error: ${err instanceof Error ? err.message : String(err)}` }],
