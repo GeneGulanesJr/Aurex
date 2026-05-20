@@ -1,4 +1,4 @@
-// src/code-analysis/shared-deps.js
+// Src/code-analysis/shared-deps.js
 // Shared imports used across code-analysis modules.
 // Centralized to avoid duplicating require() calls in every module.
 
