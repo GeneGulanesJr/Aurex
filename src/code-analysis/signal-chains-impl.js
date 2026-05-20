@@ -1,6 +1,6 @@
 // Signal chain tracing, layer violation detection, class hierarchy.
 
-const { path, _requireNativeDb, RESULT_LIMITS } = require('./shared-deps');
+const { path, _requireNativeDb } = require('./shared-deps');
 
 function getClassHierarchy(db, repoId, opts = {}) {
   const guard = _requireNativeDb(db);

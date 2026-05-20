@@ -1,6 +1,6 @@
 // Dead code detection via call graph reachability analysis.
 
-const { _requireNativeDb, DEAD_CODE, RESULT_LIMITS } = require('./shared-deps');
+const { _requireNativeDb, DEAD_CODE } = require('./shared-deps');
 
 function getDeadCode(db, repoId, opts) {
   const guard = _requireNativeDb(db);
