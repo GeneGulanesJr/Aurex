@@ -97,7 +97,6 @@ export function registerPassiveCapture(pi: ExtensionAPI, deps: PassiveCaptureDep
           type: pattern.type,
           project: deps.state.currentProject || 'unknown',
           scope: 'project',
-          force: 'true',
           content: [
             `**What**: Auto-detected ${pattern.label.toLowerCase()}`,
             `**Where**: Session ${deps.state.sessionId || 'unknown'}`,
