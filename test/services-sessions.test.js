@@ -115,5 +115,32 @@ describe('services/sessions', () => {
       expect(trustRecovery).not.toHaveBeenCalled();
       expect(result.trustRecovery).toBeUndefined();
     });
+
+    it('should run compact at session end when runCompact is provided', () => {
+      const sqlJson = vi.fn();
+      const sqlRun = vi.fn();
+      const jsonErrNoExit = vi.fn((msg) => ({ error: msg }));
+      const trustRecovery = vi.fn(() => ({ ok: true }));
+      const runCompact = vi.fn(() => ({ ok: true, pruned: 3 }));
+      const result = sessionEnd(
+        { sqlJson, sqlRun, jsonErrNoExit, trustRecovery, runCompact },
+        { id: '10', memories: '5' },
+      );
+      expect(runCompact).toHaveBeenCalled();
+      expect(result.compacted).toEqual({ ok: true, pruned: 3 });
+    });
+
+    it('should not fail when runCompact is not provided', () => {
+      const sqlJson = vi.fn();
+      const sqlRun = vi.fn();
+      const jsonErrNoExit = vi.fn((msg) => ({ error: msg }));
+      const trustRecovery = vi.fn(() => ({ ok: true }));
+      const result = sessionEnd(
+        { sqlJson, sqlRun, jsonErrNoExit, trustRecovery },
+        { id: '10', memories: '5' },
+      );
+      expect(result.ok).toBe(true);
+      expect(result.compacted).toBeUndefined();
+    });
   });
 });
