@@ -24,11 +24,14 @@ import { formatDocResult } from './tools/format-doc-result';
 
 type RegFn = (pi: ExtensionAPI, deps: any) => void;
 
+const registrationFailures: string[] = [];
+
 function safeRegister(pi: ExtensionAPI, deps: any, name: string, fn: RegFn) {
   try {
     fn(pi, deps);
   } catch (e) {
     console.error(`[memory-layer] Failed to register ${name}:`, e instanceof Error ? e.message : String(e));
+    registrationFailures.push(name);
   }
 }
 
@@ -60,4 +63,16 @@ export default function (pi: ExtensionAPI) {
   safeRegister(pi, deps, 'memory tools', registerMemoryTools);
   safeRegister(pi, deps, 'code tools', registerCodeTools);
   safeRegister(pi, deps, 'doc tools', registerDocTools);
+
+  // Surface partial load failures via UI notification
+  if (registrationFailures.length > 0) {
+    try {
+      pi.on('session_start', async (_event, ctx) => {
+        ctx.ui.notify(
+          `⚠️ Memory layer partially loaded: ${registrationFailures.join(', ')}`,
+          'warn',
+        );
+      });
+    } catch {}
+  }
 }
