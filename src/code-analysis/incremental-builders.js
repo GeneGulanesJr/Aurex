@@ -504,8 +504,12 @@ function buildComplexityForFiles(db, repoId, changedFileIds, deletedFileIds = []
     const paramCount = sigMatch ? sigMatch[1].split(',').filter((p) => p.trim()).length : 0;
     const lines = body.split('\n');
     const codeLines = lines.filter((l) => l.trim() && !l.trim().startsWith('//')).length;
-    const assessment =
-      cyclomatic <= COMPLEXITY.LOW_THRESHOLD ? 'low' : cyclomatic <= COMPLEXITY.MEDIUM_THRESHOLD ? 'medium' : 'high';
+    let assessment = 'high';
+    if (cyclomatic <= COMPLEXITY.LOW_THRESHOLD) {
+      assessment = 'low';
+    } else if (cyclomatic <= COMPLEXITY.MEDIUM_THRESHOLD) {
+      assessment = 'medium';
+    }
 
     insertStmt.run(sym.id, cyclomatic, maxDepth, paramCount, codeLines, assessment);
     count++;

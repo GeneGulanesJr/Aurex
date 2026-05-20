@@ -311,14 +311,14 @@ function getPrRiskProfile(db, repoId, opts = {}) {
     testCoverageScore * wTestCoverage +
     changeVolumeScore * wChangeVolume;
 
-  const riskLevel =
-    composite <= PR_RISK.RISK_LEVELS.LOW
-      ? 'low'
-      : composite <= PR_RISK.RISK_LEVELS.MEDIUM
-        ? 'medium'
-        : composite <= PR_RISK.RISK_LEVELS.HIGH
-          ? 'high'
-          : 'critical';
+  let riskLevel = 'critical';
+  if (composite <= PR_RISK.RISK_LEVELS.LOW) {
+    riskLevel = 'low';
+  } else if (composite <= PR_RISK.RISK_LEVELS.MEDIUM) {
+    riskLevel = 'medium';
+  } else if (composite <= PR_RISK.RISK_LEVELS.HIGH) {
+    riskLevel = 'high';
+  }
 
   return {
     signals: {
