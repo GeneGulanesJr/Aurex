@@ -109,6 +109,10 @@ export function registerToolGuardrails(pi: ExtensionAPI, deps: GuardrailsDeps) {
         return;
       }
 
+      if (typeof input.offset === 'number' || typeof input.limit === 'number') {
+        return;
+      }
+
       const basename = path.basename(filePath);
       if (CONFIG_FILENAMES.has(basename)) {
         return;
@@ -118,9 +122,6 @@ export function registerToolGuardrails(pi: ExtensionAPI, deps: GuardrailsDeps) {
         return;
       }
 
-      if (input.offset || input.limit) {
-        return;
-      }
 
       const absPath = path.resolve(filePath);
 
