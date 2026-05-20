@@ -18,6 +18,11 @@ export async function getKnownRepos(): Promise<RepoInfo[]> {
   return state.cachedRepos;
 }
 
+export function invalidateRepoCache(): void {
+  state.cachedRepos = null;
+  state.repoCacheTime = 0;
+}
+
 export function isRepoStale(repo: RepoInfo): boolean {
   try {
     const fs = require('fs');

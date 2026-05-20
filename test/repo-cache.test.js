@@ -1,4 +1,5 @@
-import { isRepoStale } from '../extensions/memory-layer/host/project-detector.ts';
+import { isRepoStale, invalidateRepoCache } from '../extensions/memory-layer/host/project-detector.ts';
+import { state } from '../extensions/memory-layer/state.ts';
 
 describe('repo-cache', () => {
   describe('isRepoStale', () => {
@@ -22,6 +23,18 @@ describe('repo-cache', () => {
         symbol_count: 0,
       };
       expect(isRepoStale(repo)).toBe(false);
+    });
+  });
+
+  describe('invalidateRepoCache', () => {
+    it('should clear cached repos and reset cache time', () => {
+      state.cachedRepos = [{ name: 'test', path: '/test', indexed_at: '2025-01-01', file_count: 1, symbol_count: 1 }];
+      state.repoCacheTime = Date.now();
+
+      invalidateRepoCache();
+
+      expect(state.cachedRepos).toBeNull();
+      expect(state.repoCacheTime).toBe(0);
     });
   });
 });
