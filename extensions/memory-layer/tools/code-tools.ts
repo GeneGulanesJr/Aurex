@@ -3,13 +3,14 @@ import { normalizeToolResult, stringifyToolError, toolTextResult } from './tool-
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from './schema';
 import { formatCodeResult } from './format-code-result';
-import { getKnownRepos } from '../host/project-detector';
+import { getKnownRepos, invalidateRepoCache } from '../host/project-detector';
 
 interface CodeDeps {
   mem: typeof mem;
   memStreaming: typeof memStreaming;
   getKnownRepos: typeof getKnownRepos;
   formatCodeResult: typeof formatCodeResult;
+  invalidateRepoCache: () => void;
 }
 
 export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
@@ -217,6 +218,8 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
           if (result.error) {
             return toolTextResult(`Error: ${result.error}`, result ?? {}, true);
           }
+          // Invalidate repo cache so guardrails immediately recognize the new/updated repo
+          deps.invalidateRepoCache();
           let fmt: string | undefined | null;
           try {
             fmt = deps.formatCodeResult(mode, result);

@@ -10,7 +10,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { isCodeFile, state, trustIcon } from './state';
 import { ensureNativeModules } from './host/native-health';
 import { mem, memCmd, memStreaming } from './host/memory-client';
-import { detectProject, getKnownRepos, isRepoStale } from './host/project-detector';
+import { detectProject, getKnownRepos, invalidateRepoCache, isRepoStale } from './host/project-detector';
 import { registerSessionCompact, registerSessionShutdown, registerSessionStart } from './hooks/session-lifecycle';
 import { registerBeforeAgentStart, registerContextReminder } from './hooks/context-injection';
 import { registerToolGuardrails } from './hooks/tool-guardrails';
@@ -41,6 +41,7 @@ export default function (pi: ExtensionAPI) {
     memStreaming,
     detectProject,
     getKnownRepos,
+    invalidateRepoCache,
     isRepoStale,
     isCodeFile,
     trustIcon,
