@@ -3,6 +3,48 @@ import { isCodeFile, state } from '../state';
 import { getKnownRepos } from '../host/project-detector';
 import path from 'node:path';
 
+const CONFIG_FILENAMES = new Set([
+  'package.json',
+  'package-lock.json',
+  'tsconfig.json',
+  'tsconfig.build.json',
+  'tsconfig.node.json',
+  'vitest.config.ts',
+  'vitest.config.mjs',
+  'vitest.config.js',
+  'jest.config.ts',
+  'jest.config.js',
+  'eslint.config.js',
+  'eslint.config.mjs',
+  'eslint.config.ts',
+  '.eslintrc',
+  '.eslintrc.js',
+  '.eslintrc.json',
+  '.eslintrc.yml',
+  '.prettierrc',
+  '.prettierrc.js',
+  '.prettierrc.json',
+  'tailwind.config.ts',
+  'tailwind.config.js',
+  'next.config.js',
+  'next.config.ts',
+  'next.config.mjs',
+  'vite.config.ts',
+  'vite.config.js',
+  'webpack.config.js',
+  'rollup.config.js',
+  'babel.config.js',
+  'babel.config.json',
+  '.babelrc',
+  'composer.json',
+  'Cargo.toml',
+  'go.mod',
+  'go.sum',
+  'pyproject.toml',
+  'setup.py',
+  'requirements.txt',
+]);
+
 interface GuardrailsDeps {
   state: typeof state;
   getKnownRepos: typeof getKnownRepos;
@@ -62,6 +104,11 @@ export function registerToolGuardrails(pi: ExtensionAPI, deps: GuardrailsDeps) {
       const filePath = input.path as string;
 
       if (!deps.isCodeFile(filePath)) {
+        return;
+      }
+
+      const basename = path.basename(filePath);
+      if (CONFIG_FILENAMES.has(basename)) {
         return;
       }
 
