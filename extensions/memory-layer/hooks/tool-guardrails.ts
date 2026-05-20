@@ -111,4 +111,24 @@ export function registerToolGuardrails(pi: ExtensionAPI, deps: GuardrailsDeps) {
       };
     }
   });
+
+  // Track explored files from memory-code results (callers, deps, importance, etc.)
+  pi.on('tool_result', async (event, _ctx) => {
+    if (event.toolName !== 'memory-code') return;
+    if (!event.result) return;
+
+    const resultText = typeof event.result === 'string'
+      ? event.result
+      : JSON.stringify(event.result);
+
+    // Match relative file paths like "src/foo.ts" or "extensions/memory-layer/hooks/tool-guardrails.ts"
+    const filePaths = resultText.match(/[\w/.-]+\.(ts|js|tsx|jsx|mjs|cjs|py|go|rs)/g) || [];
+    for (const fp of filePaths) {
+      deps.state.exploredFiles.add(fp.toLowerCase());
+      const basename = fp.split('/').pop();
+      if (basename) {
+        deps.state.exploredFiles.add(basename.toLowerCase());
+      }
+    }
+  });
 }
