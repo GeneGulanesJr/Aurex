@@ -3,7 +3,7 @@ name: memory-layer
 description: Standalone persistent memory for Pi — smart search, symbol clustering, dedup, auto-recovery, trust scoring. Zero Python dependency.
 ---
 
-# Pi Memory Layer v6.1
+# Pi Memory Layer v6.2
 
 Persistent memory via a single SQLite database (`~/.pi/memory/memory.db`).
 All operations through `memory-store.js` — zero Python dependency, zero MCP servers.
@@ -209,7 +209,13 @@ On `save`, trigram overlap checked against existing observations:
 - DB corrupted → suggest deleting `~/.pi/memory/memory.db`
 - No MCP server needed — fully self-contained (v5 includes code analysis + doc indexing natively)
 
-## Reliability Layer (v6 — extension hooks)
+### Cache Invalidation (v6.2)
+
+- `index-repo` and `reindex-repo` invalidate the repo cache immediately, so guardrails recognize the repo on the very next tool call.
+- `isRepoStale` now samples up to 50 source file mtimes (not directory mtime) to accurately detect stale indexes.
+- Config files (package.json, tsconfig.json, etc.) are excluded from guardrail blocking.
+
+## Reliability Layer (v6.2 — extension hooks)
 
 The extension proactively ensures memory is always invoked at the right moment.
 All hooks are non-blocking — they enhance, not replace, explicit tool usage.
@@ -217,13 +223,15 @@ All hooks are non-blocking — they enhance, not replace, explicit tool usage.
 | Hook               | Situation                                                     | Response                                                                                              |
 | ------------------ | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `session_compact`  | User runs `/compact` or auto-compaction fires                 | Re-inject full memory context (observations + preferences + status) so LLM retains awareness          |
-| `context`          | Every LLM call (8th call onwards)                             | Lightweight reminder to use memory-search/memory-save if no memory tool used recently                 |
-| `message_end`      | Assistant message with decision/bugfix/discovery pattern      | Auto-save as observation with detected type                                                           |
+| `context`          | 5+ consecutive non-memory LLM calls                          | Sliding-window reminder to use memory-search/memory-save (resets on any memory tool use)              |
+| `message_end`      | Assistant message with decision/bugfix/discovery pattern      | Auto-save as observation with detected type (dedup pipeline active)                                  |
 | `turn_end`         | Every 10th turn                                               | Progress checkpoint with files touched + memory count                                                 |
-| `tool_call`        | LLM reads code files directly (indexed repo, no offset/limit) | **Hard block** — forces `memory-code outline` first; partial reads (offset/limit) allowed for editing |
+| `tool_call`        | LLM reads code files directly (indexed repo, no offset/limit) | **Hard block** — forces `memory-code outline` first; **excludes config files** (package.json, tsconfig, etc.); partial reads allowed |
 | `tool_call`        | LLM uses grep/rg/find on source code in indexed repo          | **Hard block** — forces `memory-code` instead                                                         |
 | `tool_call`        | LLM calls memory-code with file param                         | Marks file as explored → future reads allowed                                                         |
-| `tool_call`        | LLM uses memory-\* tools                                      | Track last-usage timestamp (suppress redundant reminders)                                             |
+| `tool_call`        | LLM calls memory-code with any mode                           | Track result files as explored via `tool_result`; reset callsSinceLastMemory counter                  |
+| `tool_call`        | LLM uses memory-* tools                                       | Track last-usage timestamp + reset sliding window counter                                             |
+| `tool_result`      | memory-code returns results with file paths                   | Extract file paths from results → add to `exploredFiles`                                              |
 | `tool_result`      | bash with git pull/checkout/merge                             | Auto-sync code trust scores                                                                           |
 | `tool_result`      | edit/write on code files                                      | Track file for session summary + periodic auto-save                                                   |
 | `session_shutdown` | Session ends                                                  | Rich summary with topics discussed + files modified + turn count                                      |
@@ -240,3 +248,4 @@ The extension pattern-matches assistant messages for:
 
 Cooldown of 60s between auto-saved decisions prevents noise.
 Auto-saved decisions are explicitly marked with `**What**: Auto-detected ...` format.
+Dedup pipeline is active for auto-detected decisions (no `force` bypass) — prevents duplicate noise from repeated patterns.
