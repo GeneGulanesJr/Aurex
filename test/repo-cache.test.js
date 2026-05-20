@@ -1,5 +1,8 @@
 import { isRepoStale, invalidateRepoCache } from '../extensions/memory-layer/host/project-detector.ts';
 import { state } from '../extensions/memory-layer/state.ts';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 
 describe('repo-cache', () => {
   describe('isRepoStale', () => {
@@ -23,6 +26,51 @@ describe('repo-cache', () => {
         symbol_count: 0,
       };
       expect(isRepoStale(repo)).toBe(false);
+    });
+
+    it('should return true when source files were modified after indexing', () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lapis-stale-'));
+      try {
+        const srcFile = path.join(tmpDir, 'index.js');
+        fs.writeFileSync(srcFile, 'console.log("hello")');
+
+        // indexed 2 hours ago
+        const indexedAt = new Date(Date.now() - 7200000).toISOString();
+        const repo = {
+          name: 'test-stale',
+          path: tmpDir,
+          indexed_at: indexedAt,
+          file_count: 1,
+          symbol_count: 1,
+        };
+
+        // File was just modified (newer than indexed_at + 1hr threshold)
+        expect(isRepoStale(repo)).toBe(true);
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should return false when source files are older than indexing', () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lapis-fresh-'));
+      try {
+        const srcFile = path.join(tmpDir, 'index.js');
+        fs.writeFileSync(srcFile, 'console.log("hello")');
+
+        // indexed just now
+        const indexedAt = new Date().toISOString();
+        const repo = {
+          name: 'test-fresh',
+          path: tmpDir,
+          indexed_at: indexedAt,
+          file_count: 1,
+          symbol_count: 1,
+        };
+
+        expect(isRepoStale(repo)).toBe(false);
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
     });
   });
 

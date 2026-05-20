@@ -26,10 +26,40 @@ export function invalidateRepoCache(): void {
 export function isRepoStale(repo: RepoInfo): boolean {
   try {
     const fs = require('fs');
-    const stat = fs.statSync(repo.path);
-    const indexedTime = new Date(repo.indexed_at).getTime();
-    const mtime = Math.max(stat.mtimeMs, stat.ctimeMs);
-    return mtime > indexedTime + 3600000;
+    const pathMod = require('path');
+    const indexedTime = new Date(repo.indexed_at).getTime() + 3600000; // 1h grace
+
+    // Sample up to 50 source files for mtime changes
+    const extensions = new Set(['.js', '.ts', '.tsx', '.jsx', '.mjs', '.cjs', '.py', '.go', '.rs', '.java']);
+    let checked = 0;
+    const maxCheck = 50;
+
+    function checkDir(dir) {
+      if (checked >= maxCheck) return true; // assume stale if too many files
+      let entries;
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return false;
+      }
+      for (const entry of entries) {
+        if (checked >= maxCheck) return true;
+        if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === '.git') continue;
+        const fullPath = pathMod.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (checkDir(fullPath)) return true;
+        } else if (extensions.has(pathMod.extname(entry.name).toLowerCase())) {
+          checked++;
+          try {
+            const stat = fs.statSync(fullPath);
+            if (Math.max(stat.mtimeMs, stat.ctimeMs) > indexedTime) return true;
+          } catch {}
+        }
+      }
+      return false;
+    }
+
+    return checkDir(repo.path);
   } catch {
     return false;
   }
