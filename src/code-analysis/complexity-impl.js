@@ -30,10 +30,12 @@ function buildComplexity(db, repoId) {
   let count = 0;
   for (const sym of symbols) {
     if (!sym.file_content || sym.end_byte <= sym.start_byte) {
+      // oxlint-disable-next-line no-continue
       continue;
     }
     const body = Buffer.from(sym.file_content, 'utf-8').toString('utf-8', sym.start_byte, sym.end_byte);
     if (!body) {
+      // oxlint-disable-next-line no-continue
       continue;
     }
 
@@ -79,19 +81,23 @@ function buildComplexity(db, repoId) {
       if (!inString && templateDepth === 0 && (ch === '"' || ch === "'")) {
         inString = true;
         stringChar = ch;
+        // oxlint-disable-next-line no-continue
         continue;
       }
       if (inString && ch === stringChar && prev !== '\\') {
         inString = false;
+        // oxlint-disable-next-line no-continue
         continue;
       }
       // Handle template literals (${...} inside backtick strings)
       if (!inString && ch === '`') {
         templateDepth++;
+        // oxlint-disable-next-line no-continue
         continue;
       }
       if (templateDepth === 1 && ch === '`') {
         templateDepth--;
+        // oxlint-disable-next-line no-continue
         continue;
       }
 

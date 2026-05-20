@@ -46,8 +46,10 @@ function buildImportGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [
 
   runInTx(() => {
     for (const fileId of allAffected) {
+      // oxlint-disable-next-line no-continue
       if (deletedSet.has(fileId)) {continue;}
       const row = fileStmt.get(fileId);
+      // oxlint-disable-next-line no-continue
       if (!row || !row.content) {continue;}
       const imports = extractImportsFromSource(row.content);
       for (const imp of imports) {
@@ -304,7 +306,9 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
       pattern.lastIndex = 0;
       while ((match = pattern.exec(body)) !== null) {
         const calleeName = match[1];
+        // oxlint-disable-next-line no-continue
         if (_SKIP_CALLEE_NAMES.has(calleeName)) {continue;}
+        // oxlint-disable-next-line no-continue
         if (seen.has(calleeName)) {continue;}
         seen.add(calleeName);
         const { calleeSymbolId, confidence } = resolveCallee(calleeName, sym, null, fileContent);
@@ -338,16 +342,19 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
       const fileSymbols = symbolsByFile.get(fileId);
       if (!fileSymbols || fileSymbols.length === 0) {
         processedFiles++;
+        // oxlint-disable-next-line no-continue
         continue;
       }
       const meta = fileById.get(fileId);
       if (!meta) {
         processedFiles++;
+        // oxlint-disable-next-line no-continue
         continue;
       }
       const contentRow = contentStmt.get(fileId);
       if (!contentRow || !contentRow.content) {
         processedFiles++;
+        // oxlint-disable-next-line no-continue
         continue;
       }
       const fileContent = contentRow.content;
@@ -374,10 +381,13 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
           const seen = new Set();
           for (let line = sym.start_line; line <= sym.end_line; line++) {
             const lineCallees = calleeByLine.get(line);
+            // oxlint-disable-next-line no-continue
             if (!lineCallees) {continue;}
             for (const c of lineCallees) {
+              // oxlint-disable-next-line no-continue
               if (_SKIP_CALLEE_NAMES.has(c.callee)) {continue;}
               const key = `${c.callee}:${c.line}`;
+              // oxlint-disable-next-line no-continue
               if (seen.has(key)) {continue;}
               seen.add(key);
               const { calleeSymbolId, confidence } = resolveCallee(c.callee, sym, c.receiver || null, fileContent);
@@ -434,8 +444,10 @@ function buildComplexityForFiles(db, repoId, changedFileIds, deletedFileIds = []
 
   let count = 0;
   for (const sym of symbols) {
+    // oxlint-disable-next-line no-continue
     if (!sym.file_content || sym.end_byte <= sym.start_byte) {continue;}
     const body = Buffer.from(sym.file_content, 'utf-8').toString('utf-8', sym.start_byte, sym.end_byte);
+    // oxlint-disable-next-line no-continue
     if (!body) {continue;}
 
     let cyclomatic = 1;
@@ -471,18 +483,22 @@ function buildComplexityForFiles(db, repoId, changedFileIds, deletedFileIds = []
       if (!inString && templateDepth === 0 && (ch === '"' || ch === "'")) {
         inString = true;
         stringChar = ch;
+        // oxlint-disable-next-line no-continue
         continue;
       }
       if (inString && ch === stringChar && prev !== '\\') {
         inString = false;
+        // oxlint-disable-next-line no-continue
         continue;
       }
       if (!inString && ch === '`') {
         templateDepth++;
+        // oxlint-disable-next-line no-continue
         continue;
       }
       if (templateDepth === 1 && ch === '`') {
         templateDepth--;
+        // oxlint-disable-next-line no-continue
         continue;
       }
       if (!inString || templateDepth > 0) {

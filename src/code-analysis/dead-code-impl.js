@@ -152,6 +152,7 @@ function getDeadCode(db, repoId, opts) {
     }
 
     if (!includeTests && /test|spec|__tests__|\.test\./.test(sym.file_path)) {
+      // oxlint-disable-next-line no-continue
       continue;
     }
     if (confidence >= minConfidence) {

@@ -103,18 +103,22 @@ function getUntestedSymbols(db, repoId, opts = {}) {
   for (const sym of allSymbols) {
     // Skip test symbols themselves
     if (testFileIds.has(sym.file_id)) {
+      // oxlint-disable-next-line no-continue
       continue;
     }
     // Skip excluded patterns
     if (excludedFileIds.has(sym.file_id)) {
+      // oxlint-disable-next-line no-continue
       continue;
     }
     // Skip private symbols unless requested
     if (!includePrivate && sym.name.startsWith('_')) {
+      // oxlint-disable-next-line no-continue
       continue;
     }
 
     if (testedSymbols.has(sym.id)) {
+      // oxlint-disable-next-line no-continue
       continue;
     }
 

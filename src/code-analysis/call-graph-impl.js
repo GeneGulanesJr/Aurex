@@ -274,9 +274,11 @@ function buildCallGraph(db, repoId, opts = {}) {
       while ((match = pattern.exec(body)) !== null) {
         const calleeName = match[1];
         if (_SKIP_CALLEE_NAMES.has(calleeName)) {
+          // oxlint-disable-next-line no-continue
           continue;
         }
         if (seen.has(calleeName)) {
+          // oxlint-disable-next-line no-continue
           continue;
         }
         seen.add(calleeName);
@@ -301,12 +303,14 @@ function buildCallGraph(db, repoId, opts = {}) {
       const meta = fileById.get(fileId);
       if (!meta) {
         processedFiles++;
+        // oxlint-disable-next-line no-continue
         continue;
       }
 
       const contentRow = contentStmt.get(fileId);
       if (!contentRow || !contentRow.content) {
         processedFiles++;
+        // oxlint-disable-next-line no-continue
         continue;
       }
 
@@ -338,14 +342,17 @@ function buildCallGraph(db, repoId, opts = {}) {
           for (let line = sym.start_line; line <= sym.end_line; line++) {
             const lineCallees = calleeByLine.get(line);
             if (!lineCallees) {
+              // oxlint-disable-next-line no-continue
               continue;
             }
             for (const c of lineCallees) {
               if (_SKIP_CALLEE_NAMES.has(c.callee)) {
+                // oxlint-disable-next-line no-continue
                 continue;
               }
               const key = `${c.callee}:${c.line}`;
               if (seen.has(key)) {
+                // oxlint-disable-next-line no-continue
                 continue;
               }
               seen.add(key);

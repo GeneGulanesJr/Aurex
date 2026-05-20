@@ -98,6 +98,7 @@ function getSignalChains(db, repoId, opts = {}) {
   const gateways = [];
   for (const sym of symbols) {
     if (!sym.signature) {
+      // oxlint-disable-next-line no-continue
       continue;
     }
     const sig = sym.signature;
@@ -161,6 +162,7 @@ function getSignalChains(db, repoId, opts = {}) {
     while (queue.length) {
       const current = queue.shift();
       if (visited.has(current)) {
+        // oxlint-disable-next-line no-continue
         continue;
       }
       visited.add(current);
@@ -302,9 +304,11 @@ function getLayerViolations(db, repoId, opts = {}) {
     const targetLayer = fileLayer(imp.target_path, rules.layers);
 
     if (!sourceLayer || !targetLayer) {
+      // oxlint-disable-next-line no-continue
       continue;
     } // Skip unaffiliated files
     if (sourceLayer === targetLayer) {
+      // oxlint-disable-next-line no-continue
       continue;
     } // Same layer, ok
 
