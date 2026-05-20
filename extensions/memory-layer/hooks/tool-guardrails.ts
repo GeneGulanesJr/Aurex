@@ -58,6 +58,7 @@ export function registerToolGuardrails(pi: ExtensionAPI, deps: GuardrailsDeps) {
 
     if (toolName === 'memory-code') {
       deps.state.lastMemoryToolCall = Date.now();
+      deps.state.callsSinceLastMemory = 0;
       const file = String(input?.file || '');
       if (file) {
         deps.state.exploredFiles.add(file.toLowerCase());
@@ -67,6 +68,7 @@ export function registerToolGuardrails(pi: ExtensionAPI, deps: GuardrailsDeps) {
     }
     if (toolName.startsWith('memory-')) {
       deps.state.lastMemoryToolCall = Date.now();
+      deps.state.callsSinceLastMemory = 0;
       return;
     }
 

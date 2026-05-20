@@ -162,20 +162,23 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
 
 export function registerContextReminder(pi: ExtensionAPI, deps: ContextDeps) {
   pi.on('context', async (event, _ctx) => {
-    deps.state.llmCallCount++;
-
     if (deps.state.hasInjectedContext) {
       deps.state.hasInjectedContext = false;
       return;
     }
 
-    if (deps.state.llmCallCount % MEMORY_REMINDER_INTERVAL !== 0) {
+    deps.state.callsSinceLastMemory++;
+
+    if (deps.state.callsSinceLastMemory < MEMORY_REMINDER_INTERVAL) {
       return;
     }
 
     if (Date.now() - deps.state.lastMemoryToolCall < 180000) {
       return;
     }
+
+    // Reset counter after firing
+    deps.state.callsSinceLastMemory = 0;
 
     return {
       messages: [
