@@ -139,10 +139,10 @@ export function registerToolGuardrails(pi: ExtensionAPI, deps: GuardrailsDeps) {
         return;
       }
 
-      const basename = path.basename(filePath).toLowerCase();
+      const fileBase = path.basename(filePath).toLowerCase();
       const relPath = path.relative(matchedRepo.path, absPath).toLowerCase();
       if (
-        deps.state.exploredFiles.has(basename) ||
+        deps.state.exploredFiles.has(fileBase) ||
         deps.state.exploredFiles.has(relPath) ||
         deps.state.exploredFiles.has(absPath.toLowerCase())
       ) {
