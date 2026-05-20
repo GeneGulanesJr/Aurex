@@ -8,7 +8,7 @@ Persistent memory for the [Pi coding agent](https://github.com/earendil-works/pi
 
 ## Architecture
 
-LaPis is a **modular monolith** for Pi memory: one Pi extension and one local Node.js backend, with strict internal boundaries between extension adapters, CLI routing, feature services, and shared platform/storage infrastructure.
+LaPis is a **modular monolith** for Pi memory: one Pi extension and one local Node.js backend, with strict internal boundaries between extension adapters, CLI routing, feature services, and shared platform/storage infrastructure. The extension calls the backend via in-process `dispatch()` (shared Node.js process) with child process fallback for streaming operations like indexing.
 
 ![LaPis Modular Memory Architecture](memory-layer-architecture.png)
 
@@ -67,14 +67,14 @@ npm install
 ## What it does
 
 - **Remembers across sessions** — decisions, bugfixes, patterns, discoveries persist
-- **Auto-injects context** — next session starts with relevant memories loaded
+- **Auto-injects context** — next session starts with relevant memories loaded; injects visible warning if context fails to load
 - **Code indexing** — web-tree-sitter (WASM) AST parses JS/TS/Go/Python/Rust/SQL files, searchable by issue description
 - **Trust scoring** — memories linked to changed code lose trust; stable code boosts it
 - **Deduplication** — trigram overlap prevents duplicate saves (≥85% auto-merges, 60–84% warns)
 - **Workspaces** — formal project isolation with create/list/archive
 - **Session lifecycle** — auto-recovery of incomplete sessions, trust recovery on close
 - **Zero servers** — single Node.js CLI + SQLite, called on demand by Pi. Zero Python dependency.
-- **Dream Cycle** — every 10 sessions, cleans superseded, zero-recall, stale corrections, and replaced configs
+- **Dream Cycle** — per-project, every 10th session, cleans superseded, zero-recall, stale corrections, and replaced configs (runs after session ends)
 - **Update & delete** — update memories in-place instead of spawning correction entries
 
 ## What LaPis stores
@@ -87,11 +87,11 @@ The memory layer can store:
 - Search/context recall metadata used to rank useful memories.
 - Session start/end records and session summaries.
 - Edited-file checkpoints, limited to file paths and brief progress metadata.
-- Auto-detected assistant decisions, bugfix notes, discoveries, and constraints inferred from assistant messages.
+- Auto-detected assistant decisions, bugfix notes, discoveries, and constraints inferred from assistant messages (quality-gated: requires contextual words like "because"/"since"; dedup pipeline active).
 - Code and documentation indexes for repositories you explicitly index with `memory-code` / `memory-doc`.
 - Symbol links and trust scores that decay when linked code changes and improve when linked code stays stable.
 
-The Dream Cycle runs every 10 sessions and reviews memory quality. It removes or consolidates superseded memories, stale zero-recall auto memories, correction entries that should have been in-place updates, replaced setup/config memories, low-value auto titles, and related topic duplicates before running database compaction.
+The Dream Cycle runs per-project every 10 sessions (after session ends) and reviews memory quality. It removes or consolidates superseded memories, stale zero-recall auto memories, correction entries that should have been in-place updates, replaced setup/config memories, low-value auto titles, and related topic duplicates before running database compaction.
 
 ## Commands (called by Pi automatically)
 
@@ -175,7 +175,7 @@ The Dream Cycle runs every 10 sessions and reviews memory quality. It removes or
 | Command         | Purpose                                                                            |
 | --------------- | ---------------------------------------------------------------------------------- |
 | `compact`       | Prune dead links, decay trust, VACUUM, optimize FTS5                               |
-| `dream`         | Dream Cycle — clean **stale** memories (not just old). Auto-runs every 10 sessions |
+| `dream`         | Dream Cycle — clean **stale** memories (not just old). Auto-runs per-project every 10 sessions, after session ends |
 | `stats`         | Database statistics                                                                |
 | `list-projects` | List all known project names                                                       |
 
@@ -232,7 +232,7 @@ Create `~/.pi/memory/config.jsonc` to override defaults. The file supports JSONC
 }
 ```
 
-All options are optional — only include the ones you want to change. Missing values use built-in defaults.
+All options are optional — only include the ones you want to change. Missing values use built-in defaults. Config changes are detected automatically via file mtime.
 
 ## Requirements
 
