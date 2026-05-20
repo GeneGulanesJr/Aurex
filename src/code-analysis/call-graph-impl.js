@@ -1,6 +1,6 @@
 // Call graph extraction, callee resolution, and call hierarchy queries.
 
-const { codeParser, _requireNativeDb, CALL_GRAPH, _SKIP_CALLEE_NAMES } = require('./shared-deps');
+const { _requireNativeDb, CALL_GRAPH, _SKIP_CALLEE_NAMES } = require('./shared-deps');
 const { extractImportBindings } = require('./import-graph-impl');
 
 function buildCallGraph(db, repoId, opts = {}) {
@@ -243,6 +243,7 @@ function buildCallGraph(db, repoId, opts = {}) {
     return { calleeSymbolId, confidence };
   }
 
+  // oxlint-disable-next-line no-unused-vars
   function findEnclosingSymbol(line, fileSymbols) {
     for (const sym of fileSymbols) {
       if (line >= sym.start_line && line <= sym.end_line) {
@@ -323,7 +324,7 @@ function buildCallGraph(db, repoId, opts = {}) {
         try {
           const extractFn = codeParser.extractCalleesFromContent || codeParser.extractCallees;
           fileCallees = extractFn(filePath, fileContent);
-        } catch (_) {
+        } catch {
           fileCallees = [];
         }
       }

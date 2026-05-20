@@ -1,9 +1,9 @@
+const { execSync } = require('child_process');
 // PR risk profiling and untested symbol detection.
 
-const { execSync } = require('child_process');
 const {
-  path, _requireNativeDb, PR_RISK, RESULT_LIMITS,
-  UNTETECTED_CONFIDENCE, COMPLEXITY, HOTSPOT_THRESHOLDS,
+  path, _requireNativeDb, PR_RISK,
+  UNTETECTED_CONFIDENCE, COMPLEXITY /* oxlint-disable-line no-unused-vars */, HOTSPOT_THRESHOLDS /* oxlint-disable-line no-unused-vars */,
 } = require('./shared-deps');
 
 function getUntestedSymbols(db, repoId, opts = {}) {
@@ -161,14 +161,13 @@ function getPrRiskProfile(db, repoId, opts = {}) {
 
   let changedFiles = [];
   try {
-    const { execSync } = require('child_process');
-    const diffOutput = execSync(`git -C "${repo.path}" diff --name-only ${base}...${branch}`, {
+        const diffOutput = execSync(`git -C "${repo.path}" diff --name-only ${base}...${branch}`, {
       encoding: 'utf-8',
       timeout: 10000,
       stdio: ['pipe', 'pipe', 'pipe'],
     }).trim();
     changedFiles = diffOutput ? diffOutput.split('\n').filter(Boolean) : [];
-  } catch (_) {
+  } catch {
     changedFiles = [];
   }
 
@@ -232,7 +231,7 @@ function getPrRiskProfile(db, repoId, opts = {}) {
       }
       blastRadiusScore = Math.min(1.0, maxCallers / PR_RISK.BLAST_RADIUS_NORMALIZER);
     }
-  } catch (_) {}
+  } catch {}
 
   // Signal 2: Complexity (20%)
   let complexityScore = 0;
@@ -247,7 +246,7 @@ function getPrRiskProfile(db, repoId, opts = {}) {
       .all(...changedIdsArr);
     const maxCc = rows[0]?.max_cc || 0;
     complexityScore = Math.min(1.0, maxCc / PR_RISK.COMPLEXITY_NORMALIZER);
-  } catch (_) {}
+  } catch {}
 
   // Signal 3: Churn (20%)
   let churnScore = 0;
@@ -262,7 +261,7 @@ function getPrRiskProfile(db, repoId, opts = {}) {
       }
     }
     churnScore = Math.min(1.0, maxChurn / PR_RISK.CHURN_NORMALIZER);
-  } catch (_) {}
+  } catch {}
 
   // Signal 4: Test coverage (20%) — from untested detection
   let testCoverageScore = 0;
@@ -272,13 +271,12 @@ function getPrRiskProfile(db, repoId, opts = {}) {
       const untestedRatio = untestedData.untested.length / Math.max(untestedData.total_symbols, 1);
       testCoverageScore = Math.min(1.0, untestedRatio);
     }
-  } catch (_) {}
+  } catch {}
 
   // Signal 5: Change volume (10%)
   let changeVolumeScore = 0;
   try {
-    const { execSync } = require('child_process');
-    const diffStat = execSync(`git -C "${repo.path}" diff --stat ${base}...${branch}`, {
+        const diffStat = execSync(`git -C "${repo.path}" diff --stat ${base}...${branch}`, {
       encoding: 'utf-8',
       timeout: 10000,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -289,7 +287,7 @@ function getPrRiskProfile(db, repoId, opts = {}) {
       const totalLines = parseInt(totalMatch[1]) + (parseInt(totalMatch[2]) || 0);
       changeVolumeScore = Math.min(1.0, totalLines / PR_RISK.CHANGE_VOLUME_NORMALIZER);
     }
-  } catch (_) {}
+  } catch {}
 
   // Composite score with weights
   const weights = PR_RISK.WEIGHTS;

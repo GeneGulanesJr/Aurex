@@ -74,7 +74,7 @@ function getDeadCode(db, repoId, opts) {
           }
         }
       }
-    } catch (_) {}
+    } catch {}
   }
 
   // 5. Barrel files (index.js/ts that re-export other modules)

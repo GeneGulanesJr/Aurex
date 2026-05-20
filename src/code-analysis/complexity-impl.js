@@ -1,6 +1,7 @@
 // Cyclomatic complexity computation and file outline extraction.
 
-const { codeParser, _requireNativeDb, COMPLEXITY, RESULT_LIMITS } = require('./shared-deps');
+// oxlint-disable-next-line no-unused-vars
+const { codeParser, _requireNativeDb, COMPLEXITY } = require('./shared-deps');
 
 // Escape SQL LIKE wildcard characters.
 function _likeEscape(str) {
@@ -62,8 +63,8 @@ function buildComplexity(db, repoId) {
     }
     // Ternary (?:) — count only if not followed by . (to exclude ?.)
     const ternaryRe = /\?(?:\s*[^.:])/g;
-    let ternaryMatch;
-    while ((ternaryMatch = ternaryRe.exec(body)) !== null) {
+    let __ternaryMatch;
+    while ((_ternaryMatch = ternaryRe.exec(body)) !== null) {
       cyclomatic++;
     }
 

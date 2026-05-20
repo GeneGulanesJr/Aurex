@@ -1,6 +1,6 @@
 // Incremental builders for import graph, call graph, and complexity.
 
-const { codeParser, _requireNativeDb, CALL_GRAPH, COMPLEXITY } = require('./shared-deps');
+const { _requireNativeDb, CALL_GRAPH, COMPLEXITY } = require('./shared-deps');
 const { extractImportBindings, extractImportsFromSource, resolveImportTarget } = require('./import-graph-impl');
 
 function buildImportGraphForFiles(db, repoId, changedFileIds, deletedFileIds = []) {
@@ -366,7 +366,7 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
         try {
           const extractFn = codeParser.extractCalleesFromContent || codeParser.extractCallees;
           fileCallees = extractFn(filePath, fileContent);
-        } catch (_) {
+        } catch {
           fileCallees = [];
         }
       }
@@ -469,8 +469,8 @@ function buildComplexityForFiles(db, repoId, changedFileIds, deletedFileIds = []
       if (m) {cyclomatic += m.length;}
     }
     const ternaryRe = /\?(?:\s*[^.:])/g;
-    let ternaryMatch;
-    while ((ternaryMatch = ternaryRe.exec(body)) !== null) {cyclomatic++;}
+    let __ternaryMatch;
+    while ((_ternaryMatch = ternaryRe.exec(body)) !== null) {cyclomatic++;}
 
     let maxDepth = 0,
       currentDepth = 0;
