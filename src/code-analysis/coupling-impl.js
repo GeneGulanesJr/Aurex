@@ -74,18 +74,25 @@ function buildPageRank(db, repoId) {
     }
   }
 
-  // PageRank computation
+  // PERF(issue #132): Double-buffer PageRank — pre-allocate two Maps and swap instead of
+  // Allocating a fresh Map each iteration. For N symbols × 10 iterations this eliminates
+  // 10 full-size Map allocations and N×10 constructor insertions, replacing them with
+  // In-place value resets on an already-sized hash table.
+  // Do NOT replace with single-map in-place update; PageRank requires reading prior-iteration
+  // Values (ranks) while writing new values (newRanks) simultaneously.
   const d = PAGERANK.DAMPING_FACTOR;
   const n = symbolSet.size;
+  const baseRank = (1 - d) / n;
   let ranks = new Map();
+  let newRanks = new Map();
   for (const id of symbolSet) {
     ranks.set(id, 1 / n);
+    newRanks.set(id, baseRank);
   }
 
   for (let i = 0; i < PAGERANK.ITERATIONS; i++) {
-    const newRanks = new Map();
     for (const id of symbolSet) {
-      newRanks.set(id, (1 - d) / n);
+      newRanks.set(id, baseRank);
     }
 
     for (const [callerId, calleeIds] of outEdges) {
@@ -97,7 +104,10 @@ function buildPageRank(db, repoId) {
         }
       }
     }
+
+    const tmp = ranks;
     ranks = newRanks;
+    newRanks = tmp;
   }
 
   const result = { ranks, symbolMap, n };
