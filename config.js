@@ -9,7 +9,8 @@ const CONFIG_PATH = path.join(CONFIG_DIR, 'config.jsonc');
 const DEFAULTS = {
   db_path: path.join(HOME, '.pi', 'memory', 'memory.db'),
   wal_autocheckpoint: 1000,
-  busy_timeout_ms: 5000,
+  busy_timeout_ms: 30000,
+  busy_retry_max: 5,
   ranking: {
     fts_relevance: 0.4,
     recency: 0.3,

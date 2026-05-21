@@ -82,58 +82,74 @@ async function indexDocs(db, rootPath, repoName, ignoreGlob) {
     'INSERT INTO doc_code_blocks (section_id, lang, content, byte_start, byte_end) VALUES (?, ?, ?, ?, ?)',
   );
 
+  const useTx = typeof db.transaction === 'function'
+    ? (fn) => db.transaction(fn)()
+    : (fn) => {
+        db.exec('BEGIN');
+        try {
+          const result = fn();
+          db.exec('COMMIT');
+          return result;
+        } catch (e) {
+          try { db.exec('ROLLBACK'); } catch (_) {}
+          throw e;
+        }
+      };
+
   const BATCH_SIZE = RESULT_LIMITS.DOC_BATCH_SIZE;
   for (let i = 0; i < files.length; i += BATCH_SIZE) {
     const reads = await readDocBatch(files.slice(i, i + BATCH_SIZE));
 
-    for (const entry of reads) {
-      if (entry.error) {
-        warnings.push({ path: path.relative(rootPath, entry.filePath), error: entry.error });
-        continue;
-      }
-      const { filePath, content, stat } = entry;
-      const relPath = path.relative(rootPath, filePath);
-      const fileId = insertFile.get(repoId, relPath, content, hashContent(content), stat.mtimeMs).id;
-      const withParent = buildSectionHierarchy(parseMarkdownSections(content, filePath));
-      const sectionIdMap = new Map();
+    useTx(() => {
+      for (const entry of reads) {
+        if (entry.error) {
+          warnings.push({ path: path.relative(rootPath, entry.filePath), error: entry.error });
+          continue;
+        }
+        const { filePath, content, stat } = entry;
+        const relPath = path.relative(rootPath, filePath);
+        const fileId = insertFile.get(repoId, relPath, content, hashContent(content), stat.mtimeMs).id;
+        const withParent = buildSectionHierarchy(parseMarkdownSections(content, filePath));
+        const sectionIdMap = new Map();
 
-      for (let idx = 0; idx < withParent.length; idx++) {
-        const sec = withParent[idx];
-        const parentId = sec.parent_idx !== null ? sectionIdMap.get(sec.parent_idx) || null : null;
-        const sectionDbId = insertSection.get(
-          repoId,
-          fileId,
-          sec.title,
-          sec.level,
-          parentId,
-          sec.content,
-          sec.content_hash,
-          sec.byte_start,
-          sec.byte_end,
-          sec.role,
-          sec.tags,
-        ).id;
-        sectionIdMap.set(idx, sectionDbId);
-        totalSections++;
+        for (let idx = 0; idx < withParent.length; idx++) {
+          const sec = withParent[idx];
+          const parentId = sec.parent_idx !== null ? sectionIdMap.get(sec.parent_idx) || null : null;
+          const sectionDbId = insertSection.get(
+            repoId,
+            fileId,
+            sec.title,
+            sec.level,
+            parentId,
+            sec.content,
+            sec.content_hash,
+            sec.byte_start,
+            sec.byte_end,
+            sec.role,
+            sec.tags,
+          ).id;
+          sectionIdMap.set(idx, sectionDbId);
+          totalSections++;
 
-        for (const link of extractLinks(sec.content)) {
-          if (link.is_internal) {
-            insertLink.run(sectionDbId, link.target_path, null, link.link_text, 0);
-            totalLinks++;
+          for (const link of extractLinks(sec.content)) {
+            if (link.is_internal) {
+              insertLink.run(sectionDbId, link.target_path, null, link.link_text, 0);
+              totalLinks++;
+            }
+          }
+
+          for (const term of extractGlossaryTerms(sec.content)) {
+            insertTerm.run(repoId, term.term, term.definition, sectionDbId);
+            totalTerms++;
+          }
+
+          for (const block of extractCodeBlocks(sec.content, sec.byte_start)) {
+            insertCodeBlock.run(sectionDbId, block.lang, block.content, block.byte_start, block.byte_end);
+            totalCodeBlocks++;
           }
         }
-
-        for (const term of extractGlossaryTerms(sec.content)) {
-          insertTerm.run(repoId, term.term, term.definition, sectionDbId);
-          totalTerms++;
-        }
-
-        for (const block of extractCodeBlocks(sec.content, sec.byte_start)) {
-          insertCodeBlock.run(sectionDbId, block.lang, block.content, block.byte_start, block.byte_end);
-          totalCodeBlocks++;
-        }
       }
-    }
+    });
   }
 
   const linkResults = resolveLinks(db, repoId);

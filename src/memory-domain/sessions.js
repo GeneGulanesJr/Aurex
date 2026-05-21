@@ -1,4 +1,4 @@
-const { sqlJson, jsonErrNoExit } = require('../../db');
+const { sqlJson, jsonErrNoExit, withTransaction } = require('../../db');
 const { TIME_WINDOWS } = require('../../constants');
 const { getConfig } = require('../../config');
 
@@ -17,33 +17,38 @@ function sessionStart(deps, args) {
     return jsonErrNoExit('Missing --project');
   }
 
-  const sessionRows = deps.sqlJson('INSERT INTO session_log (project) VALUES (?) RETURNING id, started_at', [project]);
-  const sessionId = sessionRows[0].id;
+  const txFn = deps.withTransaction || withTransaction;
+  const { sessionId, sessionCount, consolidateDue, archiveCandidates, incompleteSession } = txFn(() => {
+    const sessionRows = deps.sqlJson('INSERT INTO session_log (project) VALUES (?) RETURNING id, started_at', [project]);
+    const sid = sessionRows[0].id;
 
-  const countRows = deps.sqlJson('SELECT COUNT(*) as cnt FROM session_log WHERE project = ?', [project]);
-  const sessionCount = countRows[0].cnt;
-  const compactInterval = getConfig().compact_every_n_sessions || 5;
-  const consolidateDue = sessionCount > 0 && sessionCount % compactInterval === 0;
+    const countRows = deps.sqlJson('SELECT COUNT(*) as cnt FROM session_log WHERE project = ?', [project]);
+    const sCnt = countRows[0].cnt;
+    const compactInterval = getConfig().compact_every_n_sessions || 5;
+    const cDue = sCnt > 0 && sCnt % compactInterval === 0;
 
-  const archiveCandidates = deps.sqlJson(
-    `
-    SELECT project, MAX(started_at) as last_active
-    FROM session_log
-    WHERE project != ?
-    GROUP BY project
-    HAVING last_active < datetime('now', '-${TIME_WINDOWS.ARCHIVE_INACTIVE_DAYS} days')
-  `,
-    [project],
-  );
+    const aCandidates = deps.sqlJson(
+      `
+      SELECT project, MAX(started_at) as last_active
+      FROM session_log
+      WHERE project != ?
+      GROUP BY project
+      HAVING last_active < datetime('now', '-${TIME_WINDOWS.ARCHIVE_INACTIVE_DAYS} days')
+    `,
+      [project],
+    );
 
-  const incompleteSession = deps.sqlJson(
-    `
-    SELECT id FROM session_log
-    WHERE project = ? AND ended_at IS NULL AND id != ?
-    ORDER BY started_at DESC LIMIT 1
-  `,
-    [project, sessionId],
-  );
+    const incomplete = deps.sqlJson(
+      `
+      SELECT id FROM session_log
+      WHERE project = ? AND ended_at IS NULL AND id != ?
+      ORDER BY started_at DESC LIMIT 1
+    `,
+      [project, sid],
+    );
+
+    return { sessionId: sid, sessionCount: sCnt, consolidateDue: cDue, archiveCandidates: aCandidates, incompleteSession: incomplete };
+  });
 
   let recoveredSession = null;
   if (incompleteSession.length > 0) {

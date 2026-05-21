@@ -108,7 +108,7 @@ function tryLibsql() {
     d.exec('PRAGMA journal_mode=WAL;');
     d.exec('PRAGMA synchronous=NORMAL;');
     d.exec('PRAGMA temp_store=MEMORY;');
-    d.exec(`PRAGMA busy_timeout=${safeInt(cfg.busy_timeout_ms, 5000)};`);
+    d.exec(`PRAGMA busy_timeout=${safeInt(cfg.busy_timeout_ms, 30000)};`);
     d.exec(`PRAGMA wal_autocheckpoint=${safeInt(cfg.wal_autocheckpoint, 1000)};`);
     d.exec('PRAGMA foreign_keys=ON;');
     return d;
@@ -132,32 +132,76 @@ function openDb() {
   throw new Error(msg);
 }
 
+/* ── SQLITE_BUSY retry ─────────────────────────────────────── */
+
+const SQLITE_BUSY_RAW_CODE = 5;
+
+function isBusyError(e) {
+  if (e && (e.rawCode === SQLITE_BUSY_RAW_CODE || e.code === 'SQLITE_BUSY')) {
+    return true;
+  }
+  const msg = (e && e.message) || '';
+  return /database is locked|SQLITE_BUSY/i.test(msg);
+}
+
+function sleepMs(ms) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {}
+}
+
+function retryOnBusy(fn, label) {
+  const maxRetries = safeInt(getConfig().busy_retry_max, 5);
+  let lastError;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return fn();
+    } catch (e) {
+      lastError = e;
+      if (!isBusyError(e) || attempt >= maxRetries) {
+        break;
+      }
+      const delay = 100 * Math.pow(2, attempt);
+      if (label) {
+        console.warn(`[db] SQLITE_BUSY on ${label}, retry ${attempt + 1}/${maxRetries} in ${delay}ms`);
+      }
+      sleepMs(delay);
+    }
+  }
+  throw lastError;
+}
+
 /* ── native SQL layer ─────────────────────────────────────── */
 
 function _sqlJson(query, params = []) {
-  try {
-    const stmt = _db.prepare(query);
-    return stmt.all(...params);
-  } catch (e) {
-    throw new Error(`SQL error: ${e.message}\nQuery: ${query}`, { cause: e });
-  }
+  return retryOnBusy(() => {
+    try {
+      const stmt = _db.prepare(query);
+      return stmt.all(...params);
+    } catch (e) {
+      throw new Error(`SQL error: ${e.message}\nQuery: ${query}`, { cause: e });
+    }
+  }, 'sqlJson');
 }
 
 function _sqlRun(query, params = []) {
-  try {
-    const stmt = _db.prepare(query);
-    stmt.run(...params);
-  } catch (e) {
-    throw new Error(`SQL error: ${e.message}\nQuery: ${query}`, { cause: e });
-  }
+  return retryOnBusy(() => {
+    try {
+      const stmt = _db.prepare(query);
+      stmt.run(...params);
+    } catch (e) {
+      throw new Error(`SQL error: ${e.message}\nQuery: ${query}`, { cause: e });
+    }
+  }, 'sqlRun');
 }
 
 function _sqlExec(sql) {
-  try {
-    _db.exec(sql);
-  } catch (e) {
-    throw new Error(`SQL exec error: ${e.message}`, { cause: e });
-  }
+  return retryOnBusy(() => {
+    try {
+      _db.exec(sql);
+    } catch (e) {
+      throw new Error(`SQL exec error: ${e.message}`, { cause: e });
+    }
+  }, 'sqlExec');
 }
 
 // Public aliases
@@ -753,6 +797,7 @@ module.exports = {
   sqlRaw,
   ensureDb,
   withTransaction,
+  retryOnBusy,
   jsonOut,
   jsonErr,
   jsonErrNoExit,

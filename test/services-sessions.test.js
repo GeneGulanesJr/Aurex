@@ -4,7 +4,7 @@ describe('services/sessions', () => {
   describe('sessionStart', () => {
     it('should return error when project is missing', () => {
       const jsonErrNoExit = vi.fn((msg) => ({ error: msg }));
-      const result = sessionStart({ sqlJson: vi.fn(), sqlRun: vi.fn(), jsonErrNoExit }, {});
+      const result = sessionStart({ sqlJson: vi.fn(), sqlRun: vi.fn(), jsonErrNoExit, withTransaction: (fn) => fn() }, {});
       expect(result.error).toContain('project');
     });
 
@@ -33,7 +33,7 @@ describe('services/sessions', () => {
       const commands = { search: vi.fn(), save: vi.fn() };
 
       const result = sessionStart(
-        { sqlJson, sqlRun, jsonErrNoExit, autoRecoverInternal, runCompact, _readTierConfig, TOOL_TIERS, commands },
+        { sqlJson, sqlRun, jsonErrNoExit, autoRecoverInternal, runCompact, _readTierConfig, TOOL_TIERS, commands, withTransaction: (fn) => fn() },
         { project: 'my-project' },
       );
       expect(result.sessionId).toBe(42);
@@ -66,7 +66,7 @@ describe('services/sessions', () => {
       const commands = { search: vi.fn() };
 
       const result = sessionStart(
-        { sqlJson, sqlRun, jsonErrNoExit, autoRecoverInternal, runCompact, _readTierConfig, TOOL_TIERS, commands },
+        { sqlJson, sqlRun, jsonErrNoExit, autoRecoverInternal, runCompact, _readTierConfig, TOOL_TIERS, commands, withTransaction: (fn) => fn() },
         { project: 'my-project' },
       );
       expect(result.hasIncompletePreviousSession).toBe(true);
