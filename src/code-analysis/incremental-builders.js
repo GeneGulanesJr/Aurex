@@ -475,47 +475,64 @@ function buildComplexityForFiles(db, repoId, changedFileIds, deletedFileIds = []
     let __ternaryMatch;
     while ((_ternaryMatch = ternaryRe.exec(body)) !== null) {cyclomatic++;}
 
+    // PERF(issue #133): CharCode fast-path — reduces branch evaluations from 6+ per byte to
+    // 1 for the common case (plain code, not in string/template). Uses integer charCodeAt
+    // Instead of string boxing. body.substring() replaced with charCodeAt to avoid allocation.
+    // Do NOT replace charCode checks with string comparisons; the integer path is the
+    // Performance-critical fast path. Template depth tracking logic is preserved as-is.
     let maxDepth = 0,
       currentDepth = 0;
     let inString = false,
-      stringChar = '',
+      stringCharCode = 0,
       templateDepth = 0;
     for (let i = 0; i < body.length; i++) {
-      const ch = body[i];
-      const prev = i > 0 ? body[i - 1] : '';
-      if (!inString && templateDepth === 0 && (ch === '"' || ch === "'")) {
-        inString = true;
-        stringChar = ch;
+      const code = body.charCodeAt(i);
+
+      if (inString) {
+        if (code === stringCharCode && (i === 0 || body.charCodeAt(i - 1) !== 92)) {
+          inString = false;
+        }
         // oxlint-disable-next-line no-continue
         continue;
       }
-      if (inString && ch === stringChar && prev !== '\\') {
-        inString = false;
+
+      if (templateDepth === 0) {
+        if (code !== 34 && code !== 39 && code !== 96 && code !== 123 && code !== 125) {
+          // oxlint-disable-next-line no-continue
+          continue;
+        }
+        if (code === 34 || code === 39) {
+          inString = true;
+          stringCharCode = code;
+          // oxlint-disable-next-line no-continue
+          continue;
+        }
+        if (code === 96) {
+          templateDepth++;
+          // oxlint-disable-next-line no-continue
+          continue;
+        }
+        if (code === 123) {
+          currentDepth++;
+          if (currentDepth > maxDepth) {maxDepth = currentDepth;}
+          // oxlint-disable-next-line no-continue
+          continue;
+        }
+        if (currentDepth > 0) {currentDepth--;}
         // oxlint-disable-next-line no-continue
         continue;
       }
-      if (!inString && ch === '`') {
+
+      if (code === 96) {
         templateDepth++;
         // oxlint-disable-next-line no-continue
         continue;
       }
-      if (templateDepth === 1 && ch === '`') {
-        templateDepth--;
-        // oxlint-disable-next-line no-continue
-        continue;
-      }
-      if (!inString || templateDepth > 0) {
-        if (ch === '{') {
-          currentDepth++;
-          maxDepth = Math.max(maxDepth, currentDepth);
-        }
-        if (ch === '}') {
-          if (templateDepth > 0 && body.substring(i - 1, i + 1) === '}') {
-            currentDepth++;
-            maxDepth = Math.max(maxDepth, currentDepth);
-          }
-          if (currentDepth > 0) {currentDepth--;}
-        }
+      if (code === 123) {
+        currentDepth++;
+        if (currentDepth > maxDepth) {maxDepth = currentDepth;}
+      } else if (code === 125) {
+        if (currentDepth > 0) {currentDepth--;}
       }
     }
 
