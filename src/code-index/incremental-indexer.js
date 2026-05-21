@@ -6,7 +6,7 @@ const { hashContent } = require('../../utils');
 const { createCodeIndexRepository } = require('./repos');
 const { scanRepository } = require('./scanner');
 const { createParserRegistry, getLanguageForFile } = require('./parser-registry');
-const { extractSymbolsFromFile } = require('./symbol-extractor');
+const { extractSymbolsSplit, normalizeSymbolHot } = require('./symbol-extractor');
 const {
   buildImportEdges,
   buildImportEdgesForFiles,
@@ -199,6 +199,43 @@ function recordDiagnostic(repository, repoId, record, status, message, symbolCou
     symbolCount,
     contentHash: record.content ? hashContent(record.content) : null,
   });
+}
+
+// PERF: AoS→SoA split variant (issue #130) — accepts hot/cold arrays so the
+// caller can keep the tight loop on compact 8-field structs. Do NOT merge the
+// arrays back into a single object before calling this; pass them as-is.
+function insertSymbolsSplit(repository, repoId, fileId, filePath, hotSymbols, coldSymbols) {
+  let count = 0;
+  for (let i = 0; i < hotSymbols.length; i++) {
+    const hot = hotSymbols[i];
+    const cold = coldSymbols[i] || {};
+    repository.insertSymbol({
+      repoId,
+      fileId,
+      filePath,
+      name: hot.name,
+      kind: hot.kind,
+      qualifiedName: hot.qualified_name,
+      startLine: hot.start_line,
+      endLine: hot.end_line,
+      startByte: hot.start_byte,
+      endByte: hot.end_byte,
+      signature: cold.signature || '',
+      docstring: cold.docstring || '',
+      bodyPreview: cold.body_preview || '',
+      language: cold.language || '',
+      parentName: cold.parent_name || '',
+      stableSymbolId: cold.stable_symbol_id || '',
+      contentHash: cold.content_hash || '',
+      summary: cold.summary || '',
+      decoratorsJson: cold.decorators_json || '[]',
+      keywordsJson: cold.keywords_json || '[]',
+      callReferencesJson: cold.call_references_json || '[]',
+      ecosystemContext: cold.ecosystem_context || '',
+    });
+    count++;
+  }
+  return count;
 }
 
 function insertSymbols(repository, repoId, fileId, filePath, symbols) {
@@ -532,7 +569,8 @@ async function parsePhase(files, deps, repoId, args) {
                 : '',
               symbols.length,
             );
-            parsedRecords.push({ record, symbols });
+            const hotSymbols = symbols.map((s) => normalizeSymbolHot(s, record.filePath));
+            parsedRecords.push({ record, hotSymbols, coldSymbols: symbols });
           }
         } catch (e) {
           emitProgress(args, 'parsing', {
@@ -546,7 +584,8 @@ async function parsePhase(files, deps, repoId, args) {
       if (!useWorkers || parsedRecords.length === 0) {
         let parsedInBatch = 0;
         for (const record of validReads) {
-          const symbols = extractSymbolsFromFile(record.filePath, registry, record.content);
+          const { hot: hotSymbols, cold: coldSymbols } = extractSymbolsSplit(record.filePath, registry, record.content);
+          const symbols = hotSymbols;
           validateSymbols(record, symbols);
           recordDiagnostic(
             repository,
@@ -556,7 +595,7 @@ async function parsePhase(files, deps, repoId, args) {
             symbols.length === 0 && record.content.trim().length > 0 ? 'No symbols extracted from non-empty file' : '',
             symbols.length,
           );
-          parsedRecords.push({ record, symbols });
+          parsedRecords.push({ record, hotSymbols, coldSymbols });
           parsedInBatch++;
           const absoluteDone = i + parsedInBatch;
           if (shouldEmitFileProgress(absoluteDone, totalFiles)) {
@@ -585,38 +624,45 @@ async function parsePhase(files, deps, repoId, args) {
         { files_total: totalFiles, files_done: fileCount, symbols: symbolCount },
       );
 
+      // PERF: AoS→SoA split (issue #130) — hot loop iterates compact 8-field objects;
+      // cold data (JSON blobs, hashes, summaries) is read from a parallel array only
+      // when building the insert payload. Do NOT merge hot/cold back into a single
+      // object before this loop; the split exists to reduce cache-line waste during
+      // the tight file×symbol iteration.
       const batchSymbols = [];
       const writeRecords = (insideTransaction = false) => {
-        for (const { record, symbols } of parsedRecords) {
+        for (const { record, hotSymbols, coldSymbols } of parsedRecords) {
           try {
             const fileId = repository.insertFile(fileRecordToParams(repoId, record));
-            for (const sym of symbols) {
+            for (let si = 0; si < hotSymbols.length; si++) {
+              const hot = hotSymbols[si];
+              const cold = coldSymbols[si] || {};
               batchSymbols.push({
                 repoId,
                 fileId,
                 filePath: record.filePath,
-                name: sym.name,
-                kind: sym.kind,
-                signature: sym.signature,
-                qualifiedName: sym.qualified_name,
-                startLine: sym.start_line,
-                endLine: sym.end_line,
-                startByte: sym.start_byte,
-                endByte: sym.end_byte,
-                docstring: sym.docstring || '',
-                bodyPreview: sym.body_preview || '',
-                language: sym.language,
-                parentName: sym.parent_name || '',
-                stableSymbolId: sym.stable_symbol_id || '',
-                contentHash: sym.content_hash || '',
-                summary: sym.summary || '',
-                decoratorsJson: sym.decorators_json || '[]',
-                keywordsJson: sym.keywords_json || '[]',
-                callReferencesJson: sym.call_references_json || '[]',
-                ecosystemContext: sym.ecosystem_context || '',
+                name: hot.name,
+                kind: hot.kind,
+                qualifiedName: hot.qualified_name,
+                startLine: hot.start_line,
+                endLine: hot.end_line,
+                startByte: hot.start_byte,
+                endByte: hot.end_byte,
+                signature: cold.signature || '',
+                docstring: cold.docstring || '',
+                bodyPreview: cold.body_preview || '',
+                language: cold.language || '',
+                parentName: cold.parent_name || '',
+                stableSymbolId: cold.stable_symbol_id || '',
+                contentHash: cold.content_hash || '',
+                summary: cold.summary || '',
+                decoratorsJson: cold.decorators_json || '[]',
+                keywordsJson: cold.keywords_json || '[]',
+                callReferencesJson: cold.call_references_json || '[]',
+                ecosystemContext: cold.ecosystem_context || '',
               });
             }
-            symbolCount += symbols.length;
+            symbolCount += hotSymbols.length;
             fileCount++;
             if (shouldEmitFileProgress(fileCount, totalFiles)) {
               emitProgress(
@@ -625,7 +671,7 @@ async function parsePhase(files, deps, repoId, args) {
                 {
                   step: 'store-index',
                   current_file: progressPath(record.filePath, repoRoot),
-                  message: `Stored index ${fileCount}/${totalFiles}: ${progressPath(record.filePath, repoRoot)} (${symbols.length} symbols)`,
+                  message: `Stored index ${fileCount}/${totalFiles}: ${progressPath(record.filePath, repoRoot)} (${hotSymbols.length} symbols)`,
                 },
                 { files_total: totalFiles, files_done: fileCount, symbols: symbolCount },
               );
@@ -878,7 +924,8 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
             current_file: progressPath(filePath, existing.path),
             message: `Step 3/5: extracting symbols from changed file ${progressPath(filePath, existing.path)}`,
           });
-          const symbols = extractSymbolsFromFile(filePath, registry, record.content);
+          const { hot: hotSymbols, cold: coldSymbols } = extractSymbolsSplit(filePath, registry, record.content);
+          const symbols = hotSymbols;
           recordDiagnostic(
             repository,
             existing.id,
@@ -892,7 +939,7 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
             current_file: progressPath(filePath, existing.path),
             message: `Step 3/5: storing updated index rows for ${progressPath(filePath, existing.path)} (${symbols.length} symbols)`,
           });
-          symbolCount += insertSymbols(repository, existing.id, fileId, filePath, symbols);
+          symbolCount += insertSymbolsSplit(repository, existing.id, fileId, filePath, hotSymbols, coldSymbols);
           reindexed++;
           changedFileIds.push(fileId);
         };

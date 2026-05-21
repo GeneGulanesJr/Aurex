@@ -86,40 +86,56 @@ function collectCallReferences(symbol, callees) {
   return [...new Set(refs)].slice(0, 80);
 }
 
-function normalizeSymbol(symbol, fallbackFilePath, context = {}) {
-  const normalized = {
+// PERF: AoS→SoA split (issue #130) — hot fields only, accessed in tight insert loops.
+// Do NOT merge cold fields back into this object; keep hot/cold separate so the
+// writeRecords inner loop iterates compact 8-field structs instead of 20-field ones.
+// Adding a field here requires updating COLD_FIELDS below and the writeRecords loop.
+function normalizeSymbolHot(symbol, fallbackFilePath) {
+  return {
     file_path: symbol.file_path || symbol.file || fallbackFilePath,
     name: symbol.name,
     kind: symbol.kind,
-    signature: symbol.signature || '',
     qualified_name: symbol.qualified_name || symbol.name,
     start_line: symbol.start_line,
     end_line: symbol.end_line,
     start_byte: symbol.start_byte,
     end_byte: symbol.end_byte,
+  };
+}
+
+// PERF: Cold fields for symbol — computed/derived data (hashes, JSON blobs, summaries).
+// These are accessed only at DB-insert time, NOT in the hot iteration loop.
+// Keep this function in sync with normalizeSymbolHot; the hot struct is its first arg.
+function normalizeSymbolCold(hot, symbol, fallbackFilePath, context = {}) {
+  const signature = symbol.signature || '';
+  const source = context.content ? sliceByBytes(context.content, hot.start_byte, hot.end_byte) : '';
+  const decorators = symbol.decorators || extractDecorators(source);
+  const callReferences = symbol.call_references || collectCallReferences(hot, context.callees || []);
+  return {
+    signature,
     docstring: symbol.docstring || '',
     body_preview: symbol.body_preview || '',
     language: symbol.language || '',
     parent_name: symbol.parent_name || '',
+    stable_symbol_id: symbol.stable_symbol_id || symbol.id || stableSymbolId(hot, fallbackFilePath),
+    content_hash: symbol.content_hash || hashText(source || signature || hot.qualified_name),
+    summary: symbol.summary || makeSummary(symbol),
+    decorators_json: safeJson(decorators),
+    keywords_json: safeJson(symbol.keywords || extractKeywords(symbol, source)),
+    call_references_json: safeJson(callReferences),
+    ecosystem_context: symbol.ecosystem_context || '',
   };
-  const source = context.content ? sliceByBytes(context.content, normalized.start_byte, normalized.end_byte) : '';
-  const decorators = symbol.decorators || extractDecorators(source);
-  const callReferences = symbol.call_references || collectCallReferences(normalized, context.callees || []);
-  normalized.stable_symbol_id = symbol.stable_symbol_id || symbol.id || stableSymbolId(normalized, fallbackFilePath);
-  normalized.content_hash =
-    symbol.content_hash || hashText(source || normalized.signature || normalized.qualified_name);
-  normalized.summary = symbol.summary || makeSummary(normalized);
-  normalized.decorators_json = safeJson(decorators);
-  normalized.keywords_json = safeJson(symbol.keywords || extractKeywords(normalized, source));
-  normalized.call_references_json = safeJson(callReferences);
-  normalized.ecosystem_context = symbol.ecosystem_context || '';
-  return normalized;
 }
 
-function extractSymbolsFromFile(filePath, registry, content) {
-  const reg = registry || createParserRegistry();
+function normalizeSymbol(symbol, fallbackFilePath, context = {}) {
+  const hot = normalizeSymbolHot(symbol, fallbackFilePath);
+  const cold = normalizeSymbolCold(hot, symbol, fallbackFilePath, context);
+  return { ...hot, ...cold };
+}
+
+function _parseRawSymbols(filePath, reg, content) {
   if (!reg.canParseFile(filePath)) {
-    return [];
+    return { rawSymbols: [], source: '', callees: [] };
   }
   let rawSymbols;
   let source = content;
@@ -139,9 +155,37 @@ function extractSymbolsFromFile(filePath, registry, content) {
       callees = reg.extractCalleesFromContent(filePath, source);
     } catch {}
   }
-  return rawSymbols.map((symbol) =>
-    normalizeSymbol(symbol, filePath, { content: source || '', callees, relativeFile: path.basename(filePath) }),
-  );
+  return { rawSymbols, source, callees };
 }
 
-module.exports = { extractSymbolsFromFile, normalizeSymbol };
+// PERF: AoS→SoA variant (issue #130). Returns { hot: [...], cold: [...] } so the
+// writeRecords hot loop iterates compact 8-field objects while cold data (JSON blobs,
+// hashes) lives in a separate array accessed only at insert time.
+function extractSymbolsSplit(filePath, registry, content) {
+  const reg = registry || createParserRegistry();
+  const { rawSymbols, source, callees } = _parseRawSymbols(filePath, reg, content);
+  const ctx = { content: source || '', callees, relativeFile: path.basename(filePath) };
+  const hot = [];
+  const cold = [];
+  for (const raw of rawSymbols) {
+    const h = normalizeSymbolHot(raw, filePath);
+    hot.push(h);
+    cold.push(normalizeSymbolCold(h, raw, filePath, ctx));
+  }
+  return { hot, cold };
+}
+
+function extractSymbolsFromFile(filePath, registry, content) {
+  const reg = registry || createParserRegistry();
+  const { rawSymbols, source, callees } = _parseRawSymbols(filePath, reg, content);
+  const ctx = { content: source || '', callees, relativeFile: path.basename(filePath) };
+  return rawSymbols.map((symbol) => normalizeSymbol(symbol, filePath, ctx));
+}
+
+module.exports = {
+  extractSymbolsFromFile,
+  extractSymbolsSplit,
+  normalizeSymbol,
+  normalizeSymbolHot,
+  normalizeSymbolCold,
+};
