@@ -146,9 +146,10 @@ describe('parse-code (WASM tree-sitter)', () => {
   });
 
   describe('parse-code: edge cases', () => {
-    it('should return empty array for unsupported file types', () => {
+    it('should return diagnostic for unsupported file types', () => {
       const symbols = codeParser.parseFile('/tmp/test.rb');
-      expect(symbols).toEqual([]);
+      expect(symbols.length).toBeGreaterThanOrEqual(1);
+      expect(symbols[0].kind).toBe('diagnostic');
     });
 
     it('should return empty array for nonexistent files', () => {

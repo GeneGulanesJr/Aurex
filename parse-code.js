@@ -198,9 +198,18 @@ function _getLangConfig(filePath) {
 }
 
 function parseContent(filePath, content) {
-  if (!_ready) {return [];}
+  if (!_ready) {
+    return [{ name: '', kind: 'diagnostic', language: '', file: filePath, signature: 'parse-code not initialized: call init() first', qualified_name: '', start_line: 0, end_line: 0, start_byte: 0, end_byte: 0, docstring: '', body_preview: '', parent_name: '' }];
+  }
   const cfg = _getLangConfig(filePath);
-  if (!cfg) {return [];}
+  if (!cfg) {
+    const ext = path.extname(filePath).toLowerCase();
+    const known = ext in LANGUAGE_MAP;
+    const msg = known
+      ? `parse-code: language ${LANGUAGE_MAP[ext].languageName} has no WASM grammar loaded`
+      : `parse-code: file extension ${ext || '(none)'} is not supported`;
+    return [{ name: '', kind: 'diagnostic', language: '', file: filePath, signature: msg, qualified_name: '', start_line: 0, end_line: 0, start_byte: 0, end_byte: 0, docstring: '', body_preview: '', parent_name: '' }];
+  }
 
   const symbols = _routeToExtractor(filePath, content, cfg.parser, cfg.langConfig);
   if (symbols.length === 0 && content.trim().length > 0) {
@@ -211,12 +220,17 @@ function parseContent(filePath, content) {
 
 function parseFile(filePath) {
   if (!_ready) {
-    return [];
+    return [{ name: '', kind: 'diagnostic', language: '', file: filePath, signature: 'parse-code not initialized: call init() first', qualified_name: '', start_line: 0, end_line: 0, start_byte: 0, end_byte: 0, docstring: '', body_preview: '', parent_name: '' }];
   }
 
   const cfg = _getLangConfig(filePath);
   if (!cfg) {
-    return [];
+    const ext = path.extname(filePath).toLowerCase();
+    const known = ext in LANGUAGE_MAP;
+    const msg = known
+      ? `parse-code: language ${LANGUAGE_MAP[ext].languageName} has no WASM grammar loaded`
+      : `parse-code: file extension ${ext || '(none)'} is not supported`;
+    return [{ name: '', kind: 'diagnostic', language: '', file: filePath, signature: msg, qualified_name: '', start_line: 0, end_line: 0, start_byte: 0, end_byte: 0, docstring: '', body_preview: '', parent_name: '' }];
   }
 
   let source;
@@ -851,20 +865,18 @@ function _extractPythonSymbols(filePath, sourceStr, parser) {
         if (!seen.has(key)) {
           seen.add(key);
           let parentName = '';
-          if (kind === 'function') {
-            let p = node.parent;
-            while (p) {
-              if (p.type === 'class_definition') {
-                for (const c of p.children) {
-                  if (c.type === 'identifier') {
-                    parentName = c.text;
-                    break;
-                  }
+          let p = node.parent;
+          while (p) {
+            if (p.type === 'class_definition') {
+              for (const c of p.children) {
+                if (c.type === 'identifier') {
+                  parentName = c.text;
+                  break;
                 }
-                break;
               }
-              p = p.parent;
+              break;
             }
+            p = p.parent;
           }
           symbols.push({
             name,
@@ -886,12 +898,80 @@ function _extractPythonSymbols(filePath, sourceStr, parser) {
         }
       }
     }
-    // Walk decorator children for decorated functions
+    if (node.type === 'expression_statement' && depth === 0) {
+      for (const child of node.children) {
+        if (child.type === 'assignment') {
+          const left = child.child(0);
+          if (left && left.type === 'identifier') {
+            const name = left.text;
+            if (name === '_' || name.startsWith('__') && name.endsWith('__')) continue;
+            const right = child.child(2);
+            let kind = 'constant';
+            if (right) {
+              if (right.type === 'dictionary' || right.type === 'list' || right.type === 'set') {
+                kind = 'constant';
+              } else if (right.type === 'call') {
+                const callee = right.child(0);
+                if (callee && callee.type === 'identifier' && callee.text === 'TypedDict') {
+                  kind = 'type';
+                } else if (callee && callee.type === 'identifier' && callee.text === 'NamedTuple') {
+                  kind = 'type';
+                }
+              } else if (right.type === 'identifier') {
+                kind = 'type';
+              }
+            }
+            const key = `${name}:${kind}:${node.startIndex}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              symbols.push({
+                name,
+                kind,
+                language: 'python',
+                file: filePath,
+                signature: sourceStr
+                  .substring(node.startIndex, Math.min(node.startIndex + 200, node.endIndex))
+                  .split('\n')[0],
+                qualified_name: name,
+                start_line: node.startPosition.row + 1,
+                end_line: node.endPosition.row + 1,
+                start_byte: node.startIndex,
+                end_byte: node.endIndex,
+                docstring: '',
+                body_preview: '',
+                parent_name: '',
+              });
+            }
+          }
+        }
+      }
+    }
     if (node.type === 'decorator') {
-      // Decorators are captured as separate symbols
       const name = node.text.replace(/^@/, '').split('(')[0];
       if (name && !seen.has(`@${name}:decorator:${node.startIndex}`)) {
         seen.add(`@${name}:decorator:${node.startIndex}`);
+      }
+    }
+    if (node.type === 'import_statement' || node.type === 'import_from_statement') {
+      const importPath = node.text.replace(/^from\s+/, '').split(/\s+import\b/)[0].trim();
+      const key = `import:${importPath}:${node.startIndex}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        symbols.push({
+          name: importPath,
+          kind: 'import',
+          language: 'python',
+          file: filePath,
+          signature: node.text.split('\n')[0].slice(0, 200),
+          qualified_name: importPath,
+          start_line: node.startPosition.row + 1,
+          end_line: node.endPosition.row + 1,
+          start_byte: node.startIndex,
+          end_byte: node.endIndex,
+          docstring: '',
+          body_preview: '',
+          parent_name: '',
+        });
       }
     }
 
@@ -1036,7 +1116,121 @@ function _extractGoSymbols(filePath, sourceStr, parser) {
               parent_name: '',
             });
           }
-          break;
+        }
+      }
+    }
+    // Var/const declarations at top level
+    else if ((node.type === 'var_declaration' || node.type === 'const_declaration') && depth === 0) {
+      for (const child of node.children) {
+        if (child.type === 'var_spec' || child.type === 'const_spec') {
+          let name = '';
+          for (const specChild of child.children) {
+            if (specChild.type === 'identifier') {
+              name = specChild.text;
+              break;
+            }
+          }
+          if (name) {
+            const kind = node.type === 'const_declaration' ? 'constant' : 'constant';
+            const key = `${name}:${kind}:${child.startIndex}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              symbols.push({
+                name,
+                kind,
+                language: 'go',
+                file: filePath,
+                signature: sourceStr
+                  .substring(node.startIndex, Math.min(node.startIndex + 200, node.endIndex))
+                  .split('\n')[0],
+                qualified_name: name,
+                start_line: node.startPosition.row + 1,
+                end_line: node.endPosition.row + 1,
+                start_byte: node.startIndex,
+                end_byte: node.endIndex,
+                docstring: _getDocstring(node),
+                body_preview: '',
+                parent_name: '',
+              });
+            }
+          }
+        }
+      }
+    }
+    // Go import declarations
+    if (node.type === 'import_declaration') {
+      for (const child of node.children) {
+        if (child.type === 'import_spec' || child.type === 'import_spec_list') {
+          for (const spec of child.children) {
+            if (spec.type === 'import_spec') {
+              for (const sc of spec.children) {
+                if (sc.type === 'interpreted_string_literal') {
+                  const importPath = sc.text.replace(/^"|"$/g, '');
+                  const key = `import:${importPath}:${spec.startIndex}`;
+                  if (!seen.has(key)) {
+                    seen.add(key);
+                    symbols.push({
+                      name: importPath,
+                      kind: 'import',
+                      language: 'go',
+                      file: filePath,
+                      signature: `import "${importPath}"`,
+                      qualified_name: importPath,
+                      start_line: spec.startPosition.row + 1,
+                      end_line: spec.endPosition.row + 1,
+                      start_byte: spec.startIndex,
+                      end_byte: spec.endIndex,
+                      docstring: '',
+                      body_preview: '',
+                      parent_name: '',
+                    });
+                  }
+                }
+              }
+            } else if (spec.type === 'interpreted_string_literal') {
+              const importPath = spec.text.replace(/^"|"$/g, '');
+              const key = `import:${importPath}:${spec.startIndex}`;
+              if (!seen.has(key)) {
+                seen.add(key);
+                symbols.push({
+                  name: importPath,
+                  kind: 'import',
+                  language: 'go',
+                  file: filePath,
+                  signature: `import "${importPath}"`,
+                  qualified_name: importPath,
+                  start_line: spec.startPosition.row + 1,
+                  end_line: spec.endPosition.row + 1,
+                  start_byte: spec.startIndex,
+                  end_byte: spec.endIndex,
+                  docstring: '',
+                  body_preview: '',
+                  parent_name: '',
+                });
+              }
+            }
+          }
+        } else if (child.type === 'interpreted_string_literal') {
+          const importPath = child.text.replace(/^"|"$/g, '');
+          const key = `import:${importPath}:${child.startIndex}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            symbols.push({
+              name: importPath,
+              kind: 'import',
+              language: 'go',
+              file: filePath,
+              signature: `import "${importPath}"`,
+              qualified_name: importPath,
+              start_line: child.startPosition.row + 1,
+              end_line: child.endPosition.row + 1,
+              start_byte: child.startIndex,
+              end_byte: child.endIndex,
+              docstring: '',
+              body_preview: '',
+              parent_name: '',
+            });
+          }
         }
       }
     }
@@ -1064,6 +1258,9 @@ const _RUST_SYMBOL_NODES = {
   type_item: 'type',
   constant_item: 'constant',
   static_item: 'constant',
+  mod_item: 'module',
+  macro_definition: 'function',
+  enum_variant: 'constant',
 };
 
 const _RUST_SCOPE_NODES = new Set(['function_item', 'impl_item', 'closure_expression', 'block']);
@@ -1122,17 +1319,17 @@ function _extractRustSymbols(filePath, sourceStr, parser) {
         }
         // Walk into impl_item to find methods at depth+1
         const childDepth = depth + 1;
-        for (const child of node.children) {
-          if (child.type === 'function_item' || child.type === 'function_signature_item') {
+        function collectMethods(n) {
+          if (n.type === 'function_item' || n.type === 'function_signature_item') {
             let methodName = '';
-            for (const mc of child.children) {
+            for (const mc of n.children) {
               if (mc.type === 'identifier') {
                 methodName = mc.text;
                 break;
               }
             }
             if (methodName) {
-              const key = `${implName}.${methodName}:function:${child.startIndex}`;
+              const key = `${implName}.${methodName}:function:${n.startIndex}`;
               if (!seen.has(key)) {
                 seen.add(key);
                 symbols.push({
@@ -1141,21 +1338,26 @@ function _extractRustSymbols(filePath, sourceStr, parser) {
                   language: 'rust',
                   file: filePath,
                   signature: sourceStr
-                    .substring(child.startIndex, Math.min(child.startIndex + 200, child.endIndex))
+                    .substring(n.startIndex, Math.min(n.startIndex + 200, n.endIndex))
                     .split('\n')[0],
                   qualified_name: implName ? `${implName}.${methodName}` : methodName,
-                  start_line: child.startPosition.row + 1,
-                  end_line: child.endPosition.row + 1,
-                  start_byte: child.startIndex,
-                  end_byte: child.endIndex,
-                  docstring: _getDocstring(child),
-                  body_preview: _getBodyPreview(child, sourceStr),
+                  start_line: n.startPosition.row + 1,
+                  end_line: n.endPosition.row + 1,
+                  start_byte: n.startIndex,
+                  end_byte: n.endIndex,
+                  docstring: _getDocstring(n),
+                  body_preview: _getBodyPreview(n, sourceStr),
                   parent_name: implName,
                 });
               }
             }
+          } else {
+            for (const c of n.children) {
+              collectMethods(c);
+            }
           }
         }
+        collectMethods(node);
         // Don't walk deeper since we already handled methods
         return;
       }
@@ -1163,13 +1365,26 @@ function _extractRustSymbols(filePath, sourceStr, parser) {
         const key = `${name}:${kind}:${node.startIndex}`;
         if (!seen.has(key)) {
           seen.add(key);
-          // Detect extends for struct
           let parentName = '';
           if (node.type === 'struct_item') {
             for (const child of node.children) {
               if (child.type === 'type_identifier' && child.text !== name) {
                 parentName = child.text;
               }
+            }
+          } else if (node.type === 'enum_variant') {
+            let p = node.parent;
+            while (p) {
+              if (p.type === 'enum_item') {
+                for (const c of p.children) {
+                  if (c.type === 'identifier' || c.type === 'type_identifier') {
+                    parentName = c.text;
+                    break;
+                  }
+                }
+                break;
+              }
+              p = p.parent;
             }
           }
           symbols.push({
@@ -1188,6 +1403,33 @@ function _extractRustSymbols(filePath, sourceStr, parser) {
             docstring: _getDocstring(node),
             body_preview: _getBodyPreview(node, sourceStr),
             parent_name: parentName,
+          });
+        }
+      }
+    }
+    if (node.type === 'use_declaration') {
+      const args = node.childForFieldName('argument');
+      if (args) {
+        const usePath = args.text;
+        const key = `use:${usePath}:${node.startIndex}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          symbols.push({
+            name: usePath,
+            kind: 'import',
+            language: 'rust',
+            file: filePath,
+            signature: sourceStr
+              .substring(node.startIndex, Math.min(node.startIndex + 200, node.endIndex))
+              .split('\n')[0],
+            qualified_name: usePath,
+            start_line: node.startPosition.row + 1,
+            end_line: node.endPosition.row + 1,
+            start_byte: node.startIndex,
+            end_byte: node.endIndex,
+            docstring: '',
+            body_preview: '',
+            parent_name: '',
           });
         }
       }
