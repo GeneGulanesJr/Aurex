@@ -97,6 +97,52 @@ async function indexDocs(db, rootPath, repoName, ignoreGlob) {
       };
 
   const BATCH_SIZE = RESULT_LIMITS.DOC_BATCH_SIZE;
+
+  function processEntry(entry) {
+    const { filePath, content, stat } = entry;
+    const relPath = path.relative(rootPath, filePath);
+    const fileId = insertFile.get(repoId, relPath, content, hashContent(content), stat.mtimeMs).id;
+    const withParent = buildSectionHierarchy(parseMarkdownSections(content, filePath));
+    const sectionIdMap = new Map();
+
+    for (let idx = 0; idx < withParent.length; idx++) {
+      const sec = withParent[idx];
+      const parentId = sec.parent_idx !== null ? sectionIdMap.get(sec.parent_idx) || null : null;
+      const sectionDbId = insertSection.get(
+        repoId,
+        fileId,
+        sec.title,
+        sec.level,
+        parentId,
+        sec.content,
+        sec.content_hash,
+        sec.byte_start,
+        sec.byte_end,
+        sec.role,
+        sec.tags,
+      ).id;
+      sectionIdMap.set(idx, sectionDbId);
+      totalSections++;
+
+      for (const link of extractLinks(sec.content)) {
+        if (link.is_internal) {
+          insertLink.run(sectionDbId, link.target_path, null, link.link_text, 0);
+          totalLinks++;
+        }
+      }
+
+      for (const term of extractGlossaryTerms(sec.content)) {
+        insertTerm.run(repoId, term.term, term.definition, sectionDbId);
+        totalTerms++;
+      }
+
+      for (const block of extractCodeBlocks(sec.content, sec.byte_start)) {
+        insertCodeBlock.run(sectionDbId, block.lang, block.content, block.byte_start, block.byte_end);
+        totalCodeBlocks++;
+      }
+    }
+  }
+
   for (let i = 0; i < files.length; i += BATCH_SIZE) {
     const reads = await readDocBatch(files.slice(i, i + BATCH_SIZE));
 
@@ -104,49 +150,8 @@ async function indexDocs(db, rootPath, repoName, ignoreGlob) {
       for (const entry of reads) {
         if (entry.error) {
           warnings.push({ path: path.relative(rootPath, entry.filePath), error: entry.error });
-          continue;
-        }
-        const { filePath, content, stat } = entry;
-        const relPath = path.relative(rootPath, filePath);
-        const fileId = insertFile.get(repoId, relPath, content, hashContent(content), stat.mtimeMs).id;
-        const withParent = buildSectionHierarchy(parseMarkdownSections(content, filePath));
-        const sectionIdMap = new Map();
-
-        for (let idx = 0; idx < withParent.length; idx++) {
-          const sec = withParent[idx];
-          const parentId = sec.parent_idx !== null ? sectionIdMap.get(sec.parent_idx) || null : null;
-          const sectionDbId = insertSection.get(
-            repoId,
-            fileId,
-            sec.title,
-            sec.level,
-            parentId,
-            sec.content,
-            sec.content_hash,
-            sec.byte_start,
-            sec.byte_end,
-            sec.role,
-            sec.tags,
-          ).id;
-          sectionIdMap.set(idx, sectionDbId);
-          totalSections++;
-
-          for (const link of extractLinks(sec.content)) {
-            if (link.is_internal) {
-              insertLink.run(sectionDbId, link.target_path, null, link.link_text, 0);
-              totalLinks++;
-            }
-          }
-
-          for (const term of extractGlossaryTerms(sec.content)) {
-            insertTerm.run(repoId, term.term, term.definition, sectionDbId);
-            totalTerms++;
-          }
-
-          for (const block of extractCodeBlocks(sec.content, sec.byte_start)) {
-            insertCodeBlock.run(sectionDbId, block.lang, block.content, block.byte_start, block.byte_end);
-            totalCodeBlocks++;
-          }
+        } else {
+          processEntry(entry);
         }
       }
     });

@@ -490,7 +490,7 @@ function _getDocstring(node) {
     return '';
   }
 
-  const prev = parent.child(idx - 1);
+  const _prev = parent.child(idx - 1);
   const singleComment = comments.length === 1 ? comments[0] : null;
   const text = singleComment ? singleComment.text : comments.map((c) => c.text).join('\n');
 
@@ -562,10 +562,6 @@ function _getBodyPreview(node, sourceStr, maxLines = 5) {
 }
 
 function _getLineNumber(node) {
-  const count = 1;
-  const n = node;
-  // Walk back to count rows
-  // Web-tree-sitter provides startPosition.row (0-indexed)
   return node.startPosition.row + 1;
 }
 
@@ -906,27 +902,27 @@ function _extractPythonSymbols(filePath, sourceStr, parser) {
             const name = left.text;
             if (name === '_' || name.startsWith('__') && name.endsWith('__')) continue;
             const right = child.child(2);
-            let kind = 'constant';
+            let assignKind = 'constant';
             if (right) {
               if (right.type === 'dictionary' || right.type === 'list' || right.type === 'set') {
-                kind = 'constant';
+                assignKind = 'constant';
               } else if (right.type === 'call') {
                 const callee = right.child(0);
                 if (callee && callee.type === 'identifier' && callee.text === 'TypedDict') {
-                  kind = 'type';
+                  assignKind = 'type';
                 } else if (callee && callee.type === 'identifier' && callee.text === 'NamedTuple') {
-                  kind = 'type';
+                  assignKind = 'type';
                 }
               } else if (right.type === 'identifier') {
-                kind = 'type';
+                assignKind = 'type';
               }
             }
-            const key = `${name}:${kind}:${node.startIndex}`;
+            const key = `${name}:${assignKind}:${node.startIndex}`;
             if (!seen.has(key)) {
               seen.add(key);
               symbols.push({
                 name,
-                kind,
+                kind: assignKind,
                 language: 'python',
                 file: filePath,
                 signature: sourceStr

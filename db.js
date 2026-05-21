@@ -440,10 +440,8 @@ function runMigrations() {
   ];
 
   const fromVersion = version;
-  for (const migration of migrations) {
-    if (version >= migration.to) {
-      continue;
-    }
+  const pending = migrations.filter((m) => version < m.to);
+  for (const migration of pending) {
     const errors = migration.run();
     if (errors.length > 0) {
       console.error(`[db] Migration to V${migration.to} failed (${errors.length} errors):`);
