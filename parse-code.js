@@ -421,6 +421,31 @@ function _getDocstring(node) {
   if (!node.parent) {
     return '';
   }
+
+  // Python: docstring is the first expression_statement containing a string in the body
+  if (node.type === 'function_definition' || node.type === 'class_definition') {
+    const body = node.childForFieldName('body');
+    if (body) {
+      for (const child of body.children) {
+        if (child.type === 'expression_statement') {
+          for (const expr of child.children) {
+            if (expr.type === 'string') {
+              let text = expr.text;
+              if ((text.startsWith('"""') && text.endsWith('"""')) || (text.startsWith("'''") && text.endsWith("'''"))) {
+                text = text.slice(3, -3);
+              } else if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+                text = text.slice(1, -1);
+              }
+              return text.trim();
+            }
+          }
+        }
+        break;
+      }
+    }
+    return '';
+  }
+
   // Find index manually — WASM node objects don't support indexOf reference equality
   const parent = node.parent;
   let idx = -1;
@@ -433,19 +458,41 @@ function _getDocstring(node) {
   if (idx <= 0) {
     return '';
   }
+
+  // Collect consecutive comment nodes preceding this node
+  const comments = [];
+  for (let i = idx - 1; i >= 0; i--) {
+    const prev = parent.child(i);
+    if (prev.type === 'comment') {
+      comments.unshift(prev);
+    } else if (prev.type === 'line_comment') {
+      comments.unshift(prev);
+    } else {
+      break;
+    }
+  }
+
+  if (comments.length === 0) {
+    return '';
+  }
+
   const prev = parent.child(idx - 1);
-  if (prev.type === 'comment') {
-    let text = prev.text;
-    if (text.startsWith('/**')) {
-      text = text.slice(3);
-    } else if (text.startsWith('/*')) {
-      text = text.slice(2);
+  const singleComment = comments.length === 1 ? comments[0] : null;
+  const text = singleComment ? singleComment.text : comments.map((c) => c.text).join('\n');
+
+  // JS/TS block comments: /** ... */ or /* ... */
+  if (singleComment && singleComment.type === 'comment') {
+    let cleaned = text;
+    if (cleaned.startsWith('/**')) {
+      cleaned = cleaned.slice(3);
+    } else if (cleaned.startsWith('/*')) {
+      cleaned = cleaned.slice(2);
     }
-    if (text.endsWith('*/')) {
-      text = text.slice(0, -2);
+    if (cleaned.endsWith('*/')) {
+      cleaned = cleaned.slice(0, -2);
     }
-    const lines = text.split('\n');
-    const cleaned = [];
+    const lines = cleaned.split('\n');
+    const result = [];
     for (let line of lines) {
       line = line.trim();
       if (line.startsWith('* ')) {
@@ -453,10 +500,34 @@ function _getDocstring(node) {
       } else if (line === '*') {
         line = '';
       }
-      cleaned.push(line.trim());
+      result.push(line.trim());
     }
-    return cleaned.join('\n').trim();
+    return result.join('\n').trim();
   }
+
+  // Go and Rust line comments: collect consecutive // or /// lines
+  if (comments.length > 0 && (comments[0].type === 'comment' || comments[0].type === 'line_comment')) {
+    const isDocComment = comments.every((c) => c.text.startsWith('///') || c.text.startsWith('//'));
+    if (isDocComment) {
+      return comments
+        .map((c) => {
+          let line = c.text;
+          if (line.startsWith('/// ')) {
+            line = line.slice(4);
+          } else if (line.startsWith('///')) {
+            line = line.slice(3);
+          } else if (line.startsWith('// ')) {
+            line = line.slice(3);
+          } else if (line.startsWith('//')) {
+            line = line.slice(2);
+          }
+          return line.trim();
+        })
+        .join('\n')
+        .trim();
+    }
+  }
+
   return '';
 }
 
@@ -587,7 +658,7 @@ function _extractJsTsSymbols(filePath, sourceStr, parser, languageName) {
           });
         }
       }
-    } else if (_VARIABLE_FUNCTION_NODES.has(node.type) && depth === 0) {
+    } else if (_VARIABLE_FUNCTION_NODES.has(node.type)) {
       const parent = node.parent;
       if (parent && parent.type === 'variable_declarator') {
         let name = null;
@@ -621,7 +692,7 @@ function _extractJsTsSymbols(filePath, sourceStr, parser, languageName) {
           }
         }
       }
-    } else if (node.type === 'variable_declarator' && depth === 0) {
+    } else if (node.type === 'variable_declarator') {
       let name = null;
       let kind = 'constant';
       for (const child of node.children) {
@@ -808,8 +879,8 @@ function _extractPythonSymbols(filePath, sourceStr, parser) {
             end_line: node.endPosition.row + 1,
             start_byte: node.startIndex,
             end_byte: node.endIndex,
-            docstring: '',
-            body_preview: '',
+            docstring: _getDocstring(node),
+            body_preview: _getBodyPreview(node, sourceStr),
             parent_name: parentName,
           });
         }
@@ -878,8 +949,8 @@ function _extractGoSymbols(filePath, sourceStr, parser) {
             end_line: node.endPosition.row + 1,
             start_byte: node.startIndex,
             end_byte: node.endIndex,
-            docstring: '',
-            body_preview: '',
+            docstring: _getDocstring(node),
+            body_preview: _getBodyPreview(node, sourceStr),
             parent_name: '',
           });
         }
@@ -932,8 +1003,8 @@ function _extractGoSymbols(filePath, sourceStr, parser) {
             end_line: node.endPosition.row + 1,
             start_byte: node.startIndex,
             end_byte: node.endIndex,
-            docstring: '',
-            body_preview: '',
+            docstring: _getDocstring(node),
+            body_preview: _getBodyPreview(node, sourceStr),
             parent_name: receiver,
           });
         }
@@ -960,7 +1031,7 @@ function _extractGoSymbols(filePath, sourceStr, parser) {
               end_line: node.endPosition.row + 1,
               start_byte: node.startIndex,
               end_byte: node.endIndex,
-              docstring: '',
+              docstring: _getDocstring(node),
               body_preview: '',
               parent_name: '',
             });
@@ -1005,7 +1076,7 @@ function _extractRustSymbols(filePath, sourceStr, parser) {
 
   function walk(node, depth) {
     const kind = _RUST_SYMBOL_NODES[node.type];
-    if (kind && depth === 0) {
+    if (kind) {
       let name = '';
       for (const child of node.children) {
         if (child.type === 'identifier' || child.type === 'type_identifier') {
@@ -1043,7 +1114,7 @@ function _extractRustSymbols(filePath, sourceStr, parser) {
               end_line: node.endPosition.row + 1,
               start_byte: node.startIndex,
               end_byte: node.endIndex,
-              docstring: '',
+              docstring: _getDocstring(node),
               body_preview: '',
               parent_name: '',
             });
@@ -1077,8 +1148,8 @@ function _extractRustSymbols(filePath, sourceStr, parser) {
                   end_line: child.endPosition.row + 1,
                   start_byte: child.startIndex,
                   end_byte: child.endIndex,
-                  docstring: '',
-                  body_preview: '',
+                  docstring: _getDocstring(child),
+                  body_preview: _getBodyPreview(child, sourceStr),
                   parent_name: implName,
                 });
               }
@@ -1114,8 +1185,8 @@ function _extractRustSymbols(filePath, sourceStr, parser) {
             end_line: node.endPosition.row + 1,
             start_byte: node.startIndex,
             end_byte: node.endIndex,
-            docstring: '',
-            body_preview: '',
+            docstring: _getDocstring(node),
+            body_preview: _getBodyPreview(node, sourceStr),
             parent_name: parentName,
           });
         }
@@ -1597,10 +1668,11 @@ function _walkCallees(root, _SKIP) {
               callees.push(entry);
             }
           }
-        } else if (calleeNode.type === 'member_expression') {
+        } else if (calleeNode.type === 'member_expression' || calleeNode.type === 'selector_expression' || calleeNode.type === 'field_expression') {
           const propNode = calleeNode.child(calleeNode.childCount - 1);
           const objNode = calleeNode.child(0);
-          if (propNode && (propNode.type === 'property_identifier' || propNode.type === 'identifier')) {
+          const propTypes = ['property_identifier', 'identifier', 'field_identifier', 'name'];
+          if (propNode && propTypes.includes(propNode.type)) {
             const name = propNode.text;
             if (!_SKIP.has(name)) {
               const key = `${name}:${node.startPosition.row + 1}`;
@@ -1618,7 +1690,6 @@ function _walkCallees(root, _SKIP) {
                   receiver,
                   full_path,
                 };
-                // Capture require('module') path
                 if (name === 'require') {
                   const argsNode = node.childForFieldName('arguments');
                   if (argsNode) {
@@ -1634,6 +1705,69 @@ function _walkCallees(root, _SKIP) {
                   entry.is_dynamic = true;
                 }
                 callees.push(entry);
+              }
+            }
+          }
+        } else if (calleeNode.type === 'scoped_identifier') {
+          const name = calleeNode.text.replace(/::/g, '.');
+          const lastPart = name.split('.').pop();
+          if (lastPart && !_SKIP.has(lastPart)) {
+            const key = `${lastPart}:${node.startPosition.row + 1}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              callees.push({
+                callee: lastPart,
+                line: node.startPosition.row + 1,
+                is_method: false,
+                receiver: null,
+                full_path: name,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // Python call node — Python uses 'call' not 'call_expression'
+    if (node.type === 'call') {
+      const calleeNode = node.child(0);
+      if (calleeNode) {
+        if (calleeNode.type === 'identifier') {
+          const name = calleeNode.text;
+          if (!_SKIP.has(name)) {
+            const key = `${name}:${node.startPosition.row + 1}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              callees.push({
+                callee: name,
+                line: node.startPosition.row + 1,
+                is_method: false,
+                receiver: null,
+                full_path: name,
+              });
+            }
+          }
+        } else if (calleeNode.type === 'attribute') {
+          const attrNode = calleeNode.child(calleeNode.childCount - 1);
+          const objNode = calleeNode.child(0);
+          if (attrNode && attrNode.type === 'identifier') {
+            const name = attrNode.text;
+            if (!_SKIP.has(name)) {
+              const key = `${name}:${node.startPosition.row + 1}`;
+              if (!seen.has(key)) {
+                seen.add(key);
+                let receiver = null;
+                if (objNode) {
+                  receiver = objNode.text;
+                }
+                const full_path = receiver ? `${receiver}.${name}` : name;
+                callees.push({
+                  callee: name,
+                  line: node.startPosition.row + 1,
+                  is_method: true,
+                  receiver,
+                  full_path,
+                });
               }
             }
           }
