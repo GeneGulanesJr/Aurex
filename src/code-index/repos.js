@@ -16,6 +16,42 @@ function createCodeIndexRepository(deps) {
     return fn();
   }
 
+  const _symbolInsertSql = `INSERT INTO code_symbols (repo_id, file_id, file_path, name, kind, signature, qualified_name,
+    start_line, end_line, start_byte, end_byte, docstring, body_preview, language, parent_name,
+    stable_symbol_id, content_hash, summary, decorators_json, keywords_json, call_references_json, ecosystem_context)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
+  function _insertSymbolsPrepared(symbols) {
+    const db = require('../../db').getDb();
+    const stmt = db.prepare(_symbolInsertSql);
+    for (const sym of symbols) {
+      stmt.run(
+        sym.repoId,
+        sym.fileId,
+        sym.filePath,
+        sym.name,
+        sym.kind,
+        sym.signature,
+        sym.qualifiedName,
+        sym.startLine,
+        sym.endLine,
+        sym.startByte,
+        sym.endByte,
+        sym.docstring || '',
+        sym.bodyPreview || '',
+        sym.language,
+        sym.parentName || '',
+        sym.stableSymbolId || '',
+        sym.contentHash || '',
+        sym.summary || '',
+        sym.decoratorsJson || '[]',
+        sym.keywordsJson || '[]',
+        sym.callReferencesJson || '[]',
+        sym.ecosystemContext || '',
+      );
+    }
+  }
+
   return Object.freeze({
     withTransaction(fn) {
       return _withTransaction(fn);
@@ -267,13 +303,17 @@ function createCodeIndexRepository(deps) {
         ],
       );
     },
+    // PERF: Prepared-statement reuse for bulk symbol inserts (issue #139).
+    // Do NOT replace with per-symbol insertSymbol() calls — each call re-prepares
+    // The same SQL via sqlRun(). For 10K+ symbols per batch this eliminates
+    // 10K redundant prepare() calls. Keep the single stmt.prepare() + loop pattern.
     insertSymbolBatch(symbols) {
-      const self = this;
       _withTransaction(() => {
-        for (const sym of symbols) {
-          self.insertSymbol(sym);
-        }
+        _insertSymbolsPrepared(symbols);
       });
+    },
+    insertSymbolBulk(symbols) {
+      _insertSymbolsPrepared(symbols);
     },
     updateRepoStats({ repoId, headCommit, currentBranch, baseHead }) {
       sqlRun(

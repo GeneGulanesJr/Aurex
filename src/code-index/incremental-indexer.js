@@ -683,10 +683,13 @@ async function parsePhase(files, deps, repoId, args) {
         }
 
         if (batchSymbols.length > 0) {
+          // PERF: Use prepared-statement bulk insert (issue #139).
+          // InsertSymbolBulk reuses a single prepared statement for all symbols,
+          // Avoiding 10K+ redundant prepare() calls per batch. The transactional
+          // Path already has an outer withTransaction(), so insertSymbolBulk skips
+          // Its own transaction wrapper. Do NOT revert to per-symbol insertSymbol().
           if (insideTransaction) {
-            for (const sym of batchSymbols) {
-              repository.insertSymbol(sym);
-            }
+            repository.insertSymbolBulk(batchSymbols);
           } else {
             repository.insertSymbolBatch(batchSymbols);
           }
