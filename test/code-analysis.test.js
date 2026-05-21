@@ -7,7 +7,7 @@ const REPO = 'PiMemoryExtension';
 
 function run(cmd, timeout = 15000) {
   try {
-    const out = execSync(`node "${STORE}" ${cmd}`, { encoding: 'utf8', timeout, stdio: ['pipe', 'pipe', 'pipe'] });
+    const out = execSync(`node "${STORE}" ${cmd}`, { encoding: 'utf8', timeout, maxBuffer: 50 * 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'] });
     const result = JSON.parse(out.trim());
     // Unwrap _meta envelope (v6) for backward-compatible test assertions
     return result.data || result;

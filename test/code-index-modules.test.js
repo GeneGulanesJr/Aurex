@@ -65,6 +65,7 @@ describe('code-index parse progress', () => {
             withTransaction: (fn) => fn(),
             insertFile: () => 123,
             insertSymbol: () => {},
+            insertSymbolBulk: () => {},
           },
         },
         7,
