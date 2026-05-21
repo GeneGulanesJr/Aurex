@@ -117,54 +117,68 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
     )
     .all(repoId);
 
+  // PERF(issue #137): Single-pass symbol index construction — all 7 Map indices are built
+  // in one iteration over allSymbols instead of 5 separate passes. For 50K symbols (~10MB),
+  // this keeps the array hot in L1/L2 cache instead of re-scanning cold memory 4 extra times.
+  // Derived maps (symbolsByFileAndName, methodsByParentAndName) are populated inline.
+  // Do NOT split this back into separate loops — the cache behavior matters at scale.
   const symbolsByName = new Map();
   const symbolsByQualified = new Map();
   const symbolsByFile = new Map();
+  const symbolsByFileAndName = new Map();
+  const classParentMap = new Map();
+  const methodsByParent = new Map();
+  const methodsByParentAndName = new Map();
+
   for (const sym of allSymbols) {
-    if (!symbolsByName.has(sym.name)) {symbolsByName.set(sym.name, []);}
+    if (!symbolsByName.has(sym.name)) {
+      symbolsByName.set(sym.name, []);
+    }
     symbolsByName.get(sym.name).push(sym);
+
     if (sym.qualified_name && sym.qualified_name !== sym.name) {
-      if (!symbolsByQualified.has(sym.qualified_name)) {symbolsByQualified.set(sym.qualified_name, []);}
+      if (!symbolsByQualified.has(sym.qualified_name)) {
+        symbolsByQualified.set(sym.qualified_name, []);
+      }
       symbolsByQualified.get(sym.qualified_name).push(sym);
     }
-    if (!symbolsByFile.has(sym.file_id)) {symbolsByFile.set(sym.file_id, []);}
+
+    if (!symbolsByFile.has(sym.file_id)) {
+      symbolsByFile.set(sym.file_id, []);
+    }
     symbolsByFile.get(sym.file_id).push(sym);
+
+    if (!symbolsByFileAndName.has(sym.file_id)) {
+      symbolsByFileAndName.set(sym.file_id, new Map());
+    }
+    const fileByName = symbolsByFileAndName.get(sym.file_id);
+    if (!fileByName.has(sym.name)) {
+      fileByName.set(sym.name, []);
+    }
+    fileByName.get(sym.name).push(sym);
+
+    if (sym.kind === 'class' && sym.parent_name) {
+      classParentMap.set(sym.name, sym.parent_name);
+    }
+
+    if (sym.parent_name) {
+      if (!methodsByParent.has(sym.parent_name)) {
+        methodsByParent.set(sym.parent_name, []);
+        methodsByParentAndName.set(sym.parent_name, new Map());
+      }
+      methodsByParent.get(sym.parent_name).push(sym);
+      const parentByName = methodsByParentAndName.get(sym.parent_name);
+      if (!parentByName.has(sym.name)) {
+        parentByName.set(sym.name, []);
+      }
+      parentByName.get(sym.name).push(sym);
+    }
   }
 
   const fileRows = db.prepare('SELECT id, path, size_bytes FROM code_files WHERE repo_id = ?').all(repoId);
   const fileById = new Map();
   for (const f of fileRows) {fileById.set(f.id, f);}
   const contentStmt = db.prepare('SELECT content FROM code_files WHERE id = ?');
-
-  const symbolsByFileAndName = new Map();
-  for (const [fileId, syms] of symbolsByFile) {
-    const byName = new Map();
-    for (const s of syms) {
-      if (!byName.has(s.name)) {byName.set(s.name, []);}
-      byName.get(s.name).push(s);
-    }
-    symbolsByFileAndName.set(fileId, byName);
-  }
-  const classParentMap = new Map();
-  for (const sym of allSymbols) {
-    if (sym.kind === 'class' && sym.parent_name) {classParentMap.set(sym.name, sym.parent_name);}
-  }
-  const methodsByParent = new Map();
-  for (const sym of allSymbols) {
-    if (sym.parent_name) {
-      if (!methodsByParent.has(sym.parent_name)) {methodsByParent.set(sym.parent_name, []);}
-      methodsByParent.get(sym.parent_name).push(sym);
-    }
-  }
-  const methodsByParentAndName = new Map();
-  for (const [parent, methods] of methodsByParent) {
-    const byName = new Map();
-    for (const m of methods) {
-      if (!byName.has(m.name)) {byName.set(m.name, []);}
-      byName.get(m.name).push(m);
-    }
-    methodsByParentAndName.set(parent, byName);
-  }
 
   const insertStmt = db.prepare(
     `INSERT OR IGNORE INTO code_calls (repo_id, caller_symbol_id, callee_name, callee_symbol_id, confidence, line_number) VALUES (?, ?, ?, ?, ?, ?)`,
