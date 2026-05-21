@@ -204,9 +204,15 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
     return resolved;
   }
 
+  // PERF(issue #134): Pre-allocated result for resolveCallee — avoids creating a new object
+  // Per call in the hot path. resolveCallee writes directly into _rr; callers read from it
+  // After the call. Do NOT change resolveCallee to return a new object; the per-call
+  // Allocation overhead is significant at hundreds of thousands of invocations.
+  const _rr = { calleeSymbolId: null, confidence: 0 };
+
   function resolveCallee(calleeName, callerSym, receiver, fileContent) {
-    let calleeSymbolId = null;
-    let confidence = 0.5;
+    _rr.calleeSymbolId = null;
+    _rr.confidence = 0.5;
 
     const bindings = getFileBindings(callerSym.file_id, fileContent);
     const bindingMatch = bindings.find((b) => b.localName === calleeName && !b.isReExport);
@@ -215,10 +221,10 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
       if (bindingMatch.target_file_id) {
         if (originalName === '*' || originalName === 'default') {
           const matchSym = getFileSymbol(bindingMatch.target_file_id, calleeName);
-          if (matchSym) {return { calleeSymbolId: matchSym.id, confidence: 1.0, resolvedVia: 'import-binding' };}
+          if (matchSym) {_rr.calleeSymbolId = matchSym.id; _rr.confidence = 1.0; return;}
         } else {
           const matchSym = getFileSymbol(bindingMatch.target_file_id, originalName);
-          if (matchSym) {return { calleeSymbolId: matchSym.id, confidence: 1.0, resolvedVia: 'import-binding-alias' };}
+          if (matchSym) {_rr.calleeSymbolId = matchSym.id; _rr.confidence = 1.0; return;}
         }
       }
     }
@@ -227,10 +233,10 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
       const qualifiedName = `${callerSym.parent_name}.${calleeName}`;
       const qualifiedMatches = symbolsByQualified.get(qualifiedName);
       if (qualifiedMatches && qualifiedMatches.length === 1)
-        {return { calleeSymbolId: qualifiedMatches[0].id, confidence: 0.95, resolvedVia: 'this-dispatch' };}
+        {_rr.calleeSymbolId = qualifiedMatches[0].id; _rr.confidence = 0.95; return;}
       if (qualifiedMatches && qualifiedMatches.length > 1) {
         const sameFile = qualifiedMatches.find((m) => m.file_id === callerSym.file_id);
-        if (sameFile) {return { calleeSymbolId: sameFile.id, confidence: 0.9, resolvedVia: 'this-dispatch-same-file' };}
+        if (sameFile) {_rr.calleeSymbolId = sameFile.id; _rr.confidence = 0.9; return;}
       }
     }
 
@@ -240,7 +246,7 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
         const superQualified = `${parentName}.${calleeName}`;
         const superMatches = symbolsByQualified.get(superQualified);
         if (superMatches && superMatches.length === 1)
-          {return { calleeSymbolId: superMatches[0].id, confidence: 0.9, resolvedVia: 'super-dispatch' };}
+          {_rr.calleeSymbolId = superMatches[0].id; _rr.confidence = 0.9; return;}
       }
     }
 
@@ -249,49 +255,47 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
       if (binding && binding.target_file_id) {
         if (binding.originalName === '*') {
           const matchSym = getFileSymbol(binding.target_file_id, calleeName, 'function');
-          if (matchSym) {return { calleeSymbolId: matchSym.id, confidence: 0.95, resolvedVia: 'namespace-member' };}
+          if (matchSym) {_rr.calleeSymbolId = matchSym.id; _rr.confidence = 0.95; return;}
         }
         const resolvedName = binding.originalName === 'default' ? receiver : binding.originalName;
         const classSym = getFileSymbol(binding.target_file_id, resolvedName, 'class');
         if (classSym) {
           const parentMethods = methodsByParentAndName.get(resolvedName);
           const methodSym = parentMethods ? parentMethods.get(calleeName)?.[0] || null : null;
-          if (methodSym) {return { calleeSymbolId: methodSym.id, confidence: 0.9, resolvedVia: 'object-type-member' };}
+          if (methodSym) {_rr.calleeSymbolId = methodSym.id; _rr.confidence = 0.9; return;}
         }
       }
       const qualifiedName = `${receiver}.${calleeName}`;
       const qualifiedMatches = symbolsByQualified.get(qualifiedName);
       if (qualifiedMatches && qualifiedMatches.length === 1)
-        {return { calleeSymbolId: qualifiedMatches[0].id, confidence: 0.85, resolvedVia: 'qualified-name' };}
+        {_rr.calleeSymbolId = qualifiedMatches[0].id; _rr.confidence = 0.85; return;}
     }
 
     const fileImports = getFileImports(callerSym.file_id);
     for (const imp of fileImports) {
       const matchSym = getFileSymbol(imp.target_file_id, calleeName);
       if (matchSym) {
-        calleeSymbolId = matchSym.id;
-        confidence = 0.8;
+        _rr.calleeSymbolId = matchSym.id;
+        _rr.confidence = 0.8;
         break;
       }
     }
 
-    if (!calleeSymbolId) {
+    if (!_rr.calleeSymbolId) {
       const sameFile = getFileSymbol(callerSym.file_id, calleeName);
       if (sameFile) {
-        calleeSymbolId = sameFile.id;
-        confidence = 0.9;
+        _rr.calleeSymbolId = sameFile.id;
+        _rr.confidence = 0.9;
       }
     }
 
-    if (!calleeSymbolId) {
+    if (!_rr.calleeSymbolId) {
       const matches = symbolsByName.get(calleeName);
       if (matches && matches.length === 1) {
-        calleeSymbolId = matches[0].id;
-        confidence = 0.7;
+        _rr.calleeSymbolId = matches[0].id;
+        _rr.confidence = 0.7;
       }
     }
-
-    return { calleeSymbolId, confidence };
   }
 
   function processRegexFallback(sym, fileContent) {
@@ -314,9 +318,9 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
         // oxlint-disable-next-line no-continue
         if (seen.has(calleeName)) {continue;}
         seen.add(calleeName);
-        const { calleeSymbolId, confidence } = resolveCallee(calleeName, sym, null, fileContent);
+        resolveCallee(calleeName, sym, null, fileContent);
         const lineNum = sym.start_line + body.substring(0, match.index).split('\n').length - 1;
-        insertStmt.run(repoId, sym.id, calleeName, calleeSymbolId, confidence, lineNum);
+        insertStmt.run(repoId, sym.id, calleeName, _rr.calleeSymbolId, _rr.confidence, lineNum);
         totalCalls++;
       }
     }
@@ -380,8 +384,11 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
           if (!calleeByLine.has(c.line)) {calleeByLine.set(c.line, []);}
           calleeByLine.get(c.line).push(c);
         }
+        // PERF(issue #134): Pre-allocated dedup Set — cleared per symbol instead of
+        // Allocating a new Set. For N symbols this eliminates N Set allocations.
+        const _seen = new Set();
         for (const sym of fileSymbols) {
-          const seen = new Set();
+          _seen.clear();
           for (let line = sym.start_line; line <= sym.end_line; line++) {
             const lineCallees = calleeByLine.get(line);
             // oxlint-disable-next-line no-continue
@@ -391,10 +398,10 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
               if (_SKIP_CALLEE_NAMES.has(c.callee)) {continue;}
               const key = `${c.callee}:${c.line}`;
               // oxlint-disable-next-line no-continue
-              if (seen.has(key)) {continue;}
-              seen.add(key);
-              const { calleeSymbolId, confidence } = resolveCallee(c.callee, sym, c.receiver || null, fileContent);
-              insertStmt.run(repoId, sym.id, c.callee, calleeSymbolId, confidence, c.line);
+              if (_seen.has(key)) {continue;}
+              _seen.add(key);
+              resolveCallee(c.callee, sym, c.receiver || null, fileContent);
+              insertStmt.run(repoId, sym.id, c.callee, _rr.calleeSymbolId, _rr.confidence, c.line);
               totalCalls++;
             }
           }
