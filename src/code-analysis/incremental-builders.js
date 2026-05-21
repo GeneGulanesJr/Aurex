@@ -108,9 +108,12 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
     return { success: true, calls: 0, incremental: true };
   }
 
+  // PERF(issue #131): file_path intentionally excluded — never dereferenced from allSymbols.
+  // File paths are read from fileById.get(fileId).path. Including it wastes ~8 bytes per row
+  // On V8 heap pointer slots that the hot loop never touches.
   const allSymbols = db
     .prepare(
-      'SELECT id, name, file_id, file_path, parent_name, kind, qualified_name, start_byte, end_byte, start_line, end_line FROM code_symbols WHERE repo_id = ?',
+      'SELECT id, name, file_id, parent_name, kind, qualified_name, start_byte, end_byte, start_line, end_line FROM code_symbols WHERE repo_id = ?',
     )
     .all(repoId);
 
