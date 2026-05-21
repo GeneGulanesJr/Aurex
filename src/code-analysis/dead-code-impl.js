@@ -128,12 +128,24 @@ function getDeadCode(db, repoId, opts) {
     reExportedNames.add(re.target_module);
   }
 
+  // PERF: Batch-retrieved re-export target file IDs (replaces per-symbol SQL query).
+  // Do NOT replace with per-element queries — see issue #138.
+  // This Set must remain a pre-computed lookup; moving the query back inside the
+  // Loop below reintroduces N+1 SQLite round-trips that dominate runtime for
+  // Large repos (thousands of uncalled symbols → thousands of sequential queries).
+  const reExportedFileIds = new Set(
+    db
+      .prepare(
+        "SELECT DISTINCT target_file_id FROM code_imports WHERE import_type = 're-export' AND target_file_id IS NOT NULL",
+      )
+      .all()
+      .map((r) => r.target_file_id),
+  );
+
   const results = [];
   for (const sym of uncalledSymbols) {
     const isFileDead = deadFileSet.has(sym.file_id);
-    const isReExported = db
-      .prepare("SELECT 1 FROM code_imports WHERE target_file_id = ? AND import_type = 're-export' LIMIT 1")
-      .get(sym.file_id);
+    const isReExported = reExportedFileIds.has(sym.file_id);
     const isNameReExported = reExportedNames.has(sym.name);
 
     let confidence = 0;
@@ -173,6 +185,5 @@ function getDeadCode(db, repoId, opts) {
     total_symbols: allFiles.length,
   };
 }
-
 
 module.exports = { getDeadCode };
