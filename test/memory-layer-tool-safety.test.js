@@ -178,6 +178,32 @@ describe('memory tool renderer safety', () => {
     results.forEach(expectRenderable);
   });
 
+  it('caps memory-code outline details before returning them to the agent', async () => {
+    const classes = Array.from({ length: 30 }, (_classItem, classIndex) => ({
+      name: `Class${classIndex}`,
+      methods: Array.from({ length: 40 }, (_methodItem, methodIndex) => ({
+        name: `method${methodIndex}`,
+        kind: 'method',
+      })),
+    }));
+    const standalone = Array.from({ length: 120 }, (_, index) => ({ name: `fn${index}`, kind: 'function' }));
+    const tool = captureTool(registerCodeTools, {
+      mem: vi.fn().mockResolvedValue({ file: 'src', classes, standalone }),
+      memStreaming: vi.fn(),
+      getKnownRepos: vi.fn().mockResolvedValue([{ name: 'app' }]),
+      formatCodeResult: vi.fn(() => 'File outline'),
+      invalidateRepoCache: vi.fn(),
+    });
+
+    const result = await tool.execute('id', { mode: 'outline', repo: 'app', file: 'src' }, undefined, vi.fn(), {});
+
+    expectRenderable(result);
+    expect(result.details.classes.length).toBe(20);
+    expect(result.details.classes[0].methods.length).toBe(25);
+    expect(result.details.standalone.length).toBe(80);
+    expect(result.details.truncated).toBe(true);
+  });
+
   it.each([
     ['bare command', {}],
     ['unknown mode', { mode: 'wat' }],

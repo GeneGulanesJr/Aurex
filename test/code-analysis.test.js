@@ -7,7 +7,12 @@ const REPO = 'PiMemoryExtension';
 
 function run(cmd, timeout = 15000) {
   try {
-    const out = execSync(`node "${STORE}" ${cmd}`, { encoding: 'utf8', timeout, maxBuffer: 50 * 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'] });
+    const out = execSync(`node "${STORE}" ${cmd}`, {
+      encoding: 'utf8',
+      timeout,
+      maxBuffer: 50 * 1024 * 1024,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
     const result = JSON.parse(out.trim());
     // Unwrap _meta envelope (v6) for backward-compatible test assertions
     return result.data || result;
@@ -136,12 +141,23 @@ describe('code-analysis: complexity', () => {
 
 describe('code-analysis: outline', () => {
   it('should return file outline with standalone symbols', () => {
-    const r = run(`outline --repo ${REPO} --file code-analysis.js`);
+    const r = run(`outline --repo ${REPO} --file src/code-analysis/complexity-impl.js`);
     expect(r.error).toBeUndefined();
     expect(Array.isArray(r.standalone)).toBe(true);
     expect(r.standalone.length).toBeGreaterThan(0);
     const first = r.standalone[0];
     expect(first.name).toBeTruthy();
+  });
+
+  it('should return a bounded directory summary for broad paths', () => {
+    const r = run(`outline --repo ${REPO} --file src`);
+    expect(r.error).toBeUndefined();
+    expect(r.directory).toBe(true);
+    expect(Array.isArray(r.files)).toBe(true);
+    expect(r.files.length).toBeLessThanOrEqual(25);
+    expect(r.total_files).toBeGreaterThanOrEqual(r.files.length);
+    expect(r.classes).toBeUndefined();
+    expect(r.standalone).toBeUndefined();
   });
 });
 

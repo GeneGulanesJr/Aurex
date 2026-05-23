@@ -228,7 +228,7 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
           } catch {
             fmt = '';
           }
-          return toolTextResult(fmt || 'Indexing completed.', result ?? {});
+          return toolTextResult(fmt || 'Indexing completed.', compactCodeToolDetails(mode, result ?? {}));
         }
 
         if (mode === 'health') {
@@ -292,12 +292,48 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
         } catch {
           fmt = '';
         }
-        return toolTextResult(fmt || `No ${mode} results found.`, result ?? {});
+        return toolTextResult(fmt || `No ${mode} results found.`, compactCodeToolDetails(mode, result ?? {}));
       } catch (err) {
         return toolTextResult(`Unexpected error: ${stringifyToolError(err)}`, {}, true);
       }
     },
   });
+}
+
+function compactCodeToolDetails(mode: string, result: any): Record<string, unknown> {
+  if (mode !== 'outline' || !result || typeof result !== 'object') {
+    return result && typeof result === 'object' ? result : {};
+  }
+
+  if (result.directory) {
+    const files = Array.isArray(result.files) ? result.files.slice(0, 25) : [];
+    return {
+      ...result,
+      files,
+      truncated: Boolean(result.truncated || (Array.isArray(result.files) && result.files.length > files.length)),
+    };
+  }
+
+  const classes = Array.isArray(result.classes)
+    ? result.classes.slice(0, 20).map((cls: any) => ({
+        ...cls,
+        methods: Array.isArray(cls.methods) ? cls.methods.slice(0, 25) : [],
+      }))
+    : [];
+  const standalone = Array.isArray(result.standalone) ? result.standalone.slice(0, 80) : [];
+
+  return {
+    ...result,
+    classes,
+    standalone,
+    truncated:
+      (Array.isArray(result.classes) && result.classes.length > classes.length) ||
+      (Array.isArray(result.standalone) && result.standalone.length > standalone.length) ||
+      classes.some((cls: any, index: number) => {
+        const original = result.classes[index];
+        return Array.isArray(original?.methods) && original.methods.length > cls.methods.length;
+      }),
+  };
 }
 
 function codeHelpText(): string {
@@ -324,9 +360,13 @@ function formatHealthResult(result: any): string {
   ];
   if (result.scan) {
     const delta = result.scan.indexed_file_delta;
-    lines.push(`Discovered: ${result.scan.parseable_files_found} parseable files (${delta >= 0 ? '+' : ''}${delta} vs indexed)`);
+    lines.push(
+      `Discovered: ${result.scan.parseable_files_found} parseable files (${delta >= 0 ? '+' : ''}${delta} vs indexed)`,
+    );
   }
-  lines.push(`Diagnostics: ok=${diagnostics.ok || 0}, zero_symbols=${diagnostics.zero_symbols || 0}, error=${diagnostics.error || 0}`);
+  lines.push(
+    `Diagnostics: ok=${diagnostics.ok || 0}, zero_symbols=${diagnostics.zero_symbols || 0}, error=${diagnostics.error || 0}`,
+  );
   if ((result.recommendations || []).length) {
     lines.push('', 'Recommendations:', ...(result.recommendations || []).map((r: string) => `- ${r}`));
   }

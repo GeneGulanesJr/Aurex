@@ -120,6 +120,21 @@ describe('tools/format-code-result', () => {
       expect(result).toContain('MyClass');
       expect(result).toContain('helper');
     });
+
+    it('should format directory outlines as compact file summaries', () => {
+      const result = formatCodeResult('outline', {
+        file: 'src',
+        directory: true,
+        total_files: 30,
+        truncated: true,
+        files: ['src/a.js', 'src/b.js'],
+      });
+
+      expect(result).toContain('Directory outline');
+      expect(result).toContain('src/a.js');
+      expect(result).toContain('28 more files');
+      expect(result).toContain('Refine --file');
+    });
   });
 
   describe('cycles', () => {

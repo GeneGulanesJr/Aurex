@@ -1,5 +1,7 @@
 function safePop(val: any): string {
-  if (typeof val === 'string') {return val.split('/').pop() ?? val;}
+  if (typeof val === 'string') {
+    return val.split('/').pop() ?? val;
+  }
   return String(val ?? '');
 }
 
@@ -84,6 +86,13 @@ function formatCodeResult(mode: string, result: any): string {
     }
     case 'outline': {
       const outline = result;
+      if (outline.directory) {
+        const files = (outline.files || []).slice(0, 25).map((file: string) => `  ${file}`);
+        const suffix = outline.truncated
+          ? `\n  ... ${Math.max(0, (outline.total_files || 0) - files.length)} more files`
+          : '';
+        return `**Directory outline** ${outline.file ?? ''}: ${outline.total_files ?? files.length} files\n${files.join('\n')}${suffix}\nRefine --file to a specific file for symbols.`;
+      }
       if (outline.classes) {
         const lines = outline.classes.map((c: any) => {
           const methods = (c.methods || [])

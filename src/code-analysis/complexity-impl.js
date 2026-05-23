@@ -107,11 +107,15 @@ function buildComplexity(db, repoId) {
         }
         if (code === 123) {
           currentDepth++;
-          if (currentDepth > maxDepth) {maxDepth = currentDepth;}
+          if (currentDepth > maxDepth) {
+            maxDepth = currentDepth;
+          }
           // oxlint-disable-next-line no-continue
           continue;
         }
-        if (currentDepth > 0) {currentDepth--;}
+        if (currentDepth > 0) {
+          currentDepth--;
+        }
         // oxlint-disable-next-line no-continue
         continue;
       }
@@ -123,9 +127,13 @@ function buildComplexity(db, repoId) {
       }
       if (code === 123) {
         currentDepth++;
-        if (currentDepth > maxDepth) {maxDepth = currentDepth;}
+        if (currentDepth > maxDepth) {
+          maxDepth = currentDepth;
+        }
       } else if (code === 125) {
-        if (currentDepth > 0) {currentDepth--;}
+        if (currentDepth > 0) {
+          currentDepth--;
+        }
       }
     }
 
@@ -179,9 +187,40 @@ function getFileOutline(db, repoId, filePath) {
   if (guard) {
     return guard;
   }
-  const fileRow = db
-    .prepare("SELECT id FROM code_files WHERE repo_id = ? AND path LIKE ? ESCAPE '!'")
-    .get(repoId, `%${_likeEscape(filePath)}%`);
+  const normalizedPath = filePath.replace(/\/$/, '').replace(/^\.\//, '');
+  const directoryPattern = `${_likeEscape(normalizedPath)}/%`;
+  const dotDirectoryPattern = `./${directoryPattern}`;
+  const nestedDirectoryPattern = `%/${directoryPattern}`;
+  const directoryMatches = db
+    .prepare(
+      "SELECT path FROM code_files WHERE repo_id = ? AND (path LIKE ? ESCAPE '!' OR path LIKE ? ESCAPE '!' OR path LIKE ? ESCAPE '!') ORDER BY path LIMIT 25",
+    )
+    .all(repoId, directoryPattern, dotDirectoryPattern, nestedDirectoryPattern);
+  if (directoryMatches.length > 1) {
+    const totalMatches = db
+      .prepare(
+        "SELECT COUNT(*) as cnt FROM code_files WHERE repo_id = ? AND (path LIKE ? ESCAPE '!' OR path LIKE ? ESCAPE '!' OR path LIKE ? ESCAPE '!')",
+      )
+      .get(repoId, directoryPattern, dotDirectoryPattern, nestedDirectoryPattern).cnt;
+    return {
+      file: filePath,
+      directory: true,
+      files: directoryMatches.map((row) => row.path),
+      total_files: totalMatches,
+      truncated: totalMatches > directoryMatches.length,
+      message: `Path "${filePath}" matches ${totalMatches} files. Refine --file to a specific file for symbols.`,
+    };
+  }
+
+  const exactFile = db.prepare('SELECT id, path FROM code_files WHERE repo_id = ? AND path = ?').get(repoId, filePath);
+  const suffixFile = exactFile
+    ? null
+    : db
+        .prepare(
+          "SELECT id, path FROM code_files WHERE repo_id = ? AND path LIKE ? ESCAPE '!' ORDER BY LENGTH(path) LIMIT 1",
+        )
+        .get(repoId, `%/${_likeEscape(filePath)}`);
+  const fileRow = exactFile || suffixFile;
   if (!fileRow) {
     // Suggest available files that partially match
     const suggestions = db
@@ -216,9 +255,10 @@ function getFileOutline(db, repoId, filePath) {
     SELECT cs.id, cs.name, cs.kind, cs.start_line, cs.end_line, cs.signature, cs.qualified_name, cs.parent_name,
            sc.cyclomatic, sc.assessment
     FROM code_symbols cs LEFT JOIN symbol_complexity sc ON sc.symbol_id = cs.id
-    WHERE cs.repo_id = ? AND cs.file_path LIKE ? ESCAPE '!' ORDER BY cs.start_line
+    WHERE cs.repo_id = ? AND (cs.file_id = ? OR cs.file_path = ? OR cs.file_path LIKE ? ESCAPE '!')
+    ORDER BY cs.start_line
   `)
-    .all(repoId, `%${_likeEscape(filePath)}%`);
+    .all(repoId, fileRow.id, fileRow.path, `%/${_likeEscape(fileRow.path)}`);
 
   const classes = [];
   const standalone = [];
@@ -235,8 +275,7 @@ function getFileOutline(db, repoId, filePath) {
     }
   }
 
-  return { file: filePath, classes, standalone };
+  return { file: fileRow.path, classes, standalone };
 }
-
 
 module.exports = { buildComplexity, getComplexity, getFileOutline };
