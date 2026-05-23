@@ -27,8 +27,9 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
       mode: Type.Optional(
         Type.String({
           description:
-            'Analysis mode: callers|callees|blast-radius|dead-code|complexity|deps|outline|churn|hotspots|cycles|importance|coupling|extractable|hierarchy|signal-chains|layer-violations|health|index-repo|reindex-repo',
+            'Analysis mode: search|callers|callees|blast-radius|dead-code|complexity|deps|outline|churn|hotspots|cycles|importance|coupling|extractable|hierarchy|signal-chains|layer-violations|health|index-repo|reindex-repo',
           enum: [
+            'search',
             'callers',
             'callees',
             'blast-radius',
@@ -55,8 +56,12 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
         Type.String({ description: 'Indexed repo name (required for analysis modes, optional for index-repo)' }),
       ),
       symbol: Type.Optional(
-        Type.String({ description: 'Symbol name (required for callers, callees, blast-radius, complexity)' }),
+        Type.String({
+          description:
+            'Symbol name (required for callers, callees, blast-radius, complexity; fallback query for search)',
+        }),
       ),
+      query: Type.Optional(Type.String({ description: 'Search query for search mode' })),
       file: Type.Optional(Type.String({ description: 'File path (required for outline, churn; optional for deps)' })),
       depth: Type.Optional(Type.Number({ description: 'Graph traversal depth 1-5 (default 3)', default: 3 })),
       direction: Type.Optional(
@@ -96,6 +101,7 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
       params = params ?? {};
       try {
         const cmdMap: Record<string, string> = {
+          search: 'search-code',
           callers: 'call-hierarchy',
           callees: 'call-hierarchy',
           'blast-radius': 'blast-radius',
@@ -138,6 +144,9 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
         if (params.symbol) {
           args.symbol = params.symbol;
         }
+        if (params.query || (mode === 'search' && params.symbol)) {
+          args.query = String(params.query || params.symbol);
+        }
         if (params.file) {
           args.file = params.file;
         }
@@ -160,7 +169,11 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
           args.refresh = 'true';
         }
         if (params.top) {
-          args.top = String(params.top);
+          if (cmd === 'search-code') {
+            args['max-results'] = String(params.top);
+          } else {
+            args.top = String(params.top);
+          }
         }
         if (params.scope) {
           args.scope = params.scope;
@@ -370,10 +383,11 @@ function codeHelpText(): string {
     '',
     'Examples:',
     '- memory-code outline --repo <repo> --file src/foo.ts',
+    '- memory-code search --repo <repo> --query "context command return fields"',
     '- memory-code callers --repo <repo> --symbol MyClass.method',
     '- memory-code reindex-repo --path . --name <repo>',
     '',
-    'Modes: callers, callees, blast-radius, dead-code, complexity, deps, outline, churn, hotspots, cycles, importance, coupling, extractable, hierarchy, signal-chains, layer-violations, health, index-repo, reindex-repo.',
+    'Modes: search, callers, callees, blast-radius, dead-code, complexity, deps, outline, churn, hotspots, cycles, importance, coupling, extractable, hierarchy, signal-chains, layer-violations, health, index-repo, reindex-repo.',
   ].join('\n');
 }
 
@@ -412,6 +426,10 @@ function validateCodeParams(mode: string, params: Record<string, any>): string |
 
   if (mode !== 'index-repo' && mode !== 'reindex-repo' && !params.repo) {
     return `${mode} requires --repo.\n\nExample:\nmemory-code ${mode} --repo <repo>`;
+  }
+
+  if (mode === 'search' && !params.query && !params.symbol) {
+    return 'search requires --query.\n\nExample:\nmemory-code search --repo <repo> --query "context command"';
   }
 
   if (['callers', 'callees', 'blast-radius', 'complexity'].includes(mode) && !params.symbol) {

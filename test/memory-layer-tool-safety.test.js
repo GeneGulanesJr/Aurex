@@ -240,6 +240,38 @@ describe('memory tool renderer safety', () => {
     expect(result.details.data.truncated).toBe(true);
   });
 
+  it('supports memory-code search mode using query or symbol text', async () => {
+    const mem = vi.fn().mockResolvedValue({
+      query: 'context command',
+      results: [{ symbol: 'context', file: 'src/memory-domain/context.js', line: 4 }],
+    });
+    const tool = captureTool(registerCodeTools, {
+      mem,
+      memStreaming: vi.fn(),
+      getKnownRepos: vi.fn().mockResolvedValue([{ name: 'app' }]),
+      formatCodeResult,
+      invalidateRepoCache: vi.fn(),
+    });
+
+    const result = await tool.execute(
+      'id',
+      { mode: 'search', repo: 'app', symbol: 'context command' },
+      undefined,
+      vi.fn(),
+      {},
+    );
+    const text = result.content.find((item) => item.type === 'text').text;
+
+    expectRenderable(result);
+    expect(mem).toHaveBeenCalledWith('search-code', {
+      repo: 'app',
+      symbol: 'context command',
+      query: 'context command',
+    });
+    expect(text).toContain('Code search');
+    expect(text).toContain('src/memory-domain/context.js');
+  });
+
   it.each([
     ['bare command', {}],
     ['unknown mode', { mode: 'wat' }],

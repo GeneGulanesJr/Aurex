@@ -156,8 +156,17 @@ describe('code-analysis: outline', () => {
     expect(Array.isArray(r.files)).toBe(true);
     expect(r.files.length).toBeLessThanOrEqual(25);
     expect(r.total_files).toBeGreaterThanOrEqual(r.files.length);
+    expect(r.files.every((file) => file.startsWith('src/'))).toBe(true);
+    expect(r.files.some((file) => file.includes('/crosshash/'))).toBe(false);
     expect(r.classes).toBeUndefined();
     expect(r.standalone).toBeUndefined();
+  });
+
+  it('should return relative suggestions for missing files', () => {
+    const r = run(`outline --repo ${REPO} --file src/context-injection.ts`);
+    expect(r.error).toBeUndefined();
+    expect(r.not_found).toBe(true);
+    expect(r.suggestions).toContain('extensions/memory-layer/hooks/context-injection.ts');
   });
 });
 

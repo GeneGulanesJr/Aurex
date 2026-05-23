@@ -1,4 +1,5 @@
 // Cyclomatic complexity computation and file outline extraction.
+const path = require('path');
 
 // oxlint-disable-next-line no-unused-vars
 const { codeParser, _requireNativeDb, COMPLEXITY } = require('./shared-deps');
@@ -6,6 +7,23 @@ const { codeParser, _requireNativeDb, COMPLEXITY } = require('./shared-deps');
 // Escape SQL LIKE wildcard characters.
 function _likeEscape(str) {
   return str.replace(/!/g, '!!').replace(/%/g, '!%').replace(/_/g, '!_');
+}
+
+function normalizeRepoPath(filePath, repoRoot = null) {
+  const normalized = String(filePath || '')
+    .replace(/\\/g, '/')
+    .replace(/\/$/, '')
+    .replace(/^\.\//, '');
+  if (!repoRoot || !path.isAbsolute(normalized)) {
+    return normalized;
+  }
+  const relative = path.relative(repoRoot, normalized).replace(/\\/g, '/');
+  return relative && !relative.startsWith('..') && relative !== '.' ? relative : normalized;
+}
+
+function getRepoRoot(db, repoId) {
+  const row = db.prepare('SELECT path FROM code_repos WHERE id = ?').get(repoId);
+  return row?.path ? path.resolve(row.path) : null;
 }
 
 function buildComplexity(db, repoId) {
@@ -187,46 +205,42 @@ function getFileOutline(db, repoId, filePath) {
   if (guard) {
     return guard;
   }
-  const normalizedPath = filePath.replace(/\/$/, '').replace(/^\.\//, '');
-  const directoryPattern = `${_likeEscape(normalizedPath)}/%`;
-  const dotDirectoryPattern = `./${directoryPattern}`;
-  const nestedDirectoryPattern = `%/${directoryPattern}`;
-  const directoryMatches = db
-    .prepare(
-      "SELECT path FROM code_files WHERE repo_id = ? AND (path LIKE ? ESCAPE '!' OR path LIKE ? ESCAPE '!' OR path LIKE ? ESCAPE '!') ORDER BY path LIMIT 25",
-    )
-    .all(repoId, directoryPattern, dotDirectoryPattern, nestedDirectoryPattern);
+  const repoRoot = getRepoRoot(db, repoId);
+  const normalizedPath = normalizeRepoPath(filePath, repoRoot);
+  const allFiles = db.prepare('SELECT id, path FROM code_files WHERE repo_id = ? ORDER BY path').all(repoId);
+  const filesWithRelativePath = allFiles.map((row) => ({
+    ...row,
+    relative_path: normalizeRepoPath(row.path, repoRoot),
+  }));
+  const directoryMatches = filesWithRelativePath
+    .filter((row) => row.relative_path.startsWith(`${normalizedPath}/`))
+    .sort((a, b) => a.relative_path.localeCompare(b.relative_path));
   if (directoryMatches.length > 1) {
-    const totalMatches = db
-      .prepare(
-        "SELECT COUNT(*) as cnt FROM code_files WHERE repo_id = ? AND (path LIKE ? ESCAPE '!' OR path LIKE ? ESCAPE '!' OR path LIKE ? ESCAPE '!')",
-      )
-      .get(repoId, directoryPattern, dotDirectoryPattern, nestedDirectoryPattern).cnt;
+    const visibleMatches = directoryMatches.slice(0, 25);
     return {
       file: filePath,
       directory: true,
-      files: directoryMatches.map((row) => row.path),
-      total_files: totalMatches,
-      truncated: totalMatches > directoryMatches.length,
-      message: `Path "${filePath}" matches ${totalMatches} files. Refine --file to a specific file for symbols.`,
+      files: visibleMatches.map((row) => row.relative_path),
+      total_files: directoryMatches.length,
+      truncated: directoryMatches.length > visibleMatches.length,
+      message: `Path "${filePath}" matches ${directoryMatches.length} files. Refine --file to a specific file for symbols.`,
     };
   }
 
-  const exactFile = db.prepare('SELECT id, path FROM code_files WHERE repo_id = ? AND path = ?').get(repoId, filePath);
+  const exactFile =
+    filesWithRelativePath.find((row) => row.path === filePath || row.relative_path === normalizedPath) || null;
   const suffixFile = exactFile
     ? null
-    : db
-        .prepare(
-          "SELECT id, path FROM code_files WHERE repo_id = ? AND path LIKE ? ESCAPE '!' ORDER BY LENGTH(path) LIMIT 1",
-        )
-        .get(repoId, `%/${_likeEscape(filePath)}`);
+    : filesWithRelativePath.find((row) => row.relative_path.endsWith(`/${normalizedPath}`));
   const fileRow = exactFile || suffixFile;
   if (!fileRow) {
     // Suggest available files that partially match
-    const suggestions = db
-      .prepare("SELECT path FROM code_files WHERE repo_id = ? AND path LIKE ? ESCAPE '!' LIMIT 20")
-      .all(repoId, `%${_likeEscape(filePath.split('/').pop())}%`);
-    const totalFiles = db.prepare('SELECT COUNT(*) as cnt FROM code_files WHERE repo_id = ?').get(repoId).cnt;
+    const basename = normalizedPath.split('/').pop();
+    const suggestions = filesWithRelativePath
+      .filter((row) => row.relative_path.includes(basename))
+      .sort((a, b) => a.relative_path.localeCompare(b.relative_path))
+      .slice(0, 20);
+    const totalFiles = allFiles.length;
     if (suggestions.length) {
       return {
         file: filePath,
@@ -234,7 +248,7 @@ function getFileOutline(db, repoId, filePath) {
         standalone: [],
         not_found: true,
         message: `File not found: "${filePath}". Did you mean one of these?`,
-        suggestions: suggestions.map((s) => s.path),
+        suggestions: suggestions.map((s) => s.relative_path),
         total_files_in_repo: totalFiles,
         hint: `Files are resolved relative to the repo root. List all files with: memory-store.js outline --repo <repo> (no --file)`,
       };
@@ -275,7 +289,7 @@ function getFileOutline(db, repoId, filePath) {
     }
   }
 
-  return { file: fileRow.path, classes, standalone };
+  return { file: fileRow.relative_path || fileRow.path, classes, standalone };
 }
 
 module.exports = { buildComplexity, getComplexity, getFileOutline };

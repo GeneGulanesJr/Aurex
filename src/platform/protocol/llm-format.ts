@@ -7,6 +7,23 @@ function safePop(val: any): string {
 
 function formatCodeResult(mode: string, result: any): string {
   switch (mode) {
+    case 'search': {
+      const results = result.results || [];
+      if (!results.length) {
+        return `No code results found for ${result.query ?? 'query'}.`;
+      }
+      return `**Code search:** ${results.length} result${results.length === 1 ? '' : 's'} for ${result.query ?? 'query'}\n${results
+        .slice(0, 10)
+        .map((r: any, i: number) => {
+          const file = r.file ?? r.file_path ?? '?';
+          const symbol = r.symbol ?? r.symbol_name ?? r.qualified_name ?? r.name ?? '?';
+          const line = r.line ?? r.start_line ?? '?';
+          const signature = r.signature ? ` — ${String(r.signature).slice(0, 90)}` : '';
+          const snippet = r.snippet ? `\n    ${String(r.snippet).replace(/\s+/g, ' ').slice(0, 140)}` : '';
+          return `  ${i + 1}. ${symbol} (${file}:${line})${signature}${snippet}`;
+        })
+        .join('\n')}`;
+    }
     case 'callers':
     case 'callees': {
       const items = result.callers || result.callees || [];
@@ -86,6 +103,17 @@ function formatCodeResult(mode: string, result: any): string {
     }
     case 'outline': {
       const outline = result;
+      if (outline.not_found) {
+        const suggestions = (outline.suggestions || []).slice(0, 10).map((file: string) => `  ${file}`);
+        return [
+          `File not found: ${outline.file ?? '?'}`,
+          outline.message || '',
+          suggestions.length ? `Suggestions:\n${suggestions.join('\n')}` : '',
+          outline.hint || '',
+        ]
+          .filter(Boolean)
+          .join('\n');
+      }
       if (outline.directory) {
         const files = (outline.files || []).slice(0, 25).map((file: string) => `  ${file}`);
         const suffix = outline.truncated
@@ -107,7 +135,8 @@ function formatCodeResult(mode: string, result: any): string {
           (s: any) =>
             `  ${s.assessment ? `[${s.assessment}] ` : ''}${s.kind ?? '?'} ${s.name ?? '?'}${s.signature ? `: ${s.signature.slice(0, 60)}` : ''}`,
         );
-        return `**File outline**\n${[...lines, ...standalone].join('\n')}`;
+        const body = [...lines, ...standalone].join('\n');
+        return body ? `**File outline**\n${body}` : `No symbols found in ${outline.file ?? 'file'}.`;
       }
       return JSON.stringify(outline, null, 2);
     }

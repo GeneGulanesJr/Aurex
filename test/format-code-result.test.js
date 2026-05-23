@@ -1,6 +1,27 @@
 import { formatCodeResult } from '../extensions/memory-layer/tools/format-code-result.ts';
 
 describe('tools/format-code-result', () => {
+  describe('search', () => {
+    it('should format code search results', () => {
+      const result = formatCodeResult('search', {
+        query: 'context command',
+        results: [
+          {
+            symbol: 'context',
+            file: 'src/memory-domain/context.js',
+            line: 4,
+            signature: 'function context(deps, args) {',
+            snippet: 'return { sessions, personal, observations }',
+          },
+        ],
+      });
+
+      expect(result).toContain('Code search');
+      expect(result).toContain('src/memory-domain/context.js:4');
+      expect(result).toContain('return');
+    });
+  });
+
   describe('callers', () => {
     it('should format callers result', () => {
       const result = formatCodeResult('callers', {
@@ -134,6 +155,22 @@ describe('tools/format-code-result', () => {
       expect(result).toContain('src/a.js');
       expect(result).toContain('28 more files');
       expect(result).toContain('Refine --file');
+    });
+
+    it('should format missing-file suggestions instead of an empty outline', () => {
+      const result = formatCodeResult('outline', {
+        file: 'src/context-injection.ts',
+        classes: [],
+        standalone: [],
+        not_found: true,
+        message: 'File not found: "src/context-injection.ts". Did you mean one of these?',
+        suggestions: ['extensions/memory-layer/hooks/context-injection.ts'],
+        hint: 'Use --file with a path relative to the repo root.',
+      });
+
+      expect(result).toContain('File not found');
+      expect(result).toContain('extensions/memory-layer/hooks/context-injection.ts');
+      expect(result).not.toBe('**File outline**\n');
     });
   });
 
