@@ -26,6 +26,13 @@ function rankObservations(rows, query = '') {
     .toLowerCase()
     .split(/\s+/)
     .filter((w) => w.length > 1);
+
+  // Detect navigation-style queries (where, module, hook, etc.)
+  const isNavigationQuery = RANKING.NAVIGATION_QUERY_SIGNALS.some(
+    (signal) => query.toLowerCase().includes(signal),
+  );
+  const pathPattern = RANKING.NAVIGATION_BOOST.path_pattern;
+
   return rows
     .map((row) => {
       let ftsScore = 0;
@@ -42,16 +49,55 @@ function rankObservations(rows, query = '') {
         row.trust_score !== undefined && row.trust_score !== null ? row.trust_score : RANKING.DEFAULT_TRUST_SCORE;
       const recallScore = Math.log(1 + (row.recall_count || 0)) * RANKING.RECALL_LOG_MULTIPLIER;
       const typeBoost = RANKING.TYPE_BOOST[row.type] || 1.0;
+
+      // Boost memories containing file paths for navigation queries
+      let navBoost = 1.0;
+      if (isNavigationQuery) {
+        const text = `${row.title || ''} ${row.snippet || ''}`;
+        if (pathPattern.test(text)) {
+          navBoost = RANKING.NAVIGATION_BOOST.path_multiplier;
+        }
+      }
+
       const ranking = getConfig().ranking;
       const composite =
         (ftsScore * ranking.fts_relevance +
           recencyScore * ranking.recency +
           trustScore * ranking.trust +
           recallScore * ranking.recall) *
-        typeBoost;
+        typeBoost *
+        navBoost;
       return { ...row, _score: composite };
     })
     .sort((a, b) => b._score - a._score);
+}
+
+function _extractFtsTerms(query) {
+  // FTS5 stopwords — common words that don't help search
+  const STOP_WORDS = new Set([
+    'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+    'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+    'should', 'may', 'might', 'shall', 'can', 'need', 'dare', 'ought',
+    'used', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from',
+    'as', 'into', 'through', 'during', 'before', 'after', 'above', 'below',
+    'between', 'out', 'off', 'over', 'under', 'again', 'further', 'then',
+    'once', 'and', 'but', 'or', 'nor', 'not', 'so', 'yet', 'both',
+    'either', 'neither', 'each', 'every', 'all', 'any', 'few', 'more',
+    'most', 'other', 'some', 'such', 'no', 'only', 'own', 'same', 'than',
+    'too', 'very', 'just', 'because', 'if', 'when', 'where', 'how', 'what',
+    'which', 'who', 'whom', 'this', 'that', 'these', 'those', 'it', 'its',
+    'name', 'also', 'known', 'keep', 'answer', 'concise', 'mention', 'explain',
+    'file', 'lives', 'implemented',
+  ]);
+  const unique = [...new Set(
+    query
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 2 && !STOP_WORDS.has(w)),
+  )];
+  // Use up to 5 most meaningful terms to avoid FTS5 implicit AND over-constraining
+  return unique.slice(0, 5).join(' ');
 }
 
 function search(deps, args) {
@@ -85,7 +131,7 @@ function search(deps, args) {
         WHERE observations_fts MATCH ?
           AND o.deleted_at IS NULL
       `;
-      const params = [query];
+      const params = [_extractFtsTerms(query)];
       if (project) {
         q += ' AND o.project = ?';
         params.push(project);

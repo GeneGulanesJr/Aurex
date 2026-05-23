@@ -98,6 +98,11 @@ const RANKING = {
     session_summary: 0.7,
     skill: 0.5,
   },
+  NAVIGATION_QUERY_SIGNALS: ['where', 'module', 'file', 'hook', 'wired', 'location', 'path', 'lives', 'implemented'],
+  NAVIGATION_BOOST: {
+    path_pattern: /(?:src\/|extensions\/|lib\/|[\w-]+\/[\w-]+\.[\w]+|\.[\w]+\/)/,
+    path_multiplier: 1.5,
+  },
 };
 
 const CONTEXT = {
