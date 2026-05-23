@@ -1,7 +1,7 @@
 # Scope-Aware Edge Extraction Design
 
 **Date:** 2026-05-23  
-**Status:** Approved  
+**Status:** Approved (Revision 1 — review feedback incorporated)  
 **Replaces:** Heuristic callee resolution in `call-graph-impl.js` (`resolveCallee` function)
 
 ## Problem
@@ -46,11 +46,14 @@ buildCallGraph (simplified — reads scope_resolution instead of heuristics)
 | `source_name` | TEXT NULL | Original name at source (for aliasing) |
 | `line_start` | INTEGER NOT NULL | Scope visibility begins (1-indexed) |
 | `line_end` | INTEGER NOT NULL | Scope visibility ends |
-| `byte_start` | INTEGER NULL | Optional: block-scoped precision |
-| `byte_end` | INTEGER NULL | Optional: block-scoped precision |
+| `scope_depth` | INTEGER NOT NULL DEFAULT 0 | Nesting depth (0 = file-level, 1 = function, 2 = block inside function, etc.) |
+| `byte_start` | INTEGER NULL | Optional: byte-range precision for languages that need it |
+| `byte_end` | INTEGER NULL | Optional: byte-range precision for languages that need it |
+| `first_seen_pass` | INTEGER NOT NULL DEFAULT 0 | Which pass first created this binding (0 = parse time, 1+ = synthetic from resolution) |
 
-Indexes: `(repo_id, file_id, name, line_start)`, `(repo_id, file_id, line_start, line_end)`  
-Unique constraint: `(file_id, name, kind, line_start)`
+Indexes: `(repo_id, file_id, name, line_start)`, `(repo_id, file_id, line_start, line_end)`, `(file_id, scope_depth)`
+
+No unique constraint. Correctness comes from the delete-then-insert strategy per file (see Reindex Compatibility).
 
 #### `scope_resolution` (resolution pass — mutable, rebuildable)
 
@@ -63,7 +66,7 @@ Unique constraint: `(file_id, name, kind, line_start)`
 | `resolved_at_pass` | INTEGER NOT NULL | Which resolution pass produced this (1=direct, 2=re-export chain, etc.) |
 | `confidence` | REAL NOT NULL DEFAULT 1.0 | Resolution confidence |
 
-Indexes: `(binding_id)`, `(resolved_symbol_id)`, `(status)`
+Indexes: `(binding_id)`, `(resolved_symbol_id)`, `(status)`, `(resolved_at_pass)`
 
 ### kind/origin Value Space
 
@@ -98,6 +101,8 @@ Indexes: `(binding_id)`, `(resolved_symbol_id)`, `(status)`
 | `named_import` | `external_package` | `from zod import z` |
 | `from_import` | `external_file` | `import module` |
 | `wildcard_import` | `external_file` | `from module import *` |
+| `wildcard_import` | `external_package` | `from numpy import *` (not expanded, marked unresolved) |
+| `re_export` | `external_file` | `__all__ = ['foo']; foo = imported.foo` |
 | `declaration` | `local` | `def foo():`, `class Foo:` |
 | `parameter` | `local` | `def foo(bar):` |
 | `assignment` | `local` | `x = 1` |
@@ -111,6 +116,7 @@ Indexes: `(binding_id)`, `(resolved_symbol_id)`, `(status)`
 | `named_import` | `external_package` | `import "fmt"` |
 | `named_import` | `internal_package` | `import "./pkg"` |
 | `dot_import` | `external_package` | `import . "fmt"` |
+| `dot_import` | `internal_package` | `import . "./pkg"` |
 | `declaration` | `local` | `func foo()` |
 | `receiver_param` | `local` | `func (r *Receiver) foo()` |
 | `type_declaration` | `local` | `type Foo struct` |
@@ -143,13 +149,15 @@ Indexes: `(binding_id)`, `(resolved_symbol_id)`, `(status)`
 | `element_id` | `local` | `<div id="app">` |
 | `css_class` | `local` | `<div class="container">` |
 | `script_src` | `external_file` | `<script src="./app.js">` |
-| `inline_script` | `local` | `<script>...</script>` → delegates to JS scope builder |
+| `inline_script` | `local` | `<script>...</script>` → **v1: no scope bindings generated** |
+
+**HTML v1 limitation:** Inline scripts have fundamentally different scope semantics than module files (no import/export, potentially multiple scripts per file with separate scopes, execution ordering). For v1, inline scripts produce no scope bindings. This can be addressed in a follow-up with a dedicated inline-script scope builder that handles `window.foo = ...` assignments and script ordering.
 
 ## Multi-Pass Resolution
 
 ### Pass 1 — Parse all files, build scope tables
 
-Process all files in any order. For each file, extract bindings but leave `source_file_id` NULL for imports. All bindings start as `status = 'unresolved'`.
+Process all files in any order. For each file, extract bindings but leave `source_file_id` NULL for imports. All bindings start as `status = 'unresolved'`. Each binding records its `scope_depth` — 0 for file-level (imports, top-level declarations), 1 for function body, 2 for nested blocks, etc. This enables innermost-scope resolution.
 
 ### Pass 2 — Direct resolution
 
@@ -168,6 +176,10 @@ Fixed-point iteration (runs until no new bindings are resolved):
 - `kind = 'namespace_import'` (JS) → create synthetic bindings for the source file's exported symbols, prefixed with the namespace name.
 
 In practice, most repos need 2-3 iterations. A maximum of 10 iterations prevents infinite loops from circular re-exports.
+
+**Convergence tracking:** After each iteration, the resolver counts how many new bindings were resolved. If the cap is hit without convergence, a warning is logged with the count and binding IDs of unresolved re-export chains. The health check surfaces these as `resolution_health` diagnostics, showing bindings with `resolved_at_pass >= 5`.
+
+**Wildcard expansion cap:** A maximum of 50 synthetic bindings per wildcard expansion. If exceeded, the remaining symbols are left unexpanded and a diagnostic warning is logged. Wildcard imports with `origin = 'external_package'` (e.g., `from numpy import *`) are marked `status = 'unresolved'` and never expanded — the exports can't be enumerated from the AST.
 
 ## Scope Builder Architecture
 
@@ -199,6 +211,7 @@ Output format:
   sourceName: string|null,    // original name at source (for aliased imports)
   lineStart: number,
   lineEnd: number,
+  scopeDepth: number,   // 0 = file-level, 1+ = nested
   byteStart: number|null,
   byteEnd: number|null,
 }
@@ -210,11 +223,11 @@ The orchestrator (`index.js`) picks the right builder based on file extension us
 
 ### 1. Schema Migration
 
-Add `file_scope_bindings` and `scope_resolution` tables to the schema file. Bump `user_version` to 7.
+Add `file_scope_bindings` and `scope_resolution` tables to the schema file. Bump `user_version` to 7. Add index on `scope_resolution(resolved_at_pass)` for convergence diagnostics.
 
 ### 2. parsePhase in incremental-indexer.js
 
-After `extractSymbolsFromFile` runs on each file, also run `buildScopeBindings`. Batch-insert scope bindings alongside symbols.
+After `extractSymbolsFromFile` runs on each file, also run `buildScopeBindings`. Scope bindings are inserted using a **delete-then-insert strategy**: `DELETE FROM file_scope_bindings WHERE file_id = ?` then bulk insert all bindings for that file. This avoids stale-row accumulation from shifted line numbers after edits and eliminates the need for upsert-by-unique-key.
 
 ### 3. derivedPhase in incremental-indexer.js
 
@@ -222,18 +235,19 @@ After `buildImportEdges`, add a new `resolveScopeBindings` step that runs the mu
 
 ### 4. buildCallGraph in call-graph-impl.js
 
-Replace the `resolveCallee` heuristic cascade with a lookup:
+Replace the `resolveCallee` heuristic cascade with an innermost-scope lookup:
 
 ```js
 function resolveCallee(calleeName, callerSym, receiver, fileId) {
-  // Primary: look up in scope_resolution
+  // Primary: look up in scope_resolution, prefer innermost scope
   const binding = db.prepare(`
-    SELECT sr.resolved_symbol_id, sr.confidence, sr.status
+    SELECT sr.resolved_symbol_id, sr.confidence, sr.status, fsb.scope_depth
     FROM file_scope_bindings fsb
     JOIN scope_resolution sr ON sr.binding_id = fsb.id
     WHERE fsb.file_id = ? AND fsb.name = ? AND fsb.line_start <= ? AND fsb.line_end >= ?
       AND sr.status = 'resolved_internal'
-    ORDER BY sr.confidence DESC LIMIT 1
+    ORDER BY fsb.scope_depth DESC, sr.confidence DESC
+    LIMIT 1
   `).get(fileId, calleeName, callerSym.start_line, callerSym.start_line);
   
   if (binding) {
@@ -245,13 +259,15 @@ function resolveCallee(calleeName, callerSym, receiver, fileId) {
 }
 ```
 
+The `ORDER BY scope_depth DESC` ensures that for block-scoped bindings (e.g., `let` inside an `if`), the innermost scope wins over a file-level binding with the same name. This handles JS `let`/`const`, Python list comprehension variables, and Rust block-scoped `let` bindings correctly.
+
 The heuristic cascade is preserved as a fallback, not deleted. Dynamic calls, complex expressions, and language features not yet covered by scope builders will still be resolved heuristically.
 
 ### 5. Reindex Compatibility
 
 - **Full reindex:** Builds scope tables from scratch, runs all resolution passes.
-- **Incremental reindex:** Rebuilds scope tables for changed files only, re-runs resolution for affected files and their importers.
-- **Force-derived flag:** New `--force-derived` option triggers re-resolution without re-parsing. Useful after scope builder improvements.
+- **Incremental reindex:** For changed files: `DELETE FROM file_scope_bindings WHERE file_id = ?`, re-parse, bulk insert new bindings. Then re-run resolution for affected files and their importers (files that import the changed files). The import graph (already built by `buildImportEdges`) identifies which files need re-resolution.
+- **Force-derived flag:** New `--force-derived` option triggers re-resolution without re-parsing. Useful after scope builder improvements. Deletes all `scope_resolution` rows and re-runs the multi-pass resolver.
 
 ## Implementation Order
 
@@ -275,3 +291,16 @@ The heuristic cascade is preserved as a fallback, not deleted. Dynamic calls, co
 - Resolution confidence ≥ 0.9 for >80% of resolved edges (compared to heuristic cascade's current ~60%)
 - No regression in parse time (scope building should add <20% overhead since it walks the same tree)
 - Incremental reindex correctly updates scope tables for changed files
+
+**Measurement harness:** The confidence comparison is measured by:
+1. Run a full reindex on PiMemoryExtension itself
+2. Query `SELECT confidence FROM code_calls WHERE callee_symbol_id IS NOT NULL` — this is the resolved-edge baseline
+3. After the scope-aware rewrite, run the same query and compare the confidence distribution
+4. The `resolved_at_pass` field on `scope_resolution` provides per-binding diagnostics
+5. The `resolution_health` check surfaces any bindings that didn't converge
+
+## Known Limitations (v1)
+
+- **HTML inline scripts** produce no scope bindings. Inline `<script>` blocks have fundamentally different scope semantics (no module system, multiple scripts per file, execution ordering). Deferred to a follow-up.
+- **Wildcard imports from external packages** (`from numpy import *`) are marked `unresolved` and not expanded. Only wildcard imports from tracked internal files are expanded (with a 50-symbol cap).
+- **Dynamic `import()` calls** produce `status = 'unresolved'` bindings. Static analysis cannot determine the target at parse time.
