@@ -288,6 +288,38 @@ Run it yourself:
 node bench/bench-tokens.js
 ```
 
+## Paired Memory Benchmark
+
+Measures whether memory actually helps — runs the same task twice: once with LaPis disabled (memory-off), once with LaPis active (memory-on). Graded on factual accuracy (expected facts matched via substring aliases) and token efficiency.
+
+```bash
+npm run bench:pi-paired
+```
+
+### Latest Results
+
+| Metric | Memory Off | Memory On | Delta |
+|--------|-----------|-----------|-------|
+| Facts correct | 18/18 | 18/18 | ✅ Tie |
+| Active tokens | 36,824 | 10,419 | **−71.7%** |
+| Wall time | ~211s | ~82s | **−61%** |
+
+#### Per-category breakdown
+
+| Category | Facts (off → on) | Tokens (off → on) | Savings |
+|----------|-------------------|---------------------|---------|
+| prior-decision | 3/3 → 3/3 | 8,948 → 1,572 | 82.4% |
+| bug-history | 3/3 → 3/3 | 6,803 → 1,300 | 80.9% |
+| staleness | 3/3 → 3/3 | 7,311 → 691 | 90.5% |
+| navigation | 3/3 → 3/3 | 11,346 → 3,893 | 65.7% |
+| negative-control | 6/6 → 6/6 | 2,416 → 2,963 | −22.6% |
+
+**Key findings:**
+
+- Memory-on achieves **equal accuracy with 72% fewer tokens** on memory-dependent tasks (prior-decision, bug-history, staleness, navigation)
+- Negative controls (tasks where memory shouldn't help) show expected neutral-to-slight overhead — memory doesn't hurt but doesn't help for pure code-reading tasks
+- Staleness detection sees the biggest win (90.5% token savings) — the agent recovers the right reindex action from memory instead of re-reading docs
+
 ## License
 
 MIT
