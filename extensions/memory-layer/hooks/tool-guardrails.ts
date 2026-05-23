@@ -1,6 +1,7 @@
 import { isCodeFile, state } from '../state';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { getKnownRepos } from '../host/project-detector';
+import { isTargetedSymbolLookup } from './guardrail-utils';
 import path from 'node:path';
 
 const CONFIG_FILENAMES = new Set([
@@ -85,6 +86,9 @@ export function registerToolGuardrails(pi: ExtensionAPI, deps: GuardrailsDeps) {
           repos.find((r) => resolvedCwd.startsWith(path.resolve(r.path))) ||
           repos.find((r) => deps.state.currentProject?.toLowerCase() === r.name.toLowerCase());
         if (matchedRepo) {
+          // Allow targeted single-symbol lookups through (e.g., grep -rn "rankObservations" src/)
+          if (isTargetedSymbolLookup(cmd)) return;
+
           const searchHint = CODE_PATH_HINT_RE.test(cmd) ? 'Code search' : 'Raw repository search';
           return {
             block: true,
