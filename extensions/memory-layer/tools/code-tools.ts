@@ -1,5 +1,5 @@
 import { mem, memStreaming } from '../host/memory-client';
-import { normalizeToolResult, stringifyToolError, toolTextResult } from './tool-result';
+import { normalizeToolResult, stringifyToolError, toolProgressResult, toolTextResult } from './tool-result';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from './schema';
 import { formatCodeResult } from './format-code-result';
@@ -195,7 +195,7 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
           const ui = (ctx as any)?.ui;
           const result = await deps.memStreaming(cmd, args, (msg: string) => {
             try {
-              onUpdate({ type: 'progress', message: msg });
+              onUpdate(toolProgressResult(msg, { progress: true }));
             } catch {}
             if (ui?.setStatus) {
               try {

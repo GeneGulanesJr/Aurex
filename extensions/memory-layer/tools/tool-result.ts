@@ -12,6 +12,10 @@ export function toolTextResult(text: unknown, details: unknown = {}, isError = f
   });
 }
 
+export function toolProgressResult(message: unknown, details: unknown = {}): ToolTextResult {
+  return toolTextResult(stringifyToolText(message), details, false);
+}
+
 export function normalizeToolResult(result: unknown, fallbackText = 'No output.'): ToolTextResult {
   if (!result || typeof result !== 'object') {
     return {

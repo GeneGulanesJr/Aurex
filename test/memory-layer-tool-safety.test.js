@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { normalizeToolResult, toolTextResult } from '../extensions/memory-layer/tools/tool-result.ts';
+import {
+  normalizeToolResult,
+  toolProgressResult,
+  toolTextResult,
+} from '../extensions/memory-layer/tools/tool-result.ts';
 import { registerCodeTools } from '../extensions/memory-layer/tools/code-tools.ts';
 import { registerDocTools } from '../extensions/memory-layer/tools/doc-tools.ts';
 
@@ -37,6 +41,27 @@ describe('memory tool renderer safety', () => {
     expectRenderable(normalizeToolResult({}));
     expectRenderable(normalizeToolResult({ content: undefined, details: undefined }));
     expectRenderable(toolTextResult(null));
+    expectRenderable(toolProgressResult('Indexing src/app.ts'));
+  });
+
+  it('keeps memory-code streaming updates renderable during indexing', async () => {
+    const onUpdate = vi.fn();
+    const tool = captureTool(registerCodeTools, {
+      mem: vi.fn(),
+      memStreaming: vi.fn(async (_cmd, _args, emit) => {
+        emit('Indexing src/app.ts');
+        return { name: 'app', file_count: 1, symbol_count: 2 };
+      }),
+      getKnownRepos: vi.fn(),
+      formatCodeResult: vi.fn(() => 'Indexed app.'),
+      invalidateRepoCache: vi.fn(),
+    });
+
+    const result = await tool.execute('id', { mode: 'reindex-repo', path: '.', name: 'app' }, undefined, onUpdate, {});
+
+    expectRenderable(result);
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+    expectRenderable(onUpdate.mock.calls[0][0]);
   });
 
   it.each([
