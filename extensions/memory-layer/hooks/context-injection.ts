@@ -4,6 +4,7 @@ import { getKnownRepos, isRepoStale } from '../host/project-detector';
 import { mem } from '../host/memory-client';
 import { CONTEXT } from '../../../../constants';
 import path from 'node:path';
+import fs from 'node:fs';
 
 interface ContextDeps {
   state: typeof state;
@@ -69,7 +70,40 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
     const stats = effectiveContext.stats as { total_memories: number; total_personal: number };
     const topic = effectiveContext.topic as string | null;
 
+    // Resolve repo staleness early (needed for lightweight path decision)
+    const repos = await deps.getKnownRepos();
+    const resolvedCwd = path.resolve(ctx.cwd);
+    const cwdRepo =
+      repos.find((r) => resolvedCwd.startsWith(path.resolve(r.path))) ||
+      repos.find((r) => r.name.toLowerCase() === deps.state.currentProject?.toLowerCase());
+    const isStale = cwdRepo ? deps.isRepoStale(cwdRepo) : false;
+
+    // Lightweight path: stale index + no observations + no personal prefs
+    // Emit only the stale guidance instead of a full context block
     if (observations.length === 0 && personal.length === 0 && !crossProjectResult) {
+      if (isStale && cwdRepo) {
+        deps.state.hasInjectedContext = true;
+        const lines: string[] = [
+          '## Memory Context (auto-loaded)',
+          '',
+          `Project: **${deps.state.currentProject}** | ${stats?.total_memories || 0} memories | ${stats?.total_personal || 0} personal preferences`,
+          '',
+          CONTEXT.STALE_GUIDANCE.replace('{repo}', cwdRepo.name),
+          '',
+          'Use `memory-save`, `memory-search`, and `memory-get` tools to interact with memory.',
+        ];
+
+        // Extension location hint
+        appendExtensionHint(lines, ctx.cwd);
+
+        return {
+          message: {
+            customType: 'memory-context',
+            content: lines.join('\n'),
+            display: false,
+          },
+        };
+      }
       return;
     }
 
@@ -82,72 +116,84 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
     const topicNote = topic ? ` | topic: ${topic}` : '';
     const lines: string[] = ['## Memory Context (auto-loaded)', ''];
 
-    if (isNewProject) {
+    // Lightweight mode: stale index + no relevant observations + no personal prefs
+    const useLightweight = isStale && effectiveObservations.length === 0 && personal.length === 0;
+
+    if (useLightweight) {
       lines.push(
-        `Project: **${deps.state.currentProject}** | 🆕 new project | ${effectiveStats?.total_memories || 0} total memories across all projects | ${stats?.total_personal || 0} personal preferences`,
+        `Project: **${deps.state.currentProject}** | ${stats?.total_memories || 0} memories | ${stats?.total_personal || 0} personal preferences`,
       );
       lines.push('');
-
-      const byProject = new Map<string, any[]>();
-      for (const o of effectiveObservations) {
-        const proj = o.project || 'unknown';
-        if (!byProject.has(proj)) {
-          byProject.set(proj, []);
-        }
-        byProject.get(proj)!.push(o);
-      }
-
-      if (byProject.size > 0) {
-        lines.push('### 🔗 Related memories from other projects');
-        for (const [proj, mems] of byProject) {
-          lines.push(`**${proj}** (${mems.length} memories)`);
-          for (const m of mems.slice(0, 5)) {
-            const trust = m.trust_score < 0.5 ? ' ⚠️' : m.trust_score < 0.7 ? ' 🔎' : '';
-            lines.push(`- [${m.type}] ${m.title}${trust}`);
-          }
-        }
-        lines.push('');
-      }
+      lines.push(CONTEXT.STALE_GUIDANCE.replace('{repo}', cwdRepo!.name));
+      lines.push('');
+      lines.push('Use `memory-save`, `memory-search`, and `memory-get` tools to interact with memory.');
     } else {
-      lines.push(
-        `Project: **${deps.state.currentProject}** | ${stats?.total_memories || 0} memories | ${stats?.total_personal || 0} personal preferences${topicNote}`,
-      );
-      lines.push('');
+      // Full context (existing behavior)
+      if (isNewProject) {
+        lines.push(
+          `Project: **${deps.state.currentProject}** | 🆕 new project | ${effectiveStats?.total_memories || 0} total memories across all projects | ${stats?.total_personal || 0} personal preferences`,
+        );
+        lines.push('');
 
-      if (effectiveObservations.length > 0) {
-        lines.push('### Recent Relevant Memory');
+        const byProject = new Map<string, any[]>();
         for (const o of effectiveObservations) {
-          const trust = o.trust_score < 0.5 ? '⚠️' : o.trust_score < 0.8 ? '🔎' : '';
-          lines.push(`- [${o.type}] ${o.title} ${trust}`);
+          const proj = o.project || 'unknown';
+          if (!byProject.has(proj)) {
+            byProject.set(proj, []);
+          }
+          byProject.get(proj)!.push(o);
+        }
+
+        if (byProject.size > 0) {
+          lines.push('### 🔗 Related memories from other projects');
+          for (const [proj, mems] of byProject) {
+            lines.push(`**${proj}** (${mems.length} memories)`);
+            for (const m of mems.slice(0, 5)) {
+              const trust = m.trust_score < 0.5 ? ' ⚠️' : m.trust_score < 0.7 ? ' 🔎' : '';
+              lines.push(`- [${m.type}] ${m.title}${trust}`);
+            }
+          }
+          lines.push('');
+        }
+      } else {
+        lines.push(
+          `Project: **${deps.state.currentProject}** | ${stats?.total_memories || 0} memories | ${stats?.total_personal || 0} personal preferences${topicNote}`,
+        );
+        lines.push('');
+
+        if (effectiveObservations.length > 0) {
+          lines.push('### Recent Relevant Memory');
+          for (const o of effectiveObservations) {
+            const trust = o.trust_score < 0.5 ? '⚠️' : o.trust_score < 0.8 ? '🔎' : '';
+            lines.push(`- [${o.type}] ${o.title} ${trust}`);
+          }
+          lines.push('');
+        }
+      }
+
+      if (personal.length > 0) {
+        lines.push('### Your Preferences (cross-project)');
+        for (const p of personal.slice(0, 5)) {
+          lines.push(`- ${p.title}`);
         }
         lines.push('');
       }
-    }
 
-    if (personal.length > 0) {
-      lines.push('### Your Preferences (cross-project)');
-      for (const p of personal.slice(0, 5)) {
-        lines.push(`- ${p.title}`);
+      lines.push('Use `memory-save`, `memory-search`, and `memory-get` tools to interact with memory.');
+
+      if (!cwdRepo) {
+        lines.push('');
+        lines.push(
+          `⚠️ **Code not indexed:** Project "${deps.state.currentProject}" has no code index yet. Run \`memory-code index-repo --path ${ctx.cwd} --name ${deps.state.currentProject}\` to enable memory-code analysis.`,
+        );
+      } else if (isStale) {
+        lines.push('');
+        lines.push(CONTEXT.STALE_GUIDANCE.replace('{repo}', cwdRepo.name));
       }
-      lines.push('');
     }
 
-    lines.push('Use `memory-save`, `memory-search`, and `memory-get` tools to interact with memory.');
-
-    const repos = await deps.getKnownRepos();
-    const resolvedCwd = path.resolve(ctx.cwd);
-    const cwdRepo =
-      repos.find((r) => resolvedCwd.startsWith(path.resolve(r.path))) ||
-      repos.find((r) => r.name.toLowerCase() === deps.state.currentProject?.toLowerCase());
-    if (!cwdRepo) {
-      lines.push('');
-      lines.push(
-        `⚠️ **Code not indexed:** Project \"${deps.state.currentProject}\" has no code index yet. Run \`memory-code index-repo --path ${ctx.cwd} --name ${deps.state.currentProject}\` to enable memory-code analysis.`,
-      );
-    } else if (deps.isRepoStale(cwdRepo)) {
-      lines.push('');
-      lines.push(CONTEXT.STALE_GUIDANCE.replace('{repo}', cwdRepo.name));
-    }
+    // Extension location hint
+    appendExtensionHint(lines, ctx.cwd);
 
     return {
       message: {
@@ -157,6 +203,24 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
       },
     };
   });
+}
+
+/**
+ * Append a one-line hint about the extension source location when the project
+ * has a local extensions/memory-layer/ directory. This prevents the LLM from
+ * searching ~/.pi/agent/ paths when looking for extension code.
+ */
+function appendExtensionHint(lines: string[], cwd: string) {
+  const extensionDir = path.join(cwd, 'extensions', 'memory-layer');
+  try {
+    const extStat = fs.statSync(extensionDir);
+    if (extStat.isDirectory()) {
+      lines.push('');
+      lines.push('📂 Extension source: `extensions/memory-layer/` in this project repo.');
+    }
+  } catch {
+    // No local extension dir — skip hint
+  }
 }
 
 export function registerContextReminder(pi: ExtensionAPI, deps: ContextDeps) {
