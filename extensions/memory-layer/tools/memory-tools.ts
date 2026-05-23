@@ -1,8 +1,9 @@
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
-import { state, trustIcon } from '../state';
-import { Type } from './schema';
 import { mem, memCmd } from '../host/memory-client';
+import { state, trustIcon } from '../state';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import { Type } from './schema';
 import { normalizeToolResult } from './tool-result';
+import { renderCompactToolResult } from './render';
 
 interface MemoryDeps {
   state: typeof state;
@@ -45,6 +46,7 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
       ),
       force: Type.Optional(Type.Boolean({ description: 'Force save even if duplicate detected', default: false })),
     }),
+    renderResult: renderCompactToolResult,
     async execute(_id, params, _signal, _onUpdate, _ctx) {
       try {
         deps.state.memoriesSavedThisSession++;
@@ -120,6 +122,7 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
       scope: Type.Optional(Type.String({ description: 'Filter by scope: project, personal' })),
       limit: Type.Optional(Type.Number({ description: 'Max results (default 10)', default: 10 })),
     }),
+    renderResult: renderCompactToolResult,
     async execute(_id, params, _signal, _onUpdate, _ctx) {
       try {
         let result = deps.state.currentProject
@@ -179,6 +182,7 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
     parameters: Type.Object({
       id: Type.Number({ description: 'Memory observation ID' }),
     }),
+    renderResult: renderCompactToolResult,
     async execute(_id, params, _signal, _onUpdate, _ctx) {
       try {
         const result = await deps.mem('get', { id: String(params.id) });
@@ -224,6 +228,7 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
       scope: Type.Optional(Type.String({ description: 'New scope: project or personal' })),
       topic_key: Type.Optional(Type.String({ description: 'New topic key (optional)' })),
     }),
+    renderResult: renderCompactToolResult,
     async execute(_id, params, _signal, _onUpdate, _ctx) {
       try {
         const args: Record<string, string> = { id: String(params.id) };
@@ -276,6 +281,7 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
     parameters: Type.Object({
       id: Type.Number({ description: 'Memory observation ID to delete' }),
     }),
+    renderResult: renderCompactToolResult,
     async execute(_id, params, _signal, _onUpdate, _ctx) {
       try {
         const result = await deps.mem('delete', { id: String(params.id) });
@@ -313,6 +319,7 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
     parameters: Type.Object({
       id: Type.Number({ description: 'Memory ID to find related memories for' }),
     }),
+    renderResult: renderCompactToolResult,
     async execute(_id, params, _signal, _onUpdate, _ctx) {
       try {
         const result = await deps.mem('related', { id: String(params.id) });
@@ -355,6 +362,7 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
         Type.Boolean({ description: 'Load deeper (up to 3x more memories). Default false.', default: false }),
       ),
     }),
+    renderResult: renderCompactToolResult,
     async execute(_id, params, _signal, _onUpdate, _ctx) {
       try {
         if (!deps.state.currentProject) {
@@ -420,6 +428,7 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
     parameters: Type.Object({
       repo: Type.String({ description: 'Repository name (must be indexed)' }),
     }),
+    renderResult: renderCompactToolResult,
     async execute(_id, params, _signal, _onUpdate, _ctx) {
       try {
         const result = await deps.mem('sync-code-trust', {

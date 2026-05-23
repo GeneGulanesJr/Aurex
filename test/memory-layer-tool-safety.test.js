@@ -6,6 +6,7 @@ import {
 } from '../extensions/memory-layer/tools/tool-result.ts';
 import { registerCodeTools } from '../extensions/memory-layer/tools/code-tools.ts';
 import { registerDocTools } from '../extensions/memory-layer/tools/doc-tools.ts';
+import { renderCompactToolResult } from '../extensions/memory-layer/tools/render.ts';
 
 function captureTool(register, deps) {
   let registered;
@@ -36,6 +37,22 @@ function expectRenderable(result) {
 }
 
 describe('memory tool renderer safety', () => {
+  it('keeps full tool content while limiting terminal result previews', () => {
+    const text = Array.from({ length: 20 }, (_, i) => `line ${i + 1}`).join('\n');
+    const result = normalizeToolResult({ content: [{ type: 'text', text }], details: { full: true } });
+    const theme = { fg: (_name, value) => value };
+
+    const collapsed = renderCompactToolResult(result, { expanded: false }, theme).render(120).join('\n');
+    const expanded = renderCompactToolResult(result, { expanded: true }, theme).render(120).join('\n');
+
+    expect(result.content[0].text).toBe(text);
+    expect(collapsed).toContain('line 1');
+    expect(collapsed).toContain('line 2');
+    expect(collapsed).not.toContain('line 3');
+    expect(collapsed).toContain('18 more terminal lines hidden');
+    expect(expanded).toContain('line 20');
+  });
+
   it('normalizes malformed results into Pi-renderable text results', () => {
     expectRenderable(normalizeToolResult(undefined));
     expectRenderable(normalizeToolResult({}));

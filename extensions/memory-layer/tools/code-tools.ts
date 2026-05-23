@@ -3,7 +3,8 @@ import { normalizeToolResult, stringifyToolError, toolProgressResult, toolTextRe
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from './schema';
 import { formatCodeResult } from './format-code-result';
-import { getKnownRepos, invalidateRepoCache } from '../host/project-detector';
+import { getKnownRepos } from '../host/project-detector';
+import { renderCompactToolResult } from './render';
 
 interface CodeDeps {
   mem: typeof mem;
@@ -90,6 +91,7 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
         Type.String({ description: 'JSON layer rules config (or use .pimemory-layers.jsonc file)' }),
       ),
     }),
+    renderResult: renderCompactToolResult,
     async execute(_id, params, _signal, onUpdate, ctx) {
       params = params ?? {};
       try {

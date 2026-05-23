@@ -4,6 +4,7 @@ import { Type } from './schema';
 import { formatDocResult } from './format-doc-result';
 import { getKnownRepos } from '../host/project-detector';
 import { mem } from '../host/memory-client';
+import { renderCompactToolResult } from './render';
 
 interface DocDeps {
   mem: typeof mem;
@@ -64,6 +65,7 @@ export function registerDocTools(pi: ExtensionAPI, deps: DocDeps) {
       name: Type.Optional(Type.String({ description: 'Doc repo name (required for index-docs mode)' })),
       ignore: Type.Optional(Type.String({ description: 'Glob pattern to ignore during doc indexing' })),
     }),
+    renderResult: renderCompactToolResult,
     async execute(_id, params, _signal, _onUpdate, _ctx) {
       params = params ?? {};
       try {
