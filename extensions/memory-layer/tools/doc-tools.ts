@@ -16,15 +16,11 @@ export function registerDocTools(pi: ExtensionAPI, deps: DocDeps) {
   pi.registerTool({
     name: 'memory-doc',
     label: 'Doc Index',
-    description:
-      'Search and query indexed documentation — full-text search, outlines, backlinks, broken links, glossary terms, tutorial paths, code examples, and stale page detection. ' +
-      'Requires docs to be indexed first (use mode `index-docs`). ' +
-      'Modes: search, outline, backlinks, broken-links, glossary, tutorial-path, code-examples, orphans, coverage, stale-pages, duplicates, index-docs, reindex-docs.',
+    description: 'Query indexed docs. Use mode search, outline, backlinks, coverage, index-docs, or reindex-docs.',
     parameters: Type.Object({
       mode: Type.Optional(
         Type.String({
-          description:
-            'Query mode: search|outline|backlinks|broken-links|glossary|tutorial-path|code-examples|orphans|coverage|stale-pages|duplicates|index-docs|reindex-docs',
+          description: 'Query mode',
           enum: [
             'search',
             'outline',
@@ -42,28 +38,24 @@ export function registerDocTools(pi: ExtensionAPI, deps: DocDeps) {
           ],
         }),
       ),
-      repo: Type.Optional(
-        Type.String({ description: 'Indexed doc repo name (required for query modes, optional for index-docs)' }),
-      ),
-      query: Type.Optional(Type.String({ description: 'Search query (required for search, code-examples)' })),
-      file: Type.Optional(Type.String({ description: 'Doc file path (optional for outline)' })),
-      doc_path: Type.Optional(Type.String({ description: 'Doc file path (for backlinks, required)' })),
-      term: Type.Optional(Type.String({ description: 'Glossary term to look up (optional)' })),
-      section: Type.Optional(Type.Number({ description: 'Section ID for tutorial-path' })),
-      level: Type.Optional(Type.Number({ description: 'Heading level filter for search' })),
+      repo: Type.Optional(Type.String({ description: 'Indexed doc repo name' })),
+      query: Type.Optional(Type.String({ description: 'Search query' })),
+      file: Type.Optional(Type.String({ description: 'Doc file path' })),
+      doc_path: Type.Optional(Type.String({ description: 'Doc path for backlinks' })),
+      term: Type.Optional(Type.String({ description: 'Glossary term' })),
+      section: Type.Optional(Type.Number({ description: 'Section ID' })),
+      level: Type.Optional(Type.Number({ description: 'Heading level' })),
       role: Type.Optional(
         Type.String({
-          description: 'Role filter for search: concept, tutorial, how_to, api, example, troubleshooting, faq',
+          description: 'Doc role',
         }),
       ),
-      lang: Type.Optional(Type.String({ description: "Language filter for code-examples (e.g. 'js', 'python')" })),
-      include_same_doc: Type.Optional(
-        Type.Boolean({ description: 'Include intra-document links when finding orphans (default: false)' }),
-      ),
-      doc_repo: Type.Optional(Type.String({ description: 'Code repo name for coverage mode. Defaults to repo.' })),
-      path: Type.Optional(Type.String({ description: 'Local path to docs directory (required for index-docs mode)' })),
-      name: Type.Optional(Type.String({ description: 'Doc repo name (required for index-docs mode)' })),
-      ignore: Type.Optional(Type.String({ description: 'Glob pattern to ignore during doc indexing' })),
+      lang: Type.Optional(Type.String({ description: 'Code language' })),
+      include_same_doc: Type.Optional(Type.Boolean({ description: 'Include intra-doc links' })),
+      doc_repo: Type.Optional(Type.String({ description: 'Code repo for coverage' })),
+      path: Type.Optional(Type.String({ description: 'Local docs path' })),
+      name: Type.Optional(Type.String({ description: 'Doc repo name' })),
+      ignore: Type.Optional(Type.String({ description: 'Ignore glob' })),
     }),
     renderResult: renderCompactToolResult,
     async execute(_id, params, _signal, _onUpdate, _ctx) {

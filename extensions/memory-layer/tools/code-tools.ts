@@ -19,15 +19,11 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
     name: 'memory-code',
     label: 'Code Analysis',
     description:
-      'Analyze code in indexed repos — import graphs, call hierarchies, blast radius, dead code, complexity, hotspots, cycles, ' +
-      'importance, coupling, extraction candidates, class hierarchy, file outlines, churn, and signal chains. ' +
-      'Requires the repo to be indexed first (use mode `index-repo`). ' +
-      'Modes: callers, callees, blast-radius, dead-code, complexity, deps, outline, churn, hotspots, cycles, importance, coupling, extractable, hierarchy, signal-chains, layer-violations, health, index-repo, reindex-repo.',
+      'Query indexed code. Use mode search, outline, callers, callees, deps, health, index-repo, or reindex-repo.',
     parameters: Type.Object({
       mode: Type.Optional(
         Type.String({
-          description:
-            'Analysis mode: search|callers|callees|blast-radius|dead-code|complexity|deps|outline|churn|hotspots|cycles|importance|coupling|extractable|hierarchy|signal-chains|layer-violations|health|index-repo|reindex-repo',
+          description: 'Analysis mode',
           enum: [
             'search',
             'callers',
@@ -52,49 +48,30 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
           ],
         }),
       ),
-      repo: Type.Optional(
-        Type.String({ description: 'Indexed repo name (required for analysis modes, optional for index-repo)' }),
-      ),
+      repo: Type.Optional(Type.String({ description: 'Indexed repo name' })),
       symbol: Type.Optional(
         Type.String({
-          description:
-            'Symbol name (required for callers, callees, blast-radius, complexity; fallback query for search)',
+          description: 'Symbol name',
         }),
       ),
-      query: Type.Optional(Type.String({ description: 'Search query for search mode' })),
-      file: Type.Optional(Type.String({ description: 'File path (required for outline, churn; optional for deps)' })),
-      depth: Type.Optional(Type.Number({ description: 'Graph traversal depth 1-5 (default 3)', default: 3 })),
-      direction: Type.Optional(
-        Type.String({ description: 'Import direction for deps: imports|importers|both', default: 'both' }),
-      ),
-      min_confidence: Type.Optional(
-        Type.Number({ description: 'Min confidence for dead-code (0-1, default 0.5)', default: 0.5 }),
-      ),
-      days: Type.Optional(
-        Type.Number({ description: 'Churn/hotspot lookback window in days (default 90)', default: 90 }),
-      ),
-      refresh: Type.Optional(Type.Boolean({ description: 'Force refresh churn cache', default: false })),
-      top: Type.Optional(Type.Number({ description: 'Max results (default 20)', default: 20 })),
-      scope: Type.Optional(Type.String({ description: "Scope importance to subdirectory (e.g. 'src/core')" })),
-      sort_by: Type.Optional(
-        Type.String({ description: 'Sort coupling by: instability|afferent|efferent', default: 'instability' }),
-      ),
-      min_complexity: Type.Optional(
-        Type.Number({ description: 'Min cyclomatic complexity for extractable (default 5)', default: 5 }),
-      ),
-      min_callers: Type.Optional(
-        Type.Number({ description: 'Min caller files for extractable (default 2)', default: 2 }),
-      ),
-      direction_hier: Type.Optional(
-        Type.String({ description: 'Hierarchy direction: both|ancestors|descendants', default: 'both' }),
-      ),
-      kind: Type.Optional(Type.String({ description: 'Gateway kind: http, cli, or omit for all' })),
-      symbol_chain: Type.Optional(Type.String({ description: 'Trace which signal chain a symbol participates in' })),
-      path: Type.Optional(Type.String({ description: 'Local path to repo directory (required for index-repo mode)' })),
-      name: Type.Optional(Type.String({ description: 'Repo name for indexing (defaults to directory basename)' })),
-      rules: Type.Optional(
-        Type.String({ description: 'JSON layer rules config (or use .pimemory-layers.jsonc file)' }),
-      ),
+      query: Type.Optional(Type.String({ description: 'Search query' })),
+      file: Type.Optional(Type.String({ description: 'File path' })),
+      depth: Type.Optional(Type.Number({ description: 'Depth 1-5', default: 3 })),
+      direction: Type.Optional(Type.String({ description: 'imports|importers|both', default: 'both' })),
+      min_confidence: Type.Optional(Type.Number({ description: 'Min confidence', default: 0.5 })),
+      days: Type.Optional(Type.Number({ description: 'Lookback days', default: 90 })),
+      refresh: Type.Optional(Type.Boolean({ description: 'Refresh cache', default: false })),
+      top: Type.Optional(Type.Number({ description: 'Max results', default: 20 })),
+      scope: Type.Optional(Type.String({ description: 'Subdirectory scope' })),
+      sort_by: Type.Optional(Type.String({ description: 'instability|afferent|efferent', default: 'instability' })),
+      min_complexity: Type.Optional(Type.Number({ description: 'Min complexity', default: 5 })),
+      min_callers: Type.Optional(Type.Number({ description: 'Min caller files', default: 2 })),
+      direction_hier: Type.Optional(Type.String({ description: 'both|ancestors|descendants', default: 'both' })),
+      kind: Type.Optional(Type.String({ description: 'Gateway kind' })),
+      symbol_chain: Type.Optional(Type.String({ description: 'Signal-chain symbol' })),
+      path: Type.Optional(Type.String({ description: 'Local repo path' })),
+      name: Type.Optional(Type.String({ description: 'Repo name' })),
+      rules: Type.Optional(Type.String({ description: 'Layer rules JSON' })),
     }),
     renderResult: renderCompactToolResult,
     async execute(_id, params, _signal, onUpdate, ctx) {

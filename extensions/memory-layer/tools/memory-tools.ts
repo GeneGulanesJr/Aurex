@@ -16,35 +16,28 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
   pi.registerTool({
     name: 'memory-save',
     label: 'Save Memory',
-    description:
-      'Save an observation to persistent memory. Use for decisions, bugfixes, architecture constraints, patterns, and discoveries. ' +
-      'Automatically checks for duplicates. Content should use **What**/**Why**/**Where**/**Learned** format.',
+    description: 'Save persistent memory; checks duplicates. Use What/Why/Where/Learned content.',
     parameters: Type.Object({
-      title: Type.String({
-        description: "Short, searchable title (e.g. 'JWT auth middleware', 'Fixed N+1 in user list')",
-      }),
-      content: Type.String({
-        description: 'Structured content: **What**: ...\\n**Why**: ...\\n**Where**: ...\\n**Learned**: ...',
-      }),
+      title: Type.String({ description: 'Short searchable title' }),
+      content: Type.String({ description: 'What/Why/Where/Learned content' }),
       type: Type.Optional(
         Type.String({
-          description:
-            'Observation type: decision, bugfix, architecture, pattern, discovery, config, preference, learning',
+          description: 'decision|bugfix|architecture|pattern|discovery|config|preference|learning',
           default: 'manual',
         }),
       ),
       scope: Type.Optional(
         Type.String({
-          description: "Scope: 'project' (default) or 'personal' (cross-project preferences)",
+          description: 'project|personal',
           default: 'project',
         }),
       ),
       topic_key: Type.Optional(
         Type.String({
-          description: "Optional topic key for grouping related observations (e.g. 'auth/jwt-middleware')",
+          description: 'Optional topic key',
         }),
       ),
-      force: Type.Optional(Type.Boolean({ description: 'Force save even if duplicate detected', default: false })),
+      force: Type.Optional(Type.Boolean({ description: 'Bypass duplicate warning', default: false })),
     }),
     renderResult: renderCompactToolResult,
     async execute(_id, params, _signal, _onUpdate, _ctx) {
@@ -108,19 +101,16 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
   pi.registerTool({
     name: 'memory-search',
     label: 'Search Memory',
-    description:
-      'Search persistent memory for past decisions, bugfixes, patterns, and discoveries. ' +
-      'Results are ranked by relevance, recency, trust, and usefulness. ' +
-      'Always search before saving to avoid duplicates.',
+    description: 'Search persistent memory for decisions, bugfixes, patterns, and discoveries.',
     parameters: Type.Object({
-      query: Type.String({ description: 'Search query — matches titles and content' }),
+      query: Type.String({ description: 'Search query' }),
       type: Type.Optional(
         Type.String({
-          description: 'Filter by type: decision, bugfix, architecture, pattern, discovery, config, preference',
+          description: 'Optional type filter',
         }),
       ),
-      scope: Type.Optional(Type.String({ description: 'Filter by scope: project, personal' })),
-      limit: Type.Optional(Type.Number({ description: 'Max results (default 10)', default: 10 })),
+      scope: Type.Optional(Type.String({ description: 'project|personal' })),
+      limit: Type.Optional(Type.Number({ description: 'Max results', default: 10 })),
     }),
     renderResult: renderCompactToolResult,
     async execute(_id, params, _signal, _onUpdate, _ctx) {
@@ -178,9 +168,9 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
   pi.registerTool({
     name: 'memory-get',
     label: 'Get Memory',
-    description: 'Get full details of a specific memory by ID, including content, symbol links, and recall count.',
+    description: 'Get full memory details by ID.',
     parameters: Type.Object({
-      id: Type.Number({ description: 'Memory observation ID' }),
+      id: Type.Number({ description: 'Memory ID' }),
     }),
     renderResult: renderCompactToolResult,
     async execute(_id, params, _signal, _onUpdate, _ctx) {
@@ -211,22 +201,18 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
   pi.registerTool({
     name: 'memory-update',
     label: 'Update Memory',
-    description:
-      'Update an existing memory in-place by ID. Use when you need to correct or refine a previously saved memory ' +
-      'instead of creating a duplicate or correction entry. Updates only the fields you provide.',
+    description: 'Update an existing memory in place by ID.',
     parameters: Type.Object({
-      id: Type.Number({ description: 'Memory observation ID to update' }),
-      title: Type.Optional(Type.String({ description: 'New title (optional)' })),
-      content: Type.Optional(
-        Type.String({ description: 'New content (optional). Use **What**/**Why**/**Where**/**Learned** format.' }),
-      ),
+      id: Type.Number({ description: 'Memory ID' }),
+      title: Type.Optional(Type.String({ description: 'New title' })),
+      content: Type.Optional(Type.String({ description: 'New content' })),
       type: Type.Optional(
         Type.String({
-          description: 'New type: decision, bugfix, architecture, pattern, discovery, config, preference, learning',
+          description: 'New type',
         }),
       ),
-      scope: Type.Optional(Type.String({ description: 'New scope: project or personal' })),
-      topic_key: Type.Optional(Type.String({ description: 'New topic key (optional)' })),
+      scope: Type.Optional(Type.String({ description: 'New scope' })),
+      topic_key: Type.Optional(Type.String({ description: 'New topic key' })),
     }),
     renderResult: renderCompactToolResult,
     async execute(_id, params, _signal, _onUpdate, _ctx) {
@@ -275,11 +261,9 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
   pi.registerTool({
     name: 'memory-delete',
     label: 'Delete Memory',
-    description:
-      'Soft-delete a memory by ID. Use to remove stale, incorrect, or duplicate memories. ' +
-      'The memory is soft-deleted (can be recovered) rather than permanently destroyed.',
+    description: 'Soft-delete a stale, incorrect, or duplicate memory.',
     parameters: Type.Object({
-      id: Type.Number({ description: 'Memory observation ID to delete' }),
+      id: Type.Number({ description: 'Memory ID' }),
     }),
     renderResult: renderCompactToolResult,
     async execute(_id, params, _signal, _onUpdate, _ctx) {
@@ -313,11 +297,9 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
   pi.registerTool({
     name: 'memory-related',
     label: 'Find Related Memories',
-    description:
-      'Find memories linked to the same code symbols as a given memory. ' +
-      'Use when you want to understand the full context around a topic.',
+    description: 'Find memories linked to the same code symbols.',
     parameters: Type.Object({
-      id: Type.Number({ description: 'Memory ID to find related memories for' }),
+      id: Type.Number({ description: 'Memory ID' }),
     }),
     renderResult: renderCompactToolResult,
     async execute(_id, params, _signal, _onUpdate, _ctx) {
@@ -351,16 +333,10 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
   pi.registerTool({
     name: 'memory-load-context',
     label: 'Load Topic Context',
-    description:
-      'Load deeper memory context for a specific topic or query. ' +
-      'Use this when you need everything the memory layer knows about a specific domain ' +
-      "(e.g., 'xRDP audio', 'benchmark pipeline', 'GPU setup'). " +
-      'Returns more memories than the auto-loaded context, focused on the topic.',
+    description: 'Load deeper memory context for a topic.',
     parameters: Type.Object({
-      query: Type.String({ description: "Topic or keyword to load context for (e.g. 'xrdp', 'benchmark', 'auth')" }),
-      deep: Type.Optional(
-        Type.Boolean({ description: 'Load deeper (up to 3x more memories). Default false.', default: false }),
-      ),
+      query: Type.String({ description: 'Topic or keyword' }),
+      deep: Type.Optional(Type.Boolean({ description: 'More results', default: false })),
     }),
     renderResult: renderCompactToolResult,
     async execute(_id, params, _signal, _onUpdate, _ctx) {
@@ -420,13 +396,9 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
   pi.registerTool({
     name: 'memory-sync-code-trust',
     label: 'Sync Trust w/ Code Changes',
-    description:
-      'Synchronize memory trust scores with code changes. Compares the stored HEAD commit ' +
-      'against the current git HEAD to detect changed files, then looks up affected symbols ' +
-      'in the built-in code index. Memories linked to changed symbols lose trust (-0.3), ' +
-      'unchanged ones gain (+0.05). Run after git pull, branch switch, or merge.',
+    description: 'Sync memory trust scores with changed code after pull, checkout, merge, or rebase.',
     parameters: Type.Object({
-      repo: Type.String({ description: 'Repository name (must be indexed)' }),
+      repo: Type.String({ description: 'Indexed repo name' }),
     }),
     renderResult: renderCompactToolResult,
     async execute(_id, params, _signal, _onUpdate, _ctx) {

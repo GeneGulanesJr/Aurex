@@ -131,7 +131,9 @@ function runCommand(command, cwd, timeoutMs, outFile) {
 
     const progress = setInterval(() => {
       const size = fs.existsSync(outFile) ? fs.statSync(outFile).size : 0;
-      console.error(`[bench] still running after ${Math.round((Date.now() - started) / 1000)}s, transcript ${size} bytes`);
+      console.error(
+        `[bench] still running after ${Math.round((Date.now() - started) / 1000)}s, transcript ${size} bytes`,
+      );
     }, 5000);
 
     const timeout = setTimeout(() => {
@@ -191,6 +193,8 @@ function parsePiOutput(raw) {
     cost_usd: 0,
   };
   const assistantParts = [];
+  const assistantByResponse = new Map();
+  const seenUsage = new Set();
   const toolCounts = new Map();
 
   for (const line of raw.split(/\r?\n/)) {
@@ -208,25 +212,61 @@ function parsePiOutput(raw) {
       const message = event.message || event.delta || event;
       const eventUsage = message.usage || event.usage;
       if (eventUsage) {
-        usage.input_tokens += eventUsage.input || eventUsage.input_tokens || 0;
-        usage.output_tokens += eventUsage.output || eventUsage.output_tokens || 0;
-        usage.cache_read_tokens += eventUsage.cacheRead || eventUsage.cache_read_tokens || 0;
-        usage.cache_write_tokens += eventUsage.cacheWrite || eventUsage.cache_write_tokens || 0;
+        const normalizedUsage = {
+          input_tokens: eventUsage.input || eventUsage.input_tokens || 0,
+          output_tokens: eventUsage.output || eventUsage.output_tokens || 0,
+          cache_read_tokens: eventUsage.cacheRead || eventUsage.cache_read_tokens || 0,
+          cache_write_tokens: eventUsage.cacheWrite || eventUsage.cache_write_tokens || 0,
+        };
         const cost = eventUsage.cost || {};
-        usage.cost_usd += cost.total || eventUsage.cost_usd || 0;
+        const costUsd = cost.total || eventUsage.cost_usd || 0;
+        const hasUsage =
+          normalizedUsage.input_tokens ||
+          normalizedUsage.output_tokens ||
+          normalizedUsage.cache_read_tokens ||
+          normalizedUsage.cache_write_tokens ||
+          costUsd;
+        const usageKey =
+          message.responseId ||
+          event.responseId ||
+          [
+            normalizedUsage.input_tokens,
+            normalizedUsage.output_tokens,
+            normalizedUsage.cache_read_tokens,
+            normalizedUsage.cache_write_tokens,
+            eventUsage.totalTokens || eventUsage.total_tokens || 0,
+            costUsd,
+          ].join(':');
+        if (hasUsage && !seenUsage.has(usageKey)) {
+          seenUsage.add(usageKey);
+          usage.input_tokens += normalizedUsage.input_tokens;
+          usage.output_tokens += normalizedUsage.output_tokens;
+          usage.cache_read_tokens += normalizedUsage.cache_read_tokens;
+          usage.cache_write_tokens += normalizedUsage.cache_write_tokens;
+          usage.cost_usd += costUsd;
+        }
       }
 
       const content = message.content || event.content;
+      let assistantText = '';
       if (message.role === 'assistant' && typeof content === 'string') {
-        assistantParts.push(content);
+        assistantText = content;
       } else if (message.role === 'assistant' && Array.isArray(content)) {
         for (const part of content) {
           if (part && part.type === 'text' && part.text) {
-            assistantParts.push(part.text);
+            assistantText += assistantText ? `\n${part.text}` : part.text;
           }
         }
       } else if ((type.includes('text') || type.includes('message')) && typeof event.text === 'string') {
-        assistantParts.push(event.text);
+        assistantText = event.text;
+      }
+      if (assistantText) {
+        const responseId = message.responseId || event.responseId;
+        if (responseId) {
+          assistantByResponse.set(responseId, assistantText);
+        } else {
+          assistantParts.push(assistantText);
+        }
       }
 
       const toolName = event.name || event.tool || event.tool_name || event.input?.tool;
@@ -238,9 +278,11 @@ function parsePiOutput(raw) {
 
   usage.active_tokens = usage.input_tokens + usage.output_tokens;
   usage.total_tokens = usage.active_tokens + usage.cache_read_tokens;
+  const answerParts =
+    assistantByResponse.size > 0 ? [...assistantByResponse.values(), ...assistantParts] : assistantParts;
   return {
     usage,
-    answer: assistantParts.join('\n').trim() || raw.trim(),
+    answer: answerParts.join('\n').trim() || raw.trim(),
     tool_counts: Object.fromEntries(toolCounts.entries()),
   };
 }
@@ -362,7 +404,13 @@ async function main() {
   }
 
   const summary = buildSummary(results);
-  const report = { generated_at: new Date().toISOString(), host: os.hostname(), task_pack: args.tasks, summary, results };
+  const report = {
+    generated_at: new Date().toISOString(),
+    host: os.hostname(),
+    task_pack: args.tasks,
+    summary,
+    results,
+  };
   const reportPath = path.join(outDir, 'report.json');
   fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
 
@@ -457,12 +505,20 @@ function buildCategorySummary(results) {
     memory_on_facts: `${group.onMatched}/${group.onTotal}`,
     memory_off_active_tokens: group.offTokens,
     memory_on_active_tokens: group.onTokens,
-    token_savings_pct:
-      group.offTokens > 0 ? `${((1 - group.onTokens / group.offTokens) * 100).toFixed(1)}%` : 'n/a',
+    token_savings_pct: group.offTokens > 0 ? `${((1 - group.onTokens / group.offTokens) * 100).toFixed(1)}%` : 'n/a',
   }));
 }
 
-main().catch((error) => {
-  console.error(error.stack || error.message || String(error));
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error.stack || error.message || String(error));
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  buildCategorySummary,
+  buildSummary,
+  gradeAnswer,
+  parsePiOutput,
+};
