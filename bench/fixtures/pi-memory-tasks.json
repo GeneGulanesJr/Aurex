@@ -16,7 +16,7 @@
         {
           "id": "zero-dependency-rationale",
           "description": "The rationale is avoiding external dependencies/services",
-          "aliases": ["zero-dependency", "zero dependency", "without external deps", "without external dependencies", "no external service", "single SQLite"]
+          "aliases": ["zero-dependency", "zero dependency", "without external deps", "without external dependencies", "no external service", "single SQLite", "zero external service", "zero external service dependencies", "eliminates any need for", "no need for external", "avoid external dependencies", "avoiding external"]
         },
         {
           "id": "search-module",
@@ -67,7 +67,7 @@
         {
           "id": "verify-current-code",
           "description": "The agent should verify against current code before relying on memory/code-index results",
-          "aliases": ["verify", "current code", "current source", "before relying"]
+          "aliases": ["verify", "verification", "current code", "current source", "before relying", "before trusting", "check against current"]
         }
       ]
     },
@@ -80,7 +80,7 @@
         {
           "id": "context-hook-module",
           "description": "Context auto-load is handled by extensions/memory-layer/hooks/context-injection.ts",
-          "aliases": ["extensions/memory-layer/hooks/context-injection.ts", "context-injection.ts", "registerBeforeAgentStart"]
+          "aliases": ["extensions/memory-layer/hooks/context-injection.ts", "context-injection.ts", "registerBeforeAgentStart", "registerbeforeagentstart", "context-injection", "context injection"]
         },
         {
           "id": "extension-composition",
@@ -90,7 +90,7 @@
         {
           "id": "startup-context",
           "description": "The hook injects or auto-loads memory context before/at agent start",
-          "aliases": ["before agent start", "agent start", "auto-loaded", "memory context"]
+          "aliases": ["before agent start", "before_agent_start", "agent start", "auto-loaded", "auto loaded", "memory context", "memory-context", "session start", "onSessionStart", "injects memory", "context injection"]
         }
       ]
     },
