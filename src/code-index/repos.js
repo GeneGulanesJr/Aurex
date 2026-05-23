@@ -141,6 +141,16 @@ function createCodeIndexRepository(deps) {
           selectSql: 'SELECT id FROM code_file_diagnostics WHERE repo_id = ? LIMIT ?',
           selectParams: [repoId],
         });
+        totals.scopeBindings = deleteByIdBatch({
+          label: { table: 'file_scope_bindings', name: 'scope bindings' },
+          selectSql: 'SELECT id FROM file_scope_bindings WHERE repo_id = ? LIMIT ?',
+          selectParams: [repoId],
+        });
+        totals.scopeResolution = deleteByIdBatch({
+          label: { table: 'scope_resolution', name: 'scope resolutions' },
+          selectSql: 'SELECT id FROM scope_resolution WHERE binding_id IN (SELECT id FROM file_scope_bindings WHERE repo_id = ?) LIMIT ?',
+          selectParams: [repoId],
+        });
         totals.symbols = deleteByIdBatch({
           label: { table: 'code_symbols', name: 'symbols' },
           selectSql: 'SELECT id FROM code_symbols WHERE repo_id = ? LIMIT ?',

@@ -16,6 +16,42 @@ const {
   buildComplexityMetricsForFiles,
 } = require('./edge-extractor');
 const { createParsePool } = require('./worker-pool');
+const { buildScopeBindings } = require('./scope-builder');
+const { resolveScopeBindings, resolveScopeBindingsForFiles } = require('./scope-resolver');
+
+/**
+ * Insert scope bindings for a file using delete-then-insert strategy.
+ * @param {object} db - native database handle
+ * @param {number} repoId
+ * @param {number} fileId
+ * @param {Array} bindings - array of binding objects from scope builder
+ */
+function insertScopeBindings(db, repoId, fileId, bindings) {
+  // Clean stale bindings first
+  db.prepare('DELETE FROM file_scope_bindings WHERE file_id = ?').run(fileId);
+
+  const stmt = db.prepare(
+    `INSERT INTO file_scope_bindings (repo_id, file_id, name, kind, origin, source_file_id, source_name, line_start, line_end, scope_depth, byte_start, byte_end, first_seen_pass)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+  );
+
+  for (const b of bindings) {
+    stmt.run(
+      repoId,
+      fileId,
+      b.name,
+      b.kind,
+      b.origin,
+      b.sourceModule ? null : null, // source_file_id resolved in derived phase
+      b.sourceName || null,
+      b.lineStart,
+      b.lineEnd,
+      b.scopeDepth || 0,
+      b.byteStart || null,
+      b.byteEnd || null,
+    );
+  }
+}
 
 function emitProgress(args, phase, detail, stats) {
   if (!args || !args.progress) {
@@ -289,6 +325,27 @@ function rebuildDerivedIndexes(db, repoId, args, totalFiles, fileCount, symbolCo
       importEdges = ig.edges;
     }
   } catch {}
+
+  // ── Scope resolution (v10) ────────────────────────────────
+  let scopeResolved = 0;
+  emitProgress(args, 'analysis', { step: 'resolve-scopes', message: 'Step 5/5: resolving scope bindings...' }, stats);
+  try {
+    const sr = resolveScopeBindings(db, repoId, {
+      onProgress: (p) => {
+        emitProgress(
+          args,
+          'analysis',
+          {
+            step: 'resolve-scopes',
+            message: `Step 5/5: resolving scopes... pass ${p.pass}, ${p.resolved || 0} resolved`,
+          },
+          stats,
+        );
+      },
+    });
+    scopeResolved = sr.resolved;
+  } catch {}
+
   emitProgress(args, 'analysis', { step: 'build-call-graph', message: 'Step 5/5: building call graph...' }, stats);
   try {
     const cg = buildCallEdges(db, repoId, {
@@ -321,7 +378,7 @@ function rebuildDerivedIndexes(db, repoId, args, totalFiles, fileCount, symbolCo
     }
   } catch {}
 
-  return { importEdges, callEdges, complexityCount, derived_scope: 'repo' };
+  return { importEdges, callEdges, complexityCount, scopeResolved, derived_scope: 'repo' };
 }
 
 function rebuildDerivedIncremental(db, repoId, args, stats, changedFileIds, deletedFileIds) {
@@ -343,6 +400,22 @@ function rebuildDerivedIncremental(db, repoId, args, stats, changedFileIds, dele
   try {
     const ig = buildImportEdgesForFiles(db, repoId, changedFileIds, deletedFileIds);
     if (ig.success) importEdges = ig.edges;
+  } catch {}
+
+  // ── Scope resolution (v10) ────────────────────────────────
+  let scopeResolved = 0;
+  emitProgress(
+    args,
+    'analysis',
+    {
+      step: 'resolve-scopes',
+      message: 'Step 5/5: incrementally resolving scope bindings for affected files...',
+    },
+    stats,
+  );
+  try {
+    const sr = resolveScopeBindingsForFiles(db, repoId, changedFileIds, deletedFileIds);
+    scopeResolved = sr.resolved || 0;
   } catch {}
 
   emitProgress(
@@ -389,6 +462,7 @@ function rebuildDerivedIncremental(db, repoId, args, stats, changedFileIds, dele
     importEdges,
     callEdges,
     complexityCount,
+    scopeResolved,
     derived_scope: 'file',
     derived_files_changed: changedFileIds.length,
     derived_files_deleted: deletedFileIds.length,
@@ -664,6 +738,25 @@ async function parsePhase(files, deps, repoId, args) {
             }
             symbolCount += hotSymbols.length;
             fileCount++;
+
+            // ── Scope bindings extraction (v10) ──────────────
+            // Build scope bindings from the same tree-sitter AST.
+            try {
+              const scopeBuilder = require('./scope-builder').getScopeBuilder;
+              const builder = scopeBuilder(record.filePath);
+              if (builder) {
+                const parseResult = registry.parseTree(record.filePath, record.content);
+                if (parseResult && parseResult.tree) {
+                  const scopeBindings = builder(parseResult.tree, record.content, record.filePath);
+                  if (scopeBindings.length > 0) {
+                    insertScopeBindings(db, repoId, fileId, scopeBindings);
+                  }
+                  parseResult.tree.delete();
+                }
+              }
+            } catch (_) {
+              // Scope binding extraction is best-effort; don't fail the batch
+            }
             if (shouldEmitFileProgress(fileCount, totalFiles)) {
               emitProgress(
                 args,
@@ -945,6 +1038,24 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
           symbolCount += insertSymbolsSplit(repository, existing.id, fileId, filePath, hotSymbols, coldSymbols);
           reindexed++;
           changedFileIds.push(fileId);
+
+          // ── Rebuild scope bindings for changed file (v10) ────
+          try {
+            const scopeBuilder = require('./scope-builder').getScopeBuilder;
+            const builder = scopeBuilder(filePath);
+            if (builder) {
+              const parseResult = registry.parseTree(filePath, record.content);
+              if (parseResult && parseResult.tree) {
+                const scopeBindings = builder(parseResult.tree, record.content, filePath);
+                if (scopeBindings.length > 0) {
+                  insertScopeBindings(require('../../db').getDb(), existing.id, fileId, scopeBindings);
+                }
+                parseResult.tree.delete();
+              }
+            }
+          } catch (_) {
+            // Best-effort scope binding extraction
+          }
         };
         if (typeof repository.withTransaction === 'function') {
           repository.withTransaction(writeChangedFile);

@@ -148,7 +148,19 @@ function buildCallGraph(db, repoId, opts = {}) {
   // Allocation overhead is significant at hundreds of thousands of invocations.
   const _rr = { calleeSymbolId: null, confidence: 0 };
 
-  function resolveCallee(calleeName, callerSym, receiver, fileContent) {
+  // ── Scope-aware resolution statement (v10) ────────────────
+  const scopeResolveStmt = db.prepare(`
+    SELECT sr.resolved_symbol_id, sr.confidence, sr.status, fsb.scope_depth
+    FROM file_scope_bindings fsb
+    JOIN scope_resolution sr ON sr.binding_id = fsb.id
+    WHERE fsb.file_id = ? AND fsb.name = ? AND fsb.line_start <= ? AND fsb.line_end >= ?
+      AND sr.status = 'resolved_internal'
+    ORDER BY fsb.scope_depth DESC, sr.confidence DESC
+    LIMIT 1
+  `);
+
+  // Keep original resolveCallee as heuristic fallback
+  function resolveCalleeHeuristic(calleeName, callerSym, receiver, fileContent) {
     _rr.calleeSymbolId = null;
     _rr.confidence = 0.5;
 
@@ -264,6 +276,36 @@ function buildCallGraph(db, repoId, opts = {}) {
         _rr.confidence = 0.7;
       }
     }
+  }
+
+  /**
+   * Scope-aware callee resolution (v10):
+   * Primary: look up in scope_resolution tables, prefer innermost scope.
+   * Fallback: existing heuristic cascade for cases not covered by scope tables.
+   */
+  function resolveCallee(calleeName, callerSym, receiver, fileContent) {
+    _rr.calleeSymbolId = null;
+    _rr.confidence = 0.5;
+
+    // Primary: scope-aware lookup
+    try {
+      const scopeResult = scopeResolveStmt.get(
+        callerSym.file_id,
+        calleeName,
+        callerSym.start_line,
+        callerSym.start_line,
+      );
+      if (scopeResult && scopeResult.resolved_symbol_id) {
+        _rr.calleeSymbolId = scopeResult.resolved_symbol_id;
+        _rr.confidence = scopeResult.confidence;
+        return;
+      }
+    } catch {
+      // scope_resolution table may not exist yet (pre-migration)
+    }
+
+    // Fallback: heuristic cascade
+    resolveCalleeHeuristic(calleeName, callerSym, receiver, fileContent);
   }
 
   // oxlint-disable-next-line no-unused-vars

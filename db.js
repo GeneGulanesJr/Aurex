@@ -340,6 +340,15 @@ const _CRITICAL_TABLES = [
     'doc_code_blocks',
     "CREATE TABLE IF NOT EXISTS doc_code_blocks (id INTEGER PRIMARY KEY AUTOINCREMENT, section_id INTEGER NOT NULL REFERENCES doc_sections(id) ON DELETE CASCADE, lang TEXT DEFAULT '', content TEXT NOT NULL, byte_start INTEGER NOT NULL, byte_end INTEGER NOT NULL)",
   ],
+  // V10: scope-aware edge extraction
+  [
+    'file_scope_bindings',
+    `CREATE TABLE IF NOT EXISTS file_scope_bindings (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE, file_id INTEGER NOT NULL REFERENCES code_files(id) ON DELETE CASCADE, name TEXT NOT NULL, kind TEXT NOT NULL, origin TEXT NOT NULL, source_file_id INTEGER NULL, source_name TEXT NULL, line_start INTEGER NOT NULL, line_end INTEGER NOT NULL, scope_depth INTEGER NOT NULL DEFAULT 0, byte_start INTEGER NULL, byte_end INTEGER NULL, first_seen_pass INTEGER NOT NULL DEFAULT 0)`,
+  ],
+  [
+    'scope_resolution',
+    `CREATE TABLE IF NOT EXISTS scope_resolution (binding_id INTEGER PRIMARY KEY REFERENCES file_scope_bindings(id) ON DELETE CASCADE, resolved_symbol_id INTEGER NULL, resolved_file_id INTEGER NULL, status TEXT NOT NULL, resolved_at_pass INTEGER NOT NULL, confidence REAL NOT NULL DEFAULT 1.0)`,
+  ],
 ];
 
 function ensureCriticalTables() {
@@ -386,6 +395,17 @@ function _createTableIndexes(name, db) {
     ],
     symbol_complexity: ['CREATE INDEX IF NOT EXISTS idx_sc_symbol ON symbol_complexity(symbol_id)'],
     churn_metrics: ['CREATE INDEX IF NOT EXISTS idx_cm_repo ON churn_metrics(repo_id)'],
+    file_scope_bindings: [
+      'CREATE INDEX IF NOT EXISTS idx_fsb_file_name ON file_scope_bindings(repo_id, file_id, name, line_start)',
+      'CREATE INDEX IF NOT EXISTS idx_fsb_file_range ON file_scope_bindings(repo_id, file_id, line_start, line_end)',
+      'CREATE INDEX IF NOT EXISTS idx_fsb_file_depth ON file_scope_bindings(file_id, scope_depth)',
+    ],
+    scope_resolution: [
+      'CREATE INDEX IF NOT EXISTS idx_sr_binding ON scope_resolution(binding_id)',
+      'CREATE INDEX IF NOT EXISTS idx_sr_symbol ON scope_resolution(resolved_symbol_id)',
+      'CREATE INDEX IF NOT EXISTS idx_sr_status ON scope_resolution(status)',
+      'CREATE INDEX IF NOT EXISTS idx_sr_pass ON scope_resolution(resolved_at_pass)',
+    ],
     doc_sections: [
       'CREATE INDEX IF NOT EXISTS idx_ds_file ON doc_sections(file_id)',
       'CREATE INDEX IF NOT EXISTS idx_ds_parent ON doc_sections(parent_id)',
@@ -424,7 +444,7 @@ function runMigrations() {
     console.error('[db] Failed to read user_version:', e.message);
   }
 
-  if (version >= 9) {
+  if (version >= 10) {
     return { migrated: false, version };
   }
 
@@ -437,6 +457,7 @@ function runMigrations() {
     { to: 7, run: runMigrationV7 },
     { to: 8, run: runMigrationV8 },
     { to: 9, run: runMigrationV9 },
+    { to: 10, run: runMigrationV10 },
   ];
 
   const fromVersion = version;
@@ -717,6 +738,50 @@ function runMigrationV9() {
     });
   } catch (e) {
     errors.push(`V9: ${e.message}`);
+  }
+  return errors;
+}
+
+function runMigrationV10() {
+  const errors = [];
+  try {
+    withTransaction(() => {
+      sqlRaw(`CREATE TABLE IF NOT EXISTS file_scope_bindings (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        repo_id         INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE,
+        file_id         INTEGER NOT NULL REFERENCES code_files(id) ON DELETE CASCADE,
+        name            TEXT NOT NULL,
+        kind            TEXT NOT NULL,
+        origin          TEXT NOT NULL,
+        source_file_id  INTEGER NULL REFERENCES code_files(id) ON DELETE SET NULL,
+        source_name     TEXT NULL,
+        line_start      INTEGER NOT NULL,
+        line_end        INTEGER NOT NULL,
+        scope_depth     INTEGER NOT NULL DEFAULT 0,
+        byte_start      INTEGER NULL,
+        byte_end        INTEGER NULL,
+        first_seen_pass INTEGER NOT NULL DEFAULT 0
+      )`);
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_fsb_file_name ON file_scope_bindings(repo_id, file_id, name, line_start)');
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_fsb_file_range ON file_scope_bindings(repo_id, file_id, line_start, line_end)');
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_fsb_file_depth ON file_scope_bindings(file_id, scope_depth)');
+
+      sqlRaw(`CREATE TABLE IF NOT EXISTS scope_resolution (
+        binding_id          INTEGER PRIMARY KEY REFERENCES file_scope_bindings(id) ON DELETE CASCADE,
+        resolved_symbol_id  INTEGER NULL REFERENCES code_symbols(id) ON DELETE SET NULL,
+        resolved_file_id    INTEGER NULL REFERENCES code_files(id) ON DELETE SET NULL,
+        status              TEXT NOT NULL,
+        resolved_at_pass    INTEGER NOT NULL,
+        confidence          REAL NOT NULL DEFAULT 1.0
+      )`);
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_sr_binding ON scope_resolution(binding_id)');
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_sr_symbol ON scope_resolution(resolved_symbol_id)');
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_sr_status ON scope_resolution(status)');
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_sr_pass ON scope_resolution(resolved_at_pass)');
+      sqlRaw('PRAGMA user_version = 10');
+    });
+  } catch (e) {
+    errors.push(`V10: ${e.message}`);
   }
   return errors;
 }

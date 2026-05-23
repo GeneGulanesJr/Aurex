@@ -62,6 +62,17 @@ function createParserRegistry(parser = codeParser) {
     extractCalleesFromContent(filePath, content) {
       return parser.extractCalleesFromContent(filePath, content);
     },
+    /**
+     * Parse a file and return the raw tree-sitter tree (for scope building).
+     * Returns { tree, parser } or null if language not supported.
+     */
+    parseTree(filePath, content) {
+      const lang = getLanguageForFile(filePath);
+      if (!lang) {
+        return null;
+      }
+      return parser.parseTree(filePath, content);
+    },
   });
 }
 

@@ -2147,4 +2147,31 @@ function extractCallees(filePath) {
   return result;
 }
 
-module.exports = { init, isReady, parseFile, parseContent, extractCallees, extractCalleesFromContent, info };
+module.exports = { init, isReady, parseFile, parseContent, extractCallees, extractCalleesFromContent, info, parseTree };
+
+/**
+ * Parse a file and return the raw tree-sitter tree + parser for scope building.
+ * The caller is responsible for calling tree.delete() when done.
+ * @param {string} filePath
+ * @param {string} content
+ * @returns {{ tree: object, parser: object } | null}
+ */
+function parseTree(filePath, content) {
+  if (!_ready) {
+    return null;
+  }
+  const ext = path.extname(filePath).toLowerCase();
+  const langConfig = LANGUAGE_MAP[ext];
+  if (!langConfig) {
+    return null;
+  }
+  const parser = _parsers[langConfig.parserKey];
+  if (!parser) {
+    return null;
+  }
+  const tree = parser.parse(content);
+  if (!tree) {
+    return null;
+  }
+  return { tree, parser };
+}

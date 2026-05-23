@@ -10,7 +10,7 @@
 --   doc-index repository: doc_repos, doc_files, doc_sections, doc FTS, links, terms, code blocks.
 --   trust-sync repository: symbol_links and trust_adjustments because they bridge memories and code symbols.
 --   analytics repository: read-only aggregate queries across feature-owned tables.
-PRAGMA user_version = 9;
+PRAGMA user_version = 10;
 
 -- ═══════════════════════════════════════════════════════════
 -- MEMORY REPOSITORY: WORKSPACES  (v4 — formal project isolation)
@@ -507,3 +507,42 @@ CREATE TABLE IF NOT EXISTS symbol_complexity (
   assessment        TEXT NOT NULL DEFAULT 'low'
 );
 CREATE INDEX IF NOT EXISTS idx_sc_symbol ON symbol_complexity(symbol_id);
+
+-- ═══════════════════════════════════════════════════════════
+-- CODE-INDEX REPOSITORY: FILE SCOPE BINDINGS  (parse artifact — immutable after parse)
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS file_scope_bindings (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id         INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE,
+  file_id         INTEGER NOT NULL REFERENCES code_files(id) ON DELETE CASCADE,
+  name            TEXT NOT NULL,
+  kind            TEXT NOT NULL,
+  origin          TEXT NOT NULL,
+  source_file_id  INTEGER NULL REFERENCES code_files(id) ON DELETE SET NULL,
+  source_name     TEXT NULL,
+  line_start      INTEGER NOT NULL,
+  line_end        INTEGER NOT NULL,
+  scope_depth     INTEGER NOT NULL DEFAULT 0,
+  byte_start      INTEGER NULL,
+  byte_end        INTEGER NULL,
+  first_seen_pass INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_fsb_file_name ON file_scope_bindings(repo_id, file_id, name, line_start);
+CREATE INDEX IF NOT EXISTS idx_fsb_file_range ON file_scope_bindings(repo_id, file_id, line_start, line_end);
+CREATE INDEX IF NOT EXISTS idx_fsb_file_depth ON file_scope_bindings(file_id, scope_depth);
+
+-- ═══════════════════════════════════════════════════════════
+-- CODE-INDEX REPOSITORY: SCOPE RESOLUTION  (resolution pass — mutable, rebuildable)
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS scope_resolution (
+  binding_id          INTEGER PRIMARY KEY REFERENCES file_scope_bindings(id) ON DELETE CASCADE,
+  resolved_symbol_id  INTEGER NULL REFERENCES code_symbols(id) ON DELETE SET NULL,
+  resolved_file_id    INTEGER NULL REFERENCES code_files(id) ON DELETE SET NULL,
+  status              TEXT NOT NULL,
+  resolved_at_pass    INTEGER NOT NULL,
+  confidence          REAL NOT NULL DEFAULT 1.0
+);
+CREATE INDEX IF NOT EXISTS idx_sr_binding ON scope_resolution(binding_id);
+CREATE INDEX IF NOT EXISTS idx_sr_symbol ON scope_resolution(resolved_symbol_id);
+CREATE INDEX IF NOT EXISTS idx_sr_status ON scope_resolution(status);
+CREATE INDEX IF NOT EXISTS idx_sr_pass ON scope_resolution(resolved_at_pass);

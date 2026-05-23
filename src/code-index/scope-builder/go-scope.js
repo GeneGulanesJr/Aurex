@@ -1,0 +1,289 @@
+// Go scope builder — walks a tree-sitter AST and extracts scope bindings.
+// Covers: named_import, dot_import, declaration, receiver_param, type_declaration, var_declaration.
+
+const { addBinding, dedupBindings } = require('./shared');
+
+function buildGoScopeBindings(tree, source, filePath) {
+  const bindings = [];
+
+  function walk(node, scopeDepth) {
+    if (!node) {
+      return;
+    }
+    const type = node.type;
+
+    switch (type) {
+      // ── Import declarations ────────────────────────────────
+      case 'import_declaration': {
+        handleImportDeclaration(node, bindings);
+        break;
+      }
+
+      // ── Function declarations ──────────────────────────────
+      case 'function_declaration': {
+        const nameNode = node.childForFieldName('name');
+        if (nameNode) {
+          addBinding(bindings, {
+            name: nameNode.text,
+            kind: 'declaration',
+            origin: 'local',
+            sourceModule: null,
+            sourceName: null,
+            lineStart: node.startPosition.row + 1,
+            lineEnd: node.endPosition.row + 1,
+            scopeDepth,
+            byteStart: node.startIndex,
+            byteEnd: node.endIndex,
+          });
+        }
+        const params = node.childForFieldName('parameters');
+        if (params) {
+          extractGoParameters(params, bindings, scopeDepth + 1);
+        }
+        const body = node.childForFieldName('body');
+        if (body) {
+          walkChildren(body, scopeDepth + 1);
+        }
+        return;
+      }
+
+      // ── Method declarations ────────────────────────────────
+      case 'method_declaration': {
+        const nameNode = node.childForFieldName('name');
+        if (nameNode) {
+          addBinding(bindings, {
+            name: nameNode.text,
+            kind: 'declaration',
+            origin: 'local',
+            sourceModule: null,
+            sourceName: null,
+            lineStart: node.startPosition.row + 1,
+            lineEnd: node.endPosition.row + 1,
+            scopeDepth,
+            byteStart: node.startIndex,
+            byteEnd: node.endIndex,
+          });
+        }
+        // Receiver
+        const receiver = node.childForFieldName('receiver');
+        if (receiver) {
+          extractGoReceiver(receiver, bindings, scopeDepth + 1);
+        }
+        const params = node.childForFieldName('parameters');
+        if (params) {
+          extractGoParameters(params, bindings, scopeDepth + 1);
+        }
+        const body = node.childForFieldName('body');
+        if (body) {
+          walkChildren(body, scopeDepth + 1);
+        }
+        return;
+      }
+
+      // ── Type declarations ──────────────────────────────────
+      case 'type_declaration': {
+        let child = node.firstChild;
+        while (child) {
+          if (child.type === 'type_spec') {
+            const nameNode = child.childForFieldName('name');
+            if (nameNode) {
+              addBinding(bindings, {
+                name: nameNode.text,
+                kind: 'type_declaration',
+                origin: 'local',
+                sourceModule: null,
+                sourceName: null,
+                lineStart: node.startPosition.row + 1,
+                lineEnd: node.endPosition.row + 1,
+                scopeDepth,
+                byteStart: child.startIndex,
+                byteEnd: child.endIndex,
+              });
+            }
+          }
+          child = child.nextSibling;
+        }
+        break;
+      }
+
+      default:
+        break;
+    }
+
+    walkChildren(node, scopeDepth);
+  }
+
+  function walkChildren(node, depth) {
+    if (!node) {
+      return;
+    }
+    let child = node.firstChild;
+    while (child) {
+      walk(child, depth);
+      child = child.nextSibling;
+    }
+  }
+
+  function handleImportDeclaration(node, bindings) {
+    const lineNum = node.startPosition.row + 1;
+    const endLine = node.endPosition.row + 1;
+
+    let child = node.firstChild;
+    while (child) {
+      if (child.type === 'import_spec') {
+        handleImportSpec(child, bindings, lineNum, endLine);
+      } else if (child.type === 'import_spec_list') {
+        let specChild = child.firstChild;
+        while (specChild) {
+          if (specChild.type === 'import_spec') {
+            handleImportSpec(specChild, bindings, lineNum, endLine);
+          }
+          specChild = specChild.nextSibling;
+        }
+      }
+      child = child.nextSibling;
+    }
+  }
+
+  function handleImportSpec(spec, bindings, lineNum, endLine) {
+    const pathNode = spec.childForFieldName('path');
+    if (!pathNode) {
+      return;
+    }
+    const importPath = pathNode.text.replace(/^"|"$/g, '');
+    const isInternal = importPath.startsWith('./') || importPath.startsWith('../') || importPath.startsWith('/');
+
+    const nameNode = spec.childForFieldName('name');
+    if (nameNode) {
+      const nameText = nameNode.text;
+      if (nameText === '.') {
+        // dot import
+        addBinding(bindings, {
+          name: '*',
+          kind: 'dot_import',
+          origin: isInternal ? 'internal_package' : 'external_package',
+          sourceModule: importPath,
+          sourceName: '*',
+          lineStart: lineNum,
+          lineEnd: endLine,
+          scopeDepth: 0,
+          byteStart: spec.startIndex,
+          byteEnd: spec.endIndex,
+        });
+      } else if (nameText === '_') {
+        // blank import — side effects only, no binding
+      } else {
+        // aliased import
+        addBinding(bindings, {
+          name: nameText,
+          kind: 'named_import',
+          origin: isInternal ? 'internal_package' : 'external_package',
+          sourceModule: importPath,
+          sourceName: null,
+          lineStart: lineNum,
+          lineEnd: endLine,
+          scopeDepth: 0,
+          byteStart: spec.startIndex,
+          byteEnd: spec.endIndex,
+        });
+      }
+    } else {
+      // Default import — package name inferred from path
+      const pkgName = importPath.split('/').pop();
+      addBinding(bindings, {
+        name: pkgName,
+        kind: 'named_import',
+        origin: isInternal ? 'internal_package' : 'external_package',
+        sourceModule: importPath,
+        sourceName: null,
+        lineStart: lineNum,
+        lineEnd: endLine,
+        scopeDepth: 0,
+        byteStart: spec.startIndex,
+        byteEnd: spec.endIndex,
+      });
+    }
+  }
+
+  function extractGoParameters(params, bindings, scopeDepth) {
+    let child = params.firstChild;
+    while (child) {
+      if (child.type === 'parameter_list') {
+        let paramChild = child.firstChild;
+        while (paramChild) {
+          if (paramChild.type === 'identifier') {
+            addBinding(bindings, {
+              name: paramChild.text,
+              kind: 'parameter',
+              origin: 'local',
+              sourceModule: null,
+              sourceName: null,
+              lineStart: params.startPosition.row + 1,
+              lineEnd: params.endPosition.row + 1,
+              scopeDepth,
+              byteStart: paramChild.startIndex,
+              byteEnd: paramChild.endIndex,
+            });
+          } else if (paramChild.type === 'parameter_declaration') {
+            const nameNode = paramChild.childForFieldName('name');
+            if (nameNode) {
+              addBinding(bindings, {
+                name: nameNode.text,
+                kind: 'parameter',
+                origin: 'local',
+                sourceModule: null,
+                sourceName: null,
+                lineStart: params.startPosition.row + 1,
+                lineEnd: params.endPosition.row + 1,
+                scopeDepth,
+                byteStart: paramChild.startIndex,
+                byteEnd: paramChild.endIndex,
+              });
+            }
+          }
+          paramChild = paramChild.nextSibling;
+        }
+      }
+      child = child.nextSibling;
+    }
+  }
+
+  function extractGoReceiver(receiver, bindings, scopeDepth) {
+    // (r *Receiver) or (r Receiver)
+    let child = receiver.firstChild;
+    while (child) {
+      if (child.type === 'parameter_list') {
+        let paramChild = child.firstChild;
+        while (paramChild) {
+          if (paramChild.type === 'parameter_declaration') {
+            const nameNode = paramChild.childForFieldName('name');
+            if (nameNode) {
+              addBinding(bindings, {
+                name: nameNode.text,
+                kind: 'receiver_param',
+                origin: 'local',
+                sourceModule: null,
+                sourceName: null,
+                lineStart: receiver.startPosition.row + 1,
+                lineEnd: receiver.endPosition.row + 1,
+                scopeDepth,
+                byteStart: paramChild.startIndex,
+                byteEnd: paramChild.endIndex,
+              });
+            }
+          }
+          paramChild = paramChild.nextSibling;
+        }
+      }
+      child = child.nextSibling;
+    }
+  }
+
+  if (tree && tree.rootNode) {
+    walk(tree.rootNode, 0);
+  }
+
+  return dedupBindings(bindings);
+}
+
+module.exports = { buildGoScopeBindings };
