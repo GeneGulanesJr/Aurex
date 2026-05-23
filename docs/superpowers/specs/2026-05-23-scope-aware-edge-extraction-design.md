@@ -1,7 +1,7 @@
 # Scope-Aware Edge Extraction Design
 
 **Date:** 2026-05-23  
-**Status:** Approved (Revision 2 — review round 2 feedback incorporated)  
+**Status:** Approved (Revision 3 — review round 3 feedback incorporated)  
 **Replaces:** Heuristic callee resolution in `call-graph-impl.js` (`resolveCallee` function)
 
 ## Problem
@@ -263,10 +263,12 @@ The `ORDER BY scope_depth DESC` ensures that for block-scoped bindings (e.g., `l
 
 The heuristic cascade is preserved as a fallback, not deleted. Dynamic calls, complex expressions, and language features not yet covered by scope builders will still be resolved heuristically.
 
+**Write path:** Both scope-aware resolution and heuristic fallback write their `confidence` value to `code_calls.confidence` via the existing `insertStmt.run(repoId, sym.id, calleeName, _rr.calleeSymbolId, _rr.confidence, lineNum)` call. This is the same write path as the current heuristic-only code — the only change is that `_rr.confidence` now comes from `scope_resolution.confidence` instead of the heuristic cascade. This ensures the measurement harness can compare before/after confidence distributions from the same `code_calls` table.
+
 ### 5. Reindex Compatibility
 
 - **Full reindex:** Builds scope tables from scratch, runs all resolution passes.
-- **Incremental reindex:** For changed files: (1) `DELETE FROM scope_resolution WHERE binding_id IN (SELECT id FROM file_scope_bindings WHERE file_id = ?)` to clean dangling resolution rows, (2) `DELETE FROM file_scope_bindings WHERE file_id = ?` to remove stale bindings, (3) re-parse and bulk insert new bindings. Then re-run resolution for the changed files and their importers (files that import the changed files, identified via the import graph). The two-step delete ensures `scope_resolution` rows keyed to old auto-increment IDs don't dangle.
+- **Incremental reindex:** For changed files: (1) `DELETE FROM scope_resolution WHERE binding_id IN (SELECT id FROM file_scope_bindings WHERE file_id = ?)` to clean dangling resolution rows, (2) `DELETE FROM file_scope_bindings WHERE file_id = ?` to remove stale bindings, (3) re-parse and bulk insert new bindings. Then re-run resolution for the changed files and their **direct importers only** (files that directly import the changed files, identified via `code_import_edges` where `target_file_id` matches). Transitive importers are not re-resolved in v1 — for widely-imported utility files, transitive closure can be large and would effectively require a full derived rebuild. If a deeper change propagation is needed, users should run a full `--force-derived` reindex. The two-step delete ensures `scope_resolution` rows keyed to old auto-increment IDs don't dangle.
 - **Force-derived flag:** New `--force-derived` option triggers re-resolution without re-parsing. Deletes all `scope_resolution` rows and re-runs the multi-pass resolver. Does not touch `file_scope_bindings` (parse artifact is preserved).
 
 ## Implementation Order
@@ -293,11 +295,12 @@ The heuristic cascade is preserved as a fallback, not deleted. Dynamic calls, co
 - Incremental reindex correctly updates scope tables for changed files
 
 **Measurement harness:** The confidence comparison is measured by:
-1. Run a full reindex on PiMemoryExtension itself
+1. Run a full reindex on PiMemoryExtension itself (before the scope-aware changes)
 2. Query `SELECT confidence FROM code_calls WHERE callee_symbol_id IS NOT NULL` — this is the resolved-edge baseline
-3. After the scope-aware rewrite, run the same query and compare the confidence distribution
-4. The `resolved_at_pass` field on `scope_resolution` provides per-binding diagnostics
-5. The `resolution_health` check surfaces any bindings that didn't converge
+3. After the scope-aware rewrite, run the same reindex and the same query, then compare the confidence distribution
+4. The write path is confirmed: `buildCallGraph` writes `_rr.confidence` to `code_calls.confidence` for both scope-aware and heuristic-fallback edges (see Integration Point 4)
+5. The `resolved_at_pass` field on `scope_resolution` provides per-binding diagnostics
+6. The `resolution_health` check surfaces any bindings that didn't converge
 
 ## Known Limitations (v1)
 
