@@ -7,6 +7,7 @@ import {
 import { formatCodeResult } from '../extensions/memory-layer/tools/format-code-result.ts';
 import { registerCodeTools } from '../extensions/memory-layer/tools/code-tools.ts';
 import { registerDocTools } from '../extensions/memory-layer/tools/doc-tools.ts';
+import { registerToolGuardrails } from '../extensions/memory-layer/hooks/tool-guardrails.ts';
 import { renderCompactToolResult } from '../extensions/memory-layer/tools/render.ts';
 
 function captureTool(register, deps) {
@@ -35,6 +36,24 @@ function expectRenderable(result) {
   );
   expect(result.details).toBeTruthy();
   expect(typeof result.details).toBe('object');
+}
+
+function captureHook(register, deps, eventName) {
+  let registered;
+  register(
+    {
+      on(name, handler) {
+        if (name === eventName) {
+          registered = handler;
+        }
+      },
+    },
+    deps,
+  );
+  if (!registered) {
+    throw new Error(`${eventName} hook was not registered`);
+  }
+  return registered;
 }
 
 describe('memory tool renderer safety', () => {
@@ -270,6 +289,37 @@ describe('memory tool renderer safety', () => {
     });
     expect(text).toContain('Code search');
     expect(text).toContain('src/memory-domain/context.js');
+  });
+
+  it('blocks raw repository discovery commands in indexed repos', async () => {
+    const toolCall = captureHook(
+      registerToolGuardrails,
+      {
+        state: {
+          currentProject: 'app',
+          lastMemoryToolCall: 0,
+          callsSinceLastMemory: 0,
+          exploredFiles: new Set(),
+          nudgeCountThisSession: 0,
+          MAX_NUDGES_PER_SESSION: 2,
+        },
+        getKnownRepos: vi.fn().mockResolvedValue([{ name: 'app', path: process.cwd() }]),
+        isCodeFile: vi.fn(),
+      },
+      'tool_call',
+    );
+
+    const result = await toolCall(
+      {
+        toolName: 'bash',
+        input: { command: "find . -maxdepth 3 -type f | grep -E 'memory|context|domain' | head -200" },
+      },
+      { ui: { notify: vi.fn() } },
+    );
+
+    expect(result.block).toBe(true);
+    expect(result.reason).toContain('Raw repository search detected');
+    expect(result.reason).toContain('memory-code search');
   });
 
   it.each([

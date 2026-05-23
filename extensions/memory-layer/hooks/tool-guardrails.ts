@@ -1,5 +1,5 @@
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { isCodeFile, state } from '../state';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { getKnownRepos } from '../host/project-detector';
 import path from 'node:path';
 
@@ -45,6 +45,10 @@ const CONFIG_FILENAMES = new Set([
   'requirements.txt',
 ]);
 
+const RAW_CODE_DISCOVERY_RE = /\b(rg|grep|ag|ack|find)\b/i;
+const CODE_PATH_HINT_RE =
+  /\.(ts|js|tsx|jsx|mjs|cjs|py|go|rs|java)\b|(^|\s)(src|lib|app|test|tests|extensions|commands|data-access|services)\b/i;
+
 interface GuardrailsDeps {
   state: typeof state;
   getKnownRepos: typeof getKnownRepos;
@@ -74,17 +78,19 @@ export function registerToolGuardrails(pi: ExtensionAPI, deps: GuardrailsDeps) {
 
     if (toolName === 'bash' && typeof input?.command === 'string') {
       const cmd = input.command as string;
-      if (/\b(rg\b|grep\b|ag\b|ack\b|find\b).*\.(ts|js|tsx|jsx|py|go|rs|java)/i.test(cmd)) {
+      if (RAW_CODE_DISCOVERY_RE.test(cmd)) {
         const repos = await deps.getKnownRepos();
         const resolvedCwd = path.resolve(process.cwd());
         const matchedRepo =
           repos.find((r) => resolvedCwd.startsWith(path.resolve(r.path))) ||
           repos.find((r) => deps.state.currentProject?.toLowerCase() === r.name.toLowerCase());
         if (matchedRepo) {
+          const searchHint = CODE_PATH_HINT_RE.test(cmd) ? 'Code search' : 'Raw repository search';
           return {
             block: true,
             reason:
-              `Code search detected in indexed repo "${matchedRepo.name}". Use \`memory-code\` instead:\n` +
+              `${searchHint} detected in indexed repo "${matchedRepo.name}". Use \`memory-code\` instead:\n` +
+              `• \`memory-code search --repo ${matchedRepo.name} --query <query>\` — find code symbols\n` +
               `• \`memory-code outline --repo ${matchedRepo.name} --file <path>\` — file structure\n` +
               `• \`memory-code callers --repo ${matchedRepo.name} --symbol <name>\` — call hierarchy\n` +
               `• \`memory-code deps --repo ${matchedRepo.name}\` — dependency graph\n` +
@@ -121,7 +127,6 @@ export function registerToolGuardrails(pi: ExtensionAPI, deps: GuardrailsDeps) {
       if (filePath.includes('node_modules')) {
         return;
       }
-
 
       const absPath = path.resolve(filePath);
 
@@ -164,12 +169,14 @@ export function registerToolGuardrails(pi: ExtensionAPI, deps: GuardrailsDeps) {
 
   // Track explored files from memory-code results (callers, deps, importance, etc.)
   pi.on('tool_result', async (event, _ctx) => {
-    if (event.toolName !== 'memory-code') return;
-    if (!event.result) return;
+    if (event.toolName !== 'memory-code') {
+      return;
+    }
+    if (!event.result) {
+      return;
+    }
 
-    const resultText = typeof event.result === 'string'
-      ? event.result
-      : JSON.stringify(event.result);
+    const resultText = typeof event.result === 'string' ? event.result : JSON.stringify(event.result);
 
     // Match relative file paths like "src/foo.ts" or "extensions/memory-layer/hooks/tool-guardrails.ts"
     const filePaths = resultText.match(/[\w/.-]+\.(ts|js|tsx|jsx|mjs|cjs|py|go|rs)/g) || [];
