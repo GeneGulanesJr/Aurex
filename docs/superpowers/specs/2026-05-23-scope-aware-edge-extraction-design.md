@@ -1,7 +1,7 @@
 # Scope-Aware Edge Extraction Design
 
 **Date:** 2026-05-23  
-**Status:** Approved (Revision 1 — review feedback incorporated)  
+**Status:** Approved (Revision 2 — review round 2 feedback incorporated)  
 **Replaces:** Heuristic callee resolution in `call-graph-impl.js` (`resolveCallee` function)
 
 ## Problem
@@ -49,7 +49,7 @@ buildCallGraph (simplified — reads scope_resolution instead of heuristics)
 | `scope_depth` | INTEGER NOT NULL DEFAULT 0 | Nesting depth (0 = file-level, 1 = function, 2 = block inside function, etc.) |
 | `byte_start` | INTEGER NULL | Optional: byte-range precision for languages that need it |
 | `byte_end` | INTEGER NULL | Optional: byte-range precision for languages that need it |
-| `first_seen_pass` | INTEGER NOT NULL DEFAULT 0 | Which pass first created this binding (0 = parse time, 1+ = synthetic from resolution) |
+| `first_seen_pass` | INTEGER NOT NULL DEFAULT 0 | Which pass first created this binding. **0 = parse-time artifact** (not a resolution pass). **1+ = synthetic binding created during resolution pass N**. Health check queries should filter `first_seen_pass >= 1` to find synthetic bindings. |
 
 Indexes: `(repo_id, file_id, name, line_start)`, `(repo_id, file_id, line_start, line_end)`, `(file_id, scope_depth)`
 
@@ -102,7 +102,7 @@ Indexes: `(binding_id)`, `(resolved_symbol_id)`, `(status)`, `(resolved_at_pass)
 | `from_import` | `external_file` | `import module` |
 | `wildcard_import` | `external_file` | `from module import *` |
 | `wildcard_import` | `external_package` | `from numpy import *` (not expanded, marked unresolved) |
-| `re_export` | `external_file` | `__all__ = ['foo']; foo = imported.foo` |
+| `re_export` | `external_file` | `__all__ = ['foo']; foo = imported.foo` — **v1: detection deferred** (requires light semantic pass beyond AST; see Known Limitations) |
 | `declaration` | `local` | `def foo():`, `class Foo:` |
 | `parameter` | `local` | `def foo(bar):` |
 | `assignment` | `local` | `x = 1` |
@@ -164,7 +164,7 @@ Process all files in any order. For each file, extract bindings but leave `sourc
 For each binding:
 - `origin = 'external_file'` → resolve `source_file_id` using `resolveImportTarget` (existing function). If found, look up the symbol in that file. Mark `status = 'resolved_internal'` or `'unresolved'`.
 - `origin = 'external_package'` → mark `status = 'resolved_external'`, no symbol lookup needed.
-- `origin = 'local'` → find matching `code_symbols` row in the same file. Mark `status = 'resolved_internal'`.
+- `origin = 'local'` → find matching `code_symbols` row in the same file by name AND line range (symbol's `start_line`/`end_line` must overlap with the binding's `line_start`/`line_end`). This handles overloaded names correctly: two `helper` functions in different classes each match their own scope binding. If multiple symbols match, prefer the one with the closest line range. Mark `status = 'resolved_internal'`.
 - `origin = 'unresolved'` → mark `status = 'unresolved'`.
 
 ### Pass 3 — Re-export chain resolution
@@ -194,7 +194,7 @@ src/code-index/
     go-scope.js           — Go scope builder
     rust-scope.js         — Rust scope builder
     sql-scope.js          — SQL scope builder
-    html-scope.js         — HTML scope builder (delegates inline scripts to JS builder)
+    html-scope.js         — HTML scope builder (v1: resource refs only — inline script bindings deferred)
     shared.js             — common utilities (addBinding, dedup, etc.)
 ```
 
@@ -266,8 +266,8 @@ The heuristic cascade is preserved as a fallback, not deleted. Dynamic calls, co
 ### 5. Reindex Compatibility
 
 - **Full reindex:** Builds scope tables from scratch, runs all resolution passes.
-- **Incremental reindex:** For changed files: `DELETE FROM file_scope_bindings WHERE file_id = ?`, re-parse, bulk insert new bindings. Then re-run resolution for affected files and their importers (files that import the changed files). The import graph (already built by `buildImportEdges`) identifies which files need re-resolution.
-- **Force-derived flag:** New `--force-derived` option triggers re-resolution without re-parsing. Useful after scope builder improvements. Deletes all `scope_resolution` rows and re-runs the multi-pass resolver.
+- **Incremental reindex:** For changed files: (1) `DELETE FROM scope_resolution WHERE binding_id IN (SELECT id FROM file_scope_bindings WHERE file_id = ?)` to clean dangling resolution rows, (2) `DELETE FROM file_scope_bindings WHERE file_id = ?` to remove stale bindings, (3) re-parse and bulk insert new bindings. Then re-run resolution for the changed files and their importers (files that import the changed files, identified via the import graph). The two-step delete ensures `scope_resolution` rows keyed to old auto-increment IDs don't dangle.
+- **Force-derived flag:** New `--force-derived` option triggers re-resolution without re-parsing. Deletes all `scope_resolution` rows and re-runs the multi-pass resolver. Does not touch `file_scope_bindings` (parse artifact is preserved).
 
 ## Implementation Order
 
@@ -280,7 +280,7 @@ The heuristic cascade is preserved as a fallback, not deleted. Dynamic calls, co
 7. **Go scope builder** — straightforward imports
 8. **Rust scope builder** — `use` statements
 9. **SQL scope builder** — table refs, CTEs, aliases
-10. **HTML scope builder** — resource refs, inline script delegation
+10. **HTML scope builder** — resource refs only (inline script bindings deferred)
 11. **Integration tests** — verify callers/callees/deps return meaningful results
 
 ## Success Criteria
@@ -302,5 +302,6 @@ The heuristic cascade is preserved as a fallback, not deleted. Dynamic calls, co
 ## Known Limitations (v1)
 
 - **HTML inline scripts** produce no scope bindings. Inline `<script>` blocks have fundamentally different scope semantics (no module system, multiple scripts per file, execution ordering). Deferred to a follow-up.
+- **Python `re_export` detection** is deferred to a follow-up. Detecting `__all__`-based re-exports requires a light semantic pass (correlating an `__all__` assignment with the bindings it names) that goes beyond pure AST walking. For v1, Python files with `__all__` will have their exported symbols resolved only through direct import analysis.
 - **Wildcard imports from external packages** (`from numpy import *`) are marked `unresolved` and not expanded. Only wildcard imports from tracked internal files are expanded (with a 50-symbol cap).
 - **Dynamic `import()` calls** produce `status = 'unresolved'` bindings. Static analysis cannot determine the target at parse time.
