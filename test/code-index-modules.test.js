@@ -175,6 +175,13 @@ describe('code-index repository clearing', () => {
       );
     }
 
+    function queueBindingRows(sql, batches) {
+      rowsBySql.set(
+        key(sql),
+        batches.map((batch) => batch.map((id) => ({ binding_id: id }))),
+      );
+    }
+
     queueRows(
       'SELECT sc.id FROM symbol_complexity sc JOIN code_symbols s ON s.id = sc.symbol_id WHERE s.repo_id = ? LIMIT ?',
       [[1, 2], []],
@@ -183,6 +190,11 @@ describe('code-index repository clearing', () => {
     queueRows('SELECT id FROM code_imports WHERE repo_id = ? LIMIT ?', [[]]);
     queueRows('SELECT id FROM churn_metrics WHERE repo_id = ? LIMIT ?', [[]]);
     queueRows('SELECT id FROM code_file_diagnostics WHERE repo_id = ? LIMIT ?', [[6], []]);
+    queueBindingRows(
+      'SELECT binding_id FROM scope_resolution WHERE binding_id IN (SELECT id FROM file_scope_bindings WHERE repo_id = ?) LIMIT ?',
+      [[7], []],
+    );
+    queueRows('SELECT id FROM file_scope_bindings WHERE repo_id = ? LIMIT ?', [[8], []]);
     queueRows('SELECT id FROM code_symbols WHERE repo_id = ? LIMIT ?', [[4], []]);
     queueRows('SELECT id FROM code_files WHERE repo_id = ? LIMIT ?', [[5], []]);
 
@@ -207,12 +219,22 @@ describe('code-index repository clearing', () => {
 
     const totals = repository.clearRepoIndex(42, { batchSize: 2, onProgress: (p) => progress.push(p.message) });
 
-    expect(totals).toMatchObject({ symbolComplexity: 2, calls: 1, diagnostics: 1, symbols: 1, files: 1 });
+    expect(totals).toMatchObject({
+      symbolComplexity: 2,
+      calls: 1,
+      diagnostics: 1,
+      scopeResolution: 1,
+      scopeBindings: 1,
+      symbols: 1,
+      files: 1,
+    });
     expect(calls.map((call) => (Array.isArray(call) ? call[0] : call))).toEqual([
       'BEGIN',
       'DELETE FROM symbol_complexity WHERE id IN (?, ?)',
       'DELETE FROM code_calls WHERE id IN (?)',
       'DELETE FROM code_file_diagnostics WHERE id IN (?)',
+      'DELETE FROM scope_resolution WHERE binding_id IN (?)',
+      'DELETE FROM file_scope_bindings WHERE id IN (?)',
       'DELETE FROM code_symbols WHERE id IN (?)',
       'DELETE FROM code_files WHERE id IN (?)',
       'COMMIT',

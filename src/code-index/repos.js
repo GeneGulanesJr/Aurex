@@ -93,7 +93,7 @@ function createCodeIndexRepository(deps) {
           onProgress({ message, ...extra });
         }
       };
-      const deleteByIdBatch = ({ label, selectSql, selectParams = [] }) => {
+      const deleteByIdBatch = ({ label, selectSql, selectParams = [], idColumn = 'id' }) => {
         let deleted = 0;
         emit(`Clearing ${label.name}...`, { deleted });
         for (;;) {
@@ -101,9 +101,9 @@ function createCodeIndexRepository(deps) {
           if (!rows.length) {
             break;
           }
-          const ids = rows.map((row) => row.id);
+          const ids = rows.map((row) => row[idColumn]);
           const placeholders = ids.map(() => '?').join(', ');
-          sqlRun(`DELETE FROM ${label.table} WHERE id IN (${placeholders})`, ids);
+          sqlRun(`DELETE FROM ${label.table} WHERE ${idColumn} IN (${placeholders})`, ids);
           deleted += ids.length;
           emit(`Cleared ${deleted} ${label.name}`, { deleted });
           if (ids.length < batchSize) {
@@ -141,14 +141,16 @@ function createCodeIndexRepository(deps) {
           selectSql: 'SELECT id FROM code_file_diagnostics WHERE repo_id = ? LIMIT ?',
           selectParams: [repoId],
         });
+        totals.scopeResolution = deleteByIdBatch({
+          label: { table: 'scope_resolution', name: 'scope resolutions' },
+          selectSql:
+            'SELECT binding_id FROM scope_resolution WHERE binding_id IN (SELECT id FROM file_scope_bindings WHERE repo_id = ?) LIMIT ?',
+          selectParams: [repoId],
+          idColumn: 'binding_id',
+        });
         totals.scopeBindings = deleteByIdBatch({
           label: { table: 'file_scope_bindings', name: 'scope bindings' },
           selectSql: 'SELECT id FROM file_scope_bindings WHERE repo_id = ? LIMIT ?',
-          selectParams: [repoId],
-        });
-        totals.scopeResolution = deleteByIdBatch({
-          label: { table: 'scope_resolution', name: 'scope resolutions' },
-          selectSql: 'SELECT id FROM scope_resolution WHERE binding_id IN (SELECT id FROM file_scope_bindings WHERE repo_id = ?) LIMIT ?',
           selectParams: [repoId],
         });
         totals.symbols = deleteByIdBatch({
