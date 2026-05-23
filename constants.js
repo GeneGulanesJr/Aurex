@@ -117,6 +117,7 @@ const CONTEXT = {
   TOPIC_MATCH_BOOST: 5,
   EXCLUDED_TYPES: ['progress', 'accomplished', 'session_summary'],
   DEFAULT_LIMIT: 10,
+  STALE_GUIDANCE: '📝 **Stale code index:** indexed code may not match current source files. Run `memory-code reindex-repo --repo {repo}` to update. Verify current source before relying on code-index results.',
 };
 
 const PAGERANK = {

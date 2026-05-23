@@ -146,9 +146,7 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
       );
     } else if (deps.isRepoStale(cwdRepo)) {
       lines.push('');
-      lines.push(
-        `📝 **Code index may be stale:** \"${cwdRepo.name}\" was indexed at ${cwdRepo.indexed_at}. Source files have been modified since. Run \`memory-code reindex-repo --repo ${cwdRepo.name}\` to update.`,
-      );
+      lines.push(CONTEXT.STALE_GUIDANCE.replace('{repo}', cwdRepo.name));
     }
 
     return {
