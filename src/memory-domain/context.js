@@ -117,6 +117,9 @@ function context(deps, args) {
   }
   const observations = sqlJson(obsQuery, obsParams);
 
+  const excludedSet = new Set(CONTEXT.EXCLUDED_TYPES);
+  const filtered = observations.filter((o) => !excludedSet.has(o.type));
+
   const workflows = project
     ? sqlJson(
         `
@@ -130,9 +133,9 @@ function context(deps, args) {
       )
     : [];
 
-  if (sessionId && observations.length > 0) {
+  if (sessionId && filtered.length > 0) {
     const recallQuery = topicQuery || topicKey || 'context-auto';
-    const entries = observations.map((o) => ({
+    const entries = filtered.map((o) => ({
       memoryId: o.id,
       sessionId: String(sessionId),
       query: recallQuery,
@@ -145,7 +148,7 @@ function context(deps, args) {
   return {
     sessions,
     personal,
-    observations,
+    observations: filtered,
     workflows,
     project: project || null,
     cross_project: crossProject,

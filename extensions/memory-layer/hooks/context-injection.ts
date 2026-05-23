@@ -2,6 +2,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { MEMORY_REMINDER_INTERVAL, MemResult, state } from '../state';
 import { getKnownRepos, isRepoStale } from '../host/project-detector';
 import { mem } from '../host/memory-client';
+import { CONTEXT } from '../../../../constants';
 import path from 'node:path';
 
 interface ContextDeps {
@@ -19,7 +20,7 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
 
     const contextResult = await deps.mem('context', {
       project: deps.state.currentProject,
-      limit: '15',
+      limit: String(CONTEXT.DEFAULT_LIMIT),
       ...(deps.state.sessionId ? { 'session-id': String(deps.state.sessionId) } : {}),
     });
 
@@ -28,7 +29,7 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
     if (!contextResult || !((contextResult.observations as any[]) || []).length) {
       crossProjectResult = await deps.mem('context', {
         'all-projects': 'true',
-        limit: '10',
+        limit: String(Math.max(CONTEXT.DEFAULT_LIMIT - 3, 5)),
         ...(deps.state.sessionId ? { 'session-id': String(deps.state.sessionId) } : {}),
       });
     }

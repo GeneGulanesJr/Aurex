@@ -83,6 +83,8 @@ const RANKING = {
     learning: 1,
     session_summary: 0,
     skill: 0,
+    progress: -1,
+    accomplished: -1,
   },
   TYPE_BOOST: {
     decision: 1.3,
@@ -108,6 +110,8 @@ const CONTEXT = {
   CROSS_PROJECT_DEEP_MULTIPLIER: 2,
   CROSS_PROJECT_DEEP_MAX: 30,
   TOPIC_MATCH_BOOST: 5,
+  EXCLUDED_TYPES: ['progress', 'accomplished', 'session_summary'],
+  DEFAULT_LIMIT: 10,
 };
 
 const PAGERANK = {
