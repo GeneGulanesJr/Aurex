@@ -1,19 +1,39 @@
 const { CONTEXT, RANKING } = require('../constants');
 const { context } = require('../src/memory-domain/context');
 
+function mockFn(impl = () => undefined) {
+  const calls = [];
+  const fn = (...args) => {
+    calls.push(args);
+    return impl(...args);
+  };
+  fn.mock = { calls };
+  return fn;
+}
+
 function makeDeps(observations = []) {
   return {
-    sqlJson: jest.fn((q, params) => {
-      if (typeof q === 'string' && q.includes('FROM observations') && q.includes("scope = 'personal'")) return [];
-      if (typeof q === 'string' && q.includes('FROM session_log')) return [];
-      if (typeof q === 'string' && q.includes('FROM procedural_memory')) return [];
-      if (typeof q === 'string' && q.includes('FROM observations')) return observations;
-      if (typeof q === 'string' && q.includes('COUNT(*)')) return [{ cnt: 0 }];
+    sqlJson: mockFn((q) => {
+      if (typeof q === 'string' && q.includes('FROM observations') && q.includes("scope = 'personal'")) {
+        return [];
+      }
+      if (typeof q === 'string' && q.includes('FROM session_log')) {
+        return [];
+      }
+      if (typeof q === 'string' && q.includes('FROM procedural_memory')) {
+        return [];
+      }
+      if (typeof q === 'string' && q.includes('FROM observations')) {
+        return observations;
+      }
+      if (typeof q === 'string' && q.includes('COUNT(*)')) {
+        return [{ cnt: 0 }];
+      }
       return [];
     }),
-    jsonErrNoExit: jest.fn(),
-    insertRecallLog: jest.fn(),
-    countObservationsByProjectAndType: jest.fn(() => 0),
+    jsonErrNoExit: mockFn(),
+    insertRecallLog: mockFn(),
+    countObservationsByProjectAndType: mockFn(() => 0),
   };
 }
 
@@ -39,10 +59,50 @@ describe('CONTEXT constants for filtering', () => {
 describe('context() excludes low-signal types', () => {
   test('excludes progress and accomplished from default project context', () => {
     const mixedObservations = [
-      { id: 1, title: 'Progress checkpoint (turn 10)', type: 'progress', scope: 'project', topic_key: null, created_at: '2026-05-23T00:00:00Z', trust_score: 0.9, recall_count: 5, type_priority: 0 },
-      { id: 2, title: 'Edited db.test.js', type: 'accomplished', scope: 'project', topic_key: null, created_at: '2026-05-23T00:00:00Z', trust_score: 0.9, recall_count: 3, type_priority: 0 },
-      { id: 3, title: 'Architecture choice: FTS5', type: 'decision', scope: 'project', topic_key: 'search', created_at: '2026-05-23T00:00:00Z', trust_score: 0.8, recall_count: 2, type_priority: 3 },
-      { id: 4, title: 'Bug fix: config save/restore', type: 'bugfix', scope: 'project', topic_key: 'config', created_at: '2026-05-22T00:00:00Z', trust_score: 0.7, recall_count: 1, type_priority: 2 },
+      {
+        id: 1,
+        title: 'Progress checkpoint (turn 10)',
+        type: 'progress',
+        scope: 'project',
+        topic_key: null,
+        created_at: '2026-05-23T00:00:00Z',
+        trust_score: 0.9,
+        recall_count: 5,
+        type_priority: 0,
+      },
+      {
+        id: 2,
+        title: 'Edited db.test.js',
+        type: 'accomplished',
+        scope: 'project',
+        topic_key: null,
+        created_at: '2026-05-23T00:00:00Z',
+        trust_score: 0.9,
+        recall_count: 3,
+        type_priority: 0,
+      },
+      {
+        id: 3,
+        title: 'Architecture choice: FTS5',
+        type: 'decision',
+        scope: 'project',
+        topic_key: 'search',
+        created_at: '2026-05-23T00:00:00Z',
+        trust_score: 0.8,
+        recall_count: 2,
+        type_priority: 3,
+      },
+      {
+        id: 4,
+        title: 'Bug fix: config save/restore',
+        type: 'bugfix',
+        scope: 'project',
+        topic_key: 'config',
+        created_at: '2026-05-22T00:00:00Z',
+        trust_score: 0.7,
+        recall_count: 1,
+        type_priority: 2,
+      },
     ];
     const deps = makeDeps(mixedObservations);
     const result = context(deps, { project: 'TestProject' });
@@ -56,8 +116,30 @@ describe('context() excludes low-signal types', () => {
 
   test('excludes progress and accomplished from cross-project context', () => {
     const mixedObservations = [
-      { id: 1, title: 'Progress checkpoint (turn 80)', type: 'progress', scope: 'project', topic_key: null, created_at: '2026-05-23T00:00:00Z', trust_score: 0.9, recall_count: 10, type_priority: 0, project: 'Other' },
-      { id: 2, title: 'Fixed auth middleware', type: 'bugfix', scope: 'project', topic_key: 'auth', created_at: '2026-05-23T00:00:00Z', trust_score: 0.8, recall_count: 3, type_priority: 2, project: 'Other' },
+      {
+        id: 1,
+        title: 'Progress checkpoint (turn 80)',
+        type: 'progress',
+        scope: 'project',
+        topic_key: null,
+        created_at: '2026-05-23T00:00:00Z',
+        trust_score: 0.9,
+        recall_count: 10,
+        type_priority: 0,
+        project: 'Other',
+      },
+      {
+        id: 2,
+        title: 'Fixed auth middleware',
+        type: 'bugfix',
+        scope: 'project',
+        topic_key: 'auth',
+        created_at: '2026-05-23T00:00:00Z',
+        trust_score: 0.8,
+        recall_count: 3,
+        type_priority: 2,
+        project: 'Other',
+      },
     ];
     const deps = makeDeps(mixedObservations);
     const result = context(deps, { 'all-projects': 'true' });
@@ -69,8 +151,28 @@ describe('context() excludes low-signal types', () => {
 
   test('excludes progress from topic-key context', () => {
     const observations = [
-      { id: 1, title: 'Progress checkpoint (turn 10)', type: 'progress', scope: 'project', topic_key: null, created_at: '2026-05-23T00:00:00Z', trust_score: 0.9, recall_count: 5, type_priority: 0 },
-      { id: 2, title: 'Decision: use SQLite', type: 'decision', scope: 'project', topic_key: 'db', created_at: '2026-05-23T00:00:00Z', trust_score: 0.8, recall_count: 2, type_priority: 3 },
+      {
+        id: 1,
+        title: 'Progress checkpoint (turn 10)',
+        type: 'progress',
+        scope: 'project',
+        topic_key: null,
+        created_at: '2026-05-23T00:00:00Z',
+        trust_score: 0.9,
+        recall_count: 5,
+        type_priority: 0,
+      },
+      {
+        id: 2,
+        title: 'Decision: use SQLite',
+        type: 'decision',
+        scope: 'project',
+        topic_key: 'db',
+        created_at: '2026-05-23T00:00:00Z',
+        trust_score: 0.8,
+        recall_count: 2,
+        type_priority: 3,
+      },
     ];
     const deps = makeDeps(observations);
     const result = context(deps, { project: 'TestProject', 'topic-key': 'db' });

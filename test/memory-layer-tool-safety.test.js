@@ -4,6 +4,7 @@ import {
   toolProgressResult,
   toolTextResult,
 } from '../extensions/memory-layer/tools/tool-result.ts';
+import { formatCodeResult } from '../extensions/memory-layer/tools/format-code-result.ts';
 import { registerCodeTools } from '../extensions/memory-layer/tools/code-tools.ts';
 import { registerDocTools } from '../extensions/memory-layer/tools/doc-tools.ts';
 import { renderCompactToolResult } from '../extensions/memory-layer/tools/render.ts';
@@ -202,6 +203,41 @@ describe('memory tool renderer safety', () => {
     expect(result.details.classes[0].methods.length).toBe(25);
     expect(result.details.standalone.length).toBe(80);
     expect(result.details.truncated).toBe(true);
+  });
+
+  it('unwraps and caps enveloped memory-code outline results before formatting', async () => {
+    const standalone = Array.from({ length: 120 }, (_item, index) => ({
+      name: `fn${index}`,
+      kind: 'function',
+      signature: `function fn${index}() {}`,
+    }));
+    const tool = captureTool(registerCodeTools, {
+      mem: vi.fn().mockResolvedValue({
+        _meta: { result_count: 120, freshness: 'stale_index' },
+        data: { file: 'src/large.js', classes: [], standalone },
+      }),
+      memStreaming: vi.fn(),
+      getKnownRepos: vi.fn().mockResolvedValue([{ name: 'app' }]),
+      formatCodeResult,
+      invalidateRepoCache: vi.fn(),
+    });
+
+    const result = await tool.execute(
+      'id',
+      { mode: 'outline', repo: 'app', file: 'src/large.js' },
+      undefined,
+      vi.fn(),
+      {},
+    );
+    const text = result.content.find((item) => item.type === 'text').text;
+
+    expectRenderable(result);
+    expect(text).toContain('File outline');
+    expect(text).toContain('fn79');
+    expect(text).not.toContain('fn80');
+    expect(result.details._meta.result_count).toBe(120);
+    expect(result.details.data.standalone.length).toBe(80);
+    expect(result.details.data.truncated).toBe(true);
   });
 
   it.each([

@@ -222,13 +222,14 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
           }
           // Invalidate repo cache so guardrails immediately recognize the new/updated repo
           deps.invalidateRepoCache();
+          const response = buildCodeToolResponse(mode, result ?? {});
           let fmt: string | undefined | null;
           try {
-            fmt = deps.formatCodeResult(mode, result);
+            fmt = deps.formatCodeResult(mode, response.formatPayload);
           } catch {
             fmt = '';
           }
-          return toolTextResult(fmt || 'Indexing completed.', compactCodeToolDetails(mode, result ?? {}));
+          return toolTextResult(fmt || 'Indexing completed.', response.details);
         }
 
         if (mode === 'health') {
@@ -286,13 +287,14 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
           return toolTextResult(`Error: ${result.error}`, result ?? {}, true);
         }
 
+        const response = buildCodeToolResponse(mode, result ?? {});
         let fmt: string | undefined | null;
         try {
-          fmt = deps.formatCodeResult(mode, result);
+          fmt = deps.formatCodeResult(mode, response.formatPayload);
         } catch {
           fmt = '';
         }
-        return toolTextResult(fmt || `No ${mode} results found.`, compactCodeToolDetails(mode, result ?? {}));
+        return toolTextResult(fmt || `No ${mode} results found.`, response.details);
       } catch (err) {
         return toolTextResult(`Unexpected error: ${stringifyToolError(err)}`, {}, true);
       }
@@ -300,8 +302,34 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
   });
 }
 
-function compactCodeToolDetails(mode: string, result: any): Record<string, unknown> {
+function buildCodeToolResponse(mode: string, result: any): { formatPayload: any; details: Record<string, unknown> } {
+  const payload = unwrapCodeResultData(result);
+  const compactPayload = compactCodeToolPayload(mode, payload);
+  const meta =
+    result && typeof result === 'object' && result._meta && typeof result._meta === 'object' ? result._meta : null;
+  return {
+    formatPayload: compactPayload,
+    details: meta ? { _meta: meta, data: compactPayload } : compactPayload,
+  };
+}
+
+function unwrapCodeResultData(result: any): any {
+  if (result && typeof result === 'object' && result.data && typeof result.data === 'object') {
+    return result.data;
+  }
+  return result;
+}
+
+function compactCodeToolPayload(mode: string, result: any): Record<string, unknown> {
   if (mode !== 'outline' || !result || typeof result !== 'object') {
+    return result && typeof result === 'object' ? result : {};
+  }
+
+  return compactOutlinePayload(result);
+}
+
+function compactOutlinePayload(result: any): Record<string, unknown> {
+  if (!result || typeof result !== 'object') {
     return result && typeof result === 'object' ? result : {};
   }
 
