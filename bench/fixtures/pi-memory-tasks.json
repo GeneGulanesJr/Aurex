@@ -1,0 +1,144 @@
+{
+  "version": 2,
+  "repo": "PiMemoryExtension",
+  "tasks": [
+    {
+      "id": "decision-fts5-no-external-service",
+      "category": "prior-decision",
+      "intent": "Memory should recover why a design choice was made, then verify the current code path if needed.",
+      "prompt": "Why did LaPis choose SQLite FTS5 for memory search instead of an external search service? Explain the rationale and identify the current search module. Keep the answer concise.",
+      "expected_facts": [
+        {
+          "id": "fts5-choice",
+          "description": "LaPis uses SQLite FTS5 for memory search",
+          "aliases": ["FTS5", "SQLite", "full-text search", "full text search"]
+        },
+        {
+          "id": "zero-dependency-rationale",
+          "description": "The rationale is avoiding external dependencies/services",
+          "aliases": ["zero-dependency", "zero dependency", "without external deps", "without external dependencies", "no external service", "single SQLite"]
+        },
+        {
+          "id": "search-module",
+          "description": "Search implementation is in src/memory-domain/search.js",
+          "aliases": ["src/memory-domain/search.js", "memory-domain/search.js", "search.js"]
+        }
+      ]
+    },
+    {
+      "id": "bug-history-createdb-config",
+      "category": "bug-history",
+      "intent": "Memory should explain the historical bug behind an implementation pattern, not just describe the final code.",
+      "prompt": "What bug led to the createDb config save/restore pattern in LaPis? Explain the failure mode and where the fix lives. Keep the answer concise.",
+      "expected_facts": [
+        {
+          "id": "createdb-config-bug",
+          "description": "createDb was mutating or overwriting cached global config",
+          "aliases": ["createDb", "cached config", "getConfig._cached", "mutating", "overwriting"]
+        },
+        {
+          "id": "test-isolation",
+          "description": "The issue affected isolated DB/test config state",
+          "aliases": ["test isolation", "isolated DB", "global singleton", "global config", "test config"]
+        },
+        {
+          "id": "db-module",
+          "description": "The fix lives in db.js createDb",
+          "aliases": ["db.js", "createDb"]
+        }
+      ]
+    },
+    {
+      "id": "staleness-code-index",
+      "category": "staleness",
+      "intent": "Memory should surface stale-index risk and recommend verification or reindexing instead of blindly trusting old code memories.",
+      "prompt": "If LaPis says the PiMemoryExtension code index may be stale, what should the agent do before relying on code-memory results? Mention the relevant reindex action and why verification matters.",
+      "expected_facts": [
+        {
+          "id": "stale-warning",
+          "description": "A stale code index means indexed code may not match current source files",
+          "aliases": ["stale", "out of date", "modified since", "current source"]
+        },
+        {
+          "id": "reindex-action",
+          "description": "The agent should run memory-code reindex-repo or equivalent reindexing",
+          "aliases": ["memory-code reindex-repo", "reindex-repo", "reindex", "update the index"]
+        },
+        {
+          "id": "verify-current-code",
+          "description": "The agent should verify against current code before relying on memory/code-index results",
+          "aliases": ["verify", "current code", "current source", "before relying"]
+        }
+      ]
+    },
+    {
+      "id": "navigation-context-hook",
+      "category": "navigation",
+      "intent": "Memory should help jump to the likely module, then code verification should confirm the wiring.",
+      "prompt": "Where is automatic project memory context wired into the Pi extension? Name the hook/module and the extension composition file. Keep the answer concise.",
+      "expected_facts": [
+        {
+          "id": "context-hook-module",
+          "description": "Context auto-load is handled by extensions/memory-layer/hooks/context-injection.ts",
+          "aliases": ["extensions/memory-layer/hooks/context-injection.ts", "context-injection.ts", "registerBeforeAgentStart"]
+        },
+        {
+          "id": "extension-composition",
+          "description": "The extension root composes/registers hooks in extensions/memory-layer/index.ts",
+          "aliases": ["extensions/memory-layer/index.ts", "index.ts", "register"]
+        },
+        {
+          "id": "startup-context",
+          "description": "The hook injects or auto-loads memory context before/at agent start",
+          "aliases": ["before agent start", "agent start", "auto-loaded", "memory context"]
+        }
+      ]
+    },
+    {
+      "id": "negative-control-rank-typeboost",
+      "category": "negative-control",
+      "intent": "Memory should not be necessary; current code inspection should answer this cheaply.",
+      "prompt": "In the current source, what does rankObservations multiply by typeBoost? Answer from the code and name the file. Keep the answer concise.",
+      "expected_facts": [
+        {
+          "id": "composite-multiplied",
+          "description": "typeBoost multiplies the composite ranking score",
+          "aliases": ["composite", "typeBoost", "multipl"]
+        },
+        {
+          "id": "ranking-components",
+          "description": "The composite includes FTS, recency, trust, and recall scores",
+          "aliases": ["ftsScore", "recencyScore", "trustScore", "recallScore", "FTS", "recency", "trust", "recall"]
+        },
+        {
+          "id": "search-file",
+          "description": "The code is in src/memory-domain/search.js",
+          "aliases": ["src/memory-domain/search.js", "memory-domain/search.js", "search.js"]
+        }
+      ]
+    },
+    {
+      "id": "negative-control-context-return-shape",
+      "category": "negative-control",
+      "intent": "Memory should not be necessary; the function return object in current source should answer this.",
+      "prompt": "In the current source, what top-level fields does the memory-domain context command return? Name the module. Keep the answer concise.",
+      "expected_facts": [
+        {
+          "id": "context-return-fields",
+          "description": "Context returns sessions, personal, observations, workflows, project, cross_project, topic, and stats",
+          "aliases": ["sessions", "personal", "observations", "workflows", "project", "cross_project", "topic", "stats"]
+        },
+        {
+          "id": "context-module",
+          "description": "The module is src/memory-domain/context.js",
+          "aliases": ["src/memory-domain/context.js", "memory-domain/context.js", "context.js"]
+        },
+        {
+          "id": "stats-fields",
+          "description": "Stats include total_memories, total_personal, and active_workflows",
+          "aliases": ["total_memories", "total_personal", "active_workflows"]
+        }
+      ]
+    }
+  ]
+}

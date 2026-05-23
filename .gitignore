@@ -7,3 +7,4 @@ __pycache__/
 /crosshash/target/
 /crosshash/.crosshash/
 jobs/
+bench/results/
