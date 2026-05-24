@@ -1,0 +1,22 @@
+{
+  "id": "feature-context-hook",
+  "category": "feature",
+  "repo": "PiMemoryExtension",
+  "setup": {
+    "checkout": "cf6b83bb2046a2d1cc32f9a0e1b8e7202d74cef3",
+    "seed_memory": "memory-seeds/context-hook-navigation.json"
+  },
+  "prompt": "Add a new optional flag 'contextLimit' to the context-injection hook that lets the user override the default limit of 10 observations. The hook should read contextLimit from the extension settings. Add a test that verifies the flag works. Run the test to confirm.",
+  "success": {
+    "tests": ["npm test -- test/context-injection.test.js --reporter=verbose 2>&1"],
+    "must_touch": ["extensions/memory-layer/hooks/context-injection.ts", "test/context-injection.test.js"],
+    "must_not_touch": ["src/memory-domain/db.js"],
+    "expected_facts": [
+      {
+        "id": "context-limit-flag",
+        "description": "The context-injection hook supports a configurable limit via contextLimit",
+        "aliases": ["contextLimit", "configurable limit", "override the default limit"]
+      }
+    ]
+  }
+}

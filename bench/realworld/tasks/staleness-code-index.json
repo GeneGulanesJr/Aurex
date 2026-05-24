@@ -1,0 +1,27 @@
+{
+  "id": "staleness-code-index",
+  "category": "staleness",
+  "repo": "PiMemoryExtension",
+  "setup": {
+    "checkout": "cf6b83bb2046a2d1cc32f9a0e1b8e7202d74cef3",
+    "seed_memory": "memory-seeds/stale-index-warning.json"
+  },
+  "prompt": "The code index says parse-code.js exports a function called extractScopeEdges. Check if this function actually exists in the current source. If it doesn't, explain what happened and fix any code that references it.",
+  "success": {
+    "tests": [],
+    "must_touch": [],
+    "must_not_touch": ["src/memory-domain/search.js"],
+    "expected_facts": [
+      {
+        "id": "stale-detection",
+        "description": "The agent detected the code index is stale and the function doesn't exist",
+        "aliases": ["stale", "doesn't exist", "not found", "no longer exists", "out of date", "reindex"]
+      },
+      {
+        "id": "verify-source",
+        "description": "The agent verified against current source code",
+        "aliases": ["verified", "current source", "checked the file", "read the source"]
+      }
+    ]
+  }
+}

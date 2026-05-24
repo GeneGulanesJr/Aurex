@@ -1,0 +1,22 @@
+{
+  "id": "refactor-fts5-rank",
+  "category": "refactor",
+  "repo": "PiMemoryExtension",
+  "setup": {
+    "checkout": "cf6b83bb2046a2d1cc32f9a0e1b8e7202d74cef3",
+    "seed_memory": "memory-seeds/fts5-decision.json"
+  },
+  "prompt": "Refactor rankObservations in src/memory-domain/search.js to extract the scoring weights into a configurable object at the top of the module. The weights are: FTS relevance, recency, trust, recall, and typeBoost. Keep the same scoring behavior — this is a pure refactor. Run the existing tests to verify nothing broke.",
+  "success": {
+    "tests": ["npm test -- test/search.test.js --reporter=verbose 2>&1"],
+    "must_touch": ["src/memory-domain/search.js"],
+    "must_not_touch": ["test/search.test.js", "src/memory-domain/db.js"],
+    "expected_facts": [
+      {
+        "id": "scoring-weights-extracted",
+        "description": "The scoring weights were extracted into a configurable object",
+        "aliases": ["scoring weights", "configurable", "extracted", "SCORING_WEIGHTS"]
+      }
+    ]
+  }
+}

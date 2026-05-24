@@ -1,0 +1,28 @@
+{
+  "id": "review-pr-trust-sync",
+  "category": "review",
+  "repo": "PiMemoryExtension",
+  "setup": {
+    "checkout": "cf6b83bb2046a2d1cc32f9a0e1b8e7202d74cef3",
+    "apply_patch": "patches/pr-trust-sync-change.patch",
+    "seed_memory": "memory-seeds/trust-sync-architecture.json"
+  },
+  "prompt": "Review the staged changes in this checkout. The change modifies trust-sync to run synchronously after every git operation instead of only after pull/checkout/merge/rebase. Evaluate whether this is a good change. Consider performance implications and whether the original design decision to only sync on specific operations was intentional.",
+  "success": {
+    "tests": [],
+    "must_touch": [],
+    "must_not_touch": [],
+    "expected_facts": [
+      {
+        "id": "original-design-intent",
+        "description": "Trust sync was intentionally designed to only trigger on pull/checkout/merge/rebase",
+        "aliases": ["pull/checkout/merge/rebase", "intentional", "specific git operations", "designed to only"]
+      },
+      {
+        "id": "performance-concern",
+        "description": "Running on every git operation would be unnecessarily expensive",
+        "aliases": ["expensive", "unnecessary", "performance", "overhead", "too frequent", "every git operation"]
+      }
+    ]
+  }
+}

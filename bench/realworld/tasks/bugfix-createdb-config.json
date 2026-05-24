@@ -1,0 +1,23 @@
+{
+  "id": "bugfix-createdb-config",
+  "category": "bugfix",
+  "repo": "PiMemoryExtension",
+  "setup": {
+    "checkout": "cf6b83bb2046a2d1cc32f9a0e1b8e7202d74cef3",
+    "apply_patch": "patches/break-createdb-config.patch",
+    "seed_memory": "memory-seeds/createdb-history.json"
+  },
+  "prompt": "A test is failing in test/db-config.test.js around createDb config isolation. The test expects that creating a second database doesn't overwrite the first database's config. Fix the bug causing the test to fail. Run the test to verify your fix works.",
+  "success": {
+    "tests": ["npm test -- test/db-config.test.js --reporter=verbose 2>&1"],
+    "must_touch": ["src/memory-domain/db.js"],
+    "must_not_touch": ["test/db-config.test.js"],
+    "expected_facts": [
+      {
+        "id": "config-mutation-bug",
+        "description": "createDb was mutating or not isolating config between instances",
+        "aliases": ["mutating", "overwriting", "not isolating", "config isolation", "shared config", "getConfig._cached"]
+      }
+    ]
+  }
+}
