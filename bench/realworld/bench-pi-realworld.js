@@ -1,0 +1,623 @@
+#!/usr/bin/env node
+// Realworld Pi memory benchmark.
+//
+// Runs Pi against real code-editing tasks (bugfixes, features, refactors)
+// with and without memory, then grades: tests pass, diff correct, answer
+// includes expected facts.
+//
+// Usage:
+//   npm run bench:pi-realworld
+//   node bench/realworld/bench-pi-realworld.js --runs 3
+//   node bench/realworld/bench-pi-realworld.js --only bugfix-createdb-config
+
+'use strict';
+
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { execSync } = require('child_process');
+const { spawn } = require('child_process');
+const { parsePiOutput, gradeAnswer } = require('../bench-pi-paired');
+const { runTests } = require('./graders/run-tests');
+const { checkDiff } = require('./graders/check-diff');
+const { checkAnswer } = require('./graders/check-answer');
+
+const TASKS_DIR = path.join(__dirname, 'tasks');
+const FIXTURES_DIR = path.join(__dirname, 'fixtures');
+const DEFAULT_RUNS = 3;
+const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
+const PI_CONFIG_FILES = ['models.json', 'settings.json', 'auth.json'];
+
+// ══════════════════════════════════════════════════════════
+// ARG PARSING
+// ══════════════════════════════════════════════════════════
+
+function parseArgs(argv) {
+  const args = {
+    runs: DEFAULT_RUNS,
+    only: null,
+    outDir: path.join(__dirname, 'results', `realworld-${new Date().toISOString().replace(/[:.]/g, '-')}`),
+    timeoutMs: DEFAULT_TIMEOUT_MS,
+    noCleanup: false,
+  };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--runs') {
+      args.runs = parseInt(argv[++i], 10);
+    } else if (arg === '--only') {
+      args.only = argv[++i];
+    } else if (arg === '--out-dir') {
+      args.outDir = argv[++i];
+    } else if (arg === '--timeout-ms') {
+      args.timeoutMs = parseInt(argv[++i], 10);
+    } else if (arg === '--no-cleanup') {
+      args.noCleanup = true;
+    } else if (arg === '--help' || arg === '-h') {
+      printHelp();
+      process.exit(0);
+    }
+  }
+  return args;
+}
+
+function printHelp() {
+  console.log(`Usage:
+  node bench/realworld/bench-pi-realworld.js
+
+Runs Pi against real code-editing tasks with and without memory.
+Each task runs N times per side (default ${DEFAULT_RUNS}).
+
+Options:
+  --runs N            Number of repetitions per task per side (default ${DEFAULT_RUNS})
+  --only TASK_ID      Run a single task
+  --out-dir DIR       Output directory
+  --timeout-ms N      Per-side timeout in ms (default ${DEFAULT_TIMEOUT_MS})
+  --no-cleanup        Keep worktrees after run (for debugging)
+`);
+}
+
+// ══════════════════════════════════════════════════════════
+// GIT WORKTREE MANAGEMENT
+// ══════════════════════════════════════════════════════════
+
+function getRepoRoot() {
+  return execSync('git rev-parse --show-toplevel', { encoding: 'utf-8' }).trim();
+}
+
+function createWorktree(repoRoot, commitish, worktreePath) {
+  fs.mkdirSync(path.dirname(worktreePath), { recursive: true });
+  execSync(`git worktree add --detach "${worktreePath}" ${commitish}`, {
+    cwd: repoRoot,
+    encoding: 'utf-8',
+    timeout: 30_000,
+  });
+}
+
+function removeWorktree(repoRoot, worktreePath) {
+  try {
+    execSync(`git worktree remove --force "${worktreePath}"`, {
+      cwd: repoRoot,
+      encoding: 'utf-8',
+      timeout: 15_000,
+    });
+  } catch {
+    // Best-effort cleanup
+    try {
+      fs.rmSync(worktreePath, { recursive: true, force: true });
+    } catch {
+      // Ignore
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// SETUP: PATCH APPLICATION
+// ══════════════════════════════════════════════════════════
+
+function applyPatch(worktreePath, patchPath) {
+  const absolutePatch = path.resolve(patchPath);
+  execSync(`git apply "${absolutePatch}"`, {
+    cwd: worktreePath,
+    encoding: 'utf-8',
+    timeout: 15_000,
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+// SETUP: MEMORY SEEDING
+// ══════════════════════════════════════════════════════════
+
+function findLapisRoot() {
+  const candidates = [
+    path.resolve(__dirname, '..', '..'),
+    process.env.LAPIS_PATH,
+    path.join(os.homedir(), '.pi', 'agent', 'git', 'github.com', 'GeneGulanesJr', 'LaPis'),
+  ];
+  for (const dir of candidates) {
+    if (dir && fs.existsSync(path.join(dir, 'memory-store.js'))) {
+      return dir;
+    }
+  }
+  // Fallback: use the current repo if it has memory-store.js
+  const repoRoot = getRepoRoot();
+  if (fs.existsSync(path.join(repoRoot, 'memory-store.js'))) {
+    return repoRoot;
+  }
+  console.error('ERROR: Cannot find LaPis root. Set LAPIS_PATH.');
+  process.exit(1);
+}
+
+function seedMemory(memorySeedPath) {
+  if (!memorySeedPath || !fs.existsSync(memorySeedPath)) {
+    return;
+  }
+  const seeds = JSON.parse(fs.readFileSync(memorySeedPath, 'utf-8'));
+  if (!Array.isArray(seeds) || seeds.length === 0) {
+    return;
+  }
+
+  const lapisRoot = findLapisRoot();
+  const msPath = path.join(lapisRoot, 'memory-store.js');
+
+  for (const seed of seeds) {
+    const args = [
+      'save',
+      '--type', seed.type || 'architecture',
+      '--title', seed.title,
+      '--content', seed.content,
+    ];
+    if (seed.project) {
+      args.push('--project', seed.project);
+    }
+    if (seed.scope) {
+      args.push('--scope', seed.scope);
+    }
+
+    execSync(`node "${msPath}" ${args.map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(' ')}`, {
+      cwd: lapisRoot,
+      encoding: 'utf-8',
+      timeout: 10_000,
+    });
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// SETUP: NO-MEMORY HOME
+// ══════════════════════════════════════════════════════════
+
+function prepareNoMemoryHome(outDir) {
+  const sourceAgentDir = path.join(os.homedir(), '.pi', 'agent');
+  const homeDir = path.join(outDir, '.pi-memory-off-home');
+  const targetAgentDir = path.join(homeDir, '.pi', 'agent');
+  fs.mkdirSync(targetAgentDir, { recursive: true });
+
+  for (const file of PI_CONFIG_FILES) {
+    const source = path.join(sourceAgentDir, file);
+    if (fs.existsSync(source)) {
+      const target = path.join(targetAgentDir, file);
+      if (file === 'settings.json') {
+        const settings = JSON.parse(fs.readFileSync(source, 'utf-8'));
+        if (Array.isArray(settings.packages)) {
+          settings.packages = [];
+        }
+        fs.writeFileSync(target, `${JSON.stringify(settings, null, 2)}\n`);
+      } else {
+        fs.copyFileSync(source, target);
+      }
+    }
+  }
+
+  return homeDir;
+}
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+// ══════════════════════════════════════════════════════════
+// PI INVOCATION
+// ══════════════════════════════════════════════════════════
+
+function buildPiCommand(homeDir, prompt, outFile) {
+  const homePrefix = homeDir ? `HOME=${shellQuote(homeDir)} ` : '';
+  return `${homePrefix}pi --print --mode json --no-session ${shellQuote(prompt)} > ${shellQuote(outFile)} 2>&1`;
+}
+
+function runCommand(command, cwd, timeoutMs, outFile) {
+  const started = Date.now();
+
+  return new Promise((resolve) => {
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+
+    const child = spawn(command, {
+      cwd,
+      shell: true,
+      env: { ...process.env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    const timeout = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        child.kill('SIGTERM');
+      }
+    }, timeoutMs);
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on('error', (error) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timeout);
+        resolve({
+          status: null,
+          signal: null,
+          elapsed_ms: Date.now() - started,
+          stdout,
+          stderr,
+          error: error.message,
+        });
+      }
+    });
+
+    child.on('close', (status, signal) => {
+      if (!settled) {
+        settled = true;
+      }
+      clearTimeout(timeout);
+      resolve({
+        status,
+        signal,
+        elapsed_ms: Date.now() - started,
+        stdout,
+        stderr,
+        error: signal === 'SIGTERM' ? `Timed out after ${timeoutMs}ms` : null,
+      });
+    });
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+// GRADING
+// ══════════════════════════════════════════════════════════
+
+function gradeRun(task, worktreePath, parsedOutput) {
+  const testResult = runTests(task, worktreePath);
+  const diffResult = checkDiff(task, worktreePath);
+  const answerResult = checkAnswer(parsedOutput.answer, task.success?.expected_facts || []);
+
+  return {
+    tests: testResult,
+    diff: diffResult,
+    answer: answerResult,
+    overall: testResult.passed === testResult.total && testResult.total > 0 && diffResult.passed,
+  };
+}
+
+// ══════════════════════════════════════════════════════════
+// TASK DISCOVERY
+// ══════════════════════════════════════════════════════════
+
+function loadTasks(tasksDir, only) {
+  const files = fs.readdirSync(tasksDir).filter((f) => f.endsWith('.json'));
+  const tasks = files.map((f) => JSON.parse(fs.readFileSync(path.join(tasksDir, f), 'utf-8')));
+  return only ? tasks.filter((t) => t.id === only) : tasks;
+}
+
+// ══════════════════════════════════════════════════════════
+// MAIN LOOP
+// ══════════════════════════════════════════════════════════
+
+async function runTaskSide(task, side, runIndex, args, repoRoot, noMemoryHome) {
+  const runId = `${task.id}.${side}.run${runIndex}`;
+  const worktreePath = path.join(args.outDir, 'worktrees', runId);
+  const outFile = path.join(args.outDir, 'transcripts', `${runId}.jsonl`);
+
+  benchLog(`[${runId}] Creating worktree at ${task.setup.checkout}`);
+  createWorktree(repoRoot, task.setup.checkout, worktreePath);
+
+  try {
+    // Apply patch if specified
+    if (task.setup.apply_patch) {
+      const patchPath = path.resolve(FIXTURES_DIR, task.setup.apply_patch);
+      benchLog(`[${runId}] Applying patch ${task.setup.apply_patch}`);
+      applyPatch(worktreePath, patchPath);
+    }
+
+    // Install deps in worktree (needed for test running)
+    try {
+      benchLog(`[${runId}] Installing dependencies`);
+      execSync('npm install --ignore-scripts', {
+        cwd: worktreePath,
+        encoding: 'utf-8',
+        timeout: 120_000,
+        stdio: 'pipe',
+      });
+    } catch {
+      benchLog(`[${runId}] WARN: npm install failed, tests may fail`);
+    }
+
+    // Seed memory for memory-on side
+    const homeDir = side === 'memory-off' ? noMemoryHome : null;
+    if (side === 'memory-on' && task.setup.seed_memory) {
+      const seedPath = path.resolve(FIXTURES_DIR, task.setup.seed_memory);
+      benchLog(`[${runId}] Seeding memory from ${task.setup.seed_memory}`);
+      seedMemory(seedPath);
+    }
+
+    // Run Pi
+    benchLog(`[${runId}] Starting Pi (${side})`);
+    const command = buildPiCommand(homeDir, task.prompt, outFile);
+    fs.mkdirSync(path.dirname(outFile), { recursive: true });
+    const run = await runCommand(command, worktreePath, args.timeoutMs, outFile);
+    benchLog(`[${runId}] Pi finished in ${run.elapsed_ms}ms`);
+
+    // Parse output
+    let raw = '';
+    if (fs.existsSync(outFile)) {
+      raw = fs.readFileSync(outFile, 'utf-8');
+    }
+    if (!raw && (run.stdout || run.stderr)) {
+      raw = `${run.stdout}\n${run.stderr}`;
+    }
+    const parsed = parsePiOutput(raw);
+
+    // Grade
+    const grade = gradeRun(task, worktreePath, parsed);
+    benchLog(
+      `[${runId}] Grade: overall=${grade.overall}, tests=${grade.tests.passed}/${grade.tests.total}, diff=${grade.diff.passed}`,
+    );
+
+    return {
+      side,
+      run_index: runIndex,
+      elapsed_ms: run.elapsed_ms,
+      error: run.error,
+      usage: parsed.usage,
+      tool_counts: parsed.tool_counts,
+      behavior: parsed.behavior,
+      grade,
+    };
+  } finally {
+    if (!args.noCleanup) {
+      removeWorktree(repoRoot, worktreePath);
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// REPORTING
+// ══════════════════════════════════════════════════════════
+
+function median(values) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function fmtMs(ms) {
+  if (!ms) return 'n/a';
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m ${s % 60}s`;
+}
+
+function fmtNum(n) {
+  if (n === undefined || n === null) return 'n/a';
+  return n.toLocaleString();
+}
+
+function printReport(results) {
+  const sides = ['memory-off', 'memory-on'];
+  const taskIds = [...new Set(results.map((r) => r.task_id))];
+
+  // Per-side aggregates
+  const bySide = {};
+  for (const side of sides) {
+    const sideResults = results.filter((r) => r.side === side);
+    const solved = sideResults.filter((r) => r.grade.overall).length;
+    const testPassed = sideResults.filter(
+      (r) => r.grade.tests.passed === r.grade.tests.total && r.grade.tests.total > 0,
+    ).length;
+    const activeTokens = sideResults.map((r) => r.usage.active_tokens || 0);
+    const wallTimes = sideResults.map((r) => r.elapsed_ms || 0);
+    const toolCalls = sideResults.map((r) => r.behavior?.tool_calls || 0);
+    const wrongFile = sideResults.filter((r) => !r.grade.diff.passed).length;
+
+    bySide[side] = {
+      solved: `${solved}/${sideResults.length}`,
+      testPassed: `${testPassed}/${sideResults.length}`,
+      medianTokens: median(activeTokens),
+      medianWallTime: median(wallTimes),
+      medianToolCalls: median(toolCalls),
+      wrongFileEdits: wrongFile,
+    };
+  }
+
+  // Print table
+  const col1 = 24;
+  const colN = 12;
+  benchLog('');
+  benchLog(
+    '╔' +
+      '═'.repeat(col1 + 2) +
+      '╤' +
+      '═'.repeat(colN + 2) +
+      '╤' +
+      '═'.repeat(colN + 2) +
+      '╗',
+  );
+  benchLog(
+    '║' +
+      'Metric'.padEnd(col1 + 2) +
+      '│' +
+      'Memory Off'.padStart(colN + 1) +
+      ' ' +
+      '│' +
+      'Memory On'.padStart(colN + 1) +
+      ' ' +
+      '║',
+  );
+  benchLog(
+    '╟' +
+      '─'.repeat(col1 + 2) +
+      '┼' +
+      '─'.repeat(colN + 2) +
+      '┼' +
+      '─'.repeat(colN + 2) +
+      '╢',
+  );
+
+  const rows = [
+    ['Tasks solved', bySide['memory-off'].solved, bySide['memory-on'].solved],
+    ['Tests passed', bySide['memory-off'].testPassed, bySide['memory-on'].testPassed],
+    [
+      'Median active tokens',
+      fmtNum(bySide['memory-off'].medianTokens),
+      fmtNum(bySide['memory-on'].medianTokens),
+    ],
+    [
+      'Median wall time',
+      fmtMs(bySide['memory-off'].medianWallTime),
+      fmtMs(bySide['memory-on'].medianWallTime),
+    ],
+    [
+      'Median tool calls',
+      fmtNum(bySide['memory-off'].medianToolCalls),
+      fmtNum(bySide['memory-on'].medianToolCalls),
+    ],
+    [
+      'Wrong-file edits',
+      String(bySide['memory-off'].wrongFileEdits),
+      String(bySide['memory-on'].wrongFileEdits),
+    ],
+  ];
+
+  for (const [label, offVal, onVal] of rows) {
+    benchLog(
+      '║ ' +
+        label.padEnd(col1) +
+        ' ' +
+        '│' +
+        String(offVal).padStart(colN + 1) +
+        ' ' +
+        '│' +
+        String(onVal).padStart(colN + 1) +
+        ' ' +
+        '║',
+    );
+  }
+
+  benchLog(
+    '╚' +
+      '═'.repeat(col1 + 2) +
+      '╧' +
+      '═'.repeat(colN + 2) +
+      '╧' +
+      '═'.repeat(colN + 2) +
+      '╝',
+  );
+  benchLog('');
+
+  // Per-task detail
+  benchLog('Per-task results:');
+  for (const taskId of taskIds) {
+    for (const side of sides) {
+      const taskResults = results.filter((r) => r.task_id === taskId && r.side === side);
+      const overall = taskResults.filter((r) => r.grade.overall).length;
+      const tokens = taskResults.map((r) => r.usage.active_tokens || 0);
+      const tools = taskResults.map((r) => r.behavior?.tool_calls || 0);
+      benchLog(
+        `  ${taskId} (${side}): ${overall}/${taskResults.length} solved, ` +
+          `median ${fmtNum(median(tokens))} tokens, ${fmtNum(median(tools))} tools`,
+      );
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// MAIN
+// ══════════════════════════════════════════════════════════
+
+let progressActive = false;
+
+function benchLog(message = '') {
+  finishProgress();
+  console.log(message);
+}
+
+function finishProgress() {
+  if (progressActive && process.stdout.isTTY) {
+    process.stdout.clearLine(0);
+    process.stdout.cursorTo(0);
+    progressActive = false;
+  }
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const tasks = loadTasks(TASKS_DIR, args.only);
+
+  if (tasks.length === 0) {
+    console.error('No tasks found. Add task JSON files to bench/realworld/tasks/');
+    process.exit(2);
+  }
+
+  const outDir = path.resolve(args.outDir);
+  fs.mkdirSync(outDir, { recursive: true });
+  const repoRoot = getRepoRoot();
+  const noMemoryHome = prepareNoMemoryHome(outDir);
+
+  benchLog(`[bench] Realworld Pi Memory Benchmark`);
+  benchLog(`[bench] Tasks: ${tasks.length}, Runs per side: ${args.runs}`);
+  benchLog(`[bench] Output: ${outDir}`);
+  benchLog(`[bench] memory-off HOME: ${noMemoryHome}`);
+  benchLog('');
+
+  const allResults = [];
+
+  for (const task of tasks) {
+    for (let runIndex = 0; runIndex < args.runs; runIndex++) {
+      // Memory-off first, then memory-on
+      // eslint-disable-next-line no-await-in-loop
+      const off = await runTaskSide(task, 'memory-off', runIndex, args, repoRoot, noMemoryHome);
+      // eslint-disable-next-line no-await-in-loop
+      const on = await runTaskSide(task, 'memory-on', runIndex, args, repoRoot, noMemoryHome);
+
+      allResults.push({ task_id: task.id, category: task.category, ...off });
+      allResults.push({ task_id: task.id, category: task.category, ...on });
+    }
+  }
+
+  // Save full results
+  const report = {
+    generated_at: new Date().toISOString(),
+    host: os.hostname(),
+    runs: args.runs,
+    tasks: tasks.map((t) => t.id),
+    results: allResults,
+  };
+  const reportPath = path.join(outDir, 'report.json');
+  fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+
+  // Print report
+  printReport(allResults);
+  benchLog(`Report saved to: ${reportPath}`);
+}
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error.stack || error.message || String(error));
+    process.exit(1);
+  });
+}
+
+module.exports = { createWorktree, removeWorktree, applyPatch, seedMemory, gradeRun, printReport };
