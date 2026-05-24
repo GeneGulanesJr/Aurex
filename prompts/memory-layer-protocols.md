@@ -46,7 +46,7 @@ Memory is handled automatically by the `memory-layer` extension. It:
 - **`memory-update`** — Correct or refine an existing memory in-place by ID. Use instead of saving a correction entry.
 - **`memory-delete`** — Remove stale, incorrect, or duplicate memories by ID (soft-delete, recoverable).
 - **`memory-search`** — Before making decisions, to avoid repeating past mistakes or re-deciding settled questions.
-- **`memory-get`** — To read the full content of a specific memory.
+- **`memory-get`** — To read the full content of a specific memory returned by `memory-search`; do not fetch arbitrary IDs from stale or unrelated context before searching the current project.
 - **`memory-related`** — To find all memories linked to the same code symbol.
 - **`memory-load-context`** — Deep-dive into everything memory knows about a specific topic.
 - **`memory-sync-code-trust`** — After git pulls / branch switches, to sync trust scores with changed symbols. Compares stored HEAD vs current HEAD automatically using the built-in code index.

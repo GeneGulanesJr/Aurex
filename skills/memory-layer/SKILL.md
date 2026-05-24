@@ -41,6 +41,7 @@ Code analysis (imports, call graph, complexity, dead code, churn) and doc indexi
   - **Recall auto-logged** when `--session-id` is provided.
   - Results include `_score` for transparency.
   - `--include-code` flag returns both memories AND indexed code symbols.
+- `get --id ID` — Read full memory details. In the Pi tool, `memory-get` rejects project-scoped memories from another project unless `allow_cross_project=true` is set, to avoid accidentally pulling stale or unrelated context.
 - `context --project NAME [--limit N] [--session-id ID] [--topic-key KEY] [--query TEXT] [--deep true]`
   - Priority-weighted: decisions/architecture first, then bugfixes/patterns, then discoveries.
   - Includes cross-project personal-scope observations.

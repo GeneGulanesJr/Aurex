@@ -7,6 +7,7 @@ import {
 import { formatCodeResult } from '../extensions/memory-layer/tools/format-code-result.ts';
 import { registerCodeTools } from '../extensions/memory-layer/tools/code-tools.ts';
 import { registerDocTools } from '../extensions/memory-layer/tools/doc-tools.ts';
+import { registerMemoryTools } from '../extensions/memory-layer/tools/memory-tools.ts';
 import { registerToolGuardrails } from '../extensions/memory-layer/hooks/tool-guardrails.ts';
 import { renderCompactToolResult } from '../extensions/memory-layer/tools/render.ts';
 
@@ -17,11 +18,31 @@ function captureTool(register, deps) {
       registerTool(tool) {
         registered = tool;
       },
+      registerCommand() {},
     },
     deps,
   );
   if (!registered) {
     throw new Error('tool was not registered');
+  }
+  return registered;
+}
+
+function captureNamedTool(register, deps, toolName) {
+  let registered;
+  register(
+    {
+      registerTool(tool) {
+        if (tool.name === toolName) {
+          registered = tool;
+        }
+      },
+      registerCommand() {},
+    },
+    deps,
+  );
+  if (!registered) {
+    throw new Error(`${toolName} tool was not registered`);
   }
   return registered;
 }
@@ -71,6 +92,33 @@ describe('memory tool renderer safety', () => {
     expect(collapsed).not.toContain('line 3');
     expect(collapsed).toContain('18 more terminal lines hidden');
     expect(expanded).toContain('line 20');
+  });
+
+  it('blocks accidental memory-get content from another project unless explicitly allowed', async () => {
+    const tool = captureNamedTool(registerMemoryTools, {
+      state: { currentProject: 'PiMemoryExtension' },
+      mem: vi.fn().mockResolvedValue({
+        id: 2,
+        title: 'Other project memory',
+        type: 'decision',
+        scope: 'project',
+        project: 'Aelvyril',
+        content: 'large unrelated content',
+      }),
+      memCmd: vi.fn(),
+      trustIcon: vi.fn(),
+    }, 'memory-get');
+
+    const blocked = await tool.execute('id', { id: 2 }, undefined, vi.fn(), {});
+    const allowed = await tool.execute('id', { id: 2, allow_cross_project: true }, undefined, vi.fn(), {});
+
+    expectRenderable(blocked);
+    expect(blocked.isError).toBe(true);
+    expect(blocked.content[0].text).toContain('belongs to project "Aelvyril"');
+    expect(blocked.content[0].text).not.toContain('large unrelated content');
+    expectRenderable(allowed);
+    expect(allowed.isError).not.toBe(true);
+    expect(allowed.content[0].text).toContain('large unrelated content');
   });
 
   it('normalizes malformed results into Pi-renderable text results', () => {

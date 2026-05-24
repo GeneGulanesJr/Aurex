@@ -171,6 +171,12 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
     description: 'Get full memory details by ID.',
     parameters: Type.Object({
       id: Type.Number({ description: 'Memory ID' }),
+      allow_cross_project: Type.Optional(
+        Type.Boolean({
+          description: 'Return full content even when the memory belongs to a different project.',
+          default: false,
+        }),
+      ),
     }),
     renderResult: renderCompactToolResult,
     async execute(_id, params, _signal, _onUpdate, _ctx) {
@@ -178,6 +184,33 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
         const result = await deps.mem('get', { id: String(params.id) });
         if (!result || result.error) {
           return { content: [{ type: 'text', text: `Memory #${params.id} not found.` }], details: {}, isError: true };
+        }
+        if (
+          deps.state.currentProject &&
+          result.scope === 'project' &&
+          result.project &&
+          result.project !== deps.state.currentProject &&
+          !params.allow_cross_project
+        ) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text:
+                  `Memory #${result.id} belongs to project "${result.project}", not current project "${deps.state.currentProject}". ` +
+                  'Search current project memory first, or retry with allow_cross_project=true if this cross-project memory is intentional.',
+              },
+            ],
+            details: {
+              id: result.id,
+              title: result.title,
+              type: result.type,
+              scope: result.scope,
+              project: result.project,
+              current_project: deps.state.currentProject,
+            },
+            isError: true,
+          };
         }
         return {
           content: [
