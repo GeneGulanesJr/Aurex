@@ -35,7 +35,7 @@ describe('context injection prompt extraction', () => {
     );
   });
 
-  test('source-authoritative prompts skip memory context calls and inject source guidance', async () => {
+  test('source-authoritative prompts bypass memory context without mutating injection state', async () => {
     let handler;
     const pi = {
       on: vi.fn((_eventName, callback) => {
@@ -63,8 +63,7 @@ describe('context injection prompt extraction', () => {
     );
 
     expect(deps.mem).not.toHaveBeenCalled();
-    expect(deps.state.hasInjectedContext).toBe(true);
-    expect(result.message.customType).toBe('source-authoritative-guidance');
-    expect(result.message.content).toContain('working tree');
+    expect(deps.state.hasInjectedContext).toBe(false);
+    expect(result).toBeUndefined();
   });
 });
