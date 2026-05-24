@@ -189,4 +189,56 @@ describe('services/context', () => {
     );
     expect(result.topic).toBe('authentication');
   });
+
+  it('should tokenize topic query prompts instead of requiring an exact phrase match', () => {
+    const observations = [
+      {
+        id: 1,
+        title: 'Architecture choice: LaPis uses SQLite FTS5 for memory search to avoid external dependencies',
+        type: 'architecture',
+        scope: 'project',
+        topic_key: 'search/fts5-rationale',
+        created_at: '2025-01-01',
+        trust_score: 0.8,
+        recall_count: 0,
+        type_priority: 3,
+      },
+    ];
+    let observationQuery = '';
+    let observationParams = [];
+    const sqlJson = vi.fn((query, params) => {
+      if (query.includes("scope = 'personal'")) {
+        return [];
+      }
+      if (query.includes('session_log')) {
+        return [];
+      }
+      if (query.includes('topic_matches')) {
+        observationQuery = query;
+        observationParams = params;
+      }
+      return observations;
+    });
+    const result = context(
+      {
+        sqlJson,
+        sqlRun: vi.fn(),
+        jsonErrNoExit: vi.fn((msg) => ({ error: msg })),
+        insertRecallLog: vi.fn(),
+        countObservationsByProjectAndType: vi.fn(() => 1),
+        searchCode: vi.fn(),
+      },
+      {
+        project: 'test',
+        query:
+          'Why did LaPis choose SQLite FTS5 for memory search instead of an external search service? Keep the answer concise.',
+      },
+    );
+
+    expect(result.observations).toEqual(observations);
+    expect(observationQuery).toContain('match_score');
+    expect(observationParams).toContain('%sqlite%');
+    expect(observationParams).toContain('%fts5%');
+    expect(observationParams).toContain('%external%');
+  });
 });

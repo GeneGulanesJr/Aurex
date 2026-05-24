@@ -122,6 +122,7 @@ function runCommand(command, cwd, timeoutMs, outFile) {
     let stdout = '';
     let stderr = '';
     let settled = false;
+    let progressActive = false;
     const child = spawn(command, {
       cwd,
       shell: true,
@@ -129,9 +130,28 @@ function runCommand(command, cwd, timeoutMs, outFile) {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
+    const writeProgress = (message) => {
+      if (process.stderr.isTTY) {
+        process.stderr.clearLine(0);
+        process.stderr.cursorTo(0);
+        process.stderr.write(message);
+        progressActive = true;
+      } else {
+        console.error(message);
+      }
+    };
+
+    const finishProgress = () => {
+      if (progressActive && process.stderr.isTTY) {
+        process.stderr.clearLine(0);
+        process.stderr.cursorTo(0);
+        progressActive = false;
+      }
+    };
+
     const progress = setInterval(() => {
       const size = fs.existsSync(outFile) ? fs.statSync(outFile).size : 0;
-      console.error(
+      writeProgress(
         `[bench] still running after ${Math.round((Date.now() - started) / 1000)}s, transcript ${size} bytes`,
       );
     }, 5000);
@@ -154,6 +174,7 @@ function runCommand(command, cwd, timeoutMs, outFile) {
         settled = true;
         clearInterval(progress);
         clearTimeout(timeout);
+        finishProgress();
         resolve({
           status: null,
           signal: null,
@@ -170,6 +191,7 @@ function runCommand(command, cwd, timeoutMs, outFile) {
       }
       clearInterval(progress);
       clearTimeout(timeout);
+      finishProgress();
       resolve({
         status,
         signal,
@@ -340,7 +362,23 @@ async function runSide(side, commandTemplate, task, repo, outDir, cwd, timeoutMs
   };
 }
 
-function printRow(taskId, off, on) {
+function printTableHeader(taskColumnWidth) {
+  const columns = [
+    'Task'.padEnd(taskColumnWidth),
+    'OffFacts'.padEnd(9),
+    'OnFacts'.padEnd(9),
+    'OffActive'.padStart(10),
+    'OnActive'.padStart(10),
+    'Savings'.padStart(8),
+    'OffMs'.padStart(9),
+    'OnMs'.padStart(9),
+  ];
+  const header = columns.join('  ');
+  console.log(header);
+  console.log('-'.repeat(header.length));
+}
+
+function printRow(taskId, off, on, taskColumnWidth) {
   const offTokens = off.usage.active_tokens || 0;
   const onTokens = on.usage.active_tokens || 0;
   const savings = offTokens > 0 ? `${Math.round((1 - onTokens / offTokens) * 100)}%` : 'n/a';
@@ -348,7 +386,7 @@ function printRow(taskId, off, on) {
   const onScore = `${on.grade.matched}/${on.grade.total}`;
   console.log(
     [
-      taskId.padEnd(24),
+      taskId.padEnd(taskColumnWidth),
       offScore.padEnd(9),
       onScore.padEnd(9),
       String(offTokens).padStart(10),
@@ -382,8 +420,8 @@ async function main() {
   }
   console.log('');
   const results = [];
-  console.log(`${'Task'.padEnd(24)}  OffFacts   OnFacts    OffActive   OnActive  Savings      OffMs      OnMs`);
-  console.log('-'.repeat(96));
+  const taskColumnWidth = Math.max(24, ...tasks.map((task) => task.id.length));
+  printTableHeader(taskColumnWidth);
   for (const task of tasks) {
     const taskOutDir = path.join(outDir, task.id);
     fs.mkdirSync(taskOutDir, { recursive: true });
@@ -400,7 +438,7 @@ async function main() {
       memory_off: off,
       memory_on: on,
     });
-    printRow(task.id, off, on);
+    printRow(task.id, off, on, taskColumnWidth);
   }
 
   const summary = buildSummary(results);

@@ -2,6 +2,73 @@ const { getConfig } = require('../../config');
 const { RESULT_LIMITS, RANKING, CONTEXT } = require('../../constants');
 const { TRUST_RECALL_JOINS, TYPE_PRIORITY_CASE } = require('./search');
 
+const TOPIC_QUERY_STOP_WORDS = new Set([
+  'the',
+  'and',
+  'for',
+  'with',
+  'that',
+  'this',
+  'from',
+  'what',
+  'where',
+  'when',
+  'why',
+  'how',
+  'did',
+  'does',
+  'into',
+  'instead',
+  'keep',
+  'answer',
+  'concise',
+]);
+
+function topicQueryNeedles(query) {
+  const normalized = String(query || '').toLowerCase().trim();
+  if (!normalized) {
+    return [];
+  }
+
+  const phrase = normalized.length <= 120 ? [normalized] : [];
+  const terms = normalized
+    .match(/[a-z0-9_.\/-]+/g)
+    ?.filter((term) => term.length >= 3 && !TOPIC_QUERY_STOP_WORDS.has(term))
+    .slice(0, 16);
+
+  const needles = [...new Set([...phrase, ...(terms || [])])];
+  return needles.length > 0 ? needles : [normalized.slice(0, 120)];
+}
+
+function buildTopicQueryMatch(needles) {
+  const fields = [
+    "lower(coalesce(o.topic_key, ''))",
+    "lower(coalesce(o.title, ''))",
+    "lower(coalesce(o.content, ''))",
+  ];
+  const whereParts = [];
+  const whereParams = [];
+  const scoreParts = [];
+  const scoreParams = [];
+
+  for (const needle of needles) {
+    const like = `%${needle.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
+    whereParts.push(`(${fields.map((field) => `${field} LIKE ?`).join(' OR ')})`);
+    whereParams.push(...fields.map(() => like));
+    for (const field of fields) {
+      scoreParts.push(`CASE WHEN ${field} LIKE ? THEN 1 ELSE 0 END`);
+      scoreParams.push(like);
+    }
+  }
+
+  return {
+    whereSql: whereParts.join(' OR '),
+    scoreSql: scoreParts.length > 0 ? scoreParts.join(' + ') : '0',
+    whereParams,
+    scoreParams,
+  };
+}
+
 function context(deps, args) {
   const { sqlJson, jsonErrNoExit } = deps;
   const insertRecallLog = deps.insertRecallLog || (() => {});
@@ -61,12 +128,14 @@ function context(deps, args) {
       ? Math.min(limit * CONTEXT.CROSS_PROJECT_DEEP_MULTIPLIER, CONTEXT.CROSS_PROJECT_DEEP_MAX)
       : limit;
     if (topicQuery) {
+      const match = buildTopicQueryMatch(topicQueryNeedles(topicQuery));
       obsQuery = `
         WITH topic_matches AS (
-          SELECT id FROM observations
+          SELECT id, ${match.scoreSql} as match_score
+          FROM observations o
           WHERE project = ? AND deleted_at IS NULL AND type != 'skill'
-            AND (topic_key LIKE ? OR title LIKE ? OR content LIKE ?)
-          ORDER BY created_at DESC
+            AND (${match.whereSql})
+          ORDER BY match_score DESC, created_at DESC
           LIMIT ?
         )
         SELECT o.id, o.title, o.type, o.scope, o.topic_key, o.created_at,
@@ -76,10 +145,9 @@ function context(deps, args) {
         FROM observations o
         JOIN topic_matches tm ON o.id = tm.id
         ${TRUST_RECALL_JOINS}
-        ORDER BY recall_count DESC, trust_score DESC, type_priority DESC, o.created_at DESC
+        ORDER BY tm.match_score DESC, recall_count DESC, trust_score DESC, type_priority DESC, o.created_at DESC
       `;
-      const like = `%${topicQuery.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
-      obsParams = [project, like, like, like, topicLimit];
+      obsParams = [...match.scoreParams, project, ...match.whereParams, topicLimit];
     } else {
       obsQuery = `
         SELECT o.id, o.title, o.type, o.scope, o.topic_key, o.created_at,

@@ -2,7 +2,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { MEMORY_REMINDER_INTERVAL, MemResult, state } from '../state';
 import { getKnownRepos, isRepoStale } from '../host/project-detector';
 import { mem } from '../host/memory-client';
-import { CONTEXT } from '../../../../constants';
+import { CONTEXT } from '../../../constants';
 import path from 'node:path';
 import fs from 'node:fs';
 
@@ -19,15 +19,29 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
       return;
     }
 
+    const promptQuery = extractUserPrompt(event);
+    const contextLimit = promptQuery ? CONTEXT.PROMPT_RELEVANT_LIMIT : CONTEXT.DEFAULT_LIMIT;
     const contextResult = await deps.mem('context', {
       project: deps.state.currentProject,
-      limit: String(CONTEXT.DEFAULT_LIMIT),
+      limit: String(contextLimit),
+      ...(promptQuery ? { query: promptQuery } : {}),
       ...(deps.state.sessionId ? { 'session-id': String(deps.state.sessionId) } : {}),
     });
 
+    let recentContextResult: MemResult | null = null;
+    if (promptQuery && !((contextResult?.observations as any[]) || []).length) {
+      recentContextResult = await deps.mem('context', {
+        project: deps.state.currentProject,
+        limit: String(CONTEXT.DEFAULT_LIMIT),
+        ...(deps.state.sessionId ? { 'session-id': String(deps.state.sessionId) } : {}),
+      });
+    }
+
     let crossProjectResult: MemResult | null = null;
 
-    if (!contextResult || !((contextResult.observations as any[]) || []).length) {
+    const projectContext = recentContextResult || contextResult;
+
+    if (!projectContext || !((projectContext.observations as any[]) || []).length) {
       crossProjectResult = await deps.mem('context', {
         'all-projects': 'true',
         limit: String(Math.max(CONTEXT.DEFAULT_LIMIT - 3, 5)),
@@ -35,7 +49,7 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
       });
     }
 
-    if (!contextResult && !crossProjectResult) {
+    if (!projectContext && !crossProjectResult) {
       return {
         message: {
           customType: 'memory-context',
@@ -47,7 +61,7 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
       };
     }
 
-    const effectiveContext = contextResult || crossProjectResult;
+    const effectiveContext = projectContext || crossProjectResult;
 
     const observations =
       (effectiveContext.observations as Array<{
@@ -107,7 +121,7 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
       return;
     }
 
-    const isNewProject = crossProjectResult !== null && !contextResult;
+    const isNewProject = crossProjectResult !== null && !projectContext;
     const effectiveObservations = isNewProject ? (crossProjectResult!.observations as any[]) || [] : observations;
     const effectiveStats = isNewProject ? (crossProjectResult!.stats as any) : stats;
 
@@ -203,6 +217,60 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
       },
     };
   });
+}
+
+/**
+ * Pull the current user prompt out of Pi hook events when available. The
+ * before-agent hook runs after Pi has assembled messages, but exact event shape
+ * differs across Pi versions, so this accepts the known string and content-part
+ * forms and falls back quietly.
+ */
+export function extractUserPrompt(event: unknown): string | null {
+  const eventAny = event as any;
+  const candidates: unknown[] = [eventAny?.prompt, eventAny?.input, eventAny?.query];
+  const messages = Array.isArray(eventAny?.messages) ? eventAny.messages : [];
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message?.role === 'user') {
+      candidates.push(message.content);
+      break;
+    }
+  }
+
+  for (const candidate of candidates) {
+    const text = contentToText(candidate);
+    if (text) {
+      return text.length > 500 ? `${text.slice(0, 500)}...` : text;
+    }
+  }
+
+  return null;
+}
+
+function contentToText(content: unknown): string | null {
+  if (typeof content === 'string') {
+    const trimmed = content.trim();
+    return trimmed || null;
+  }
+
+  if (Array.isArray(content)) {
+    const text = content
+      .map((part) => {
+        if (typeof part === 'string') {
+          return part;
+        }
+        if (part && typeof part === 'object' && 'text' in part && typeof (part as any).text === 'string') {
+          return (part as any).text;
+        }
+        return '';
+      })
+      .join('\n')
+      .trim();
+    return text || null;
+  }
+
+  return null;
 }
 
 /**
