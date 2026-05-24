@@ -3,7 +3,7 @@
 
 const { addBinding, dedupBindings } = require('./shared');
 
-function buildHtmlScopeBindings(tree, source, filePath) {
+function buildHtmlScopeBindings(tree, source, _filePath) {
   const bindings = [];
 
   // V1: Use regex-based extraction for HTML since tree-sitter HTML grammars

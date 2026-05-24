@@ -1,8 +1,8 @@
-import { isRepoStale, invalidateRepoCache } from '../extensions/memory-layer/host/project-detector.ts';
-import { state } from '../extensions/memory-layer/state.ts';
+import { invalidateRepoCache, isRepoStale } from '../extensions/memory-layer/host/project-detector.ts';
 import fs from 'node:fs';
-import path from 'node:path';
 import os from 'node:os';
+import path from 'node:path';
+import { state } from '../extensions/memory-layer/state.ts';
 
 describe('repo-cache', () => {
   describe('isRepoStale', () => {

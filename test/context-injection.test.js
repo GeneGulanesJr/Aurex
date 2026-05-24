@@ -31,7 +31,12 @@ function buildLightweightContext({ observations, personal, isStale, projectName,
     if (hasObservations) {
       lines.push('### Recent Relevant Memory');
       for (const o of observations) {
-        const trust = (o.trust_score ?? 1) < 0.5 ? '⚠️' : (o.trust_score ?? 1) < 0.8 ? '🔎' : '';
+        let trust = '';
+        if ((o.trust_score ?? 1) < 0.5) {
+          trust = '⚠️';
+        } else if ((o.trust_score ?? 1) < 0.8) {
+          trust = '🔎';
+        }
         lines.push(`- [${o.type}] ${o.title}${trust}`);
       }
       lines.push('');

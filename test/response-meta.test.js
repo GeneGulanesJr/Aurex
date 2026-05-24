@@ -14,7 +14,7 @@ describe('response-meta.js', () => {
       let head;
       try {
         head = execSync('git rev-parse HEAD', { cwd: repoPath, encoding: 'utf-8', timeout: 5000 }).trim();
-      } catch (_) {
+      } catch {
         return; /* Skip if not in git repo */
       }
 

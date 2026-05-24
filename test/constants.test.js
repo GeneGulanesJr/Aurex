@@ -3,7 +3,7 @@ const constants = require('../constants');
 describe('constants.js', () => {
   describe('TRUST_DELTA', () => {
     it('should have numeric values for all fields', () => {
-      for (const [key, val] of Object.entries(constants.TRUST_DELTA)) {
+      for (const [_key, val] of Object.entries(constants.TRUST_DELTA)) {
         expect(typeof val).toBe('number');
       }
     });
@@ -57,7 +57,7 @@ describe('constants.js', () => {
 
   describe('RESULT_LIMITS', () => {
     it('should have positive integer values for all limits', () => {
-      for (const [key, val] of Object.entries(constants.RESULT_LIMITS)) {
+      for (const [_key, val] of Object.entries(constants.RESULT_LIMITS)) {
         expect(Number.isInteger(val)).toBe(true);
         expect(val).toBeGreaterThan(0);
       }
@@ -79,13 +79,13 @@ describe('constants.js', () => {
     });
 
     it('should have TYPE_PRIORITY with numeric values', () => {
-      for (const [key, val] of Object.entries(constants.RANKING.TYPE_PRIORITY)) {
+      for (const [_key, val] of Object.entries(constants.RANKING.TYPE_PRIORITY)) {
         expect(typeof val).toBe('number');
       }
     });
 
     it('should have TYPE_BOOST with values >= 0', () => {
-      for (const [key, val] of Object.entries(constants.RANKING.TYPE_BOOST)) {
+      for (const [_key, val] of Object.entries(constants.RANKING.TYPE_BOOST)) {
         expect(val).toBeGreaterThanOrEqual(0);
       }
     });

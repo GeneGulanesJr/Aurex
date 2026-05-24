@@ -1,7 +1,8 @@
+// oxlint-disable sort-imports
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { MemResult, state } from '../state';
-import { ensureNativeModules } from '../host/native-health';
 import { mem, memCmd } from '../host/memory-client';
+import { ensureNativeModules } from '../host/native-health';
 import { detectProject } from '../host/project-detector';
 import path from 'node:path';
 
@@ -122,7 +123,12 @@ export function registerSessionCompact(pi: ExtensionAPI, deps: SessionDeps) {
         lines.push('');
         lines.push('### Recent Relevant Memory');
         for (const o of effectiveObservations) {
-          const trust = o.trust_score < 0.5 ? '⚠️' : o.trust_score < 0.8 ? '🔎' : '';
+          let trust = '';
+          if (o.trust_score < 0.5) {
+            trust = '⚠️';
+          } else if (o.trust_score < 0.8) {
+            trust = '🔎';
+          }
           lines.push(`- [${o.type}] ${o.title} ${trust}`);
         }
       }

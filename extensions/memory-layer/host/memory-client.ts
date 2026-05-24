@@ -1,5 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
+// oxlint-disable-next-line sort-imports
 import { MEMORY_SCRIPT, MemResult, getTimeout } from '../state';
 
 export type { MemResult };
@@ -7,7 +8,7 @@ export type { MemResult };
 let _inProcessDispatch: ((cmd: string, args: Record<string, string>) => Promise<MemResult | null>) | null = null;
 
 async function getInProcessDispatch() {
-  if (_inProcessDispatch) return _inProcessDispatch;
+  if (_inProcessDispatch) {return _inProcessDispatch;}
   try {
     const gateway = require('../../src/cli/gateway');
     if (typeof gateway.dispatch === 'function') {
@@ -41,6 +42,7 @@ async function memViaChildProcess(cmd: string, args: Record<string, string | num
   const argList: string[] = [cmd];
   for (const [k, v] of Object.entries(args)) {
     if (v === undefined || v === null || v === '') {
+      // oxlint-disable-next-line no-continue
       continue;
     }
     argList.push(`--${k}`);
@@ -145,6 +147,7 @@ export async function memStreaming(
   const argList: string[] = [cmd, '--progress'];
   for (const [k, v] of Object.entries(args)) {
     if (v === undefined || v === null || v === '') {
+      // oxlint-disable-next-line no-continue
       continue;
     }
     argList.push(`--${k}`);

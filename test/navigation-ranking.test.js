@@ -1,4 +1,4 @@
-const { CONTEXT, RANKING } = require('../constants');
+const { CONTEXT: _CONTEXT, RANKING } = require('../constants');
 
 // We need to access _extractFtsTerms which is module-scoped.
 // Test it indirectly via the search behavior.

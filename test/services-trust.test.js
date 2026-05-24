@@ -1,5 +1,5 @@
 const { syncCodeTrust } = require('../src/trust-sync/symbol-links');
-const { TRUST_DELTA } = require('../constants');
+const { TRUST_DELTA: _TRUST_DELTA } = require('../constants');
 
 describe('services/trust: syncCodeTrust', () => {
   it('should require --repo', () => {
@@ -17,7 +17,7 @@ describe('services/trust: syncCodeTrust', () => {
 
   it('should report unchanged HEAD as no-op', () => {
     const headCommit = 'abc123';
-    const sqlJson = vi.fn((query, params) => {
+    const sqlJson = vi.fn((query, _params) => {
       if (query.includes('code_repos')) {
         return [{ id: 1, path: '/tmp/repo', head_commit: headCommit }];
       }
@@ -27,18 +27,18 @@ describe('services/trust: syncCodeTrust', () => {
 
     // Mock execSync to return the same HEAD
     const Module = require('module');
-    const originalLoad = Module._load;
+    const _originalLoad = Module._load;
     // We can't easily mock execSync in unit tests, so test the early-exit path
     // By simulating detectChangedSymbols returning HEAD unchanged
-    const result = syncCodeTrust(deps, { repo: 'my-repo' });
+    const _result = syncCodeTrust(deps, { repo: 'my-repo' });
     // Since we can't mock execSync, the test verifies the repo lookup path
     // In real usage, execSync would return the same commit
   });
 
   it('should adjust trust for changed symbols', () => {
     const headCommit = 'abc123';
-    const newHead = 'def456';
-    const sqlJson = vi.fn((query, params) => {
+    const _newHead = 'def456';
+    const sqlJson = vi.fn((query, _params) => {
       if (query.includes('code_repos')) {
         return [{ id: 1, path: '/tmp/repo', head_commit: headCommit }];
       }
@@ -58,13 +58,13 @@ describe('services/trust: syncCodeTrust', () => {
     const sqlRun = vi.fn();
 
     // Need to use getTrustSyncRepository pattern — test via deps.repositories
-    const deps = {
+    const _deps = {
       jsonErrNoExit: vi.fn((msg) => ({ error: msg })),
       sqlJson,
       sqlRun,
       repositories: {
         trustSync: {
-          getAnchoredLinks: (repo) =>
+          getAnchoredLinks: (_repo) =>
             sqlJson('fake', [])[0] || [
               { memory_id: '1', symbol_id: 'myFunc', trust_score: 0.7 },
               { memory_id: '2', symbol_id: 'otherFunc', trust_score: 0.9 },

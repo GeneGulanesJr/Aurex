@@ -8,6 +8,7 @@ function extractLinks(content) {
   while ((match = re.exec(stripped)) !== null) {
     const prefix = stripped.substring(Math.max(0, match.index - 1), match.index);
     if (prefix === '!') {
+      // oxlint-disable-next-line no-continue
       continue;
     }
     const target = match[2];
@@ -23,6 +24,7 @@ function extractLinks(content) {
         !target.startsWith('#') &&
         !target.startsWith('http')
       ) {
+        // oxlint-disable-next-line no-continue
         continue;
       }
     }
@@ -110,8 +112,8 @@ function resolveLinks(db, repoId) {
     if (href.startsWith('#')) {
       targetSectionId = resolveAnchor(link.file_id, href.slice(1));
     } else {
-      let [pathPart, anchor] = href.split('#');
-      pathPart = pathPart.replace(/^\.\/|^\.\.\//, '');
+      const [pathPartRaw, anchor] = href.split('#');
+      const pathPart = pathPartRaw.replace(/^\.\/|^\.\.\//, '');
 
       let docFile = findFileByPath(pathPart);
       if (!docFile && !pathPart.endsWith('.md') && !pathPart.endsWith('.mdx')) {

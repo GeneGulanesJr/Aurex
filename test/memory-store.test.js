@@ -37,7 +37,7 @@ beforeAll(() => {
 afterAll(() => {
   try {
     run(`session-end --id ${sessionId} --memories 0 --auto true`);
-  } catch (_) {}
+  } catch {}
 });
 
 describe('memory-store: save', () => {

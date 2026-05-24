@@ -6,21 +6,22 @@
  * (e.g., doc tooling) does not prevent unrelated tools from registering.
  */
 
+// oxlint-disable sort-imports
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { isCodeFile, state, trustIcon } from './state';
-import { ensureNativeModules } from './host/native-health';
+import { registerBeforeAgentStart, registerContextReminder } from './hooks/context-injection';
+import { registerSessionCompact, registerSessionShutdown, registerSessionStart } from './hooks/session-lifecycle';
 import { mem, memCmd, memStreaming } from './host/memory-client';
 import { detectProject, getKnownRepos, invalidateRepoCache, isRepoStale } from './host/project-detector';
-import { registerSessionCompact, registerSessionShutdown, registerSessionStart } from './hooks/session-lifecycle';
-import { registerBeforeAgentStart, registerContextReminder } from './hooks/context-injection';
+import { registerPassiveCapture } from './hooks/passive-capture';
 import { registerToolGuardrails } from './hooks/tool-guardrails';
 import { registerTrustSync } from './hooks/trust-sync';
-import { registerPassiveCapture } from './hooks/passive-capture';
-import { registerMemoryTools } from './tools/memory-tools';
+import { ensureNativeModules } from './host/native-health';
 import { registerCodeTools } from './tools/code-tools';
 import { registerDocTools } from './tools/doc-tools';
 import { formatCodeResult } from './tools/format-code-result';
 import { formatDocResult } from './tools/format-doc-result';
+import { registerMemoryTools } from './tools/memory-tools';
 
 type RegFn = (pi: ExtensionAPI, deps: any) => void;
 
@@ -35,7 +36,7 @@ function safeRegister(pi: ExtensionAPI, deps: any, name: string, fn: RegFn) {
   }
 }
 
-export default function (pi: ExtensionAPI) {
+export default function memoryLayer(pi: ExtensionAPI) {
   const deps = {
     state,
     ensureNativeModules,

@@ -20,7 +20,7 @@ function cleanupRepo(name) {
       timeout: 5000,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-  } catch (_) {
+  } catch {
     /* Not found — fine */
   }
 }

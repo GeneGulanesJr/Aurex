@@ -22,7 +22,7 @@ function detectChangedSymbols(deps, repoName) {
       encoding: 'utf-8',
       timeout: 5000,
     }).trim();
-  } catch (_) {
+  } catch {
     return { error: jsonErrNoExit(`Cannot read HEAD commit from ${repoPath}. Is it a git repo?`) };
   }
 
@@ -56,7 +56,7 @@ function detectChangedSymbols(deps, repoName) {
       .split('\n')
       .map((f) => f.trim())
       .filter(Boolean);
-  } catch (_) {
+  } catch {
     return { error: jsonErrNoExit('Failed to run git diff to determine changed files') };
   }
 

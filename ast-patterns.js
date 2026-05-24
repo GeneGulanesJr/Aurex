@@ -16,7 +16,7 @@ const PRESET_DETECTORS = [
     category: 'error_handling',
     description: 'catch block with empty body',
     severity: 'warning',
-    detect(symbol, db) {
+    detect(symbol, _db) {
       if (!symbol.body_preview) {
         return null;
       }
@@ -50,7 +50,7 @@ const PRESET_DETECTORS = [
         if (row && row.lines_of_code === 0) {
           return { lines_of_code: 0 };
         }
-      } catch (_) {}
+      } catch {}
       // Fallback: check body_preview
       if (symbol.body_preview != null && symbol.body_preview.trim().length === 0) {
         return { lines_of_code: 0 };
@@ -69,7 +69,7 @@ const PRESET_DETECTORS = [
         if (row && row.nesting_depth >= 5) {
           return { nesting_depth: row.nesting_depth };
         }
-      } catch (_) {}
+      } catch {}
       return null;
     },
   },
@@ -78,7 +78,7 @@ const PRESET_DETECTORS = [
     category: 'performance',
     description: '≥ 3 nested loops',
     severity: 'warning',
-    detect(symbol, db) {
+    detect(symbol, _db) {
       if (!symbol.body_preview) {
         return null;
       }
@@ -116,7 +116,7 @@ const PRESET_DETECTORS = [
         if (row && row.lines_of_code >= 100) {
           return { lines_of_code: row.lines_of_code };
         }
-      } catch (_) {}
+      } catch {}
       // Fallback: compute from start/end lines
       const loc = symbol.end_line - symbol.start_line + 1;
       if (loc >= 100) {
@@ -130,7 +130,7 @@ const PRESET_DETECTORS = [
     category: 'security',
     description: 'Usage of eval(), Function(), or new Function()',
     severity: 'error',
-    detect(symbol, db) {
+    detect(symbol, _db) {
       if (!symbol.body_preview) {
         return null;
       }
@@ -155,7 +155,7 @@ const PRESET_DETECTORS = [
     category: 'security',
     description: 'Hardcoded strings matching password/api_key/secret patterns',
     severity: 'error',
-    detect(symbol, db) {
+    detect(symbol, _db) {
       if (!symbol.body_preview) {
         return null;
       }
@@ -177,7 +177,7 @@ const PRESET_DETECTORS = [
     category: 'maintenance',
     description: 'TODO/FIXME/HACK comments',
     severity: 'info',
-    detect(symbol, db) {
+    detect(symbol, _db) {
       if (!symbol.body_preview) {
         return null;
       }
@@ -200,7 +200,7 @@ const PRESET_DETECTORS = [
     category: 'maintenance',
     description: 'Unexplained numeric literals (not 0, 1, -1, 2)',
     severity: 'info',
-    detect(symbol, db) {
+    detect(symbol, _db) {
       if (!symbol.body_preview) {
         return null;
       }
@@ -229,7 +229,7 @@ const PRESET_DETECTORS = [
     category: 'quality',
     description: 'Function parameter reassigned within body',
     severity: 'warning',
-    detect(symbol, db) {
+    detect(symbol, _db) {
       if (!symbol.signature || !symbol.body_preview) {
         return null;
       }
@@ -330,7 +330,7 @@ function parseCustomPattern(raw) {
             if (row && row.nesting_depth >= depth) {
               return { nesting_depth: row.nesting_depth };
             }
-          } catch (_) {}
+          } catch {}
           return null;
         },
       };
@@ -449,7 +449,7 @@ function scanAstPatterns(db, repoId, opts = {}) {
             break;
           }
         }
-      } catch (_) {
+      } catch {
         // Skip detector errors for individual symbols
       }
     }

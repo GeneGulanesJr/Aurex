@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 const DECISION_PATTERNS = [
   {
@@ -14,7 +14,7 @@ const DECISION_PATTERNS = [
 
 function matchPattern(text) {
   for (const pattern of DECISION_PATTERNS) {
-    if (pattern.regex.test(text)) return pattern;
+    if (pattern.regex.test(text)) {return pattern;}
   }
   return null;
 }

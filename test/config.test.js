@@ -8,7 +8,7 @@ const {
   loadConfig,
   resetConfigCache,
   DEFAULTS,
-  CONFIG_PATH,
+  _CONFIG_PATH,
 } = require('../config');
 
 describe('config.js', () => {

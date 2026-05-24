@@ -11,7 +11,7 @@ const { addBinding, dedupBindings } = require('./shared');
  * @param {string} filePath - file path (for determining relative imports)
  * @returns {Array} array of binding objects
  */
-function buildJsTsScopeBindings(tree, source, filePath) {
+function buildJsTsScopeBindings(tree, source, _filePath) {
   const bindings = [];
 
   function walk(node, scopeDepth, lineStart, lineEnd) {
@@ -22,9 +22,9 @@ function buildJsTsScopeBindings(tree, source, filePath) {
     const type = node.type;
 
     // Track scope boundaries
-    let currentDepth = scopeDepth;
-    let currentLineStart = lineStart;
-    let currentLineEnd = lineEnd;
+    const currentDepth = scopeDepth;
+    const currentLineStart = lineStart;
+    const currentLineEnd = lineEnd;
 
     switch (type) {
       // ── Import statements ──────────────────────────────────
@@ -247,9 +247,9 @@ function buildJsTsScopeBindings(tree, source, filePath) {
 
     // Check for default import: import foo from '...'
     let child = node.firstChild;
-    let hasDefaultImport = false;
-    let hasNamespaceImport = false;
-    let hasNamedImports = false;
+    const _hasDefaultImport = false;
+    const _hasNamespaceImport = false;
+    const _hasNamedImports = false;
 
     while (child) {
       const t = child.type;
@@ -320,7 +320,12 @@ function buildJsTsScopeBindings(tree, source, filePath) {
             const nameNode = specChild.childForFieldName('name');
             // The alias (as clause) uses 'alias' field in some grammars
             const aliasNode = specChild.childForFieldName('alias');
-            const localName = aliasNode ? aliasNode.text : (nameNode ? nameNode.text : null);
+            let localName = null;
+            if (aliasNode) {
+              localName = aliasNode.text;
+            } else if (nameNode) {
+              localName = nameNode.text;
+            }
             const originalName = nameNode ? nameNode.text : localName;
             if (localName) {
               addBinding(bindings, {
@@ -470,14 +475,19 @@ function buildJsTsScopeBindings(tree, source, filePath) {
     }
   }
 
+  function destructureOrigin(requireInfo) {
+    if (!requireInfo) {
+      return 'local';
+    }
+    return requireInfo.isPackage ? 'external_package' : 'external_file';
+  }
+
   function extractDestructuredBindings(pattern, scopeDepth, lineNum, endLine, requireInfo) {
     let child = pattern.firstChild;
     while (child) {
       if (child.type === 'shorthand_property_identifier' || child.type === 'property_identifier') {
         const kind = requireInfo ? 'destructure_import' : 'destructure_local';
-        const origin = requireInfo
-          ? (requireInfo.isPackage ? 'external_package' : 'external_file')
-          : 'local';
+        const origin = destructureOrigin(requireInfo);
         addBinding(bindings, {
           name: child.text,
           kind,
@@ -496,9 +506,7 @@ function buildJsTsScopeBindings(tree, source, filePath) {
         const keyNode = child.childForFieldName('key');
         if (valueNode && valueNode.type === 'identifier') {
           const kind = requireInfo ? 'destructure_import' : 'destructure_local';
-          const origin = requireInfo
-            ? (requireInfo.isPackage ? 'external_package' : 'external_file')
-            : 'local';
+          const origin = destructureOrigin(requireInfo);
           addBinding(bindings, {
             name: valueNode.text,
             kind,
@@ -517,9 +525,7 @@ function buildJsTsScopeBindings(tree, source, filePath) {
         const nameNode = child.childForFieldName('name') || findIdentifierNode(child);
         if (nameNode) {
           const kind = requireInfo ? 'destructure_import' : 'destructure_local';
-          const origin = requireInfo
-            ? (requireInfo.isPackage ? 'external_package' : 'external_file')
-            : 'local';
+          const origin = destructureOrigin(requireInfo);
           addBinding(bindings, {
             name: nameNode.text,
             kind,
@@ -543,9 +549,7 @@ function buildJsTsScopeBindings(tree, source, filePath) {
     while (child) {
       if (child.type === 'identifier') {
         const kind = requireInfo ? 'destructure_import' : 'destructure_local';
-        const origin = requireInfo
-          ? (requireInfo.isPackage ? 'external_package' : 'external_file')
-          : 'local';
+        const origin = destructureOrigin(requireInfo);
         addBinding(bindings, {
           name: child.text,
           kind,

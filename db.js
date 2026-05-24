@@ -45,7 +45,7 @@ function resetDb() {
   if (_db) {
     try {
       _db.close();
-    } catch (_) {}
+    } catch {}
   }
   _db = null;
   _engine = null;
@@ -146,7 +146,7 @@ function isBusyError(e) {
 
 function sleepMs(ms) {
   const end = Date.now() + ms;
-  while (Date.now() < end) {}
+  while (Date.now() < end) { /* Spin */ }
 }
 
 function retryOnBusy(fn, label) {
@@ -160,7 +160,7 @@ function retryOnBusy(fn, label) {
       if (!isBusyError(e) || attempt >= maxRetries) {
         break;
       }
-      const delay = 100 * Math.pow(2, attempt);
+      const delay = 100 * 2 ** attempt;
       if (label) {
         console.warn(`[db] SQLITE_BUSY on ${label}, retry ${attempt + 1}/${maxRetries} in ${delay}ms`);
       }
@@ -232,7 +232,7 @@ function withTransaction(fn, onRollbackError) {
         if (typeof onRollbackError === 'function') {
           onRollbackError(rollbackErr);
         }
-      } catch (_) {}
+      } catch {}
     }
     throw e;
   }
@@ -255,7 +255,7 @@ function ensureDb() {
     const schema = fs.readFileSync(SCHEMA_PATH, 'utf8');
     try {
       _db.exec(schema);
-    } catch (e) {
+    } catch {
       const stmts = schema
         .split(/;\s*\n/)
         .map((s) => s.trim())
@@ -429,7 +429,7 @@ function _createTableIndexes(name, db) {
   for (const sql of indexMap[name] || []) {
     try {
       db.exec(sql);
-    } catch (_) {}
+    } catch {}
   }
 }
 
@@ -623,7 +623,7 @@ function runMigrationV5() {
     let schemaExecOk = true;
     try {
       _db.exec(schema);
-    } catch (e) {
+    } catch {
       schemaExecOk = false;
       const stmts = schema
         .split(/;\s*\n/)

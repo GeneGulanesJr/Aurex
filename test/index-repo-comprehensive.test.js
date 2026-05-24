@@ -24,7 +24,7 @@ function runFail(cmd) {
   } catch (err) {
     try {
       return JSON.parse((err.stderr || err.stdout || '').trim());
-    } catch (_) {
+    } catch {
       return { error: err.stderr || err.message };
     }
   }
@@ -52,7 +52,7 @@ function cleanupRepo(name) {
       timeout: 5000,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-  } catch (_) {}
+  } catch {}
 }
 
 describe('index-repo (comprehensive)', () => {
@@ -71,7 +71,7 @@ describe('index-repo (comprehensive)', () => {
       cleanupRepo(name);
       try {
         fs.rmSync(tmpRepo, { recursive: true });
-      } catch (_) {}
+      } catch {}
     });
 
     it('should index a small repo', () => {
@@ -122,7 +122,7 @@ describe('index-repo (comprehensive)', () => {
       cleanupRepo(name);
       try {
         fs.rmSync(tmpRepo, { recursive: true });
-      } catch (_) {}
+      } catch {}
     });
 
     it('should index all supported languages', () => {
@@ -151,7 +151,7 @@ describe('index-repo (comprehensive)', () => {
       cleanupRepo(name);
       try {
         fs.rmSync(tmpRepo, { recursive: true });
-      } catch (_) {}
+      } catch {}
     });
 
     it('should exclude node_modules, .git, and dot-directories', () => {
@@ -177,7 +177,7 @@ describe('index-repo (comprehensive)', () => {
       cleanupRepo(name);
       try {
         fs.rmSync(tmpRepo, { recursive: true });
-      } catch (_) {}
+      } catch {}
     });
 
     it('should handle a nonexistent path gracefully', () => {
@@ -201,7 +201,7 @@ describe('index-repo (comprehensive)', () => {
       cleanupRepo(name);
       try {
         fs.rmSync(tmpRepo, { recursive: true });
-      } catch (_) {}
+      } catch {}
     });
 
     it('should handle binary files mixed with source', () => {
@@ -220,7 +220,7 @@ describe('index-repo (comprehensive)', () => {
       cleanupRepo(name);
       try {
         fs.rmSync(tmpRepo, { recursive: true });
-      } catch (_) {}
+      } catch {}
     });
   });
 
@@ -241,7 +241,7 @@ describe('index-repo (comprehensive)', () => {
       cleanupRepo(name);
       try {
         fs.rmSync(tmpRepo, { recursive: true });
-      } catch (_) {}
+      } catch {}
     });
 
     it('should reindex in full mode', () => {
@@ -305,7 +305,7 @@ describe('index-repo (comprehensive)', () => {
 
       try {
         fs.rmSync(tmpRepo, { recursive: true });
-      } catch (_) {}
+      } catch {}
     });
   });
 
@@ -326,7 +326,7 @@ describe('index-repo (comprehensive)', () => {
       cleanupRepo(name);
       try {
         fs.rmSync(tmpRepo, { recursive: true });
-      } catch (_) {}
+      } catch {}
     });
 
     it('should build import graph', () => {
@@ -381,7 +381,7 @@ describe('index-repo (comprehensive)', () => {
       cleanupRepo(name);
       try {
         fs.rmSync(tmpRepo, { recursive: true });
-      } catch (_) {}
+      } catch {}
     });
 
     it('should complete indexing a repo with many files and symbols', () => {

@@ -91,7 +91,7 @@ async function indexDocs(db, rootPath, repoName, ignoreGlob) {
           db.exec('COMMIT');
           return result;
         } catch (e) {
-          try { db.exec('ROLLBACK'); } catch (_) {}
+          try { db.exec('ROLLBACK'); } catch {}
           throw e;
         }
       };
@@ -144,6 +144,7 @@ async function indexDocs(db, rootPath, repoName, ignoreGlob) {
   }
 
   for (let i = 0; i < files.length; i += BATCH_SIZE) {
+    // oxlint-disable-next-line no-await-in-loop
     const reads = await readDocBatch(files.slice(i, i + BATCH_SIZE));
 
     useTx(() => {

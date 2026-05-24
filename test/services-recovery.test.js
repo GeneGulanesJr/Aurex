@@ -10,7 +10,7 @@ describe('services/recovery', () => {
 
     it('should return nothing_to_recover when session has no observations', () => {
       const jsonErrNoExit = vi.fn((msg) => ({ error: msg }));
-      const sqlJson = vi.fn((query, params) => {
+      const sqlJson = vi.fn((query, _params) => {
         if (query.includes('session_log')) {
           return [{ id: 1, project: 'test', started_at: '2025-01-01' }];
         }
@@ -32,8 +32,8 @@ describe('services/recovery', () => {
     });
 
     it('should recover orphan sessions', () => {
-      let callCount = 0;
-      const sqlJson = vi.fn((query, params) => {
+      const _callCount = 0;
+      const sqlJson = vi.fn((query, _params) => {
         callCount++;
         if (query.includes('ended_at IS NULL')) {
           return [{ id: 5, project: 'test-proj' }];

@@ -9,7 +9,7 @@ describe('services/sessions', () => {
     });
 
     it('should create session and return session info', () => {
-      const sqlJson = vi.fn((query, params) => {
+      const sqlJson = vi.fn((query, _params) => {
         if (query.includes('INSERT INTO session_log')) {
           return [{ id: 42, started_at: '2025-01-01T00:00:00' }];
         }
@@ -42,7 +42,7 @@ describe('services/sessions', () => {
     });
 
     it('should detect incomplete previous session', () => {
-      const sqlJson = vi.fn((query, params) => {
+      const sqlJson = vi.fn((query, _params) => {
         if (query.includes('INSERT INTO session_log')) {
           return [{ id: 5, started_at: '2025-01-01' }];
         }

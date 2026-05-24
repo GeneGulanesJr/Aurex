@@ -4,7 +4,7 @@
 
 const { addBinding, dedupBindings } = require('./shared');
 
-function buildPythonScopeBindings(tree, _source, filePath) {
+function buildPythonScopeBindings(tree, _source, _filePath) {
   const bindings = [];
 
   function walk(node, scopeDepth) {

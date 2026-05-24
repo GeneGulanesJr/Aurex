@@ -1,7 +1,8 @@
-import { isCodeFile, state } from '../state';
+// oxlint-disable sort-imports
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
-import { getKnownRepos } from '../host/project-detector';
+import { isCodeFile, state } from '../state';
 import { isPipedOutputFilter, isTargetedSymbolLookup } from './guardrail-utils';
+import { getKnownRepos } from '../host/project-detector';
 import path from 'node:path';
 
 const CONFIG_FILENAMES = new Set([
@@ -88,10 +89,10 @@ export function registerToolGuardrails(pi: ExtensionAPI, deps: GuardrailsDeps) {
         if (matchedRepo) {
           // Allow grep/rg/etc. When they are only filtering another command's stdout,
           // Such as `npx oxlint 2>&1 | grep -i unused`.
-          if (isPipedOutputFilter(cmd)) return;
+          if (isPipedOutputFilter(cmd)) {return;}
 
           // Allow targeted single-symbol lookups through (e.g., grep -rn "rankObservations" src/)
-          if (isTargetedSymbolLookup(cmd)) return;
+          if (isTargetedSymbolLookup(cmd)) {return;}
 
           const searchHint = CODE_PATH_HINT_RE.test(cmd) ? 'Code search' : 'Raw repository search';
           return {

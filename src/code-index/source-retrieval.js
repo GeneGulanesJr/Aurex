@@ -130,7 +130,7 @@ function searchCode(query, repoName, kind, maxResults) {
 
   try {
     ensureCodeFts();
-  } catch (_) {
+  } catch {
     return searchCodeLike(query, repoName, kind, maxResults);
   }
 
@@ -170,7 +170,7 @@ function searchCode(query, repoName, kind, maxResults) {
   let rows;
   try {
     rows = sqlJson(sql, params);
-  } catch (_) {
+  } catch {
     return searchCodeLike(query, repoName, kind, maxResults);
   }
   const { scores, max } = centralityBySymbol(repoName || null);
@@ -201,11 +201,13 @@ function rankedContext(query, repoName, options = {}) {
     considered++;
     const source = getCodeSource(result.repo, result.file, result.symbol);
     if (!source.success) {
+      // oxlint-disable-next-line no-continue
       continue;
     }
     const text = [result.signature, result.summary, source.source].filter(Boolean).join('\n');
     const tokens = estimateTokens(text);
     if (items.length > 0 && totalTokens + tokens > tokenBudget) {
+      // oxlint-disable-next-line no-continue
       continue;
     }
     items.push({

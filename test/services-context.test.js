@@ -15,7 +15,7 @@ describe('services/context', () => {
         type_priority: 3,
       },
     ];
-    const sqlJson = vi.fn((query, params) => {
+    const sqlJson = vi.fn((query, _params) => {
       if (query.includes("scope = 'personal'")) {
         return [];
       }
@@ -56,7 +56,7 @@ describe('services/context', () => {
     const personal = [
       { id: 20, title: 'My note', type: 'preference', scope: 'personal', topic_key: null, created_at: '2025-01-01' },
     ];
-    const sqlJson = vi.fn((query, params) => {
+    const sqlJson = vi.fn((query, _params) => {
       if (query.includes('session_log') && query.includes('WHERE project')) {
         return sessions;
       }
@@ -95,7 +95,7 @@ describe('services/context', () => {
         type_priority: 3,
       },
     ];
-    const sqlJson = vi.fn((query, params) => {
+    const sqlJson = vi.fn((query, _params) => {
       if (query.includes("scope = 'personal'")) {
         return [];
       }
@@ -132,7 +132,7 @@ describe('services/context', () => {
         type_priority: 3,
       },
     ];
-    const sqlJson = vi.fn((query, params) => {
+    const sqlJson = vi.fn((query, _params) => {
       if (query.includes("scope = 'personal'")) {
         return [];
       }
@@ -168,7 +168,7 @@ describe('services/context', () => {
         type_priority: 3,
       },
     ];
-    const sqlJson = vi.fn((query, params) => {
+    const sqlJson = vi.fn((query, _params) => {
       if (query.includes("scope = 'personal'")) {
         return [];
       }

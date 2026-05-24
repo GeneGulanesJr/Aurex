@@ -26,10 +26,16 @@ function searchDocs(db, repoId, query, opts) {
       const content = r.content || '';
       const hasCode = content.includes('```');
       const codeRatio = (content.match(/```[\s\S]*?```/g) || []).join('').length / Math.max(content.length, 1);
+      let roleScore = 0;
+      if (r.role === 'how_to' || r.role === 'tutorial') {
+        roleScore = 0.3;
+      } else if (r.role === 'api' || r.role === 'reference') {
+        roleScore = 0.2;
+      }
       r.answerability = Math.min(
         1,
         (r.level >= 2 && r.level <= 4 ? 0.3 : 0.1) +
-          (r.role === 'how_to' || r.role === 'tutorial' ? 0.3 : r.role === 'api' || r.role === 'reference' ? 0.2 : 0) +
+          roleScore +
           (content.length > 100 && content.length < 3000 ? 0.2 : 0.1) +
           (hasCode ? 0.2 : 0) +
           (codeRatio > 0.2 && codeRatio < 0.7 ? 0.1 : 0),
@@ -248,7 +254,7 @@ function getStalePages(db, repoId) {
           reason: 'modified',
         });
       }
-    } catch (e) {
+    } catch {
       missing.push({ id: file.id, path: file.path, reason: 'missing' });
     }
   }

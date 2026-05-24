@@ -1,6 +1,6 @@
-import path from 'node:path';
 import { RepoInfo, state } from '../state';
 import { mem, memCmd } from './memory-client';
+import path from 'node:path';
 
 export { type RepoInfo };
 
@@ -35,7 +35,7 @@ export function isRepoStale(repo: RepoInfo): boolean {
     const maxCheck = 50;
 
     function checkDir(dir) {
-      if (checked >= maxCheck) return true; // Assume stale if too many files
+      if (checked >= maxCheck) {return true;} // Assume stale if too many files
       let entries;
       try {
         entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -43,16 +43,17 @@ export function isRepoStale(repo: RepoInfo): boolean {
         return false;
       }
       for (const entry of entries) {
-        if (checked >= maxCheck) return true;
-        if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === '.git') continue;
+        if (checked >= maxCheck) {return true;}
+        // oxlint-disable-next-line no-continue
+        if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === '.git') {continue;}
         const fullPath = pathMod.join(dir, entry.name);
         if (entry.isDirectory()) {
-          if (checkDir(fullPath)) return true;
+          if (checkDir(fullPath)) {return true;}
         } else if (extensions.has(pathMod.extname(entry.name).toLowerCase())) {
           checked++;
           try {
             const stat = fs.statSync(fullPath);
-            if (Math.max(stat.mtimeMs, stat.ctimeMs) > indexedTime) return true;
+            if (Math.max(stat.mtimeMs, stat.ctimeMs) > indexedTime) {return true;}
           } catch {}
         }
       }
@@ -74,7 +75,7 @@ export async function detectProject(cwd: string): Promise<string> {
     if (result && (result as any).projects) {
       knownProjects = ((result as any).projects as any[]).map((p: any) => p.project);
     }
-  } catch (_) {
+  } catch {
     /* DB may not exist yet */
   }
 
@@ -99,7 +100,7 @@ export async function detectProject(cwd: string): Promise<string> {
         return bestRepo.repo.name;
       }
     }
-  } catch (_) {
+  } catch {
     /* Code repos may not be available */
   }
 

@@ -16,7 +16,7 @@ function _getImportGraph() {
   return _importGraph;
 }
 
-const path = require('path');
+const _path = require('path');
 
 const MAX_RESOLUTION_PASSES = 10;
 const WILDCARD_EXPANSION_CAP = 50;
@@ -104,11 +104,11 @@ function runDirectResolution(db, repoId) {
   );
 
   // Cache for import target resolution
-  const importTargetCache = new Map();
+  const _importTargetCache = new Map();
 
   // Cache for file path lookup
   const filePathCache = new Map();
-  const getFilePath = (fileId) => {
+  const _getFilePath = (fileId) => {
     if (!filePathCache.has(fileId)) {
       const row = db.prepare('SELECT path FROM code_files WHERE id = ?').get(fileId);
       filePathCache.set(fileId, row ? row.path : null);
@@ -125,12 +125,14 @@ function runDirectResolution(db, repoId) {
       if (binding.origin === 'external_package') {
         insertResolution.run(binding.id, null, null, 'resolved_external', 2, 1.0);
         resolved++;
+        // oxlint-disable-next-line no-continue
         continue;
       }
 
       if (binding.origin === 'unresolved') {
         insertResolution.run(binding.id, null, null, 'unresolved', 2, 0.0);
         unresolved++;
+        // oxlint-disable-next-line no-continue
         continue;
       }
 
@@ -168,6 +170,7 @@ function runDirectResolution(db, repoId) {
           insertResolution.run(binding.id, null, null, 'unresolved', 2, 0.3);
           unresolved++;
         }
+        // oxlint-disable-next-line no-continue
         continue;
       }
 
@@ -188,6 +191,7 @@ function runDirectResolution(db, repoId) {
           insertResolution.run(binding.id, null, null, 'unresolved', 2, 0.2);
           unresolved++;
         }
+        // oxlint-disable-next-line no-continue
         continue;
       }
 
@@ -195,6 +199,7 @@ function runDirectResolution(db, repoId) {
         // Go/Rust internal packages/modules — resolved at file level
         insertResolution.run(binding.id, null, null, 'resolved_external', 2, 0.8);
         resolved++;
+        // oxlint-disable-next-line no-continue
         continue;
       }
 
@@ -202,6 +207,7 @@ function runDirectResolution(db, repoId) {
         // SQL table refs, etc.
         insertResolution.run(binding.id, null, null, 'resolved_external', 2, 0.7);
         resolved++;
+        // oxlint-disable-next-line no-continue
         continue;
       }
 

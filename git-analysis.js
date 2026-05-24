@@ -303,7 +303,7 @@ function getProvenance(db, repoId, symbolName) {
         entry.touches_symbol = true;
       }
     }
-  } catch (_) {
+  } catch {
     /* Blame failed, keep all */
   }
 

@@ -87,13 +87,13 @@ describe('Error patterns and DB isolation', () => {
       dbModule.resetDb();
       try {
         fs.unlinkSync(tmpPath);
-      } catch (_) {}
+      } catch {}
       try {
         fs.unlinkSync(`${tmpPath}-wal`);
-      } catch (_) {}
+      } catch {}
       try {
         fs.unlinkSync(`${tmpPath}-shm`);
-      } catch (_) {}
+      } catch {}
 
       // Restore global singleton
       resetConfigCache();
@@ -119,13 +119,13 @@ describe('Error patterns and DB isolation', () => {
       // Cleanup
       try {
         fs.unlinkSync(tmpPath);
-      } catch (_) {}
+      } catch {}
       try {
         fs.unlinkSync(`${tmpPath}-wal`);
-      } catch (_) {}
+      } catch {}
       try {
         fs.unlinkSync(`${tmpPath}-shm`);
-      } catch (_) {}
+      } catch {}
     });
   });
 

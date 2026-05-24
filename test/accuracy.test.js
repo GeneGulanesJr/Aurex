@@ -14,10 +14,10 @@ function cleanupTmp(files) {
   for (const f of files) {
     try {
       fs.unlinkSync(f);
-    } catch (_) {}
+    } catch {}
     try {
       fs.rmdirSync(path.dirname(f), { recursive: true });
-    } catch (_) {}
+    } catch {}
   }
 }
 
@@ -321,14 +321,14 @@ class Child extends Base {
     if (db) {
       try {
         db.close();
-      } catch (_) {}
+      } catch {}
     }
     try {
       fs.unlinkSync(TEST_DB_PATH);
-    } catch (_) {}
+    } catch {}
     try {
       fs.rmSync(TEST_REPO_DIR, { recursive: true });
-    } catch (_) {}
+    } catch {}
   });
 
   it('should resolve aliased import getHelp → helper in utils.js', () => {

@@ -64,7 +64,7 @@ describe('data-access/symbols', () => {
     it('should query symbol links for a memory', () => {
       const deps = mockDeps();
       deps.sqlJson.mockReturnValue([{ symbol_id: 'myFunc', repo: 'myrepo' }]);
-      const result = getSymbolsForMemory(deps, 42);
+      const _result = getSymbolsForMemory(deps, 42);
       expect(deps.sqlJson).toHaveBeenCalledWith(
         expect.stringContaining('symbol_links WHERE memory_id'),
         expect.any(Array),

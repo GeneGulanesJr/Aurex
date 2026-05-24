@@ -3,7 +3,7 @@
 
 const { addBinding, dedupBindings } = require('./shared');
 
-function buildGoScopeBindings(tree, _source, filePath) {
+function buildGoScopeBindings(tree, _source, _filePath) {
   const bindings = [];
 
   function walk(node, scopeDepth) {

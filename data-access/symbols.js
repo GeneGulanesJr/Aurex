@@ -68,7 +68,7 @@ function getAnchoredLinks(deps, repo) {
   );
 }
 
-function updateLinkTrust(deps, { memoryId, symbolId, newTrust, timestamp }) {
+function updateLinkTrust(deps, { memoryId, symbolId, newTrust, _timestamp }) {
   const { sqlRun } = deps;
   sqlRun(
     "UPDATE symbol_links SET trust_score = ?, last_verified = datetime('now') WHERE memory_id = ? AND symbol_id = ?",
@@ -121,7 +121,7 @@ function getSymbolCluster(deps, { symbolId, repo }) {
   return sqlJson(q, params);
 }
 
-function getRelatedMemories(deps, { memoryId, symbolIds, limit }) {
+function getRelatedMemories(deps, { memoryId, symbolIds, _limit }) {
   const { sqlJson } = deps;
   const placeholders = symbolIds.map(() => '?').join(',');
   return sqlJson(

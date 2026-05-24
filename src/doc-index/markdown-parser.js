@@ -93,6 +93,7 @@ function parseMarkdownSections(content, filePath) {
         content_hash: '',
       };
       i++;
+      // oxlint-disable-next-line no-continue
       continue;
     }
 
@@ -113,6 +114,7 @@ function parseMarkdownSections(content, filePath) {
         content_hash: '',
       };
       i += 2;
+      // oxlint-disable-next-line no-continue
       continue;
     }
 

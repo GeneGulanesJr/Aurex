@@ -16,7 +16,7 @@ const {
   buildComplexityMetricsForFiles,
 } = require('./edge-extractor');
 const { createParsePool } = require('./worker-pool');
-const { buildScopeBindings } = require('./scope-builder');
+const { buildScopeBindings: _buildScopeBindings } = require('./scope-builder');
 const { resolveScopeBindings, resolveScopeBindingsForFiles } = require('./scope-resolver');
 
 /**
@@ -142,6 +142,7 @@ function parseChangedPathsInput(input, repoPath) {
       filePath = entry.path || entry.file || entry.filePath || entry[1];
     }
     if (!filePath || typeof filePath !== 'string') {
+      // oxlint-disable-next-line no-continue
       continue;
     }
     const abs = path.isAbsolute(filePath) ? path.resolve(filePath) : path.resolve(repoPath, filePath);
@@ -182,6 +183,7 @@ function getGitDelta(repoPath, baseCommit) {
     for (const line of output.split('\n')) {
       const trimmed = line.trim();
       if (!trimmed) {
+        // oxlint-disable-next-line no-continue
         continue;
       }
       const parts = trimmed.split('\t');
@@ -395,11 +397,11 @@ function rebuildDerivedIncremental(db, repoId, args, stats, changedFileIds, dele
   let importEdges = 0;
   let callEdges = 0;
   let complexityCount = 0;
-  let usedFallback = false;
+  const usedFallback = false;
 
   try {
     const ig = buildImportEdgesForFiles(db, repoId, changedFileIds, deletedFileIds);
-    if (ig.success) importEdges = ig.edges;
+    if (ig.success) {importEdges = ig.edges;}
   } catch {}
 
   // ── Scope resolution (v10) ────────────────────────────────
@@ -441,7 +443,7 @@ function rebuildDerivedIncremental(db, repoId, args, stats, changedFileIds, dele
         );
       },
     });
-    if (cg.success) callEdges = cg.calls;
+    if (cg.success) {callEdges = cg.calls;}
   } catch {}
 
   emitProgress(
@@ -455,7 +457,7 @@ function rebuildDerivedIncremental(db, repoId, args, stats, changedFileIds, dele
   );
   try {
     const cc = buildComplexityMetricsForFiles(db, repoId, changedFileIds, deletedFileIds);
-    if (cc.success) complexityCount = cc.symbols;
+    if (cc.success) {complexityCount = cc.symbols;}
   } catch {}
 
   return {
@@ -600,6 +602,7 @@ async function parsePhase(files, deps, repoId, args) {
         { files_total: totalFiles, files_done: fileCount, symbols: symbolCount },
       );
 
+      // oxlint-disable-next-line no-await-in-loop
       const reads = await Promise.all(
         batch.map(async (fp) => {
           try {
@@ -628,6 +631,7 @@ async function parsePhase(files, deps, repoId, args) {
       if (useWorkers && pool) {
         try {
           const workerInputs = validReads.map((r) => ({ filePath: r.filePath, content: r.content }));
+          // oxlint-disable-next-line no-await-in-loop
           const workerResults = await pool.parseAll(workerInputs);
           const symbolMap = new Map(workerResults.map((r) => [r.filePath, r.symbols]));
           for (const record of validReads) {
@@ -754,7 +758,7 @@ async function parsePhase(files, deps, repoId, args) {
                   parseResult.tree.delete();
                 }
               }
-            } catch (_) {
+            } catch {
               // Scope binding extraction is best-effort; don't fail the batch
             }
             if (shouldEmitFileProgress(fileCount, totalFiles)) {
@@ -949,15 +953,18 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
     : null;
   const gitDeletedFiles = gitDelta ? gitDelta.deleted : [];
   const explicitChangedPathMode = gitDelta && gitDelta.source === 'changed-paths';
-  const scanResult = gitDelta
-    ? {
-        files: gitChangedFiles,
-        skipReport: { builtIn: {}, gitignore: {}, memorycodeignore: {}, unsupportedExt: 0 },
-        source: 'git-diff',
-      }
-    : fs.existsSync(existing.path)
-      ? await scanPhase(existing.path, {}, args)
-      : { files: [], skipReport: { builtIn: {}, gitignore: {}, memorycodeignore: {}, unsupportedExt: 0 } };
+  let scanResult;
+  if (gitDelta) {
+    scanResult = {
+      files: gitChangedFiles,
+      skipReport: { builtIn: {}, gitignore: {}, memorycodeignore: {}, unsupportedExt: 0 },
+      source: 'git-diff',
+    };
+  } else if (fs.existsSync(existing.path)) {
+    scanResult = await scanPhase(existing.path, {}, args);
+  } else {
+    scanResult = { files: [], skipReport: { builtIn: {}, gitignore: {}, memorycodeignore: {}, unsupportedExt: 0 } };
+  }
   const files = scanResult.files;
   const skipReport = scanResult.skipReport;
   const skipSummary = formatSkipReport(skipReport);
@@ -998,6 +1005,7 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
     }
 
     try {
+      // oxlint-disable-next-line no-await-in-loop
       const record = await readFileRecord(filePath);
       const fileParams = fileRecordToParams(existing.id, record);
       hashed++;
@@ -1053,7 +1061,7 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
                 parseResult.tree.delete();
               }
             }
-          } catch (_) {
+          } catch {
             // Best-effort scope binding extraction
           }
         };

@@ -177,6 +177,7 @@ function scanRepository(repoPath, options = {}) {
     }
     for (const rule of nestedGitignoreRules) {
       if (!relativePath.startsWith(rule.prefix)) {
+        // oxlint-disable-next-line no-continue
         continue;
       }
       const local = relativePath.slice(rule.prefix.length).replace(/\\/g, '/');
@@ -225,6 +226,7 @@ function scanRepository(repoPath, options = {}) {
       scanStats.currentKind = entry.isDirectory() ? 'directory' : 'file';
       if (entry.isSymbolicLink() && !followSymlinks) {
         mark('symlink', entry.name, relativePath);
+        // oxlint-disable-next-line no-continue
         continue;
       }
       let resolved = fullPath;
@@ -233,6 +235,7 @@ function scanRepository(repoPath, options = {}) {
       } catch {}
       if (!pathIsInside(absRoot, resolved)) {
         mark('pathTraversal', entry.name, relativePath);
+        // oxlint-disable-next-line no-continue
         continue;
       }
       if (entry.isDirectory()) {
@@ -250,15 +253,18 @@ function scanRepository(repoPath, options = {}) {
         if (!isCodeFile(fullPath)) {
           skipReport.unsupportedExt++;
           maybeReportScanProgress();
+          // oxlint-disable-next-line no-continue
           continue;
         }
         const ignored = ignoredBy(relativePath, false);
         if (ignored) {
           mark(ignored, path.extname(entry.name) || entry.name, relativePath);
+          // oxlint-disable-next-line no-continue
           continue;
         }
         if (SECRET_FILE_RE.test(relativePath.replace(/\\/g, '/'))) {
           mark('secret', entry.name, relativePath);
+          // oxlint-disable-next-line no-continue
           continue;
         }
         let stats;
@@ -266,14 +272,17 @@ function scanRepository(repoPath, options = {}) {
           stats = fs.statSync(fullPath);
         } catch {
           skipReport.unreadable++;
+          // oxlint-disable-next-line no-continue
           continue;
         }
         if (maxFileSize > 0 && stats.size > maxFileSize) {
           mark('tooLarge', path.extname(entry.name) || entry.name, relativePath);
+          // oxlint-disable-next-line no-continue
           continue;
         }
         if (isBinaryFile(fullPath)) {
           mark('binary', path.extname(entry.name) || entry.name, relativePath);
+          // oxlint-disable-next-line no-continue
           continue;
         }
         results.push(fullPath);

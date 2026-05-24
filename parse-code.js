@@ -88,13 +88,16 @@ async function init() {
       const uniqueEntries = [...new Map(grammarEntries).entries()];
 
       for (const [key, wasmFile] of uniqueEntries) {
-        if (!wasmFile || !key) continue; // Skip regex-based extractors (no WASM grammar)
+        // oxlint-disable-next-line no-continue
+        if (!wasmFile || !key) {continue;} // Skip regex-based extractors (no WASM grammar)
         const wasmPath = path.join(GRAMMAR_DIR, wasmFile);
         if (!fs.existsSync(wasmPath)) {
           // Skip silently — grammar not bundled
+          // oxlint-disable-next-line no-continue
           continue;
         }
         try {
+          // oxlint-disable-next-line no-await-in-loop
           const lang = await _LanguageClass.load(wasmPath);
           _languages[key] = lang;
           const parser = new _ParserClass();
@@ -900,7 +903,8 @@ function _extractPythonSymbols(filePath, sourceStr, parser) {
           const left = child.child(0);
           if (left && left.type === 'identifier') {
             const name = left.text;
-            if (name === '_' || name.startsWith('__') && name.endsWith('__')) continue;
+            // oxlint-disable-next-line no-continue
+            if (name === '_' || name.startsWith('__') && name.endsWith('__')) {continue;}
             const right = child.child(2);
             let assignKind = 'constant';
             if (right) {
@@ -1314,7 +1318,7 @@ function _extractRustSymbols(filePath, sourceStr, parser) {
           }
         }
         // Walk into impl_item to find methods at depth+1
-        const childDepth = depth + 1;
+        const _childDepth = depth + 1;
         function collectMethods(n) {
           if (n.type === 'function_item' || n.type === 'function_signature_item') {
             let methodName = '';
@@ -1447,7 +1451,7 @@ function _extractSqlSymbolsRegex(filePath, source) {
 
   function add(name, kind, startLine, startByte, endByte, sig) {
     const key = `${name}:${kind}:${startLine}`;
-    if (seen.has(key)) return;
+    if (seen.has(key)) {return;}
     seen.add(key);
     const bodyLines = source
       .substring(startByte, endByte)
@@ -1627,7 +1631,7 @@ function _extractHtmlSymbols(filePath, source) {
 
   function add(name, kind, startLine, signature) {
     const key = `${name}:${kind}:${startLine}`;
-    if (seen.has(key)) return;
+    if (seen.has(key)) {return;}
     seen.add(key);
     symbols.push({
       name,
@@ -1653,31 +1657,35 @@ function _extractHtmlSymbols(filePath, source) {
   // Extract id attributes
   for (const match of source.matchAll(_HTML_ID_RE)) {
     const name = match[1].trim();
-    if (!name) continue;
+    // oxlint-disable-next-line no-continue
+    if (!name) {continue;}
     add(name, 'id', getLine(match.index), `id="${name}"`);
   }
 
   // Extract class attributes (split on whitespace, record each class)
   for (const match of source.matchAll(_HTML_CLASS_RE)) {
     const raw = match[1].trim();
-    if (!raw) continue;
+    // oxlint-disable-next-line no-continue
+    if (!raw) {continue;}
     const line = getLine(match.index);
     for (const cls of raw.split(/\s+/)) {
-      if (cls) add(cls, 'css_class', line, `class="${cls}"`);
+      if (cls) {add(cls, 'css_class', line, `class="${cls}"`);}
     }
   }
 
   // Extract custom element / component tags (PascalCase or kebab-case)
   for (const match of source.matchAll(_HTML_CUSTOM_ELEMENT_RE)) {
     const tagName = match[1];
-    if (_STANDARD_HTML_TAGS.has(tagName.toLowerCase())) continue;
+    // oxlint-disable-next-line no-continue
+    if (_STANDARD_HTML_TAGS.has(tagName.toLowerCase())) {continue;}
     add(tagName, 'component', getLine(match.index), `<${tagName}>`);
   }
 
   // Extract inline <script> blocks
   for (const match of source.matchAll(_HTML_SCRIPT_RE)) {
     const body = match[1].trim();
-    if (!body) continue;
+    // oxlint-disable-next-line no-continue
+    if (!body) {continue;}
     const startLine = getLine(match.index);
     const preview = body.split('\n').slice(0, 3).join('\n');
     const sig = preview.length > 200 ? `${preview.slice(0, 197)}...` : preview;
@@ -1687,7 +1695,8 @@ function _extractHtmlSymbols(filePath, source) {
   // Extract inline <style> blocks
   for (const match of source.matchAll(_HTML_STYLE_RE)) {
     const body = match[1].trim();
-    if (!body) continue;
+    // oxlint-disable-next-line no-continue
+    if (!body) {continue;}
     const startLine = getLine(match.index);
     const preview = body.split('\n').slice(0, 3).join('\n');
     const sig = preview.length > 200 ? `${preview.slice(0, 197)}...` : preview;
@@ -1716,7 +1725,7 @@ function _extractCssSymbols(filePath, source) {
 
   function add(name, kind, startLine, signature) {
     const key = `${name}:${kind}:${startLine}`;
-    if (seen.has(key)) return;
+    if (seen.has(key)) {return;}
     seen.add(key);
     symbols.push({
       name,
@@ -1759,9 +1768,11 @@ function _extractCssSymbols(filePath, source) {
   for (const match of source.matchAll(_CSS_SELECTOR_RE)) {
     const selector = match[1].trim();
     // Skip @-rules, comments, properties, and empty selectors
-    if (!selector || selector.startsWith('@') || selector.startsWith('//') || selector.startsWith('/*')) continue;
+    // oxlint-disable-next-line no-continue
+    if (!selector || selector.startsWith('@') || selector.startsWith('//') || selector.startsWith('/*')) {continue;}
     // Skip property-like patterns (word: value;) that aren't class/id selectors
-    if (/^\s*[\w-]+\s*:/.test(selector) && !selector.startsWith('.') && !selector.startsWith('#')) continue;
+    // oxlint-disable-next-line no-continue
+    if (/^\s*[\w-]+\s*:/.test(selector) && !selector.startsWith('.') && !selector.startsWith('#')) {continue;}
     add(selector, 'selector', getLine(match.index), selector);
   }
 

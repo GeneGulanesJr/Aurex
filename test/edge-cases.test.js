@@ -17,7 +17,7 @@ function run(cmd) {
     if (e.stdout?.trim()) {
       try {
         return JSON.parse(e.stdout.trim());
-      } catch (_) {}
+      } catch {}
     }
     return { error: e.message };
   }
@@ -36,7 +36,7 @@ function runFail(cmd) {
     const stdout = e.stdout?.trim() || '';
     try {
       return JSON.parse(stderr || stdout);
-    } catch (_) {
+    } catch {
       return { error: stderr || stdout || e.message };
     }
   }
@@ -51,7 +51,7 @@ function cleanup(title) {
         run(`delete --id ${m.id} --hard true`);
       }
     }
-  } catch (_) {}
+  } catch {}
 }
 
 // ═══════════════════════════════════════════

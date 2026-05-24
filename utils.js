@@ -79,6 +79,7 @@ function walkDirForCode(dirPath) {
       const entries = fs.readdirSync(dir, { withFileTypes: true });
       for (const entry of entries) {
         if (entry.name.startsWith('.')) {
+          // oxlint-disable-next-line no-continue
           continue;
         }
         const fullPath = path.join(dir, entry.name);
@@ -90,7 +91,7 @@ function walkDirForCode(dirPath) {
           results.push(fullPath);
         }
       }
-    } catch (_) {}
+    } catch {}
   }
   walk(dirPath);
   return results;
@@ -104,19 +105,23 @@ function walkDirForDocs(dirPath, ignoreGlob) {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
       if (entry.name.startsWith('.')) {
+        // oxlint-disable-next-line no-continue
         continue;
       }
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         if (IGNORE_DIRS_DOCS.has(entry.name)) {
+          // oxlint-disable-next-line no-continue
           continue;
         }
         if (ignoreRe && ignoreRe.test(fullPath)) {
+          // oxlint-disable-next-line no-continue
           continue;
         }
         walk(fullPath);
       } else if (entry.isFile() && MD_EXTENSIONS.has(path.extname(entry.name))) {
         if (ignoreRe && ignoreRe.test(fullPath)) {
+          // oxlint-disable-next-line no-continue
           continue;
         }
         results.push(fullPath);

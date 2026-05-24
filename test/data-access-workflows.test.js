@@ -99,7 +99,7 @@ describe('data-access/workflows', () => {
     });
 
     it('should return workflow with steps', () => {
-      const sqlJson = vi.fn((query, params) => {
+      const sqlJson = vi.fn((query, _params) => {
         if (query.includes('procedural_memory')) {
           return [{ id: 'wf-1', name: 'Test', project: 'proj', status: 'active' }];
         }

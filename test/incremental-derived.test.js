@@ -1,8 +1,8 @@
 const fs = require('fs');
-const os = require('os');
+const _os = require('os');
 const path = require('path');
 const { execSync } = require('child_process');
-const { buildImportGraphForFiles, buildCallGraphForFiles, buildComplexityForFiles } = require('../src/code-analysis/legacy-core');
+const { buildImportGraphForFiles, buildCallGraphForFiles: _buildCallGraphForFiles, buildComplexityForFiles } = require('../src/code-analysis/legacy-core');
 const { rebuildDerivedIndexes } = require('../src/code-index/incremental-indexer');
 
 const STORE = path.resolve(__dirname, '..', 'memory-store.js');
@@ -12,7 +12,7 @@ try {
   const result = execSync(`node "${STORE}" list-code-repos`, { encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] });
   const parsed = JSON.parse(result.trim());
   cliAvailable = parsed && typeof parsed.total === 'number';
-} catch (_) {}
+} catch {}
 
 function run(cmd) {
   const out = execSync(`node "${STORE}" ${cmd}`, {
@@ -23,7 +23,7 @@ function run(cmd) {
   return JSON.parse(out.trim());
 }
 
-function runFail(cmd) {
+function _runFail(cmd) {
   try {
     execSync(`node "${STORE}" ${cmd}`, {
       encoding: 'utf8',
@@ -34,7 +34,7 @@ function runFail(cmd) {
   } catch (err) {
     try {
       return JSON.parse((err.stderr || err.stdout || '').trim());
-    } catch (_) {
+    } catch {
       return { error: err.stderr || err.message };
     }
   }
@@ -62,7 +62,7 @@ function cleanupRepo(name) {
       timeout: 5000,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-  } catch (_) {}
+  } catch {}
 }
 
 function makeMockDb(tables) {
@@ -92,7 +92,7 @@ function makeMockDb(tables) {
           });
         }
         if (normalized.startsWith('DELETE FROM symbol_complexity')) {
-          data.symbol_complexity = (data.symbol_complexity || []).filter((row) => {
+          data.symbol_complexity = (data.symbol_complexity || []).filter((_row) => {
             if (normalized.includes('file_id IN')) {
               return false;
             }
@@ -388,7 +388,7 @@ describeIntegration('incremental derived rebuild integration', () => {
       cleanupRepo(name);
       try {
         fs.rmSync(tmpRepo, { recursive: true });
-      } catch (_) {}
+      } catch {}
     });
 
     it('reports file-level derived_scope after incremental reindex', () => {
@@ -423,7 +423,7 @@ describeIntegration('incremental derived rebuild integration', () => {
       cleanupRepo(name);
       try {
         fs.rmSync(tmpRepo, { recursive: true });
-      } catch (_) {}
+      } catch {}
     });
 
     it('handles renamed files in incremental reindex with derived_scope file', () => {
@@ -452,7 +452,7 @@ describeIntegration('incremental derived rebuild integration', () => {
       cleanupRepo(name);
       try {
         fs.rmSync(tmpRepo, { recursive: true });
-      } catch (_) {}
+      } catch {}
     });
 
     it('handles deleted files in incremental reindex', () => {
@@ -486,7 +486,7 @@ describeIntegration('incremental derived rebuild integration', () => {
       cleanupRepo(name);
       try {
         fs.rmSync(tmpRepo, { recursive: true });
-      } catch (_) {}
+      } catch {}
     });
 
     it('full mode rebuilds all derived indexes repo-wide', () => {
@@ -513,7 +513,7 @@ describeIntegration('health reporting with stale state', () => {
     cleanupRepo(name);
     try {
       fs.rmSync(tmpRepo, { recursive: true });
-    } catch (_) {}
+    } catch {}
   });
 
   it('reports health accurately after incremental reindex', () => {

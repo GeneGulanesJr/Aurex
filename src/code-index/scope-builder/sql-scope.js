@@ -3,7 +3,7 @@
 
 const { addBinding, dedupBindings } = require('./shared');
 
-function buildSqlScopeBindings(tree, _source, filePath) {
+function buildSqlScopeBindings(tree, _source, _filePath) {
   const bindings = [];
 
   function walk(node, scopeDepth) {

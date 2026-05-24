@@ -27,6 +27,7 @@ function findLapisRoot() {
   ];
   for (const dir of candidates) {
     if (!dir) {
+      // oxlint-disable-next-line no-continue
       continue;
     }
     const msPath = path.join(dir, 'memory-store.js');
@@ -108,7 +109,7 @@ function isRepoIndexed(repo) {
     }).trim();
     const data = JSON.parse(stdout);
     return (data.repos || []).some((r) => r.name === repo);
-  } catch (_) {
+  } catch {
     return false;
   }
 }
@@ -120,7 +121,7 @@ function findSymbolWithCallers(repo) {
       return null;
     }
     return _pickCallSymbolFromOutline(repo, hotFile);
-  } catch (_) {
+  } catch {
     return null;
   }
 }

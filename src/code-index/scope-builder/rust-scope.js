@@ -3,7 +3,7 @@
 
 const { addBinding, dedupBindings } = require('./shared');
 
-function buildRustScopeBindings(tree, _source, filePath) {
+function buildRustScopeBindings(tree, _source, _filePath) {
   const bindings = [];
 
   function walk(node, scopeDepth) {

@@ -146,13 +146,13 @@ describe('db.js (database layer)', () => {
       dbModule.resetDb();
       try {
         fs.unlinkSync(tmpPath);
-      } catch (_) {}
+      } catch {}
       try {
         fs.unlinkSync(`${tmpPath}-wal`);
-      } catch (_) {}
+      } catch {}
       try {
         fs.unlinkSync(`${tmpPath}-shm`);
-      } catch (_) {}
+      } catch {}
       const { resetConfigCache } = require('../config');
       resetConfigCache();
       dbModule.ensureDb();

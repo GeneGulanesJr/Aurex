@@ -1,5 +1,5 @@
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { AUTO_DECISION_COOLDOWN, CHECKPOINT_INTERVAL, state } from '../state';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { mem } from '../host/memory-client';
 import path from 'node:path';
 
@@ -92,6 +92,7 @@ export function registerPassiveCapture(pi: ExtensionAPI, deps: PassiveCaptureDep
         const firstLine = text.split('\n')[0].slice(0, 120);
         const title = `${pattern.label}: ${firstLine.slice(0, 80)}`;
 
+        // oxlint-disable-next-line no-await-in-loop
         await deps.mem('save', {
           title,
           type: pattern.type,

@@ -1,5 +1,5 @@
-const { RESULT_LIMITS } = require('../constants');
-const { getConfig } = require('../config');
+const { RESULT_LIMITS: _RESULT_LIMITS } = require('../constants');
+const { getConfig: _getConfig } = require('../config');
 
 function insertObservation(deps, { sessionId, type, title, content, project, scope, topicKey }) {
   const { sqlJson } = deps;
@@ -26,7 +26,7 @@ function softDeleteObservation(deps, id) {
       "INSERT INTO observations_fts(observations_fts, rowid, title, content, type, project, topic_key) VALUES ('delete', ?, '', '', '', '', '')",
       [parseInt(id, 10)],
     );
-  } catch (_) {}
+  } catch {}
 }
 
 function hardDeleteObservation(deps, id) {

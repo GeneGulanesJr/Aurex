@@ -1,6 +1,6 @@
-import { state } from '../state';
-import path from 'node:path';
 import fs from 'node:fs';
+import path from 'node:path';
+import { state } from '../state';
 
 function findLapisRoot(): string {
   let dir = __dirname;
