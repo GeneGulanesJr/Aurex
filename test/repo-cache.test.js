@@ -34,7 +34,7 @@ describe('repo-cache', () => {
         const srcFile = path.join(tmpDir, 'index.js');
         fs.writeFileSync(srcFile, 'console.log("hello")');
 
-        // indexed 2 hours ago
+        // Indexed 2 hours ago
         const indexedAt = new Date(Date.now() - 7200000).toISOString();
         const repo = {
           name: 'test-stale',
@@ -57,7 +57,7 @@ describe('repo-cache', () => {
         const srcFile = path.join(tmpDir, 'index.js');
         fs.writeFileSync(srcFile, 'console.log("hello")');
 
-        // indexed just now
+        // Indexed just now
         const indexedAt = new Date().toISOString();
         const repo = {
           name: 'test-fresh',

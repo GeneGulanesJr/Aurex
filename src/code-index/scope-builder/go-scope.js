@@ -3,7 +3,7 @@
 
 const { addBinding, dedupBindings } = require('./shared');
 
-function buildGoScopeBindings(tree, source, filePath) {
+function buildGoScopeBindings(tree, _source, filePath) {
   const bindings = [];
 
   function walk(node, scopeDepth) {
@@ -15,7 +15,7 @@ function buildGoScopeBindings(tree, source, filePath) {
     switch (type) {
       // ── Import declarations ────────────────────────────────
       case 'import_declaration': {
-        handleImportDeclaration(node, bindings);
+        handleImportDeclaration(node);
         break;
       }
 
@@ -38,7 +38,7 @@ function buildGoScopeBindings(tree, source, filePath) {
         }
         const params = node.childForFieldName('parameters');
         if (params) {
-          extractGoParameters(params, bindings, scopeDepth + 1);
+          extractGoParameters(params, scopeDepth + 1);
         }
         const body = node.childForFieldName('body');
         if (body) {
@@ -67,11 +67,11 @@ function buildGoScopeBindings(tree, source, filePath) {
         // Receiver
         const receiver = node.childForFieldName('receiver');
         if (receiver) {
-          extractGoReceiver(receiver, bindings, scopeDepth + 1);
+          extractGoReceiver(receiver, scopeDepth + 1);
         }
         const params = node.childForFieldName('parameters');
         if (params) {
-          extractGoParameters(params, bindings, scopeDepth + 1);
+          extractGoParameters(params, scopeDepth + 1);
         }
         const body = node.childForFieldName('body');
         if (body) {
@@ -124,19 +124,19 @@ function buildGoScopeBindings(tree, source, filePath) {
     }
   }
 
-  function handleImportDeclaration(node, bindings) {
+  function handleImportDeclaration(node) {
     const lineNum = node.startPosition.row + 1;
     const endLine = node.endPosition.row + 1;
 
     let child = node.firstChild;
     while (child) {
       if (child.type === 'import_spec') {
-        handleImportSpec(child, bindings, lineNum, endLine);
+        handleImportSpec(child, lineNum, endLine);
       } else if (child.type === 'import_spec_list') {
         let specChild = child.firstChild;
         while (specChild) {
           if (specChild.type === 'import_spec') {
-            handleImportSpec(specChild, bindings, lineNum, endLine);
+            handleImportSpec(specChild, lineNum, endLine);
           }
           specChild = specChild.nextSibling;
         }
@@ -145,7 +145,7 @@ function buildGoScopeBindings(tree, source, filePath) {
     }
   }
 
-  function handleImportSpec(spec, bindings, lineNum, endLine) {
+  function handleImportSpec(spec, lineNum, endLine) {
     const pathNode = spec.childForFieldName('path');
     if (!pathNode) {
       return;
@@ -157,7 +157,7 @@ function buildGoScopeBindings(tree, source, filePath) {
     if (nameNode) {
       const nameText = nameNode.text;
       if (nameText === '.') {
-        // dot import
+        // Dot import
         addBinding(bindings, {
           name: '*',
           kind: 'dot_import',
@@ -171,9 +171,9 @@ function buildGoScopeBindings(tree, source, filePath) {
           byteEnd: spec.endIndex,
         });
       } else if (nameText === '_') {
-        // blank import — side effects only, no binding
+        // Blank import — side effects only, no binding
       } else {
-        // aliased import
+        // Aliased import
         addBinding(bindings, {
           name: nameText,
           kind: 'named_import',
@@ -205,7 +205,7 @@ function buildGoScopeBindings(tree, source, filePath) {
     }
   }
 
-  function extractGoParameters(params, bindings, scopeDepth) {
+  function extractGoParameters(params, scopeDepth) {
     let child = params.firstChild;
     while (child) {
       if (child.type === 'parameter_list') {
@@ -248,7 +248,7 @@ function buildGoScopeBindings(tree, source, filePath) {
     }
   }
 
-  function extractGoReceiver(receiver, bindings, scopeDepth) {
+  function extractGoReceiver(receiver, scopeDepth) {
     // (r *Receiver) or (r Receiver)
     let child = receiver.firstChild;
     while (child) {

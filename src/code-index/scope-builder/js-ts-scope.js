@@ -1,6 +1,6 @@
 // JS/TS scope builder — walks a tree-sitter AST and extracts scope bindings.
 // Covers: named_import, default_import, namespace_import, require, destructure_import,
-//         re_export, declaration, destructure_local, parameter, class_member, dynamic_import.
+//         Re-export, declaration, destructure_local, parameter, class_member, dynamic_import.
 
 const { addBinding, dedupBindings } = require('./shared');
 
@@ -29,13 +29,13 @@ function buildJsTsScopeBindings(tree, source, filePath) {
     switch (type) {
       // ── Import statements ──────────────────────────────────
       case 'import_statement': {
-        handleImportStatement(node, source, bindings);
+        handleImportStatement(node);
         break;
       }
 
       // ── Re-exports ─────────────────────────────────────────
       case 'export_statement': {
-        handleExportStatement(node, source, bindings);
+        handleExportStatement(node);
         break;
       }
 
@@ -64,7 +64,7 @@ function buildJsTsScopeBindings(tree, source, filePath) {
         // Parameters create bindings at function scope
         const params = node.childForFieldName('parameters');
         if (params) {
-          extractParameters(params, source, bindings, currentDepth + 1, node.startPosition.row + 1, node.endPosition.row + 1);
+          extractParameters(params, currentDepth + 1, node.startPosition.row + 1, node.endPosition.row + 1);
         }
         // Body creates deeper scope
         const body = node.childForFieldName('body');
@@ -78,7 +78,7 @@ function buildJsTsScopeBindings(tree, source, filePath) {
       case 'arrow_function': {
         const params = node.childForFieldName('parameters');
         if (params) {
-          extractParameters(params, source, bindings, currentDepth + 1, node.startPosition.row + 1, node.endPosition.row + 1);
+          extractParameters(params, currentDepth + 1, node.startPosition.row + 1, node.endPosition.row + 1);
         }
         const body = node.childForFieldName('body');
         if (body) {
@@ -89,7 +89,7 @@ function buildJsTsScopeBindings(tree, source, filePath) {
 
       // ── Variable declarations ──────────────────────────────
       case 'variable_declarator': {
-        handleVariableDeclarator(node, source, bindings, currentDepth);
+        handleVariableDeclarator(node, currentDepth);
         // Walk the value for nested functions
         const value = node.childForFieldName('value');
         if (value) {
@@ -126,7 +126,7 @@ function buildJsTsScopeBindings(tree, source, filePath) {
         // Walk class body for methods
         const body = node.childForFieldName('body');
         if (body) {
-          walkClassBody(body, source, bindings, currentDepth + 1);
+          walkClassBody(body, currentDepth + 1);
         }
         return;
       }
@@ -155,7 +155,7 @@ function buildJsTsScopeBindings(tree, source, filePath) {
         // Parameters in methods
         const params = node.childForFieldName('parameters');
         if (params) {
-          extractParameters(params, source, bindings, currentDepth + 1, node.startPosition.row + 1, node.endPosition.row + 1);
+          extractParameters(params, currentDepth + 1, node.startPosition.row + 1, node.endPosition.row + 1);
         }
         const body = node.childForFieldName('body');
         if (body) {
@@ -209,7 +209,7 @@ function buildJsTsScopeBindings(tree, source, filePath) {
     }
   }
 
-  function walkClassBody(body, source, bindings, depth) {
+  function walkClassBody(body, depth) {
     let child = body.firstChild;
     while (child) {
       const type = child.type;
@@ -231,7 +231,7 @@ function buildJsTsScopeBindings(tree, source, filePath) {
 
   // ── Import handling ─────────────────────────────────────
 
-  function handleImportStatement(node, source, bindings) {
+  function handleImportStatement(node) {
     const lineNum = node.startPosition.row + 1;
     const endLine = node.endPosition.row + 1;
 
@@ -269,7 +269,7 @@ function buildJsTsScopeBindings(tree, source, filePath) {
           byteEnd: child.endIndex,
         });
       } else if (t === 'namespace_import' || t === 'import_namespace_clause') {
-        // import * as foo from '...'
+        // Import * as foo from '...'
         hasNamespaceImport = true;
         const nameNode = child.childForFieldName('name') || findIdentifierNode(child);
         if (nameNode) {
@@ -288,13 +288,13 @@ function buildJsTsScopeBindings(tree, source, filePath) {
         }
       } else if (t === 'named_imports' || t === 'import_clause') {
         // Handle the import_clause which may contain named_imports, default, or namespace
-        handleImportClause(child, modulePath, isPackage, lineNum, endLine, bindings);
+        handleImportClause(child, modulePath, isPackage, lineNum, endLine);
       }
       child = child.nextSibling;
     }
   }
 
-  function handleImportClause(clause, modulePath, isPackage, lineNum, endLine, bindings) {
+  function handleImportClause(clause, modulePath, isPackage, lineNum, endLine) {
     let child = clause.firstChild;
     while (child) {
       const t = child.type;
@@ -360,7 +360,7 @@ function buildJsTsScopeBindings(tree, source, filePath) {
     }
   }
 
-  function handleExportStatement(node, source, bindings) {
+  function handleExportStatement(node) {
     const lineNum = node.startPosition.row + 1;
     const endLine = node.endPosition.row + 1;
 
@@ -398,22 +398,22 @@ function buildJsTsScopeBindings(tree, source, filePath) {
           }
         }
       }
-      // export * from '...'
+      // Export * from '...'
       if (child.type === 'export_all_clause' || child.type === 'namespace_import') {
         // Re-export all — we don't enumerate individual names at parse time
         // This is handled by the multi-pass resolver
       }
-      // export default function foo() — extract foo as declaration
+      // Export default function foo() — extract foo as declaration
       if (child.type === 'function_declaration' || child.type === 'class_declaration' || child.type === 'arrow_function') {
         walk(child, 0, lineNum, endLine);
         return;
       }
-      // export { foo } (without from) — just an export marker, the binding exists from declaration
+      // Export { foo } (without from) — just an export marker, the binding exists from declaration
       child = child.nextSibling;
     }
   }
 
-  function handleVariableDeclarator(node, source, bindings, scopeDepth) {
+  function handleVariableDeclarator(node, scopeDepth) {
     const nameNode = node.childForFieldName('name');
     if (!nameNode) {
       return;
@@ -455,23 +455,22 @@ function buildJsTsScopeBindings(tree, source, filePath) {
         });
       }
     } else if (nameNode.type === 'object_pattern') {
-      // const { foo, bar } = require('./baz') or const { foo, bar } = obj
+      // Const { foo, bar } = require('./baz') or const { foo, bar } = obj
       const destructureInfo = value ? extractRequireInfo(value) : null;
       extractDestructuredBindings(
         nameNode,
-        bindings,
         scopeDepth,
         lineNum,
         endLine,
         destructureInfo,
       );
     } else if (nameNode.type === 'array_pattern') {
-      // const [a, b] = ...
-      extractArrayDestructure(nameNode, bindings, scopeDepth, lineNum, endLine, requireInfo);
+      // Const [a, b] = ...
+      extractArrayDestructure(nameNode, scopeDepth, lineNum, endLine, requireInfo);
     }
   }
 
-  function extractDestructuredBindings(pattern, bindings, scopeDepth, lineNum, endLine, requireInfo) {
+  function extractDestructuredBindings(pattern, scopeDepth, lineNum, endLine, requireInfo) {
     let child = pattern.firstChild;
     while (child) {
       if (child.type === 'shorthand_property_identifier' || child.type === 'property_identifier') {
@@ -539,7 +538,7 @@ function buildJsTsScopeBindings(tree, source, filePath) {
     }
   }
 
-  function extractArrayDestructure(pattern, bindings, scopeDepth, lineNum, endLine, requireInfo) {
+  function extractArrayDestructure(pattern, scopeDepth, lineNum, endLine, requireInfo) {
     let child = pattern.firstChild;
     while (child) {
       if (child.type === 'identifier') {
@@ -564,7 +563,7 @@ function buildJsTsScopeBindings(tree, source, filePath) {
     }
   }
 
-  function extractParameters(params, source, bindings, scopeDepth, lineStart, lineEnd) {
+  function extractParameters(params, scopeDepth, lineStart, lineEnd) {
     let child = params.firstChild;
     while (child) {
       if (child.type === 'identifier') {
@@ -597,11 +596,11 @@ function buildJsTsScopeBindings(tree, source, filePath) {
           });
         }
       } else if (child.type === 'object_pattern') {
-        extractDestructuredBindings(child, bindings, scopeDepth, lineStart, lineEnd, null);
+        extractDestructuredBindings(child, scopeDepth, lineStart, lineEnd, null);
       } else if (child.type === 'array_pattern') {
-        extractArrayDestructure(child, bindings, scopeDepth, lineStart, lineEnd, null);
+        extractArrayDestructure(child, scopeDepth, lineStart, lineEnd, null);
       } else if (child.type === 'assignment_pattern') {
-        // default parameter: foo = 'bar' — the name is the left side
+        // Default parameter: foo = 'bar' — the name is the left side
         const left = child.childForFieldName('left') || child.firstChild;
         if (left && left.type === 'identifier') {
           addBinding(bindings, {
@@ -617,7 +616,7 @@ function buildJsTsScopeBindings(tree, source, filePath) {
             byteEnd: child.endIndex,
           });
         } else if (left && left.type === 'object_pattern') {
-          extractDestructuredBindings(left, bindings, scopeDepth, lineStart, lineEnd, null);
+          extractDestructuredBindings(left, scopeDepth, lineStart, lineEnd, null);
         }
       } else if (child.type === 'type_annotation' || child.type === 'optional_type_annotation') {
         // TypeScript: skip type annotations in parameter lists

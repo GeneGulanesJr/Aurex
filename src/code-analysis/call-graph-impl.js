@@ -26,8 +26,8 @@ function buildCallGraph(db, repoId, opts = {}) {
     .all(repoId);
 
   // PERF(issue #137): Single-pass symbol index construction — all 7 Map indices are built
-  // in one iteration over allSymbols instead of 5 separate passes. For 50K symbols (~10MB),
-  // this keeps the array hot in L1/L2 cache instead of re-scanning cold memory 4 extra times.
+  // In one iteration over allSymbols instead of 5 separate passes. For 50K symbols (~10MB),
+  // This keeps the array hot in L1/L2 cache instead of re-scanning cold memory 4 extra times.
   // Derived maps (symbolsByFileAndName, methodsByParentAndName) are populated inline.
   // Do NOT split this back into separate loops — the cache behavior matters at scale.
   const symbolsByName = new Map();
@@ -301,7 +301,7 @@ function buildCallGraph(db, repoId, opts = {}) {
         return;
       }
     } catch {
-      // scope_resolution table may not exist yet (pre-migration)
+      // Scope_resolution table may not exist yet (pre-migration)
     }
 
     // Fallback: heuristic cascade

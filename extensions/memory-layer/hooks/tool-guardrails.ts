@@ -86,8 +86,8 @@ export function registerToolGuardrails(pi: ExtensionAPI, deps: GuardrailsDeps) {
           repos.find((r) => resolvedCwd.startsWith(path.resolve(r.path))) ||
           repos.find((r) => deps.state.currentProject?.toLowerCase() === r.name.toLowerCase());
         if (matchedRepo) {
-          // Allow grep/rg/etc. when they are only filtering another command's stdout,
-          // such as `npx oxlint 2>&1 | grep -i unused`.
+          // Allow grep/rg/etc. When they are only filtering another command's stdout,
+          // Such as `npx oxlint 2>&1 | grep -i unused`.
           if (isPipedOutputFilter(cmd)) return;
 
           // Allow targeted single-symbol lookups through (e.g., grep -rn "rankObservations" src/)

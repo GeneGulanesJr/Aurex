@@ -88,7 +88,7 @@ function collectCallReferences(symbol, callees) {
 
 // PERF: AoS→SoA split (issue #130) — hot fields only, accessed in tight insert loops.
 // Do NOT merge cold fields back into this object; keep hot/cold separate so the
-// writeRecords inner loop iterates compact 8-field structs instead of 20-field ones.
+// WriteRecords inner loop iterates compact 8-field structs instead of 20-field ones.
 // Adding a field here requires updating COLD_FIELDS below and the writeRecords loop.
 function normalizeSymbolHot(symbol, fallbackFilePath) {
   return {
@@ -159,8 +159,8 @@ function _parseRawSymbols(filePath, reg, content) {
 }
 
 // PERF: AoS→SoA variant (issue #130). Returns { hot: [...], cold: [...] } so the
-// writeRecords hot loop iterates compact 8-field objects while cold data (JSON blobs,
-// hashes) lives in a separate array accessed only at insert time.
+// WriteRecords hot loop iterates compact 8-field objects while cold data (JSON blobs,
+// Hashes) lives in a separate array accessed only at insert time.
 function extractSymbolsSplit(filePath, registry, content) {
   const reg = registry || createParserRegistry();
   const { rawSymbols, source, callees } = _parseRawSymbols(filePath, reg, content);

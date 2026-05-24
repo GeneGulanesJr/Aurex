@@ -35,7 +35,7 @@ describe('Navigation query path-boost constants', () => {
 describe('FTS5 term extraction (indirect)', () => {
   test('stopword-heavy queries are reduced to meaningful terms', () => {
     // Verify that the NAVIGATION_QUERY_SIGNALS and FTS stopword removal
-    // work together to produce short meaningful FTS queries
+    // Work together to produce short meaningful FTS queries
     const SIGNALS = RANKING.NAVIGATION_QUERY_SIGNALS;
     // These signals should not be in any stopword list (they're meaningful)
     expect(SIGNALS.length).toBeGreaterThan(5);

@@ -6,8 +6,8 @@ const { addBinding, dedupBindings } = require('./shared');
 function buildHtmlScopeBindings(tree, source, filePath) {
   const bindings = [];
 
-  // v1: Use regex-based extraction for HTML since tree-sitter HTML grammars
-  // vary widely and the spec says inline scripts produce no scope bindings.
+  // V1: Use regex-based extraction for HTML since tree-sitter HTML grammars
+  // Vary widely and the spec says inline scripts produce no scope bindings.
   const lines = source.split('\n');
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];

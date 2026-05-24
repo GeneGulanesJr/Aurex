@@ -35,7 +35,7 @@ export function isRepoStale(repo: RepoInfo): boolean {
     const maxCheck = 50;
 
     function checkDir(dir) {
-      if (checked >= maxCheck) return true; // assume stale if too many files
+      if (checked >= maxCheck) return true; // Assume stale if too many files
       let entries;
       try {
         entries = fs.readdirSync(dir, { withFileTypes: true });

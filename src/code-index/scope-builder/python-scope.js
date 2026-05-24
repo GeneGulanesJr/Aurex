@@ -1,10 +1,10 @@
 // Python scope builder — walks a tree-sitter AST and extracts scope bindings.
 // Covers: named_import, from_import, wildcard_import, declaration, parameter,
-//         assignment, destructure, decorator.
+//         Assignment, destructure, decorator.
 
 const { addBinding, dedupBindings } = require('./shared');
 
-function buildPythonScopeBindings(tree, source, filePath) {
+function buildPythonScopeBindings(tree, _source, filePath) {
   const bindings = [];
 
   function walk(node, scopeDepth) {
@@ -16,11 +16,11 @@ function buildPythonScopeBindings(tree, source, filePath) {
     switch (type) {
       // ── Import statements ──────────────────────────────────
       case 'import_statement': {
-        handleImportStatement(node, bindings);
+        handleImportStatement(node);
         break;
       }
       case 'import_from_statement': {
-        handleFromImportStatement(node, bindings);
+        handleFromImportStatement(node);
         break;
       }
 
@@ -44,7 +44,7 @@ function buildPythonScopeBindings(tree, source, filePath) {
         // Parameters
         const params = node.childForFieldName('parameters');
         if (params) {
-          extractPyParameters(params, bindings, scopeDepth + 1);
+          extractPyParameters(params, scopeDepth + 1);
         }
         // Walk body at deeper scope
         const body = node.childForFieldName('body');
@@ -92,7 +92,7 @@ function buildPythonScopeBindings(tree, source, filePath) {
 
       // ── Decorator ──────────────────────────────────────────
       case 'decorator': {
-        handleDecorator(node, bindings, scopeDepth);
+        handleDecorator(node, scopeDepth);
         break;
       }
 
@@ -114,11 +114,11 @@ function buildPythonScopeBindings(tree, source, filePath) {
     }
   }
 
-  function handleImportStatement(node, bindings) {
+  function handleImportStatement(node) {
     const lineNum = node.startPosition.row + 1;
     const endLine = node.endPosition.row + 1;
-    // import foo, bar
-    // import foo as baz
+    // Import foo, bar
+    // Import foo as baz
     let child = node.firstChild;
     while (child) {
       if (child.type === 'dotted_name' || child.type === 'aliased_import') {
@@ -158,7 +158,7 @@ function buildPythonScopeBindings(tree, source, filePath) {
     }
   }
 
-  function handleFromImportStatement(node, bindings) {
+  function handleFromImportStatement(node) {
     const lineNum = node.startPosition.row + 1;
     const endLine = node.endPosition.row + 1;
 
@@ -174,7 +174,7 @@ function buildPythonScopeBindings(tree, source, filePath) {
     let child = node.firstChild;
     while (child) {
       if (child.type === 'wildcard_import') {
-        // from foo import *
+        // From foo import *
         addBinding(bindings, {
           name: '*',
           kind: 'wildcard_import',
@@ -262,7 +262,7 @@ function buildPythonScopeBindings(tree, source, filePath) {
     }
   }
 
-  function handleDecorator(node, bindings, scopeDepth) {
+  function handleDecorator(node, scopeDepth) {
     // @some_decorator
     const lineNum = node.startPosition.row + 1;
     const endLine = node.endPosition.row + 1;
@@ -287,7 +287,7 @@ function buildPythonScopeBindings(tree, source, filePath) {
     }
   }
 
-  function extractPyParameters(params, bindings, scopeDepth) {
+  function extractPyParameters(params, scopeDepth) {
     let child = params.firstChild;
     while (child) {
       if (child.type === 'identifier') {
@@ -320,7 +320,7 @@ function buildPythonScopeBindings(tree, source, filePath) {
           });
         }
       } else if (child.type === 'list_splat_pattern') {
-        // *args
+        // *Args
         const nameNode = child.firstChild;
         if (nameNode && nameNode.type === 'identifier') {
           addBinding(bindings, {
@@ -337,7 +337,7 @@ function buildPythonScopeBindings(tree, source, filePath) {
           });
         }
       } else if (child.type === 'dictionary_splat_pattern') {
-        // **kwargs
+        // **Kwargs
         const nameNode = child.firstChild;
         if (nameNode && nameNode.type === 'identifier') {
           addBinding(bindings, {

@@ -42,7 +42,7 @@ function insertScopeBindings(db, repoId, fileId, bindings) {
       b.name,
       b.kind,
       b.origin,
-      b.sourceModule ? null : null, // source_file_id resolved in derived phase
+      b.sourceModule ? null : null, // Source_file_id resolved in derived phase
       b.sourceName || null,
       b.lineStart,
       b.lineEnd,
@@ -238,8 +238,8 @@ function recordDiagnostic(repository, repoId, record, status, message, symbolCou
 }
 
 // PERF: AoS→SoA split variant (issue #130) — accepts hot/cold arrays so the
-// caller can keep the tight loop on compact 8-field structs. Do NOT merge the
-// arrays back into a single object before calling this; pass them as-is.
+// Caller can keep the tight loop on compact 8-field structs. Do NOT merge the
+// Arrays back into a single object before calling this; pass them as-is.
 function insertSymbolsSplit(repository, repoId, fileId, filePath, hotSymbols, coldSymbols) {
   let count = 0;
   for (let i = 0; i < hotSymbols.length; i++) {
@@ -699,10 +699,10 @@ async function parsePhase(files, deps, repoId, args) {
       );
 
       // PERF: AoS→SoA split (issue #130) — hot loop iterates compact 8-field objects;
-      // cold data (JSON blobs, hashes, summaries) is read from a parallel array only
-      // when building the insert payload. Do NOT merge hot/cold back into a single
-      // object before this loop; the split exists to reduce cache-line waste during
-      // the tight file×symbol iteration.
+      // Cold data (JSON blobs, hashes, summaries) is read from a parallel array only
+      // When building the insert payload. Do NOT merge hot/cold back into a single
+      // Object before this loop; the split exists to reduce cache-line waste during
+      // The tight file×symbol iteration.
       const batchSymbols = [];
       const writeRecords = (insideTransaction = false) => {
         for (const { record, hotSymbols, coldSymbols } of parsedRecords) {
