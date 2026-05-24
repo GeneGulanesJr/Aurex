@@ -298,27 +298,30 @@ npm run bench:pi-paired
 
 ### Latest Results
 
+Latest run: `bench/results/pi-paired-2026-05-24T06-53-22-629Z/report.json`
+
 | Metric | Memory Off | Memory On | Delta |
 |--------|-----------|-----------|-------|
-| Facts correct | 18/18 | 18/18 | ✅ Tie |
-| Active tokens | 36,824 | 10,419 | **−71.7%** |
-| Wall time | ~211s | ~82s | **−61%** |
+| Facts correct | 17/18 | 18/18 | **+1 fact** |
+| Active tokens | 33,842 | 7,019 | **−79.3%** |
+| Wall time | ~212s | ~137s | **−35.4%** |
 
 #### Per-category breakdown
 
 | Category | Facts (off → on) | Tokens (off → on) | Savings |
 |----------|-------------------|---------------------|---------|
-| prior-decision | 3/3 → 3/3 | 8,948 → 1,572 | 82.4% |
-| bug-history | 3/3 → 3/3 | 6,803 → 1,300 | 80.9% |
-| staleness | 3/3 → 3/3 | 7,311 → 691 | 90.5% |
-| navigation | 3/3 → 3/3 | 11,346 → 3,893 | 65.7% |
-| negative-control | 6/6 → 6/6 | 2,416 → 2,963 | −22.6% |
+| prior-decision | 2/3 → 3/3 | 10,730 → 996 | 90.7% |
+| bug-history | 3/3 → 3/3 | 3,485 → 595 | 82.9% |
+| staleness | 3/3 → 3/3 | 10,377 → 508 | 95.1% |
+| navigation | 3/3 → 3/3 | 2,327 → 89 | 96.2% |
+| negative-control | 6/6 → 6/6 | 6,923 → 4,831 | 30.2% |
 
 **Key findings:**
 
-- Memory-on achieves **equal accuracy with 72% fewer tokens** on memory-dependent tasks (prior-decision, bug-history, staleness, navigation)
-- Negative controls (tasks where memory shouldn't help) show expected neutral-to-slight overhead — memory doesn't hurt but doesn't help for pure code-reading tasks
-- Staleness detection sees the biggest win (90.5% token savings) — the agent recovers the right reindex action from memory instead of re-reading docs
+- Memory-on achieved **perfect accuracy with 79.3% fewer active tokens overall**.
+- The memory-off miss is expected for a control run: without memory, the agent had to recover prior context from source/docs and missed one prior-decision fact. Memory-on recovered it.
+- Memory-dependent tasks all improved sharply. Prior-decision, bug-history, staleness, and navigation each saved 82.9–96.2% active tokens.
+- Negative controls are source-only tasks where memory should not be required. They stayed accurate at 6/6 and were net positive in this run, which means the source-authoritative bypass avoided memory-context overhead while preserving correctness.
 
 ## License
 
