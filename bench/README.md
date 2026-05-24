@@ -1,5 +1,29 @@
 # Benchmarks
 
+## Token efficiency benchmark
+
+`bench/bench-tokens.js` measures how much LaPis' compact wire format reduces analysis-response size. It runs real code-analysis CLI commands against an indexed repo, compares raw JSON with `compactResponse()` output, and prints per-tool and total byte savings.
+
+Run against the current repo:
+
+```bash
+node bench/bench-tokens.js
+```
+
+Run against another indexed repo:
+
+```bash
+node bench/bench-tokens.js --repo-path /path/to/repo --repo-name RepoName
+```
+
+Force a fresh code index before measuring:
+
+```bash
+node bench/bench-tokens.js --reindex
+```
+
+Treat the output as a current local snapshot. Results change when the repo, indexer, code-analysis commands, or compact wire format changes.
+
 ## Pi paired memory benchmark
 
 `bench/bench-pi-paired.js` measures memory-on and memory-off as real Pi runs. It does not simulate the no-memory case.

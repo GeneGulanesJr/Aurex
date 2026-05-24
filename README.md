@@ -57,30 +57,7 @@ Run it with:
 node bench/bench-tokens.js
 ```
 
-#### Percentage Saved per Tool
-
-| Tool         | [PiMemoryExtension](https://github.com/GeneGulanesJr/PiMemoryExtension) | [Aether (PCBuilder)](https://github.com/GeneGulanesJr/Aether) |
-| :----------- | :---------------------------------------------------------------------: | :-----------------------------------------------------------: |
-| importance   |                                   27%                                   |                              26%                              |
-| hotspots     |                                   48%                                   |                              0%                               |
-| dead-code    |                                   42%                                   |                            **47%**                            |
-| coupling     |                                   33%                                   |                            **39%**                            |
-| extraction   |                                   33%                                   |                              24%                              |
-| cycles       |                                   0%                                    |                              0%                               |
-| import-graph |                                   24%                                   |                              20%                              |
-| **OVERALL**  |                                 **36%**                                 |                            **37%**                            |
-
-#### Total Savings
-
-|                |   PiMemoryExtension    |    Aether (PCBuilder)     |
-| :------------- | :--------------------: | :-----------------------: |
-| Repo size      | 38 files / 210 symbols | 154 files / 1,359 symbols |
-| Raw JSON       |        42.6 KB         |         181.7 KB          |
-| Compact format |        27.1 KB         |         114.3 KB          |
-| Bytes saved    |        15.5 KB         |          67.4 KB          |
-| Tokens saved   |     ~4,445 tokens      |      ~19,242 tokens       |
-
-All transforms are lossless round-trip, verified by `test/wire-format.test.js`.
+The token-efficiency numbers are repo- and index-dependent, so README does not pin a static result table. See [`bench/README.md`](bench/README.md) for benchmark usage and interpretation notes.
 
 ### Paired Memory
 
