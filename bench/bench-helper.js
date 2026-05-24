@@ -39,6 +39,7 @@ function findLapisRoot() {
 }
 
 const LAPIS_ROOT = findLapisRoot();
+const CLI_MAX_BUFFER = 64 * 1024 * 1024;
 
 // ══════════════════════════════════════════════════════════
 // BENCHMARK MATRIX
@@ -89,6 +90,7 @@ function runCli(repo, subcommand, extraFlags = '') {
       cwd: LAPIS_ROOT,
       encoding: 'utf-8',
       timeout: 30000,
+      maxBuffer: CLI_MAX_BUFFER,
     }).trim();
     return JSON.parse(stdout);
   } catch (e) {

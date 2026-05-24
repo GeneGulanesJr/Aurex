@@ -57,7 +57,32 @@ Run it with:
 node bench/bench-tokens.js
 ```
 
-The token-efficiency numbers are repo- and index-dependent, so README does not pin a static result table. See [`bench/README.md`](bench/README.md) for benchmark usage and interpretation notes.
+Latest local run: May 24, 2026, with fresh reindexes for both repos. `call-hierarchy` and `blast-radius` were skipped because the benchmark could not select a representative symbol with callers.
+
+#### Percentage Saved per Tool
+
+| Tool         | LaPis / PiMemoryExtension | PCBuilder |
+| :----------- | :-----------------------: | :-------: |
+| importance   |            21%            |    24%    |
+| hotspots     |            0%             |    0%     |
+| dead-code    |            44%            |    50%    |
+| coupling     |            37%            |    40%    |
+| extraction   |            23%            |    22%    |
+| import-graph |            18%            |    20%    |
+| cycles       |            0%             |    0%     |
+| **overall**  |          **40%**          |  **49%**  |
+
+#### Total Savings
+
+|                | LaPis / PiMemoryExtension |       PCBuilder        |
+| :------------- | :-----------------------: | :--------------------: |
+| Repo size      |  292 files / 6,913 symbols | 171 files / 207,599 symbols |
+| Raw JSON       |         692.6 KB          |        36.7 MB         |
+| Compact format |         417.5 KB          |        18.5 MB         |
+| Bytes saved    |         275.1 KB          |        18.1 MB         |
+| Tokens saved   |       ~80,500 tokens      |    ~5,436,007 tokens   |
+
+See [`bench/README.md`](bench/README.md) for benchmark usage and interpretation notes.
 
 ### Paired Memory
 
