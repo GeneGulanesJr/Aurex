@@ -8,6 +8,47 @@ const QUOTED_PATTERN_RE = /(?:['"])([^'"]+)(?:['"])/g;
 // Pipes that are NOT just head/tail (which are fine for targeted lookups)
 // The \s* must be INSIDE the negative lookahead so it's part of the assertion
 const COMPLEX_PIPE_RE = /\|(?!\s*(?:head|tail)\b)/;
+const SEARCH_COMMAND_RE = /\b(grep|rg|ag|ack|find)\b/;
+const FILTER_COMMAND_RE = /^\s*(grep|rg|ag|ack)\b/;
+
+function splitPipeline(cmd) {
+  const stages = [];
+  let current = '';
+  let quote = null;
+
+  for (let i = 0; i < cmd.length; i++) {
+    const ch = cmd[i];
+    const prev = i > 0 ? cmd[i - 1] : '';
+
+    if ((ch === '"' || ch === "'") && prev !== '\\') {
+      quote = quote === ch ? null : quote || ch;
+    }
+
+    if (ch === '|' && !quote) {
+      stages.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+
+  stages.push(current.trim());
+  return stages.filter(Boolean);
+}
+
+function isPipedOutputFilter(cmd) {
+  const stages = splitPipeline(cmd);
+  if (stages.length < 2) {
+    return false;
+  }
+
+  const [sourceStage, ...filterStages] = stages;
+  if (SEARCH_COMMAND_RE.test(sourceStage)) {
+    return false;
+  }
+
+  return filterStages.some((stage) => FILTER_COMMAND_RE.test(stage));
+}
 
 /**
  * Determine if a bash grep/rg command is a targeted single-symbol lookup
@@ -49,4 +90,4 @@ function isTargetedSymbolLookup(cmd) {
   return true;
 }
 
-module.exports = { isTargetedSymbolLookup };
+module.exports = { isPipedOutputFilter, isTargetedSymbolLookup };

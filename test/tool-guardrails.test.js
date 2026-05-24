@@ -1,4 +1,4 @@
-const { isTargetedSymbolLookup } = require('../extensions/memory-layer/hooks/guardrail-utils');
+const { isPipedOutputFilter, isTargetedSymbolLookup } = require('../extensions/memory-layer/hooks/guardrail-utils');
 
 describe('tool-guardrails: isTargetedSymbolLookup', () => {
   test('allows grep for single quoted symbol', () => {
@@ -59,5 +59,19 @@ describe('tool-guardrails: isTargetedSymbolLookup', () => {
 
   test('allows longer camelCase symbol', () => {
     expect(isTargetedSymbolLookup('grep -rn "buildCategorySummary" src/')).toBe(true);
+  });
+});
+
+describe('tool-guardrails: isPipedOutputFilter', () => {
+  test('allows grep when filtering command output', () => {
+    expect(isPipedOutputFilter('npx oxlint 2>&1 | grep -iE "(lowercase|Unused)" || true')).toBe(true);
+  });
+
+  test('does not treat repo discovery pipelines as output filtering', () => {
+    expect(isPipedOutputFilter("find . -maxdepth 3 -type f | grep -E 'memory|context' | head -200")).toBe(false);
+  });
+
+  test('does not treat direct grep as output filtering', () => {
+    expect(isPipedOutputFilter('grep -rn "rankObservations" src/')).toBe(false);
   });
 });

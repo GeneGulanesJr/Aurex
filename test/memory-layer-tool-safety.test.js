@@ -322,6 +322,35 @@ describe('memory tool renderer safety', () => {
     expect(result.reason).toContain('memory-code search');
   });
 
+  it('allows grep when it only filters another command output', async () => {
+    const toolCall = captureHook(
+      registerToolGuardrails,
+      {
+        state: {
+          currentProject: 'app',
+          lastMemoryToolCall: 0,
+          callsSinceLastMemory: 0,
+          exploredFiles: new Set(),
+          nudgeCountThisSession: 0,
+          MAX_NUDGES_PER_SESSION: 2,
+        },
+        getKnownRepos: vi.fn().mockResolvedValue([{ name: 'app', path: process.cwd() }]),
+        isCodeFile: vi.fn(),
+      },
+      'tool_call',
+    );
+
+    const result = await toolCall(
+      {
+        toolName: 'bash',
+        input: { command: 'npx oxlint 2>&1 | grep -iE "(lowercase|Unused)" || true' },
+      },
+      { ui: { notify: vi.fn() } },
+    );
+
+    expect(result).toBeUndefined();
+  });
+
   it.each([
     ['bare command', {}],
     ['unknown mode', { mode: 'wat' }],
