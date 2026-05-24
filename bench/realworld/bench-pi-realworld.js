@@ -369,6 +369,7 @@ function loadTasks(tasksDir, opts) {
   if (category) {
     tasks = tasks.filter((t) => t.category === category);
   }
+  tasks.sort((a, b) => a.id.localeCompare(b.id));
   return tasks;
 }
 
@@ -430,8 +431,21 @@ async function runTaskSide(task, side, runIndex, args, repoRoot, noMemoryHome) {
     }
     const parsed = parsePiOutput(raw);
 
-    // Grade
-    const grade = gradeRun(task, worktreePath, parsed);
+    // Grade (skip if Pi timed out or crashed)
+    let grade;
+    if (run.error) {
+      grade = {
+        tests: { passed: 0, failed: 0, total: 0, skipped: true },
+        diff: { passed: false, touched: [], violations: [], missed: [], linesChanged: 0 },
+        answer: { matched: 0, total: 0, score: 0, facts: [], skipped: true },
+        trajectory: checkTrajectory(parsed),
+        constraints: checkConstraints(task, worktreePath),
+        overall: false,
+        incomplete: true,
+      };
+    } else {
+      grade = gradeRun(task, worktreePath, parsed);
+    }
     benchLog(
       `[${runId}] Grade: overall=${grade.overall}, tests=${grade.tests.passed}/${grade.tests.total}, diff=${grade.diff.passed}`,
     );
@@ -496,8 +510,8 @@ function printReport(results) {
       .map((r) => r.grade.trajectory?.score || 0)
       .filter((s) => s > 0);
     const linesChanged = sideResults.map((r) => r.grade.diff?.linesChanged || 0);
-    const readBeforeEdit = sideResults
-      .map((r) => r.grade.trajectory?.readBeforeEditRatio || 0)
+    const readEditRatios = sideResults
+      .map((r) => r.grade.trajectory?.readEditRatio || 0)
       .filter((r) => r > 0);
 
     bySide[side] = {
@@ -510,7 +524,7 @@ function printReport(results) {
       constraintViolations,
       medianTrajectoryScore: trajectoryScores.length > 0 ? median(trajectoryScores).toFixed(2) : 'n/a',
       medianLinesChanged: linesChanged.some((l) => l > 0) ? fmtNum(median(linesChanged)) : 'n/a',
-      medianReadBeforeEdit: readBeforeEdit.length > 0 ? median(readBeforeEdit).toFixed(2) : 'n/a',
+      medianReadEditRatio: readEditRatios.length > 0 ? median(readEditRatios).toFixed(2) : 'n/a',
     };
   }
 
@@ -588,8 +602,8 @@ function printReport(results) {
     ],
     [
       'Median read-before-edit',
-      String(bySide['memory-off'].medianReadBeforeEdit),
-      String(bySide['memory-on'].medianReadBeforeEdit),
+      String(bySide['memory-off'].medianReadEditRatio),
+      String(bySide['memory-on'].medianReadEditRatio),
     ],
   ];
 
@@ -716,15 +730,14 @@ async function main() {
 
   const allResults = [];
 
+  // Warmup once before all tasks (builds organic memory for memory-on side)
+  if (args.warmup && !args.accumulate) {
+    benchLog(`[warmup] Running warmup prompts`);
+    await runWarmup(args.warmup, repoRoot, outDir);
+  }
+
   for (const task of tasks) {
     for (let runIndex = 0; runIndex < args.runs; runIndex++) {
-      // Warmup for memory-on side (run lightweight prompts to build organic memory)
-      if (args.warmup && !args.accumulate) {
-        benchLog(`[warmup] Running warmup prompts before ${task.id}`);
-        // eslint-disable-next-line no-await-in-loop
-        await runWarmup(args.warmup, repoRoot, outDir);
-      }
-
       // Memory-off first, then memory-on
       // eslint-disable-next-line no-await-in-loop
       const off = await runTaskSide(task, 'memory-off', runIndex, args, repoRoot, noMemoryHome);

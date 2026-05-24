@@ -29,11 +29,11 @@ function checkTrajectory(parsedOutput) {
     }
   }
 
-  let readBeforeEditRatio = 0;
+  let readEditRatio = 0;
   if (editCount > 0) {
-    readBeforeEditRatio = readCount / (readCount + editCount);
+    readEditRatio = readCount / (readCount + editCount);
   } else if (readCount > 0) {
-    readBeforeEditRatio = 1;
+    readEditRatio = 1;
   }
 
   const uniqueTools = Object.keys(toolCounts).length;
@@ -62,7 +62,7 @@ function checkTrajectory(parsedOutput) {
     uniqueTools,
     failedToolCalls,
     errorRate: parseFloat(errorRate.toFixed(3)),
-    readBeforeEditRatio: parseFloat(readBeforeEditRatio.toFixed(3)),
+    readEditRatio: parseFloat(readEditRatio.toFixed(3)),
     score: parseFloat(score.toFixed(3)),
   };
 }

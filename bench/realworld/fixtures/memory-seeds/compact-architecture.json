@@ -2,19 +2,19 @@
   {
     "type": "architecture",
     "title": "Compaction and dream cycle architecture",
-    "content": "What: The compaction system in src/memory-domain/compaction.js handles cleanup of stale data. It runs pruneDeleted() to soft-delete old entries, then rebuilds the FTS index with rebuildFtsIndex(). The dream cycle additionally targets superseded and stale memories. Why: Without FTS rebuild after pruning, deleted observations remain searchable via FTS until the next manual rebuild. Where: src/memory-domain/compaction.js, called from services/dream.js. Learned: The rebuildFtsIndex function runs `INSERT INTO observations_fts(observations_fts) VALUES('rebuild')` to force FTS re-index. This MUST be called after any bulk deletion. The FTS5 virtual table does NOT auto-sync when underlying content tables change via DELETE — only the content-sync triggers handle row-level changes.",
-    "project": "PiMemoryExtension"
-  },
-  {
-    "type": "bugfix",
-    "title": "Fixed FTS staleness after bulk deletion",
-    "content": "What: After bulk deletion during compaction, the FTS index was not being rebuilt because the rebuildFtsIndex call was removed in a refactor. Why: The developer assumed SQLite triggers would handle FTS sync, but FTS5 content-sync triggers only handle individual INSERT/UPDATE/DELETE, not bulk operations or the `rebuild` command. Where: src/memory-domain/compaction.js. Learned: Always verify FTS index integrity after compaction. The `rebuild` command is the correct way to force a full FTS re-index.",
+    "content": "What: The compaction system in src/memory-domain/compaction.js handles cleanup of stale data. It runs multiple prune steps (soft-deleted observations, old sessions, old prompts, dead symbol links, stale trust). After pruning, it runs VACUUM and optimizes FTS indexes. Why: Keeps the DB lean and FTS responsive after bulk deletions. Where: src/memory-domain/compaction.js, called from services/dream.js. Learned: The compaction function uses sqlRaw for VACUUM and FTS optimize commands. Any bulk deletion followed by search requires the FTS index to be current. The FTS5 virtual table has specific optimize/rebuild commands.",
     "project": "PiMemoryExtension"
   },
   {
     "type": "architecture",
     "title": "Search ranking and FTS interaction",
-    "content": "What: The search function in src/memory-domain/search.js queries observations_fts for candidate rows, then ranks them with rankObservations(). The FTS query returns rowids that are joined back to the observations table. Why: FTS5 provides the initial candidate set; rankObservations applies the multi-signal ranking. Where: src/memory-domain/search.js. Learned: If the FTS index is stale (missing entries for existing observations), search will not find them even though they exist in the observations table. The FTS index must be kept in sync.",
+    "content": "What: The search function in src/memory-domain/search.js queries observations_fts for candidate rows, then ranks them with rankObservations(). The FTS query returns rowids that are joined back to the observations table. Why: FTS5 provides the initial candidate set; rankObservations applies the multi-signal ranking. Where: src/memory-domain/search.js. Learned: If the FTS index is stale (missing entries for existing observations), search will not find them even though they exist in the observations table. The FTS index must be kept in sync with the observations table content.",
+    "project": "PiMemoryExtension"
+  },
+  {
+    "type": "architecture",
+    "title": "FTS5 content sync mechanism",
+    "content": "What: FTS5 virtual tables can use content= or contentless mode. When using content= mode, FTS reads from the underlying content table at query time. However, FTS indexes can become stale if the underlying table is modified via bulk DELETE without an FTS rebuild/optimize step. Why: FTS5 needs to know about deleted rows to exclude them from results. Where: schema.sql (observations_fts definition). Learned: After bulk deletions in compaction, the FTS index should be optimized using INSERT INTO observations_fts(observations_fts) VALUES('optimize') to ensure search results are accurate.",
     "project": "PiMemoryExtension"
   }
 ]

@@ -28,7 +28,7 @@
       {
         "id": "no-external-event-lib",
         "type": "must_not_contain",
-        "pattern": "require\\(['\"](?:eventemitter3|events|mitt|wolfy87-eventemitter)",
+        "pattern": "require\\(['\"](?:eventemitter3|mitt|wolfy87-eventemitter)",
         "message": "Use Node's built-in EventEmitter, not an external library"
       }
     ]

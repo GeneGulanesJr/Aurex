@@ -168,7 +168,7 @@ Each task has:
 | Tests | `run-tests.js` | Do the specified test commands pass? |
 | Diff | `check-diff.js` | Correct files touched, lines changed count |
 | Answer | `check-answer.js` | Response contains expected facts |
-| Trajectory | `check-trajectory.js` | Tool call efficiency, read-before-edit ratio, error rate |
+| Trajectory | `check-trajectory.js` | Tool call efficiency, read/edit ratio, error rate |
 | Constraints | `check-constraints.js` | Diff respects semantic constraints (no forbidden patterns) |
 
 ### Report
@@ -188,7 +188,7 @@ The report shows a comparison table with both basic and trajectory metrics:
 ║ Constraint violations      │          2 │          0 ║
 ║ Median trajectory score    │       0.45 │       0.82 ║
 ║ Median lines changed       │        340 │        120 ║
-║ Median read-before-edit    │       0.30 │       0.78 ║
+║ Median read/edit ratio      │       0.30 │       0.78 ║
 ╚════════════════════════════╧════════════╧════════════╝
 ```
 

@@ -40,22 +40,12 @@ function checkDiff(task, worktreePath) {
       timeout: 10_000,
     }).trim();
     const lastLine = statDiff.split(/\r?\n/).pop() || '';
-    const match = lastLine.match(/(\d+)\s+(?:files? changed|insertions?|deletions?)/);
-    if (match) {
-      linesChanged = parseInt(match[1], 10);
-    } else {
-      let total = 0;
-      for (const line of statDiff.split(/\r?\n/)) {
-        const plusMatch = line.match(/\+(\d+)/g);
-        const minusMatch = line.match(/-(\d+)/g);
-        if (plusMatch) {
-          total += plusMatch.reduce((s, m) => s + parseInt(m.slice(1), 10), 0);
-        }
-        if (minusMatch) {
-          total += minusMatch.reduce((s, m) => s + parseInt(m.slice(1), 10), 0);
-        }
-      }
-      linesChanged = total;
+    const insMatch = lastLine.match(/(\d+) insertion/);
+    const delMatch = lastLine.match(/(\d+) deletion/);
+    if (insMatch || delMatch) {
+      const insertions = insMatch ? parseInt(insMatch[1], 10) : 0;
+      const deletions = delMatch ? parseInt(delMatch[1], 10) : 0;
+      linesChanged = insertions + deletions;
     }
   } catch {
     // No diff or stat not available
