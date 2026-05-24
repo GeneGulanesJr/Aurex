@@ -116,38 +116,44 @@ function sanitizeMemoryOffSettings(settingsPath) {
   return settings;
 }
 
+let progressActive = false;
+
+function benchLog(message = '') {
+  finishProgress();
+  console.log(message);
+}
+
+function writeProgress(message) {
+  if (process.stdout.isTTY) {
+    process.stdout.clearLine(0);
+    process.stdout.cursorTo(0);
+    process.stdout.write(message);
+    progressActive = true;
+  } else {
+    console.log(message);
+  }
+}
+
+function finishProgress() {
+  if (progressActive && process.stdout.isTTY) {
+    process.stdout.clearLine(0);
+    process.stdout.cursorTo(0);
+    progressActive = false;
+  }
+}
+
 function runCommand(command, cwd, timeoutMs, outFile) {
   const started = Date.now();
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
     let settled = false;
-    let progressActive = false;
     const child = spawn(command, {
       cwd,
       shell: true,
       env: { ...process.env },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-
-    const writeProgress = (message) => {
-      if (process.stderr.isTTY) {
-        process.stderr.clearLine(0);
-        process.stderr.cursorTo(0);
-        process.stderr.write(message);
-        progressActive = true;
-      } else {
-        console.error(message);
-      }
-    };
-
-    const finishProgress = () => {
-      if (progressActive && process.stderr.isTTY) {
-        process.stderr.clearLine(0);
-        process.stderr.cursorTo(0);
-        progressActive = false;
-      }
-    };
 
     const progress = setInterval(() => {
       const size = fs.existsSync(outFile) ? fs.statSync(outFile).size : 0;
@@ -333,9 +339,9 @@ function gradeAnswer(answer, expectedFacts) {
 async function runSide(side, commandTemplate, task, repo, outDir, cwd, timeoutMs) {
   const outFile = path.join(outDir, `${task.id}.${side}.jsonl`);
   const command = renderCommand(commandTemplate, task, repo, outFile);
-  console.error(`[bench] ${task.id}: starting ${side}`);
+  benchLog(`[bench] ${task.id}: starting ${side}`);
   const run = await runCommand(command, cwd, timeoutMs, outFile);
-  console.error(`[bench] ${task.id}: finished ${side} in ${run.elapsed_ms}ms`);
+  benchLog(`[bench] ${task.id}: finished ${side} in ${run.elapsed_ms}ms`);
 
   let raw = '';
   if (fs.existsSync(outFile)) {
@@ -374,8 +380,8 @@ function printTableHeader(taskColumnWidth) {
     'OnMs'.padStart(9),
   ];
   const header = columns.join('  ');
-  console.log(header);
-  console.log('-'.repeat(header.length));
+  benchLog(header);
+  benchLog('-'.repeat(header.length));
 }
 
 function printRow(taskId, off, on, taskColumnWidth) {
@@ -384,7 +390,7 @@ function printRow(taskId, off, on, taskColumnWidth) {
   const savings = offTokens > 0 ? `${Math.round((1 - onTokens / offTokens) * 100)}%` : 'n/a';
   const offScore = `${off.grade.matched}/${off.grade.total}`;
   const onScore = `${on.grade.matched}/${on.grade.total}`;
-  console.log(
+  benchLog(
     [
       taskId.padEnd(taskColumnWidth),
       offScore.padEnd(9),
@@ -414,11 +420,11 @@ async function main() {
   const offCommand = process.env.BENCH_PI_MEMORY_OFF_CMD || defaultPiCommand(noMemoryHome);
   const onCommand = process.env.BENCH_PI_MEMORY_ON_CMD || defaultPiCommand();
 
-  console.log(`[bench] memory-off HOME: ${noMemoryHome}`);
+  benchLog(`[bench] memory-off HOME: ${noMemoryHome}`);
   if (!process.env.BENCH_PI_MEMORY_OFF_CMD || !process.env.BENCH_PI_MEMORY_ON_CMD) {
-    console.log('[bench] using default Pi commands; set BENCH_PI_MEMORY_OFF_CMD / BENCH_PI_MEMORY_ON_CMD to override');
+    benchLog('[bench] using default Pi commands; set BENCH_PI_MEMORY_OFF_CMD / BENCH_PI_MEMORY_ON_CMD to override');
   }
-  console.log('');
+  benchLog('');
   const results = [];
   const taskColumnWidth = Math.max(24, ...tasks.map((task) => task.id.length));
   printTableHeader(taskColumnWidth);
@@ -452,23 +458,23 @@ async function main() {
   const reportPath = path.join(outDir, 'report.json');
   fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
 
-  console.log('\nSummary');
-  console.log(`  Tasks:             ${summary.tasks}`);
-  console.log(`  Memory-off facts:  ${summary.memory_off_facts}`);
-  console.log(`  Memory-on facts:   ${summary.memory_on_facts}`);
-  console.log(`  Memory-off active: ${summary.memory_off_active_tokens}`);
-  console.log(`  Memory-on active:  ${summary.memory_on_active_tokens}`);
-  console.log(`  Memory-off cache:  ${summary.memory_off_cache_read_tokens}`);
-  console.log(`  Memory-on cache:   ${summary.memory_on_cache_read_tokens}`);
-  console.log(`  Token delta:       ${summary.token_savings_pct}`);
-  console.log('');
-  console.log('By category:');
+  benchLog('\nSummary');
+  benchLog(`  Tasks:             ${summary.tasks}`);
+  benchLog(`  Memory-off facts:  ${summary.memory_off_facts}`);
+  benchLog(`  Memory-on facts:   ${summary.memory_on_facts}`);
+  benchLog(`  Memory-off active: ${summary.memory_off_active_tokens}`);
+  benchLog(`  Memory-on active:  ${summary.memory_on_active_tokens}`);
+  benchLog(`  Memory-off cache:  ${summary.memory_off_cache_read_tokens}`);
+  benchLog(`  Memory-on cache:   ${summary.memory_on_cache_read_tokens}`);
+  benchLog(`  Token delta:       ${summary.token_savings_pct}`);
+  benchLog('');
+  benchLog('By category:');
   for (const category of summary.categories) {
-    console.log(
+    benchLog(
       `  ${category.category}: facts ${category.memory_off_facts} -> ${category.memory_on_facts}, active ${category.memory_off_active_tokens} -> ${category.memory_on_active_tokens}, delta ${category.token_savings_pct}`,
     );
   }
-  console.log(`  Report:            ${reportPath}`);
+  benchLog(`  Report:            ${reportPath}`);
 }
 
 function buildSummary(results) {
