@@ -16,7 +16,7 @@
         {
           "id": "zero-dependency-rationale",
           "description": "The rationale is avoiding external dependencies/services",
-          "aliases": ["zero-dependency", "zero dependency", "without external deps", "without external dependencies", "no external service", "single SQLite", "zero external service", "zero external service dependencies", "external service dependencies", "eliminates any need for", "no need for external", "avoid external dependencies", "avoid external service dependencies", "avoiding external"]
+          "aliases": ["zero-dependency", "zero dependency", "zero external dependencies", "without external deps", "without external dependencies", "no external service", "no separate search service", "no additional infrastructure", "single SQLite", "zero external service", "zero external service dependencies", "external service dependencies", "eliminates any need for", "no need for external", "avoid external dependencies", "avoid external service dependencies", "avoiding external"]
         },
         {
           "id": "search-module",

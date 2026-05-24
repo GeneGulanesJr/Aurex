@@ -54,6 +54,8 @@ Code analysis (imports, call graph, complexity, dead code, churn) and doc indexi
 - `get-code-source --repo NAME --file PATH --name SYMBOL` — Byte-accurate source retrieval.
 - `list-code-repos` / `remove-code-repo --repo NAME` — Manage indexed repos.
 
+**Fast-path guidance:** For exact current-code questions, use one locator step, then a targeted read. If you already know the symbol name, exact `grep`/`rg` is acceptable when it is clearly cheaper than semantic search. If using `memory-code`, include `--repo` when known. After a locator identifies the file, do not run another broad search; call `outline --repo NAME --file F` only if structure is needed, then use `read` with `offset`/`limit`.
+
 **Supported:** JavaScript, TypeScript, TSX, Go, Python, Rust. Uses web-tree-sitter (WASM) — zero Python dependency.
 Grammar .wasm files bundled in `grammars/`.
 
@@ -227,7 +229,7 @@ All hooks are non-blocking — they enhance, not replace, explicit tool usage.
 | `message_end`      | Assistant message with decision/bugfix/discovery pattern      | Auto-save as observation with detected type (dedup pipeline active)                                  |
 | `turn_end`         | Every 10th turn                                               | Progress checkpoint with files touched + memory count                                                 |
 | `tool_call`        | LLM reads code files directly (indexed repo, no offset/limit) | **Hard block** — forces `memory-code outline` first; **excludes config files** (package.json, tsconfig, etc.); partial reads allowed |
-| `tool_call`        | LLM uses grep/rg/find on source code in indexed repo          | **Hard block** — forces `memory-code` instead                                                         |
+| `tool_call`        | LLM uses grep/rg/find on source code in indexed repo          | **Hard block** for browsing/scanning — forces `memory-code` instead; targeted exact-symbol grep/rg is allowed when cheaper |
 | `tool_call`        | LLM calls memory-code with file param                         | Marks file as explored → future reads allowed                                                         |
 | `tool_call`        | LLM calls memory-code with any mode                           | Track result files as explored via `tool_result`; reset callsSinceLastMemory counter                  |
 | `tool_call`        | LLM uses memory-* tools                                       | Track last-usage timestamp + reset sliding window counter                                             |

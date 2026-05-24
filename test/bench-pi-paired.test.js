@@ -45,4 +45,43 @@ describe('bench pi paired parser', () => {
     expect(parsed.usage.cost_usd).toBe(0.12);
     expect(parsed.answer).toBe('First final answer.\nSecond final answer.');
   });
+
+  it('counts executed tools from Pi tool execution events', () => {
+    const raw = [
+      JSON.stringify({
+        type: 'message_end',
+        message: {
+          role: 'assistant',
+          responseId: 'resp_tool',
+          usage: { input: 10, output: 5 },
+          content: [{ type: 'toolCall', id: 'call_1', name: 'memory-code', arguments: { mode: 'search' } }],
+        },
+      }),
+      JSON.stringify({
+        type: 'tool_execution_start',
+        toolCallId: 'call_1',
+        toolName: 'memory-code',
+        args: { mode: 'search' },
+      }),
+      JSON.stringify({
+        type: 'tool_execution_end',
+        toolCallId: 'call_1',
+        toolName: 'memory-code',
+        result: { content: [] },
+      }),
+      JSON.stringify({
+        type: 'tool_execution_start',
+        toolCallId: 'call_2',
+        toolName: 'read',
+        args: { path: 'src/memory-domain/search.js', offset: 45, limit: 40 },
+      }),
+    ].join('\n');
+
+    const parsed = parsePiOutput(raw);
+
+    expect(parsed.tool_counts).toEqual({
+      'memory-code': 1,
+      read: 1,
+    });
+  });
 });

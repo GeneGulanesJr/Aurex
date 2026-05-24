@@ -17,8 +17,11 @@ If a repo isn't indexed yet, the tool will tell you exactly how to index it.
 
 - `read` on a code file in an indexed repo **without** offset/limit → BLOCKED. Use `memory-code outline` first.
 - `read` on a code file **with** offset/limit → ALLOWED (editing targeted lines).
-- `bash` grep/rg/find on source code in an indexed repo → BLOCKED. Use `memory-code` instead.
+- `bash` grep/rg/find on source code in an indexed repo → BLOCKED for browsing/scanning. Use `memory-code` instead.
+- Targeted exact-symbol grep/rg is allowed when it is clearly cheaper than semantic search, e.g. `grep -rn "rankObservations" src/`.
 - After calling `memory-code outline` on a file, subsequent reads are allowed.
+- Avoid duplicate locator steps: once exact-symbol grep or `memory-code` identifies the file, go straight to a targeted `read` with `offset`/`limit` instead of running another search.
+- Always include `--repo` with `memory-code`/`memory-doc` when known. In a project session this is usually the current project name.
 - If a lookup seems to need raw source browsing, stop and use `memory-code` / `memory-doc` instead.
 
 ## 2. Persistent Memory — Automatic

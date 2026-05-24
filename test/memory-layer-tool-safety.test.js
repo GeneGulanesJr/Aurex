@@ -291,6 +291,64 @@ describe('memory tool renderer safety', () => {
     expect(text).toContain('src/memory-domain/context.js');
   });
 
+  it('infers memory-code repo from current working directory', async () => {
+    const mem = vi.fn().mockResolvedValue({
+      query: 'context command',
+      results: [{ symbol: 'context', file: 'src/memory-domain/context.js', line: 4 }],
+    });
+    const tool = captureTool(registerCodeTools, {
+      mem,
+      memStreaming: vi.fn(),
+      getKnownRepos: vi.fn().mockResolvedValue([{ name: 'app', path: process.cwd() }]),
+      formatCodeResult,
+      invalidateRepoCache: vi.fn(),
+    });
+
+    const result = await tool.execute(
+      'id',
+      { mode: 'search', query: 'context command' },
+      undefined,
+      vi.fn(),
+      {},
+    );
+    const text = result.content.find((item) => item.type === 'text').text;
+
+    expectRenderable(result);
+    expect(mem).toHaveBeenCalledWith('search-code', {
+      repo: 'app',
+      query: 'context command',
+    });
+    expect(text).toContain('Code search');
+  });
+
+  it('infers memory-code repo when only one indexed repo is available', async () => {
+    const mem = vi.fn().mockResolvedValue({
+      query: 'rankObservations',
+      results: [{ symbol: 'rankObservations', file: 'src/memory-domain/search.js', line: 23 }],
+    });
+    const tool = captureTool(registerCodeTools, {
+      mem,
+      memStreaming: vi.fn(),
+      getKnownRepos: vi.fn().mockResolvedValue([{ name: 'solo', path: '/tmp/other' }]),
+      formatCodeResult,
+      invalidateRepoCache: vi.fn(),
+    });
+
+    const result = await tool.execute(
+      'id',
+      { mode: 'search', query: 'rankObservations' },
+      undefined,
+      vi.fn(),
+      {},
+    );
+
+    expectRenderable(result);
+    expect(mem).toHaveBeenCalledWith('search-code', {
+      repo: 'solo',
+      query: 'rankObservations',
+    });
+  });
+
   it('blocks raw repository discovery commands in indexed repos', async () => {
     const toolCall = captureHook(
       registerToolGuardrails,

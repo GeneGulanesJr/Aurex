@@ -225,6 +225,12 @@ function parsePiOutput(raw) {
   const seenUsage = new Set();
   const toolCounts = new Map();
 
+  function countTool(name) {
+    if (name) {
+      toolCounts.set(name, (toolCounts.get(name) || 0) + 1);
+    }
+  }
+
   for (const line of raw.split(/\r?\n/)) {
     const trimmed = line.trim();
     let event;
@@ -297,9 +303,8 @@ function parsePiOutput(raw) {
         }
       }
 
-      const toolName = event.name || event.tool || event.tool_name || event.input?.tool;
-      if (toolName && /tool|command|exec|read|search|memory/i.test(type + toolName)) {
-        toolCounts.set(toolName, (toolCounts.get(toolName) || 0) + 1);
+      if (type === 'tool_execution_start') {
+        countTool(event.toolName || event.name || event.tool || event.tool_name || event.input?.tool);
       }
     }
   }

@@ -4,6 +4,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from './schema';
 import { formatCodeResult } from './format-code-result';
 import { getKnownRepos } from '../host/project-detector';
+import path from 'node:path';
 import { renderCompactToolResult } from './render';
 
 interface CodeDeps {
@@ -19,7 +20,7 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
     name: 'memory-code',
     label: 'Code Analysis',
     description:
-      'Query indexed code. Use mode search, outline, callers, callees, deps, health, index-repo, or reindex-repo.',
+      'Query indexed code. Use mode search, outline, callers, callees, deps, health, index-repo, or reindex-repo. Include repo when known; if omitted, LaPis infers the current indexed repo when possible.',
     parameters: Type.Object({
       mode: Type.Optional(
         Type.String({
@@ -107,6 +108,15 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
         const cmd = cmdMap[mode];
         if (!cmd) {
           return toolTextResult(`Unknown memory-code mode: ${mode}\n\n${codeHelpText()}`, {}, true);
+        }
+
+        const codeRepos =
+          mode === 'index-repo' || mode === 'reindex-repo' || mode === 'health'
+            ? []
+            : await deps.getKnownRepos();
+        const inferredRepo = inferCurrentRepo(params, codeRepos, process.cwd());
+        if (inferredRepo) {
+          params = { ...params, repo: inferredRepo };
         }
 
         const validationError = validateCodeParams(mode, params);
@@ -233,7 +243,6 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
           return toolTextResult(formatHealthResult(result), result ?? {});
         }
 
-        const codeRepos = await deps.getKnownRepos();
         const repoMatch = codeRepos.find((r) => r.name.toLowerCase() === params.repo?.toLowerCase());
         if (!repoMatch) {
           const available = codeRepos.map((r) => r.name).join(', ') || 'none';
@@ -290,6 +299,26 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
       }
     },
   });
+}
+
+function inferCurrentRepo(params: Record<string, any>, repos: Array<{ name: string; path?: string }>, cwd: string) {
+  if (params.repo || !Array.isArray(repos) || repos.length === 0) {
+    return null;
+  }
+
+  const resolvedCwd = path.resolve(cwd).toLowerCase();
+  const cwdMatch = repos.find((repo) => {
+    if (!repo.path) {
+      return false;
+    }
+    const repoPath = path.resolve(repo.path).toLowerCase();
+    return resolvedCwd === repoPath || resolvedCwd.startsWith(`${repoPath}/`);
+  });
+  if (cwdMatch) {
+    return cwdMatch.name;
+  }
+
+  return repos.length === 1 ? repos[0].name : null;
 }
 
 function buildCodeToolResponse(mode: string, result: any): { formatPayload: any; details: Record<string, unknown> } {
