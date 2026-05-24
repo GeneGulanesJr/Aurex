@@ -94,25 +94,29 @@ Run it with:
 npm run bench:pi-paired
 ```
 
-Latest run: `bench/results/pi-paired-2026-05-24T06-53-22-629Z/report.json`
+Latest run: `bench/results/pi-paired-2026-05-24T14-47-20-651Z/report.json`
 
 | Metric        | Memory Off | Memory On | Delta     |
 | ------------- | ---------- | --------- | --------- |
-| Facts correct | 17/18      | 18/18     | +1 fact   |
-| Active tokens | 33,842     | 7,019     | -79.3%    |
-| Wall time     | ~212s      | ~137s     | -35.4%    |
+| Facts correct | 18/18      | 18/18     | no loss   |
+| Active tokens | 42,954     | 3,192     | -92.6%    |
+| Wall time     | ~233s      | ~86s      | -63.1%    |
+| Tool calls    | 49         | 6         | -87.8%    |
+| Failed tools  | 4          | 0         | -100%     |
 
 #### Per-category Breakdown
 
 | Category         | Facts (off -> on) | Tokens (off -> on) | Savings |
 | ---------------- | ----------------- | ------------------ | ------- |
-| prior-decision   | 2/3 -> 3/3        | 10,730 -> 996      | 90.7%   |
-| bug-history      | 3/3 -> 3/3        | 3,485 -> 595       | 82.9%   |
-| staleness        | 3/3 -> 3/3        | 10,377 -> 508      | 95.1%   |
-| navigation       | 3/3 -> 3/3        | 2,327 -> 89        | 96.2%   |
-| negative-control | 6/6 -> 6/6        | 6,923 -> 4,831     | 30.2%   |
+| prior-decision   | 3/3 -> 3/3        | 12,505 -> 128      | 99.0%   |
+| bug-history      | 3/3 -> 3/3        | 10,430 -> 603      | 94.2%   |
+| staleness        | 3/3 -> 3/3        | 7,315 -> 426       | 94.2%   |
+| navigation       | 3/3 -> 3/3        | 6,976 -> 72        | 99.0%   |
+| negative-control | 6/6 -> 6/6        | 5,728 -> 1,963     | 65.7%   |
 
-Memory-on achieved perfect accuracy with 79.3% fewer active tokens overall. Memory-dependent tasks saved 82.9-96.2% active tokens in this run.
+Memory-on achieved perfect accuracy with 92.6% fewer active tokens overall. Memory-dependent tasks saved 94.2-99.0% active tokens in this run.
+
+The paired benchmark also reports behavior counters. In the latest run, memory-on used 6 total tools, 4 code-oriented tools, 4 memory tools, 12 assistant turns, and 0 failed tools. These counters help distinguish real memory regressions from normal provider cache and latency variance. The negative-control tasks are current-source questions; they should avoid memory facts and route quickly through `memory-code search` plus targeted reads when code verification is needed.
 
 ## Requirements
 
