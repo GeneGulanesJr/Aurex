@@ -120,6 +120,7 @@ const CONTEXT = {
   PROMPT_RELEVANT_LIMIT: 5,
   PROJECT_SUMMARY_LIMIT: 1,
   PROMPT_INJECT_LIMIT: 2,
+  PROMPT_MEMORY_SNIPPET_LENGTH: 280,
   PERSONAL_INJECT_LIMIT: 2,
   STALE_GUIDANCE: '📝 **Stale code index:** indexed code may not match current source files. Run `memory-code reindex-repo --repo {repo}` to update. Verify current source before relying on code-index results.',
 };

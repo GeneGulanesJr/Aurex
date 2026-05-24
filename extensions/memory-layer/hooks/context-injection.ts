@@ -135,6 +135,10 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
           trust = ' 🔎';
         }
         lines.push(`- [${o.type}] ${o.title}${trust}`);
+        const snippet = summarizeMemoryContent(o.content);
+        if (snippet) {
+          lines.push(`  ${snippet}`);
+        }
       }
       lines.push('');
     }
@@ -213,6 +217,34 @@ export function isSourceAuthoritativePrompt(prompt: string | null): boolean {
     /\bfrom the code\b/.test(normalized) ||
     /\banswer from (?:the )?code\b/.test(normalized)
   );
+}
+
+function summarizeMemoryContent(content: unknown): string | null {
+  if (typeof content !== 'string') {
+    return null;
+  }
+
+  const lines = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const priority = lines.filter((line) => /^\*\*(What|Why|Where)\*\*:/i.test(line));
+  const selected = (priority.length > 0 ? priority : lines).slice(0, 3);
+  if (selected.length === 0) {
+    return null;
+  }
+
+  const normalized = selected
+    .join(' ')
+    .replace(/\*\*(What|Why|Where)\*\*:\s*/gi, '$1: ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const limit = CONTEXT.PROMPT_MEMORY_SNIPPET_LENGTH || 280;
+  return normalized.length > limit ? `${normalized.slice(0, limit - 1)}…` : normalized;
 }
 
 function contentToText(content: unknown): string | null {

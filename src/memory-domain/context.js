@@ -112,7 +112,7 @@ function context(deps, args) {
       ? Math.min(limit * CONTEXT.CROSS_PROJECT_DEEP_MULTIPLIER, CONTEXT.CROSS_PROJECT_DEEP_MAX)
       : limit;
     obsQuery = `
-      SELECT o.id, o.title, o.type, o.scope, o.topic_key, o.project, o.created_at,
+      SELECT o.id, o.title, o.content, o.type, o.scope, o.topic_key, o.project, o.created_at,
              COALESCE(sl.trust_score, ${RANKING.DEFAULT_TRUST_SCORE}) as trust_score,
              COALESCE(rl.recall_count, 0) as recall_count,
              ${TYPE_PRIORITY_CASE} as type_priority
@@ -138,7 +138,7 @@ function context(deps, args) {
           ORDER BY match_score DESC, created_at DESC
           LIMIT ?
         )
-        SELECT o.id, o.title, o.type, o.scope, o.topic_key, o.created_at,
+        SELECT o.id, o.title, o.content, o.type, o.scope, o.topic_key, o.created_at,
                COALESCE(sl.trust_score, ${RANKING.DEFAULT_TRUST_SCORE}) as trust_score,
                COALESCE(rl.recall_count, 0) as recall_count,
                ${TYPE_PRIORITY_CASE} as type_priority
@@ -150,7 +150,7 @@ function context(deps, args) {
       obsParams = [...match.scoreParams, project, ...match.whereParams, topicLimit];
     } else {
       obsQuery = `
-        SELECT o.id, o.title, o.type, o.scope, o.topic_key, o.created_at,
+        SELECT o.id, o.title, o.content, o.type, o.scope, o.topic_key, o.created_at,
                COALESCE(sl.trust_score, ${RANKING.DEFAULT_TRUST_SCORE}) as trust_score,
                COALESCE(rl.recall_count, 0) as recall_count,
                  CASE
@@ -171,7 +171,7 @@ function context(deps, args) {
     }
   } else {
     obsQuery = `
-      SELECT o.id, o.title, o.type, o.scope, o.topic_key, o.created_at,
+      SELECT o.id, o.title, o.content, o.type, o.scope, o.topic_key, o.created_at,
              COALESCE(sl.trust_score, ${RANKING.DEFAULT_TRUST_SCORE}) as trust_score,
              COALESCE(rl.recall_count, 0) as recall_count,
              ${TYPE_PRIORITY_CASE} as type_priority

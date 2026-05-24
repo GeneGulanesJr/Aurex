@@ -119,9 +119,24 @@ describe('context injection prompt extraction', () => {
       state: { currentProject: 'PiMemoryExtension', hasInjectedContext: false, sessionId: 1 },
       mem: vi.fn().mockResolvedValue({
         observations: [
-          { type: 'decision', title: 'Matched decision 1', trust_score: 0.95 },
-          { type: 'bugfix', title: 'Matched bugfix 2', trust_score: 0.95 },
-          { type: 'pattern', title: 'Matched pattern 3', trust_score: 0.95 },
+          {
+            type: 'decision',
+            title: 'Matched decision 1',
+            trust_score: 0.95,
+            content: '**What**: Use SQLite FTS5\n**Why**: Avoid external search services\n**Where**: src/search.js',
+          },
+          {
+            type: 'bugfix',
+            title: 'Matched bugfix 2',
+            trust_score: 0.95,
+            content: '**What**: Fixed config leak',
+          },
+          {
+            type: 'pattern',
+            title: 'Matched pattern 3',
+            trust_score: 0.95,
+            content: '**What**: Should not be injected',
+          },
         ],
         personal: [],
         stats: { total_memories: 42, total_personal: 0, active_workflows: 0 },
@@ -141,7 +156,9 @@ describe('context injection prompt extraction', () => {
     );
     expect(content).toContain('### Prompt-Matched Memory');
     expect(content).toContain('Matched decision 1');
+    expect(content).toContain('What: Use SQLite FTS5 Why: Avoid external search services Where: src/search.js');
     expect(content).toContain('Matched bugfix 2');
     expect(content).not.toContain('Matched pattern 3');
+    expect(content).not.toContain('Should not be injected');
   });
 });
