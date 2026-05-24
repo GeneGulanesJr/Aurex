@@ -224,6 +224,13 @@ function parsePiOutput(raw) {
   const assistantByResponse = new Map();
   const seenUsage = new Set();
   const toolCounts = new Map();
+  const behavior = {
+    assistant_turns: 0,
+    tool_calls: 0,
+    failed_tool_calls: 0,
+    memory_tool_calls: 0,
+    code_tool_calls: 0,
+  };
 
   function countTool(name) {
     if (name) {
@@ -303,8 +310,27 @@ function parsePiOutput(raw) {
         }
       }
 
+      if (type === 'message_end' && message.role === 'assistant') {
+        behavior.assistant_turns++;
+      }
+
       if (type === 'tool_execution_start') {
-        countTool(event.toolName || event.name || event.tool || event.tool_name || event.input?.tool);
+        const toolName = event.toolName || event.name || event.tool || event.tool_name || event.input?.tool;
+        countTool(toolName);
+        behavior.tool_calls++;
+        if (toolName && /^memory-/.test(toolName)) {
+          behavior.memory_tool_calls++;
+        }
+        if (toolName === 'memory-code' || toolName === 'read' || toolName === 'bash') {
+          behavior.code_tool_calls++;
+        }
+      }
+
+      if (type === 'tool_execution_end') {
+        const isError = event.isError === true || event.result?.isError === true;
+        if (isError) {
+          behavior.failed_tool_calls++;
+        }
       }
     }
   }
@@ -317,6 +343,7 @@ function parsePiOutput(raw) {
     usage,
     answer: answerParts.join('\n').trim() || raw.trim(),
     tool_counts: Object.fromEntries(toolCounts.entries()),
+    behavior,
   };
 }
 
@@ -369,6 +396,7 @@ async function runSide(side, commandTemplate, task, repo, outDir, cwd, timeoutMs
     error: run.error,
     usage: parsed.usage,
     tool_counts: parsed.tool_counts,
+    behavior: parsed.behavior,
     grade,
   };
 }
@@ -471,6 +499,11 @@ async function main() {
   benchLog(`  Memory-on active:  ${summary.memory_on_active_tokens}`);
   benchLog(`  Memory-off cache:  ${summary.memory_off_cache_read_tokens}`);
   benchLog(`  Memory-on cache:   ${summary.memory_on_cache_read_tokens}`);
+  benchLog(`  Memory-off tools:  ${summary.memory_off_tool_calls} (${summary.memory_off_failed_tool_calls} failed)`);
+  benchLog(`  Memory-on tools:   ${summary.memory_on_tool_calls} (${summary.memory_on_failed_tool_calls} failed)`);
+  benchLog(`  Memory-on memtools:${summary.memory_on_memory_tool_calls}`);
+  benchLog(`  Memory-on codetools:${summary.memory_on_code_tool_calls}`);
+  benchLog(`  Memory-on turns:   ${summary.memory_on_assistant_turns}`);
   benchLog(`  Token delta:       ${summary.token_savings_pct}`);
   benchLog('');
   benchLog('By category:');
@@ -494,6 +527,18 @@ function buildSummary(results) {
       acc.onTokens += result.memory_on.usage.active_tokens || 0;
       acc.offCache += result.memory_off.usage.cache_read_tokens || 0;
       acc.onCache += result.memory_on.usage.cache_read_tokens || 0;
+      acc.offElapsed += result.memory_off.elapsed_ms || 0;
+      acc.onElapsed += result.memory_on.elapsed_ms || 0;
+      acc.offToolCalls += result.memory_off.behavior?.tool_calls || 0;
+      acc.onToolCalls += result.memory_on.behavior?.tool_calls || 0;
+      acc.offFailedToolCalls += result.memory_off.behavior?.failed_tool_calls || 0;
+      acc.onFailedToolCalls += result.memory_on.behavior?.failed_tool_calls || 0;
+      acc.offMemoryToolCalls += result.memory_off.behavior?.memory_tool_calls || 0;
+      acc.onMemoryToolCalls += result.memory_on.behavior?.memory_tool_calls || 0;
+      acc.offCodeToolCalls += result.memory_off.behavior?.code_tool_calls || 0;
+      acc.onCodeToolCalls += result.memory_on.behavior?.code_tool_calls || 0;
+      acc.offAssistantTurns += result.memory_off.behavior?.assistant_turns || 0;
+      acc.onAssistantTurns += result.memory_on.behavior?.assistant_turns || 0;
       return acc;
     },
     {
@@ -506,6 +551,18 @@ function buildSummary(results) {
       onTokens: 0,
       offCache: 0,
       onCache: 0,
+      offElapsed: 0,
+      onElapsed: 0,
+      offToolCalls: 0,
+      onToolCalls: 0,
+      offFailedToolCalls: 0,
+      onFailedToolCalls: 0,
+      offMemoryToolCalls: 0,
+      onMemoryToolCalls: 0,
+      offCodeToolCalls: 0,
+      onCodeToolCalls: 0,
+      offAssistantTurns: 0,
+      onAssistantTurns: 0,
     },
   );
   return {
@@ -516,6 +573,18 @@ function buildSummary(results) {
     memory_on_active_tokens: sum.onTokens,
     memory_off_cache_read_tokens: sum.offCache,
     memory_on_cache_read_tokens: sum.onCache,
+    memory_off_elapsed_ms: sum.offElapsed,
+    memory_on_elapsed_ms: sum.onElapsed,
+    memory_off_tool_calls: sum.offToolCalls,
+    memory_on_tool_calls: sum.onToolCalls,
+    memory_off_failed_tool_calls: sum.offFailedToolCalls,
+    memory_on_failed_tool_calls: sum.onFailedToolCalls,
+    memory_off_memory_tool_calls: sum.offMemoryToolCalls,
+    memory_on_memory_tool_calls: sum.onMemoryToolCalls,
+    memory_off_code_tool_calls: sum.offCodeToolCalls,
+    memory_on_code_tool_calls: sum.onCodeToolCalls,
+    memory_off_assistant_turns: sum.offAssistantTurns,
+    memory_on_assistant_turns: sum.onAssistantTurns,
     token_savings_pct: sum.offTokens > 0 ? `${((1 - sum.onTokens / sum.offTokens) * 100).toFixed(1)}%` : 'n/a',
     categories: buildCategorySummary(results),
   };
