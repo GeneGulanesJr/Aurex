@@ -1,4 +1,8 @@
-import { extractUserPrompt, isSourceAuthoritativePrompt } from '../extensions/memory-layer/hooks/context-injection.ts';
+import {
+  extractUserPrompt,
+  isSourceAuthoritativePrompt,
+  registerBeforeAgentStart,
+} from '../extensions/memory-layer/hooks/context-injection.ts';
 
 describe('context injection prompt extraction', () => {
   test('uses the latest user message content parts', () => {
@@ -29,5 +33,38 @@ describe('context injection prompt extraction', () => {
     expect(isSourceAuthoritativePrompt('Where is automatic project memory context wired into the Pi extension?')).toBe(
       false,
     );
+  });
+
+  test('source-authoritative prompts skip memory context calls and inject source guidance', async () => {
+    let handler;
+    const pi = {
+      on: vi.fn((_eventName, callback) => {
+        handler = callback;
+      }),
+    };
+    const deps = {
+      state: { currentProject: 'PiMemoryExtension', hasInjectedContext: false, sessionId: 1 },
+      mem: vi.fn(),
+      getKnownRepos: vi.fn(),
+      isRepoStale: vi.fn(),
+    };
+
+    registerBeforeAgentStart(pi, deps);
+    const result = await handler(
+      {
+        messages: [
+          {
+            role: 'user',
+            content: 'In the current source, what fields does context return? Answer from the code.',
+          },
+        ],
+      },
+      { cwd: process.cwd() },
+    );
+
+    expect(deps.mem).not.toHaveBeenCalled();
+    expect(deps.state.hasInjectedContext).toBe(true);
+    expect(result.message.customType).toBe('source-authoritative-guidance');
+    expect(result.message.content).toContain('working tree');
   });
 });

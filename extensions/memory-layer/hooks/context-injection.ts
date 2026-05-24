@@ -21,7 +21,15 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
 
     const promptQuery = extractUserPrompt(event);
     if (isSourceAuthoritativePrompt(promptQuery)) {
-      return;
+      deps.state.hasInjectedContext = true;
+      return {
+        message: {
+          customType: 'source-authoritative-guidance',
+          content:
+            'Current-source question detected. Answer from the working tree, not stored memory. Prefer targeted source inspection for named files, modules, or symbols; indexed code-memory may be stale.',
+          display: false,
+        },
+      };
     }
 
     const contextLimit = promptQuery ? CONTEXT.PROMPT_RELEVANT_LIMIT : CONTEXT.DEFAULT_LIMIT;
