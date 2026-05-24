@@ -86,7 +86,7 @@ See [`bench/README.md`](bench/README.md) for benchmark usage and interpretation 
 
 ### Paired Memory
 
-The paired benchmark measures whether memory helps by running the same task twice: once with LaPis disabled and once with LaPis active. It is an internal regression and directional benchmark, not a comprehensive external evaluation.
+The paired benchmark measures whether memory helps by running the same task twice: once with LaPis disabled and once with LaPis active. It is an internal regression and directional benchmark, not a comprehensive external evaluation. It is designed to catch regressions in LaPis behavior; it should not be read as a claim about typical real-world usage, where prompts, repositories, model behavior, provider cache state, and tool choices vary.
 
 Run it with:
 
@@ -113,6 +113,16 @@ Latest run: `bench/results/pi-paired-2026-05-24T14-47-20-651Z/report.json`
 | staleness        | 3/3 -> 3/3        | 7,315 -> 426       | 94.2%   |
 | navigation       | 3/3 -> 3/3        | 6,976 -> 72        | 99.0%   |
 | negative-control | 6/6 -> 6/6        | 5,728 -> 1,963     | 65.7%   |
+
+#### What Each Category Tests
+
+| Category         | What it tests |
+| ---------------- | ------------- |
+| prior-decision   | Recalls an architectural decision and its rationale, then names the current module involved. |
+| bug-history      | Recalls why a fix exists, including the historical failure mode that is not obvious from the final code alone. |
+| staleness        | Checks whether LaPis warns that an indexed code view may be stale and should be verified or reindexed before trust. |
+| navigation       | Uses memory to jump to the likely hook/module and confirm where extension wiring lives. |
+| negative-control | Asks current-source questions that should not need memory facts; memory-on should route cheaply to code lookup instead of adding overhead. |
 
 Memory-on achieved perfect accuracy with 92.6% fewer active tokens overall. Memory-dependent tasks saved 94.2-99.0% active tokens in this run.
 
