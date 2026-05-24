@@ -57,18 +57,7 @@ LaPis stores data locally in the configured SQLite database. It can store:
 
 ## Dream Cycle
 
-The Dream Cycle is the memory-quality cleanup pass. It runs every 10 sessions and removes or consolidates stale memory based on quality signals, not age alone.
-
-It currently handles:
-
-- Superseded or duplicate memories with high confidence.
-- Stale auto-progress and accomplished entries that were never recalled.
-- Never-recalled auto-detected decisions, bugfixes, and discoveries with low trust.
-- Correction entries that should have updated an existing memory in-place.
-- Replaced setup/config memories.
-- Low-value auto-generated decision titles.
-- Related memories sharing the same topic key, consolidated into one retained entry.
-- Database compaction, FTS optimization, old session/prompt pruning, and stale trust decay.
+The Dream Cycle is configured through the session cadence settings above and runs memory-quality cleanup after session end. See [`DREAM_CYCLE.md`](DREAM_CYCLE.md) for the cleanup policy and stale-memory criteria.
 
 ## Glossary
 
