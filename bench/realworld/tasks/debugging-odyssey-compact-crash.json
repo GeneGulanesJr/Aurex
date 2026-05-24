@@ -1,0 +1,29 @@
+{
+  "id": "debugging-odyssey-compact-crash",
+  "category": "debugging-odyssey",
+  "horizon": "long",
+  "repo": "PiMemoryExtension",
+  "setup": {
+    "checkout": "cf6b83bb2046a2d1cc32f9a0e1b8e7202d74cef3",
+    "apply_patch": "patches/break-compact-data-loss.patch",
+    "seed_memory": "memory-seeds/compact-architecture.json"
+  },
+  "prompt": "There is a bug in the compaction/dream cycle that causes observations to be silently lost. Users report that after running the dream cycle, some high-value memories disappear from search results even though they were never deleted.\n\nSymptoms:\n- After `memory-store compact` or the dream cycle runs, some observations vanish from search\n- The observations are NOT in the deleted_at column — they're genuinely missing from FTS results\n- It seems to affect observations that were created in a different session than the one running compaction\n- The recall_log entries for the missing observations still exist\n\nYour task:\n1. Trace the data flow from compaction through search to find where observations get lost\n2. The bug spans at least 3 modules: compaction (src/memory-domain/compaction.js), search (src/memory-domain/search.js), and possibly the FTS index management\n3. Fix the root cause — not just the symptom\n4. Run the existing tests to verify: npm test -- test/services-dream.test.js test/services-search.test.js --reporter=verbose\n\nStart by reading the compaction code and understanding what happens to FTS entries during the dream cycle.",
+  "success": {
+    "tests": ["npm test -- test/services-dream.test.js test/services-search.test.js --reporter=verbose 2>&1"],
+    "must_touch": ["src/memory-domain/compaction.js"],
+    "must_not_touch": ["test/services-dream.test.js", "test/services-search.test.js"],
+    "expected_facts": [
+      {
+        "id": "fts-stale-index",
+        "description": "The FTS index was not being updated after compaction removed or modified observation rows",
+        "aliases": ["FTS", "full-text search", "stale", "rebuild", "reindex", "observations_fts", "FTS index"]
+      },
+      {
+        "id": "cross-session-scope",
+        "description": "The bug affected observations from a different session because the FTS rebuild was scoped incorrectly",
+        "aliases": ["session", "scope", "cross-session", "different session", "session_id"]
+      }
+    ]
+  }
+}

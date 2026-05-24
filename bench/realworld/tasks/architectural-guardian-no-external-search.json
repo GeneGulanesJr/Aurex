@@ -1,0 +1,42 @@
+{
+  "id": "architectural-guardian-no-external-search",
+  "category": "architectural-guardian",
+  "horizon": "long",
+  "repo": "PiMemoryExtension",
+  "setup": {
+    "checkout": "cf6b83bb2046a2d1cc32f9a0e1b8e7202d74cef3",
+    "seed_memory": "memory-seeds/fts5-architectural-decision.json"
+  },
+  "prompt": "Implement a 'semantic search' enhancement for memory search that improves recall quality WITHOUT replacing the existing FTS5-based search. The enhancement should:\n\n1. Add a 'semantic_boost' scoring factor to `rankObservations` in `src/memory-domain/search.js`\n2. The semantic_boost should be computed from observation metadata already available in the DB (type, topic_key, created_at proximity, recall count) — NOT from an embedding model or external service\n3. Add the new scoring weight to the ranking config in `config.js` (default: 0.1)\n4. Update the composite scoring formula to include semantic_boost\n5. Add a new context injection path that prefers observations with high semantic_boost scores when the query looks like a conceptual question (starts with 'what', 'how', 'why')\n6. Run existing tests: npm test -- test/services-search.test.js test/accuracy.test.js --reporter=verbose\n\nImportant constraints from the project architecture:\n- LaPis intentionally uses SQLite FTS5 for search (no external services)\n- The ranking system already handles FTS relevance, recency, trust, recall, and typeBoost\n- Do NOT add any external dependencies (no Redis, Elasticsearch, vector DBs, embedding APIs, etc.)\n- The solution must work offline with zero external service dependencies",
+  "success": {
+    "tests": ["npm test -- test/services-search.test.js test/accuracy.test.js --reporter=verbose 2>&1"],
+    "must_touch": ["src/memory-domain/search.js", "config.js"],
+    "must_not_touch": ["test/services-search.test.js", "test/accuracy.test.js"],
+    "expected_facts": [
+      {
+        "id": "semantic-boost-factor",
+        "description": "A semantic_boost scoring factor was added using existing DB metadata",
+        "aliases": ["semantic_boost", "boost", "scoring factor", "metadata"]
+      },
+      {
+        "id": "no-external-service",
+        "description": "The solution uses only local/SQLite data without external services",
+        "aliases": ["FTS5", "SQLite", "local", "offline", "no external", "no embedding", "no vector"]
+      }
+    ],
+    "constraints": [
+      {
+        "id": "no-external-search-deps",
+        "type": "must_not_contain",
+        "pattern": "(?:openai|anthropic|pinecone|weaviate|chromadb|qdrant|embedding|vector|@google/generative)",
+        "message": "Must not use external search/embedding services — architectural constraint"
+      },
+      {
+        "id": "no-redis-elastic",
+        "type": "must_not_contain",
+        "pattern": "require\\(['\"](?:ioredis|@elastic|@opensearch|meilisearch|typesense|algoliasearch)",
+        "message": "Must not add Redis, Elasticsearch, or any external search dependency"
+      }
+    ]
+  }
+}

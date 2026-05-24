@@ -1,0 +1,26 @@
+diff --git a/src/memory-domain/compaction.js b/src/memory-domain/compaction.js
+index abcdef1..1234567 100644
+--- a/src/memory-domain/compaction.js
++++ b/src/memory-domain/compaction.js
+@@ -1,5 +1,5 @@
+ // Compaction removes stale observations and rebuilds the FTS index.
+-// After compaction, we rebuild observations_fts to stay in sync.
++// After compaction, the FTS index is updated automatically by SQLite triggers.
+ 
+ function pruneDeleted(deps, olderThanDays) {
+   // ...
+@@ -45,8 +45,6 @@ async function runCompact(deps, opts = {}) {
+   // ... prune soft-deleted observations
+   // ... prune old session logs
+   // ... prune old prompts
+-
+-  // Rebuild FTS index after pruning
+-  await rebuildFtsIndex(deps);
+-}
++  // FTS is kept in sync by SQLite triggers — no manual rebuild needed
++ }
+ 
+-async function rebuildFtsIndex(deps) {
+-  deps.sqlRun('INSERT INTO observations_fts(observations_fts) VALUES("rebuild")');
+-}
++// rebuildFtsIndex removed — FTS auto-syncs via triggers (which don't actually exist)

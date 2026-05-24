@@ -1,0 +1,20 @@
+[
+  {
+    "type": "decision",
+    "title": "Trust sync only on pull/checkout/merge/rebase/reset/stash pop",
+    "content": "What: Trust sync is intentionally designed to run only after git pull, checkout, merge, rebase, reset, and stash pop operations. Why: Running trust sync on every git operation would be unnecessarily expensive and provide little additional value. The specific operations are the ones where code changes from external sources are integrated. Where: extensions/memory-layer/hooks/trust-sync.ts. Learned: This was an intentional design decision. Trust sync compares stored HEAD vs current HEAD to detect changed symbols. It should NOT be triggered on every git operation. The regex pattern is: /\\bgit\\s+(pull|checkout|merge|rebase|reset|stash\\s+pop)\\b/.",
+    "project": "PiMemoryExtension"
+  },
+  {
+    "type": "architecture",
+    "title": "Trust policy system for projects",
+    "content": "What: Trust policies are per-project configurations stored in the trust module. They control which directories to index (exclude_patterns) and the trust threshold (minimum trust score to consider a link verified). Why: Different projects have different structures — monorepos may want to exclude node_modules/ and dist/, while libraries may want stricter trust thresholds. Where: services/trust.js, src/trust-sync/. Learned: Trust policies are loaded by the trust service and applied during sync-code-trust. The config supports exclude_patterns (glob patterns to skip) and trust_threshold (0-1 float, default 0.5). Policies are keyed by project name.",
+    "project": "PiMemoryExtension"
+  },
+  {
+    "type": "decision",
+    "title": "React-admin project trust policy",
+    "content": "What: The react-admin project has a specific trust policy: only index src/ directory, exclude node_modules/ and dist/, trust threshold of 0.8 (higher than default 0.5). Why: React-admin is a monorepo with many generated and vendored files that should not affect trust scoring. The higher threshold ensures only well-verified symbol links are trusted. Where: This policy should be configured in the trust module for project 'react-admin'. Learned: The trust policy for react-admin must be: exclude_patterns: ['node_modules/**', 'dist/**', '.next/**'], trust_threshold: 0.8, include_patterns: ['src/**'].",
+    "project": "PiMemoryExtension"
+  }
+]

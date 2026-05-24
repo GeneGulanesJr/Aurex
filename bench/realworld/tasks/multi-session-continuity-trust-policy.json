@@ -1,0 +1,34 @@
+{
+  "id": "multi-session-continuity-trust-policy",
+  "category": "multi-session-continuity",
+  "horizon": "long",
+  "repo": "PiMemoryExtension",
+  "setup": {
+    "checkout": "cf6b83bb2046a2d1cc32f9a0e1b8e7202d74cef3",
+    "apply_patch": "patches/break-trust-sync-default.patch",
+    "seed_memory": "memory-seeds/trust-policy-decision.json"
+  },
+  "prompt": "The trust-sync module has a regression. After a recent change, trust sync is now running on every git operation instead of only on specific operations (pull, checkout, merge, rebase, reset, stash pop). This causes unnecessary overhead and slows down the agent.\n\nAdditionally, there was a trust policy established for the 'react-admin' project:\n- The project uses a monorepo structure with multiple packages\n- Trust sync should only index the `src/` directory, not `node_modules/` or `dist/`\n- The project has a custom trust threshold of 0.8 (higher than default)\n\nYour tasks:\n1. Fix the trust-sync regression — restore the original behavior of only triggering on pull/checkout/merge/rebase/reset/stash pop\n2. Implement the trust policy for 'react-admin' — create the config that restricts indexing to src/ and sets the trust threshold to 0.8\n3. Add a test that verifies the trust-sync only triggers on the correct git operations\n4. Run tests: npm test -- test/trust-sync.test.js test/services-trust.test.js --reporter=verbose\n\nCheck the trust-sync hook code in extensions/memory-layer/hooks/trust-sync.ts and the trust service in services/trust.js.",
+  "success": {
+    "tests": ["npm test -- test/trust-sync.test.js test/services-trust.test.js --reporter=verbose 2>&1"],
+    "must_touch": ["extensions/memory-layer/hooks/trust-sync.ts"],
+    "must_not_touch": ["test/trust-sync.test.js", "test/services-trust.test.js"],
+    "expected_facts": [
+      {
+        "id": "trust-sync-fixed",
+        "description": "Trust sync was restored to only trigger on pull/checkout/merge/rebase/reset/stash pop",
+        "aliases": ["pull", "checkout", "merge", "rebase", "reset", "stash pop", "specific git operations", "restored"]
+      },
+      {
+        "id": "trust-policy-applied",
+        "description": "A trust policy was applied with custom config for the project",
+        "aliases": ["trust policy", "threshold", "0.8", "monorepo", "src/", "react-admin"]
+      },
+      {
+        "id": "original-design-intent",
+        "description": "The original design was intentional — trust sync on every operation is wasteful",
+        "aliases": ["intentional", "design", "wasteful", "overhead", "unnecessary"]
+      }
+    ]
+  }
+}

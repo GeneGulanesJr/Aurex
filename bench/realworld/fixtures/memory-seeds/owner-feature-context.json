@@ -1,0 +1,20 @@
+[
+  {
+    "type": "architecture",
+    "title": "Observations table schema and data flow",
+    "content": "What: Observations are stored in the `observations` table with columns: id, session_id, type, title, content, project, scope, topic_key, created_at, updated_at, deleted_at. They are inserted via data-access/observations.js insertObservation() which takes deps={sqlJson,sqlRun,sqlRaw}. Why: The layered architecture means any new column needs changes in schema.sql, data-access, domain, and extension layers. Where: schema.sql (table definition), data-access/observations.js (SQL), src/memory-domain/observations.js (domain logic), extensions/memory-layer/tools/memory-tools.ts (tool API). Learned: Changes to observation schema must propagate through all 4 layers. The data-access layer uses parameterized SQL so new columns must be added to both INSERT and SELECT statements.",
+    "project": "PiMemoryExtension"
+  },
+  {
+    "type": "architecture",
+    "title": "Schema migration pattern",
+    "content": "What: Schema migrations are handled by PRAGMA user_version checks in schema.sql. Each version upgrade uses ALTER TABLE statements wrapped in conditionals. The current version is 10. Why: Allows incremental upgrades without data loss. Where: schema.sql at the top of the file. Learned: To add a new column, bump PRAGMA user_version and add an ALTER TABLE in the upgrade path. The ensureSchema() function in db.js runs these on startup.",
+    "project": "PiMemoryExtension"
+  },
+  {
+    "type": "architecture",
+    "title": "Context injection hook rendering",
+    "content": "What: The context-injection hook in extensions/memory-layer/hooks/context-injection.ts renders observations as formatted text for the LLM prompt. It calls context() from src/memory-domain/context.js which calls search() and rankObservations(). Why: This is how memories become visible to the LLM. Where: extensions/memory-layer/hooks/context-injection.ts. Learned: Any new observation field (like code_owner) should be included in the rendering output. The hook uses a template that includes title, type, project, and content. Adding a new field means updating the template string.",
+    "project": "PiMemoryExtension"
+  }
+]

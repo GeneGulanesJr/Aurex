@@ -1,0 +1,20 @@
+[
+  {
+    "type": "decision",
+    "title": "LaPis uses SQLite FTS5 — no external search services",
+    "content": "What: LaPis chose SQLite FTS5 as its full-text search engine. This is an intentional architectural decision that will NOT change. Why: Zero external service dependencies — SQLite FTS5 is built into the library LaPis already uses. This avoids needing Redis, Elasticsearch, or any external search service. It also works fully offline. Where: src/memory-domain/search.js. Learned: NEVER replace FTS5 with an external service. Any search enhancement must use FTS5 and local data only. The rankObservations() function applies composite scoring with FTS relevance, recency, trust, recall, and typeBoost weights. Semantic search features must be implemented using existing metadata (type, topic_key, recall count, created_at) without embedding models or vector databases.",
+    "project": "PiMemoryExtension"
+  },
+  {
+    "type": "architecture",
+    "title": "Search ranking composite scoring formula",
+    "content": "What: The rankObservations function in src/memory-domain/search.js computes a composite score from ftsScore, recencyScore, trustScore, recallScore, typeBoost, and navBoost. The weights come from getConfig().ranking. Why: Provides balanced ranking considering text relevance, freshness, code trust, usage patterns, and type priority. Where: src/memory-domain/search.js. Learned: typeBoost and navBoost multiply the final composite score. The composite formula is: (ftsScore*fts_relevance + recencyScore*recency + trustScore*trust + recallScore*recall) * typeBoost * navBoost. New scoring factors should follow this same additive-inside-multiplicative-outside pattern.",
+    "project": "PiMemoryExtension"
+  },
+  {
+    "type": "architecture",
+    "title": "Config structure and ranking weights",
+    "content": "What: Config is loaded from ~/.pi/memory/config.jsonc via config.js. The ranking section has weights: fts_relevance (0.4), recency (0.3), trust (0.15), recall (0.15). Why: These weights balance the different signals in search ranking. Where: config.js (DEFAULTS object). Learned: New ranking factors should add a new weight key to the ranking section with a conservative default (0.05-0.15). The config system uses deepMerge so user overrides work correctly.",
+    "project": "PiMemoryExtension"
+  }
+]

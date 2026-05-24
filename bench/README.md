@@ -74,7 +74,11 @@ Use this benchmark as an internal regression and directional signal, not a compr
 
 ## Realworld Pi memory benchmark
 
-`bench/realworld/bench-pi-realworld.js` runs Pi against real code-editing tasks — bugfixes, feature implementations, refactors, PR reviews — and measures whether memory-on improves completion rate, reduces wrong turns, and preserves project decisions better than memory-off.
+`bench/realworld/bench-pi-realworld.js` runs Pi against real code-editing tasks and measures whether memory-on improves completion rate, reduces wrong turns, and preserves project decisions better than memory-off.
+
+The benchmark has two tiers:
+- **Long-horizon tasks** (in `tasks/`) — multi-file, multi-step tasks requiring 10-40+ tool calls. These test deep agentic reasoning, architectural awareness, and memory-guided decision-making.
+- **Short regression tasks** (in `tasks/short/`) — single-focus tasks for basic regression coverage.
 
 Run:
 
@@ -86,7 +90,7 @@ By default, the harness:
 1. Creates a fresh git worktree for each run
 2. Applies bug-injection patches to introduce failures
 3. Runs Pi with the task prompt (memory-off first, then memory-on)
-4. Grades results on three axes: tests pass, diff touches correct files, answer contains expected facts
+4. Grades results on six axes: tests pass, diff touches correct files, answer contains expected facts, trajectory quality, semantic constraints, and precision
 5. Repeats each task 3 times for statistical signal
 
 Options:
@@ -98,44 +102,94 @@ node bench/realworld/bench-pi-realworld.js --runs 5
 # Single task for debugging
 node bench/realworld/bench-pi-realworld.js --only bugfix-createdb-config
 
+# Only long-horizon tasks
+node bench/realworld/bench-pi-realworld.js --only-long
+
+# Only short regression tasks
+node bench/realworld/bench-pi-realworld.js --only-short
+
+# Filter by category
+node bench/realworld/bench-pi-realworld.js --category cross-cutting-feature
+
+# Warmup with organic memory before tasks
+node bench/realworld/bench-pi-realworld.js --warmup warmup-prompts.json
+
+# Accumulate memory across tasks (simulates real session)
+node bench/realworld/bench-pi-realworld.js --accumulate
+
 # Keep worktrees for inspection
 node bench/realworld/bench-pi-realworld.js --no-cleanup
 
-# Custom timeout
-node bench/realworld/bench-pi-realworld.js --timeout-ms 300000
+# Custom timeout (default 30 min for long-horizon tasks)
+node bench/realworld/bench-pi-realworld.js --timeout-ms 600000
 ```
 
 Results are written under `bench/realworld/results/` with JSONL transcripts and a `report.json` summary.
 
-The task pack lives in `bench/realworld/tasks/` with 8 tasks:
-- 2 bugfix tasks (createDb config isolation, search ranking)
-- 2 feature tasks (context hook limit, session summary hook)
-- 1 refactor task (FTS5 rank scoring weights)
-- 1 stale-index task (verify code index accuracy)
-- 1 PR review task (evaluate trust-sync change)
-- 1 negative-control task (README lookup)
+### Long-horizon tasks (5 tasks)
+
+| Task | Category | Description |
+|---|---|---|
+| `cross-cutting-add-code-owner` | cross-cutting-feature | Add a code_owner concept across schema, data access, domain, and extension layers (8+ files) |
+| `debugging-odyssey-compact-crash` | debugging-odyssey | Trace a data loss bug spanning compaction, FTS indexing, and search (3+ modules) |
+| `api-migration-hooks-to-events` | api-migration | Migrate hook registration from callbacks to event-emitter pattern (10+ files, pure refactor) |
+| `architectural-guardian-no-external-search` | architectural-guardian | Add semantic search enhancement that must respect the no-external-services constraint |
+| `multi-session-continuity-trust-policy` | multi-session-continuity | Fix trust-sync regression and apply a remembered trust policy from a prior session |
+
+### Short regression tasks (8 tasks, in `tasks/short/`)
+
+| Task | Category | Description |
+|---|---|---|
+| `bugfix-createdb-config` | bugfix | Fix config isolation in createDb |
+| `bugfix-search-ranking` | bugfix | Fix composite ranking score |
+| `feature-context-hook` | feature | Add contextLimit flag to context-injection |
+| `feature-session-summary` | feature | Add onCompact hook for session summaries |
+| `refactor-fts5-rank` | refactor | Extract scoring weights into configurable object |
+| `staleness-code-index` | staleness | Detect and fix stale code index references |
+| `review-pr-trust-sync` | review | Evaluate trust-sync change correctness |
+| `negative-control-readme` | negative-control | README lookup (no memory needed) |
+
+### Task definition format
 
 Each task has:
-- A `setup.checkout` pointing to a known-good commit
-- Optional `setup.apply_patch` to inject a bug
-- Optional `setup.seed_memory` to pre-populate LaPis with relevant memories
-- `success.tests` — test commands that must pass after Pi edits
+- `horizon`: `"long"` or absent (short)
+- `setup.checkout` — a known-good commit SHA
+- `setup.apply_patch` — optional patch to inject a bug
+- `setup.seed_memory` — optional memory seed file
+- `success.tests` — test commands that must pass
 - `success.must_touch` / `success.must_not_touch` — file constraints
 - `success.expected_facts` — answer content expectations
+- `success.constraints` — semantic diff constraints (e.g., must not contain certain patterns)
 
-The report shows a comparison table:
+### Grading axes
+
+| Axis | Grader | What it measures |
+|---|---|---|
+| Tests | `run-tests.js` | Do the specified test commands pass? |
+| Diff | `check-diff.js` | Correct files touched, lines changed count |
+| Answer | `check-answer.js` | Response contains expected facts |
+| Trajectory | `check-trajectory.js` | Tool call efficiency, read-before-edit ratio, error rate |
+| Constraints | `check-constraints.js` | Diff respects semantic constraints (no forbidden patterns) |
+
+### Report
+
+The report shows a comparison table with both basic and trajectory metrics:
 
 ```
-╔════════════════════════╤════════════╤═══════════╗
-║ Metric                 │ Memory Off │ Memory On ║
-╟────────────────────────┼────────────┼───────────╢
-║ Tasks solved           │       3/6  │      5/6  ║
-║ Tests passed           │       2/6  │      5/6  ║
-║ Median active tokens   │     18,400 │     7,900 ║
-║ Median wall time       │     4m 20s │    2m 10s ║
-║ Median tool calls      │         14 │         8 ║
-║ Wrong-file edits       │          3 │         1 ║
-╚════════════════════════╧════════════╧═══════════╝
+╔════════════════════════════╤════════════╤════════════╗
+║ Metric                     │ Memory Off │ Memory On  ║
+╟────────────────────────────┼────────────┼────────────╢
+║ Tasks solved               │       1/5  │       4/5  ║
+║ Tests passed               │       1/5  │       4/5  ║
+║ Median active tokens       │     18,400 │     12,100 ║
+║ Median wall time           │    18m 30s │     9m 15s ║
+║ Median tool calls          │         42 │         18 ║
+║ Wrong-file edits           │          3 │          1 ║
+║ Constraint violations      │          2 │          0 ║
+║ Median trajectory score    │       0.45 │       0.82 ║
+║ Median lines changed       │        340 │        120 ║
+║ Median read-before-edit    │       0.30 │       0.78 ║
+╚════════════════════════════╧════════════╧════════════╝
 ```
 
-This complements the paired benchmark. The paired benchmark tests knowledge retrieval; this benchmark tests code editing and problem-solving.
+This complements the paired benchmark. The paired benchmark tests knowledge retrieval; this benchmark tests code editing, multi-step problem-solving, and architectural awareness over extended tool-use sessions.
