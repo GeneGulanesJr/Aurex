@@ -45,3 +45,5 @@ The default task pack lives at `bench/fixtures/pi-memory-tasks.json`. It intenti
 - `negative-control`: memory should not be necessary and should avoid adding overhead.
 
 Each task has expected facts with aliases. The built-in grader is intentionally simple and deterministic; for publishable numbers, review misses manually or replace it with a stricter evaluator.
+
+Use this benchmark as an internal regression and directional signal, not a comprehensive scientific evaluation. The harness is legitimate for comparing real memory-off and memory-on Pi runs because it records raw transcripts, structured reports, token usage, cache reads, elapsed time, tool counts, and expected-fact matches under `--no-session`. Its limits are that each side runs once, memory-off is vanilla Pi rather than a separately optimized retrieval baseline, memory-off always runs before memory-on by default, the grader is substring/alias based, and the task pack is intentionally small. For stronger external claims, add repeated runs, randomized side ordering, stricter/manual grading, and broader task coverage.

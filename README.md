@@ -296,6 +296,8 @@ Measures whether memory actually helps — runs the same task twice: once with L
 npm run bench:pi-paired
 ```
 
+Interpret these numbers as an internal regression and directional benchmark, not a comprehensive scientific evaluation. The harness is legitimate for catching whether memory-on improves real Pi runs: it uses real Pi invocations, `--no-session`, raw transcripts, structured reports, token accounting, elapsed time, tool counts, and expected-fact grading across prior-decision, bug-history, staleness, navigation, and negative-control tasks. Its limits are also deliberate: the grader is simple substring/alias matching, each side runs once, memory-off is vanilla Pi rather than a separately optimized retrieval baseline, memory-off runs before memory-on, and the task pack is small. Stronger external claims should add repeated runs, randomized side ordering, stricter/manual grading, and broader task coverage.
+
 ### Latest Results
 
 Latest run: `bench/results/pi-paired-2026-05-24T06-53-22-629Z/report.json`
