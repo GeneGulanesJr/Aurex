@@ -1,0 +1,32 @@
+diff --git a/db.js b/db.js
+index b1f03db..5a4bd3a 100644
+--- a/db.js
++++ b/db.js
+@@ -53,23 +53,12 @@ function resetDb() {
+ 
+ function createDb(configOverride = {}) {
+   const mergedConfig = { ...getConfig(), ...configOverride };
+-  const savedConfig = getConfig._cached;
+-  const savedDb = _db;
+-  const savedEngine = _engine;
+ 
+   getConfig._cached = mergedConfig;
+-  try {
+-    _db = null;
+-    _engine = null;
+-    const result = ensureDb();
+-    return result;
+-  } catch (e) {
+-    // Restore on failure
+-    _db = savedDb;
+-    _engine = savedEngine;
+-    getConfig._cached = savedConfig;
+-    throw e;
+-  }
++  _db = null;
++  _engine = null;
++  const result = ensureDb();
++  return result;
+   // NOTE: After successful createDb, the global _db/_engine point to the isolated DB.
+   // To restore the global singleton, call resetDb() then ensureDb().
+   // Config is NOT auto-restored so callers can continue using the isolated DB.
