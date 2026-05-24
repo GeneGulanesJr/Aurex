@@ -21,6 +21,17 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
 
     const promptQuery = extractUserPrompt(event);
     if (isSourceAuthoritativePrompt(promptQuery)) {
+      const repos = await deps.getKnownRepos();
+      const guidance = buildSourceLookupGuidance(repos, ctx.cwd, deps.state.currentProject);
+      if (guidance) {
+        return {
+          message: {
+            customType: 'memory-code-guidance',
+            content: guidance,
+            display: false,
+          },
+        };
+      }
       return;
     }
 
@@ -174,6 +185,28 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
       },
     };
   });
+}
+
+function buildSourceLookupGuidance(
+  repos: Awaited<ReturnType<typeof getKnownRepos>>,
+  cwd: string,
+  currentProject: string | null,
+): string | null {
+  const resolvedCwd = path.resolve(cwd);
+  const cwdRepo =
+    repos.find((r) => resolvedCwd.startsWith(path.resolve(r.path))) ||
+    repos.find((r) => r.name.toLowerCase() === currentProject?.toLowerCase());
+
+  if (!cwdRepo) {
+    return null;
+  }
+
+  return [
+    '## Code Lookup Guidance',
+    '',
+    `Current-source prompt: skip memory facts and verify against code in indexed repo \`${cwdRepo.name}\`.`,
+    `Use \`memory-code search --repo ${cwdRepo.name} --query <query>\` or \`memory-code outline --repo ${cwdRepo.name} --file <path>\` before shell code search.`,
+  ].join('\n');
 }
 
 /**

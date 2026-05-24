@@ -42,7 +42,7 @@ describe('context injection prompt extraction', () => {
     expect(isHistoricalMemoryPrompt('In the current source, what does rankObservations multiply?')).toBe(false);
   });
 
-  test('source-authoritative prompts bypass memory context without mutating injection state', async () => {
+  test('source-authoritative prompts bypass memory facts but keep code lookup guidance', async () => {
     let handler;
     const pi = {
       on: vi.fn((_eventName, callback) => {
@@ -52,7 +52,15 @@ describe('context injection prompt extraction', () => {
     const deps = {
       state: { currentProject: 'PiMemoryExtension', hasInjectedContext: false, sessionId: 1 },
       mem: vi.fn(),
-      getKnownRepos: vi.fn(),
+      getKnownRepos: vi.fn().mockResolvedValue([
+        {
+          name: 'PiMemoryExtension',
+          path: process.cwd(),
+          file_count: 292,
+          symbol_count: 6913,
+          indexed_at: '2026-05-24 00:00:00',
+        },
+      ]),
       isRepoStale: vi.fn(),
     };
 
@@ -71,7 +79,9 @@ describe('context injection prompt extraction', () => {
 
     expect(deps.mem).not.toHaveBeenCalled();
     expect(deps.state.hasInjectedContext).toBe(false);
-    expect(result).toBeUndefined();
+    expect(result.message.content).toContain('## Code Lookup Guidance');
+    expect(result.message.content).toContain('memory-code search --repo PiMemoryExtension');
+    expect(result.message.content).not.toContain('Prompt-Matched Memory');
   });
 
   test('promptless startup injects project summary without memory titles', async () => {
