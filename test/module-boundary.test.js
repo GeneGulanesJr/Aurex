@@ -12,7 +12,8 @@ const { evaluateTrustSync } = require('../src/trust-sync/trust-policy');
 describe('Module boundary: doc-index failure does not break memory save/search', () => {
   it('saves and searches observations even when doc-index modules throw', () => {
     // Simulate a broken doc-index by requiring it and verifying it can fail independently
-    const _docIndexThrew = false;
+    // oxlint-disable-next-line no-unused-vars
+    let docIndexThrew = false;
     try {
       const docIndex = require('../src/doc-index/repos');
       // Force a failure path — call with null db

@@ -32,7 +32,8 @@ describe('services/recovery', () => {
     });
 
     it('should recover orphan sessions', () => {
-      const _callCount = 0;
+      // oxlint-disable-next-line no-unused-vars
+      let callCount = 0;
       const sqlJson = vi.fn((query, _params) => {
         callCount++;
         if (query.includes('ended_at IS NULL')) {
