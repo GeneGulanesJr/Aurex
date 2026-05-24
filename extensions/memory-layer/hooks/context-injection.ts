@@ -1,10 +1,10 @@
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { MEMORY_REMINDER_INTERVAL, MemResult, state } from '../state';
 import { getKnownRepos, isRepoStale } from '../host/project-detector';
-import { mem } from '../host/memory-client';
 import { CONTEXT } from '../../../constants';
-import path from 'node:path';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import fs from 'node:fs';
+import { mem } from '../host/memory-client';
+import path from 'node:path';
 
 interface ContextDeps {
   state: typeof state;
@@ -24,7 +24,7 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
       return;
     }
 
-    const contextLimit = promptQuery ? CONTEXT.PROMPT_RELEVANT_LIMIT : CONTEXT.DEFAULT_LIMIT;
+    const contextLimit = promptQuery ? CONTEXT.PROMPT_RELEVANT_LIMIT : CONTEXT.PROJECT_SUMMARY_LIMIT;
     const contextResult = await deps.mem('context', {
       project: deps.state.currentProject,
       limit: String(contextLimit),
@@ -32,23 +32,12 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
       ...(deps.state.sessionId ? { 'session-id': String(deps.state.sessionId) } : {}),
     });
 
-    let recentContextResult: MemResult | null = null;
-    if (promptQuery && !((contextResult?.observations as any[]) || []).length) {
-      recentContextResult = await deps.mem('context', {
-        project: deps.state.currentProject,
-        limit: String(CONTEXT.DEFAULT_LIMIT),
-        ...(deps.state.sessionId ? { 'session-id': String(deps.state.sessionId) } : {}),
-      });
-    }
-
     let crossProjectResult: MemResult | null = null;
-
-    const projectContext = recentContextResult || contextResult;
-
-    if (!projectContext || !((projectContext.observations as any[]) || []).length) {
+    const projectContext = contextResult;
+    if (!projectContext) {
       crossProjectResult = await deps.mem('context', {
         'all-projects': 'true',
-        limit: String(Math.max(CONTEXT.DEFAULT_LIMIT - 3, 5)),
+        limit: String(CONTEXT.PROJECT_SUMMARY_LIMIT),
         ...(deps.state.sessionId ? { 'session-id': String(deps.state.sessionId) } : {}),
       });
     }
@@ -96,118 +85,78 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
       repos.find((r) => r.name.toLowerCase() === deps.state.currentProject?.toLowerCase());
     const isStale = cwdRepo ? deps.isRepoStale(cwdRepo) : false;
 
-    // Lightweight path: stale index + no observations + no personal prefs
-    // Emit only the stale guidance instead of a full context block
-    if (observations.length === 0 && personal.length === 0 && !crossProjectResult) {
-      if (isStale && cwdRepo) {
-        deps.state.hasInjectedContext = true;
-        const lines: string[] = [
-          '## Memory Context (auto-loaded)',
-          '',
-          `Project: **${deps.state.currentProject}** | ${stats?.total_memories || 0} memories | ${stats?.total_personal || 0} personal preferences`,
-          '',
-          CONTEXT.STALE_GUIDANCE.replace('{repo}', cwdRepo.name),
-          '',
-          'Use `memory-save`, `memory-search`, and `memory-get` tools to interact with memory.',
-        ];
-
-        // Extension location hint
-        appendExtensionHint(lines, ctx.cwd);
-
-        return {
-          message: {
-            customType: 'memory-context',
-            content: lines.join('\n'),
-            display: false,
-          },
-        };
-      }
-      return;
-    }
-
     const isNewProject = crossProjectResult !== null && !projectContext;
-    const effectiveObservations = isNewProject ? (crossProjectResult!.observations as any[]) || [] : observations;
+    let effectiveObservations: any[] = [];
+    if (promptQuery) {
+      effectiveObservations = isNewProject ? (crossProjectResult!.observations as any[]) || [] : observations;
+    }
     const effectiveStats = isNewProject ? (crossProjectResult!.stats as any) : stats;
 
     deps.state.hasInjectedContext = true;
 
     const topicNote = topic ? ` | topic: ${topic}` : '';
     const lines: string[] = ['## Memory Context (auto-loaded)', ''];
+    const projectDir = cwdRepo?.path || ctx.cwd;
+    const projectSummary = getProjectSummary(projectDir);
 
-    // Lightweight mode: stale index + no relevant observations + no personal prefs
-    const useLightweight = isStale && effectiveObservations.length === 0 && personal.length === 0;
-
-    if (useLightweight) {
+    if (isNewProject) {
       lines.push(
-        `Project: **${deps.state.currentProject}** | ${stats?.total_memories || 0} memories | ${stats?.total_personal || 0} personal preferences`,
+        `Project: **${deps.state.currentProject}** | new project | ${effectiveStats?.total_memories || 0} total memories across all projects`,
       );
       lines.push('');
-      lines.push(CONTEXT.STALE_GUIDANCE.replace('{repo}', cwdRepo!.name));
-      lines.push('');
-      lines.push('Use `memory-save`, `memory-search`, and `memory-get` tools to interact with memory.');
     } else {
-      // Full context (existing behavior)
-      if (isNewProject) {
-        lines.push(
-          `Project: **${deps.state.currentProject}** | 🆕 new project | ${effectiveStats?.total_memories || 0} total memories across all projects | ${stats?.total_personal || 0} personal preferences`,
-        );
-        lines.push('');
+      lines.push(
+        `Project: **${deps.state.currentProject}** | ${effectiveStats?.total_memories || 0} memories | ${effectiveStats?.total_personal || 0} personal preferences${topicNote}`,
+      );
+      lines.push('');
+    }
 
-        const byProject = new Map<string, any[]>();
-        for (const o of effectiveObservations) {
-          const proj = o.project || 'unknown';
-          if (!byProject.has(proj)) {
-            byProject.set(proj, []);
-          }
-          byProject.get(proj)!.push(o);
-        }
+    lines.push('### Project Context');
+    lines.push(`- Directory: \`${projectDir}\``);
+    lines.push(`- Summary: ${projectSummary}`);
+    if (cwdRepo) {
+      const staleLabel = isStale ? ' (stale)' : '';
+      lines.push(`- Code index: \`${cwdRepo.name}\` with ${cwdRepo.file_count} files / ${cwdRepo.symbol_count} symbols${staleLabel}`);
+    } else {
+      lines.push(`- Code index: not indexed for this project`);
+    }
+    if ((effectiveStats?.active_workflows || 0) > 0) {
+      lines.push(`- Active workflows: ${effectiveStats.active_workflows}`);
+    }
+    lines.push('');
 
-        if (byProject.size > 0) {
-          lines.push('### 🔗 Related memories from other projects');
-          for (const [proj, mems] of byProject) {
-            lines.push(`**${proj}** (${mems.length} memories)`);
-            for (const m of mems.slice(0, 5)) {
-              const trust = m.trust_score < 0.5 ? ' ⚠️' : m.trust_score < 0.7 ? ' 🔎' : '';
-              lines.push(`- [${m.type}] ${m.title}${trust}`);
-            }
-          }
-          lines.push('');
+    if (effectiveObservations.length > 0) {
+      lines.push('### Prompt-Matched Memory');
+      for (const o of effectiveObservations.slice(0, CONTEXT.PROMPT_INJECT_LIMIT)) {
+        let trust = '';
+        if (o.trust_score < 0.5) {
+          trust = ' ⚠️';
+        } else if (o.trust_score < 0.8) {
+          trust = ' 🔎';
         }
-      } else {
-        lines.push(
-          `Project: **${deps.state.currentProject}** | ${stats?.total_memories || 0} memories | ${stats?.total_personal || 0} personal preferences${topicNote}`,
-        );
-        lines.push('');
-
-        if (effectiveObservations.length > 0) {
-          lines.push('### Recent Relevant Memory');
-          for (const o of effectiveObservations) {
-            const trust = o.trust_score < 0.5 ? '⚠️' : o.trust_score < 0.8 ? '🔎' : '';
-            lines.push(`- [${o.type}] ${o.title} ${trust}`);
-          }
-          lines.push('');
-        }
+        lines.push(`- [${o.type}] ${o.title}${trust}`);
       }
+      lines.push('');
+    }
 
-      if (personal.length > 0) {
-        lines.push('### Your Preferences (cross-project)');
-        for (const p of personal.slice(0, 5)) {
-          lines.push(`- ${p.title}`);
-        }
-        lines.push('');
+    if (promptQuery && personal.length > 0) {
+      lines.push('### Personal Preferences');
+      for (const p of personal.slice(0, CONTEXT.PERSONAL_INJECT_LIMIT)) {
+        lines.push(`- ${p.title}`);
       }
+      lines.push('');
+    }
 
-      lines.push('Use `memory-save`, `memory-search`, and `memory-get` tools to interact with memory.');
+    lines.push('Use `memory-search` for deeper recall and `memory-save` for durable decisions.');
 
-      if (!cwdRepo) {
-        lines.push('');
-        lines.push(
-          `⚠️ **Code not indexed:** Project "${deps.state.currentProject}" has no code index yet. Run \`memory-code index-repo --path ${ctx.cwd} --name ${deps.state.currentProject}\` to enable memory-code analysis.`,
-        );
-      } else if (isStale) {
-        lines.push('');
-        lines.push(CONTEXT.STALE_GUIDANCE.replace('{repo}', cwdRepo.name));
-      }
+    if (!cwdRepo) {
+      lines.push('');
+      lines.push(
+        `⚠️ **Code not indexed:** Project "${deps.state.currentProject}" has no code index yet. Run \`memory-code index-repo --path ${ctx.cwd} --name ${deps.state.currentProject}\` to enable memory-code analysis.`,
+      );
+    } else if (isStale) {
+      lines.push('');
+      lines.push(CONTEXT.STALE_GUIDANCE.replace('{repo}', cwdRepo.name));
     }
 
     // Extension location hint
@@ -289,6 +238,22 @@ function contentToText(content: unknown): string | null {
   }
 
   return null;
+}
+
+function getProjectSummary(cwd: string): string {
+  const packagePath = path.join(cwd, 'package.json');
+  try {
+    const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+    if (typeof pkg.description === 'string' && pkg.description.trim()) {
+      return pkg.description.trim();
+    }
+    if (typeof pkg.name === 'string' && pkg.name.trim()) {
+      return `Local project ${pkg.name.trim()}.`;
+    }
+  } catch {
+    // Non-Node projects or unreadable package files fall back to directory name.
+  }
+  return `Local project directory ${path.basename(cwd) || cwd}.`;
 }
 
 /**

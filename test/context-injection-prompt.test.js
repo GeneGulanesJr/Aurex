@@ -66,4 +66,82 @@ describe('context injection prompt extraction', () => {
     expect(deps.state.hasInjectedContext).toBe(false);
     expect(result).toBeUndefined();
   });
+
+  test('promptless startup injects project summary without memory titles', async () => {
+    let handler;
+    const pi = {
+      on: vi.fn((_eventName, callback) => {
+        handler = callback;
+      }),
+    };
+    const deps = {
+      state: { currentProject: 'PiMemoryExtension', hasInjectedContext: false, sessionId: 1 },
+      mem: vi.fn().mockResolvedValue({
+        observations: [{ type: 'decision', title: 'Noisy prior decision', trust_score: 0.95 }],
+        personal: [{ title: 'Personal preference' }],
+        stats: { total_memories: 42, total_personal: 1, active_workflows: 0 },
+        topic: null,
+      }),
+      getKnownRepos: vi.fn().mockResolvedValue([
+        {
+          name: 'PiMemoryExtension',
+          path: process.cwd(),
+          file_count: 292,
+          symbol_count: 6913,
+          indexed_at: '2026-05-24 00:00:00',
+        },
+      ]),
+      isRepoStale: vi.fn().mockReturnValue(false),
+    };
+
+    registerBeforeAgentStart(pi, deps);
+    const result = await handler({}, { cwd: process.cwd() });
+    const content = result.message.content;
+
+    expect(deps.mem).toHaveBeenCalledWith(
+      'context',
+      expect.objectContaining({ project: 'PiMemoryExtension', limit: '1' }),
+    );
+    expect(content).toContain('### Project Context');
+    expect(content).toContain('Code index: `PiMemoryExtension`');
+    expect(content).not.toContain('Noisy prior decision');
+    expect(content).not.toContain('Personal preference');
+  });
+
+  test('prompt-matched startup caps injected memories', async () => {
+    let handler;
+    const pi = {
+      on: vi.fn((_eventName, callback) => {
+        handler = callback;
+      }),
+    };
+    const deps = {
+      state: { currentProject: 'PiMemoryExtension', hasInjectedContext: false, sessionId: 1 },
+      mem: vi.fn().mockResolvedValue({
+        observations: [
+          { type: 'decision', title: 'Matched decision 1', trust_score: 0.95 },
+          { type: 'bugfix', title: 'Matched bugfix 2', trust_score: 0.95 },
+          { type: 'pattern', title: 'Matched pattern 3', trust_score: 0.95 },
+        ],
+        personal: [],
+        stats: { total_memories: 42, total_personal: 0, active_workflows: 0 },
+        topic: 'benchmark',
+      }),
+      getKnownRepos: vi.fn().mockResolvedValue([]),
+      isRepoStale: vi.fn().mockReturnValue(false),
+    };
+
+    registerBeforeAgentStart(pi, deps);
+    const result = await handler({ prompt: 'benchmark memory context' }, { cwd: process.cwd() });
+    const content = result.message.content;
+
+    expect(deps.mem).toHaveBeenCalledWith(
+      'context',
+      expect.objectContaining({ project: 'PiMemoryExtension', limit: '5', query: 'benchmark memory context' }),
+    );
+    expect(content).toContain('### Prompt-Matched Memory');
+    expect(content).toContain('Matched decision 1');
+    expect(content).toContain('Matched bugfix 2');
+    expect(content).not.toContain('Matched pattern 3');
+  });
 });
