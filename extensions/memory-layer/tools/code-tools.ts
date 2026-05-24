@@ -62,7 +62,7 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
       min_confidence: Type.Optional(Type.Number({ description: 'Min confidence', default: 0.5 })),
       days: Type.Optional(Type.Number({ description: 'Lookback days', default: 90 })),
       refresh: Type.Optional(Type.Boolean({ description: 'Refresh cache', default: false })),
-      top: Type.Optional(Type.Number({ description: 'Max results', default: 20 })),
+      top: Type.Optional(Type.Number({ description: 'Max results', default: 5 })),
       scope: Type.Optional(Type.String({ description: 'Subdirectory scope' })),
       sort_by: Type.Optional(Type.String({ description: 'instability|afferent|efferent', default: 'instability' })),
       min_complexity: Type.Optional(Type.Number({ description: 'Min complexity', default: 5 })),
@@ -155,11 +155,12 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
         if (params.refresh) {
           args.refresh = 'true';
         }
-        if (params.top) {
+        const top = params.top || (cmd === 'search-code' ? 5 : null);
+        if (top) {
           if (cmd === 'search-code') {
-            args['max-results'] = String(params.top);
+            args['max-results'] = String(top);
           } else {
-            args.top = String(params.top);
+            args.top = String(top);
           }
         }
         if (params.scope) {

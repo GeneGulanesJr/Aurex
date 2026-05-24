@@ -1,5 +1,6 @@
 import {
   extractUserPrompt,
+  isHistoricalMemoryPrompt,
   isSourceAuthoritativePrompt,
   registerBeforeAgentStart,
 } from '../extensions/memory-layer/hooks/context-injection.ts';
@@ -33,6 +34,12 @@ describe('context injection prompt extraction', () => {
     expect(isSourceAuthoritativePrompt('Where is automatic project memory context wired into the Pi extension?')).toBe(
       false,
     );
+  });
+
+  test('detects historical memory prompts', () => {
+    expect(isHistoricalMemoryPrompt('Why did LaPis choose SQLite FTS5?')).toBe(true);
+    expect(isHistoricalMemoryPrompt('What bug led to the createDb pattern?')).toBe(true);
+    expect(isHistoricalMemoryPrompt('In the current source, what does rankObservations multiply?')).toBe(false);
   });
 
   test('source-authoritative prompts bypass memory context without mutating injection state', async () => {
@@ -160,5 +167,48 @@ describe('context injection prompt extraction', () => {
     expect(content).toContain('Matched bugfix 2');
     expect(content).not.toContain('Matched pattern 3');
     expect(content).not.toContain('Should not be injected');
+  });
+
+  test('historical prompt suppresses stale code verification warning', async () => {
+    let handler;
+    const pi = {
+      on: vi.fn((_eventName, callback) => {
+        handler = callback;
+      }),
+    };
+    const deps = {
+      state: { currentProject: 'PiMemoryExtension', hasInjectedContext: false, sessionId: 1 },
+      mem: vi.fn().mockResolvedValue({
+        observations: [
+          {
+            type: 'architecture',
+            title: 'SQLite FTS5 rationale',
+            trust_score: 0.95,
+            content: '**Why**: Avoid external services\n**Where**: src/memory-domain/search.js',
+          },
+        ],
+        personal: [],
+        stats: { total_memories: 42, total_personal: 0, active_workflows: 0 },
+        topic: 'why fts5',
+      }),
+      getKnownRepos: vi.fn().mockResolvedValue([
+        {
+          name: 'PiMemoryExtension',
+          path: process.cwd(),
+          file_count: 292,
+          symbol_count: 6913,
+          indexed_at: '2026-05-24 00:00:00',
+        },
+      ]),
+      isRepoStale: vi.fn().mockReturnValue(true),
+    };
+
+    registerBeforeAgentStart(pi, deps);
+    const result = await handler({ prompt: 'Why did LaPis choose SQLite FTS5?' }, { cwd: process.cwd() });
+    const content = result.message.content;
+
+    expect(content).toContain('Code index: `PiMemoryExtension`');
+    expect(content).not.toContain('Stale code index');
+    expect(content).toContain('Why: Avoid external services Where: src/memory-domain/search.js');
   });
 });

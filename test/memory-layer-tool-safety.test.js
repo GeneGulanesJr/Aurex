@@ -334,6 +334,7 @@ describe('memory tool renderer safety', () => {
       repo: 'app',
       symbol: 'context command',
       query: 'context command',
+      'max-results': '5',
     });
     expect(text).toContain('Code search');
     expect(text).toContain('src/memory-domain/context.js');
@@ -365,6 +366,7 @@ describe('memory tool renderer safety', () => {
     expect(mem).toHaveBeenCalledWith('search-code', {
       repo: 'app',
       query: 'context command',
+      'max-results': '5',
     });
     expect(text).toContain('Code search');
   });
@@ -394,6 +396,7 @@ describe('memory tool renderer safety', () => {
     expect(mem).toHaveBeenCalledWith('search-code', {
       repo: 'solo',
       query: 'rankObservations',
+      'max-results': '5',
     });
   });
 

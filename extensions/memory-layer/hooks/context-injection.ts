@@ -158,7 +158,7 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
       lines.push(
         `⚠️ **Code not indexed:** Project "${deps.state.currentProject}" has no code index yet. Run \`memory-code index-repo --path ${ctx.cwd} --name ${deps.state.currentProject}\` to enable memory-code analysis.`,
       );
-    } else if (isStale) {
+    } else if (isStale && !isHistoricalMemoryPrompt(promptQuery)) {
       lines.push('');
       lines.push(CONTEXT.STALE_GUIDANCE.replace('{repo}', cwdRepo.name));
     }
@@ -216,6 +216,22 @@ export function isSourceAuthoritativePrompt(prompt: string | null): boolean {
     /\bcurrent code\b/.test(normalized) ||
     /\bfrom the code\b/.test(normalized) ||
     /\banswer from (?:the )?code\b/.test(normalized)
+  );
+}
+
+export function isHistoricalMemoryPrompt(prompt: string | null): boolean {
+  if (!prompt) {
+    return false;
+  }
+
+  const normalized = prompt.toLowerCase();
+  return (
+    /\bwhy did\b/.test(normalized) ||
+    /\bwhat bug led to\b/.test(normalized) ||
+    /\brationale\b/.test(normalized) ||
+    /\bdecision\b/.test(normalized) ||
+    /\bchoose\b/.test(normalized) ||
+    /\bchose\b/.test(normalized)
   );
 }
 
