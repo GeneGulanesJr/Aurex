@@ -205,7 +205,8 @@ function buildSourceLookupGuidance(
     '## Code Lookup Guidance',
     '',
     `Current-source prompt: skip memory facts and verify against code in indexed repo \`${cwdRepo.name}\`.`,
-    `Use \`memory-code search --repo ${cwdRepo.name} --query <query>\` or \`memory-code outline --repo ${cwdRepo.name} --file <path>\` before shell code search.`,
+    `For exact symbol or return-shape questions, use \`memory-code search --repo ${cwdRepo.name} --query <query>\`, then a small targeted \`read\` around the reported file/line if the search result is not enough.`,
+    'Avoid broad shell code search and skip `memory-code outline` unless the task needs file structure.',
   ].join('\n');
 }
 
