@@ -7,16 +7,16 @@
     "apply_patch": "patches/break-createdb-config.patch",
     "seed_memory": "memory-seeds/createdb-history.json"
   },
-  "prompt": "A test is failing in test/db-config.test.js around createDb config isolation. The test expects that creating a second database doesn't overwrite the first database's config. Fix the bug causing the test to fail. Run the test to verify your fix works.",
+  "prompt": "The createDb function in db.js is broken. When a test creates an isolated database and then the main code tries to use the global database, the config is corrupted because createDb doesn't properly save and restore the global config state. Fix the config isolation in createDb so that creating a temporary DB doesn't affect the global singleton. After fixing, run: npx vitest run test/config.test.js",
   "success": {
-    "tests": ["npm test -- test/db-config.test.js --reporter=verbose 2>&1"],
-    "must_touch": ["src/memory-domain/db.js"],
-    "must_not_touch": ["test/db-config.test.js"],
+    "tests": ["npx vitest run test/config.test.js 2>&1"],
+    "must_touch": ["db.js"],
+    "must_not_touch": ["test/config.test.js"],
     "expected_facts": [
       {
         "id": "config-mutation-bug",
         "description": "createDb was mutating or not isolating config between instances",
-        "aliases": ["mutating", "overwriting", "not isolating", "config isolation", "shared config", "getConfig._cached"]
+        "aliases": ["mutating", "overwriting", "not isolating", "config isolation", "shared config", "getConfig._cached", "save and restore"]
       }
     ]
   }

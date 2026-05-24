@@ -10,7 +10,7 @@
   "success": {
     "tests": ["npm test -- test/search.test.js --reporter=verbose 2>&1"],
     "must_touch": ["src/memory-domain/search.js"],
-    "must_not_touch": ["test/search.test.js", "src/memory-domain/db.js"],
+    "must_not_touch": ["test/search.test.js", "db.js"],
     "expected_facts": [
       {
         "id": "scoring-weights-extracted",

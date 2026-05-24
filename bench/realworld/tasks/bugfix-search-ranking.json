@@ -1,0 +1,23 @@
+{
+  "id": "bugfix-search-ranking",
+  "category": "bugfix",
+  "repo": "PiMemoryExtension",
+  "setup": {
+    "checkout": "cf6b83bb2046a2d1cc32f9a0e1b8e7202d74cef3",
+    "apply_patch": "patches/break-search-ranking.patch",
+    "seed_memory": "memory-seeds/search-ranking-history.json"
+  },
+  "prompt": "The rankObservations function in src/memory-domain/search.js has a bug in its scoring. The composite ranking score is always returning the same value regardless of query relevance. The recency scoring and typeBoost are not being applied correctly. Fix the ranking logic so observations are properly ranked by relevance. After fixing, run: npx vitest run test/accuracy.test.js",
+  "success": {
+    "tests": ["npx vitest run test/accuracy.test.js 2>&1"],
+    "must_touch": ["src/memory-domain/search.js"],
+    "must_not_touch": ["test/accuracy.test.js"],
+    "expected_facts": [
+      {
+        "id": "ranking-bug",
+        "description": "The ranking composite score was not incorporating all scoring factors correctly",
+        "aliases": ["composite", "ranking", "scoring", "recencyScore", "trustScore", "typeBoost"]
+      }
+    ]
+  }
+}

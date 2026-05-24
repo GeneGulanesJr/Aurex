@@ -10,7 +10,7 @@
   "success": {
     "tests": ["npm test -- test/session-lifecycle.test.js --reporter=verbose 2>&1"],
     "must_touch": ["extensions/memory-layer/hooks/session-lifecycle.ts"],
-    "must_not_touch": ["src/memory-domain/db.js"],
+    "must_not_touch": ["db.js"],
     "expected_facts": [
       {
         "id": "on-compact-hook",
