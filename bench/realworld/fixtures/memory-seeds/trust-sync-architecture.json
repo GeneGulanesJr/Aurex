@@ -1,0 +1,8 @@
+[
+  {
+    "type": "architecture",
+    "title": "Trust sync design: only on pull/checkout/merge/rebase",
+    "content": "What: Trust sync is intentionally designed to run only after git pull, checkout, merge, rebase, reset, and stash pop operations. Why: Running trust sync on every git operation would be unnecessarily expensive and provide little additional value. The specific operations are the ones where code changes from external sources are integrated. Where: extensions/memory-layer/hooks/trust-sync.ts. Learned: This was an intentional design decision. Trust sync compares stored HEAD vs current HEAD to detect changed symbols. It should NOT be triggered on every git operation.",
+    "project": "PiMemoryExtension"
+  }
+]

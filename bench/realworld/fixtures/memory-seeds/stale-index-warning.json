@@ -1,0 +1,14 @@
+[
+  {
+    "type": "architecture",
+    "title": "Stale code index detection and guidance",
+    "content": "What: When the code index is stale (indexed code may not match current source), LaPis injects a staleness warning in the context. Why: Agents should verify against current source before relying on indexed code. Where: extensions/memory-layer/hooks/context-injection.ts adds staleness warning. Learned: The correct action is to run memory-code reindex-repo to update the index. Always verify indexed facts against current source code before acting on them.",
+    "project": "PiMemoryExtension"
+  },
+  {
+    "type": "bugfix",
+    "title": "Fixed stale index guidance verbosity",
+    "content": "What: Stale index guidance was injecting too much context (full 10 observations) when only the staleness line was needed. Why: Inflated LLM output by 1155+ chars of irrelevant observations. Where: extensions/memory-layer/hooks/context-injection.ts. Learned: The lightweight context path (stale warning only, no observations, no personal prefs) saves significant tokens for staleness-related queries.",
+    "project": "PiMemoryExtension"
+  }
+]

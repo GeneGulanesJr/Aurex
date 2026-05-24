@@ -1,0 +1,14 @@
+[
+  {
+    "type": "bugfix",
+    "title": "Fixed createDb config mutation bug",
+    "content": "What: createDb was mutating global config — calling createDb for a test DB would overwrite the cached singleton config. Why: Tests creating isolated DBs were breaking the main DB's config. Where: db.js createDb function. Learned: Always save and restore config around createDb calls. The fix adds config isolation via save/restore of getConfig._cached.",
+    "project": "PiMemoryExtension"
+  },
+  {
+    "type": "architecture",
+    "title": "createDb config isolation pattern",
+    "content": "What: createDb uses a save/restore pattern for config isolation. The function saves the current config state, creates the new DB, and restores the original config on error. Why: Prevents test DBs from polluting the main DB's config. Where: db.js. Learned: The save/restore happens around the createDb call and is critical for test isolation. On success, config is NOT auto-restored so callers can continue using the isolated DB.",
+    "project": "PiMemoryExtension"
+  }
+]
