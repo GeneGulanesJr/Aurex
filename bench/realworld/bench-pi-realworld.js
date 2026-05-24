@@ -169,7 +169,7 @@ function findLapisRoot() {
   process.exit(1);
 }
 
-function seedMemory(memorySeedPath) {
+function seedMemory(memorySeedPath, memoryOnHome) {
   if (!memorySeedPath || !fs.existsSync(memorySeedPath)) {
     return;
   }
@@ -195,11 +195,15 @@ function seedMemory(memorySeedPath) {
       args.push('--scope', seed.scope);
     }
 
-    execSync(`node "${msPath}" ${args.map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(' ')}`, {
-      cwd: lapisRoot,
-      encoding: 'utf-8',
-      timeout: 10_000,
-    });
+    const homeEnv = memoryOnHome ? `HOME=${shellQuote(memoryOnHome)} ` : '';
+    execSync(
+      `${homeEnv}node "${msPath}" ${args.map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(' ')}`,
+      {
+        cwd: lapisRoot,
+        encoding: 'utf-8',
+        timeout: 10_000,
+      },
+    );
   }
 }
 
@@ -228,6 +232,28 @@ function prepareNoMemoryHome(outDir) {
       }
     }
   }
+
+  return homeDir;
+}
+
+function prepareMemoryOnHome(outDir, taskId) {
+  const sourceAgentDir = path.join(os.homedir(), '.pi', 'agent');
+  const homeDir = path.join(outDir, `.pi-memory-on-home-${taskId}`);
+  const targetAgentDir = path.join(homeDir, '.pi', 'agent');
+  const targetMemoryDir = path.join(homeDir, '.pi', 'memory');
+  fs.mkdirSync(targetAgentDir, { recursive: true });
+  fs.mkdirSync(targetMemoryDir, { recursive: true });
+
+  for (const file of PI_CONFIG_FILES) {
+    const source = path.join(sourceAgentDir, file);
+    if (fs.existsSync(source)) {
+      fs.copyFileSync(source, path.join(targetAgentDir, file));
+    }
+  }
+
+  const dbPath = path.join(targetMemoryDir, 'memory.db');
+  const configContent = JSON.stringify({ db_path: dbPath }, null, 2);
+  fs.writeFileSync(path.join(targetMemoryDir, 'config.jsonc'), `${configContent}\n`);
 
   return homeDir;
 }
@@ -377,7 +403,7 @@ function loadTasks(tasksDir, opts) {
 // MAIN LOOP
 // ══════════════════════════════════════════════════════════
 
-async function runTaskSide(task, side, runIndex, args, repoRoot, noMemoryHome) {
+async function runTaskSide(task, side, runIndex, args, repoRoot, noMemoryHome, memoryOnHome) {
   const runId = `${task.id}.${side}.run${runIndex}`;
   const worktreePath = path.join(args.outDir, 'worktrees', runId);
   const outFile = path.join(args.outDir, 'transcripts', `${runId}.jsonl`);
@@ -406,15 +432,15 @@ async function runTaskSide(task, side, runIndex, args, repoRoot, noMemoryHome) {
       benchLog(`[${runId}] WARN: npm install failed, tests may fail`);
     }
 
-    // Seed memory for memory-on side
-    const homeDir = side === 'memory-off' ? noMemoryHome : null;
+    // Seed memory for memory-on side into isolated DB
     if (side === 'memory-on' && task.setup.seed_memory) {
       const seedPath = path.resolve(FIXTURES_DIR, task.setup.seed_memory);
       benchLog(`[${runId}] Seeding memory from ${task.setup.seed_memory}`);
-      seedMemory(seedPath);
+      seedMemory(seedPath, memoryOnHome);
     }
 
-    // Run Pi
+    // Run Pi with the appropriate HOME
+    const homeDir = side === 'memory-off' ? noMemoryHome : memoryOnHome;
     benchLog(`[${runId}] Starting Pi (${side})`);
     const command = buildPiCommand(homeDir, task.prompt, outFile);
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
@@ -673,7 +699,7 @@ function finishProgress() {
   }
 }
 
-async function runWarmup(warmupFile, repoRoot, outDir) {
+async function runWarmup(warmupFile, repoRoot, outDir, warmupHome) {
   if (!fs.existsSync(warmupFile)) {
     benchLog(`[warmup] WARN: warmup file not found: ${warmupFile}`);
     return;
@@ -686,7 +712,7 @@ async function runWarmup(warmupFile, repoRoot, outDir) {
   for (const prompt of warmup) {
     const warmupOut = path.join(outDir, 'warmup', `warmup-${Date.now()}.jsonl`);
     fs.mkdirSync(path.dirname(warmupOut), { recursive: true });
-    const command = buildPiCommand(null, prompt, warmupOut);
+    const command = buildPiCommand(warmupHome, prompt, warmupOut);
     benchLog(`[warmup] Running: ${prompt.slice(0, 80)}...`);
     // eslint-disable-next-line no-await-in-loop
     await runCommand(command, repoRoot, 120_000);
@@ -712,6 +738,12 @@ async function main() {
   const repoRoot = getRepoRoot();
   const noMemoryHome = prepareNoMemoryHome(outDir);
 
+  // For accumulate mode, create a single shared memory-on HOME
+  let accumulateMemoryOnHome = null;
+  if (args.accumulate) {
+    accumulateMemoryOnHome = prepareMemoryOnHome(outDir, 'accumulate');
+  }
+
   const longCount = tasks.filter((t) => t.horizon === 'long').length;
   const shortCount = tasks.length - longCount;
   benchLog(`[bench] Realworld Pi Memory Benchmark`);
@@ -721,7 +753,10 @@ async function main() {
   benchLog(`[bench] Output: ${outDir}`);
   benchLog(`[bench] memory-off HOME: ${noMemoryHome}`);
   if (args.accumulate) {
-    benchLog(`[bench] Accumulate mode ON — memory persists across tasks`);
+    benchLog(`[bench] Accumulate mode ON — shared memory-on HOME across tasks`);
+    benchLog(`[bench] memory-on HOME: ${accumulateMemoryOnHome}`);
+  } else {
+    benchLog(`[bench] memory-on: isolated HOME per task (seeded from fixtures)`);
   }
   if (args.warmup) {
     benchLog(`[bench] Warmup: ${args.warmup}`);
@@ -731,18 +766,29 @@ async function main() {
   const allResults = [];
 
   // Warmup once before all tasks (builds organic memory for memory-on side)
-  if (args.warmup && !args.accumulate) {
-    benchLog(`[warmup] Running warmup prompts`);
-    await runWarmup(args.warmup, repoRoot, outDir);
+  if (args.warmup) {
+    const warmupHome = accumulateMemoryOnHome || prepareMemoryOnHome(outDir, 'warmup');
+    benchLog(`[warmup] Running warmup prompts into ${warmupHome}`);
+    await runWarmup(args.warmup, repoRoot, outDir, warmupHome);
   }
 
   for (const task of tasks) {
     for (let runIndex = 0; runIndex < args.runs; runIndex++) {
+      // Create or reuse memory-on HOME
+      let memoryOnHome;
+      if (args.accumulate) {
+        memoryOnHome = accumulateMemoryOnHome;
+      } else if (runIndex === 0) {
+        memoryOnHome = prepareMemoryOnHome(outDir, task.id);
+      } else {
+        memoryOnHome = prepareMemoryOnHome(outDir, `${task.id}-run${runIndex}`);
+      }
+
       // Memory-off first, then memory-on
       // eslint-disable-next-line no-await-in-loop
-      const off = await runTaskSide(task, 'memory-off', runIndex, args, repoRoot, noMemoryHome);
+      const off = await runTaskSide(task, 'memory-off', runIndex, args, repoRoot, noMemoryHome, memoryOnHome);
       // eslint-disable-next-line no-await-in-loop
-      const on = await runTaskSide(task, 'memory-on', runIndex, args, repoRoot, noMemoryHome);
+      const on = await runTaskSide(task, 'memory-on', runIndex, args, repoRoot, noMemoryHome, memoryOnHome);
 
       allResults.push({ task_id: task.id, category: task.category, ...off });
       allResults.push({ task_id: task.id, category: task.category, ...on });
@@ -772,4 +818,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { createWorktree, removeWorktree, applyPatch, seedMemory, gradeRun, printReport, loadTasks };
+module.exports = { createWorktree, removeWorktree, applyPatch, seedMemory, gradeRun, printReport, loadTasks, prepareNoMemoryHome, prepareMemoryOnHome };
