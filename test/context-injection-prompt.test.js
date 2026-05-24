@@ -1,4 +1,4 @@
-import { extractUserPrompt } from '../extensions/memory-layer/hooks/context-injection.ts';
+import { extractUserPrompt, isSourceAuthoritativePrompt } from '../extensions/memory-layer/hooks/context-injection.ts';
 
 describe('context injection prompt extraction', () => {
   test('uses the latest user message content parts', () => {
@@ -18,5 +18,16 @@ describe('context injection prompt extraction', () => {
 
   test('returns null when no text prompt is available', () => {
     expect(extractUserPrompt({ messages: [{ role: 'assistant', content: 'Nope' }] })).toBeNull();
+  });
+
+  test('detects prompts that should inspect current source instead of auto memory', () => {
+    expect(
+      isSourceAuthoritativePrompt(
+        'In the current source, what does rankObservations multiply by typeBoost? Answer from the code.',
+      ),
+    ).toBe(true);
+    expect(isSourceAuthoritativePrompt('Where is automatic project memory context wired into the Pi extension?')).toBe(
+      false,
+    );
   });
 });

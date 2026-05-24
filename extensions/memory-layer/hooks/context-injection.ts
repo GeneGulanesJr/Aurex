@@ -20,6 +20,10 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
     }
 
     const promptQuery = extractUserPrompt(event);
+    if (isSourceAuthoritativePrompt(promptQuery)) {
+      return;
+    }
+
     const contextLimit = promptQuery ? CONTEXT.PROMPT_RELEVANT_LIMIT : CONTEXT.DEFAULT_LIMIT;
     const contextResult = await deps.mem('context', {
       project: deps.state.currentProject,
@@ -246,6 +250,20 @@ export function extractUserPrompt(event: unknown): string | null {
   }
 
   return null;
+}
+
+export function isSourceAuthoritativePrompt(prompt: string | null): boolean {
+  if (!prompt) {
+    return false;
+  }
+
+  const normalized = prompt.toLowerCase();
+  return (
+    /\bcurrent source\b/.test(normalized) ||
+    /\bcurrent code\b/.test(normalized) ||
+    /\bfrom the code\b/.test(normalized) ||
+    /\banswer from (?:the )?code\b/.test(normalized)
+  );
 }
 
 function contentToText(content: unknown): string | null {
