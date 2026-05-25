@@ -1,11 +1,7 @@
-// Module boundary:
-// Owns documentation indexing and intelligence: Markdown sections, links,
-// Glossary terms, examples, and doc analytics. Coverage may use a narrow code
-// Symbol lookup, but this module must not depend on memory/code-analysis internals.
-
 const { withDb } = require('../../utils');
 const repos = require('./repos');
 const markdownParser = require('./markdown-parser');
+const htmlParser = require('./html-parser');
 const sections = require('./sections');
 const links = require('./links');
 const glossary = require('./glossary');
@@ -28,10 +24,12 @@ module.exports = {
   getStalePages: withDb(analytics.getStalePages),
   getDuplicateSections: withDb(analytics.getDuplicateSections),
   _parseMarkdownSections: markdownParser.parseMarkdownSections,
+  _extractHtmlSections: htmlParser.extractHtmlSections,
+  _extractHtmlLinks: htmlParser.extractHtmlLinks,
   _slugify: markdownParser.slugify,
   _extractLinks: links.extractLinks,
   _extractGlossaryTerms: glossary.extractGlossaryTerms,
   _extractCodeBlocks: examples.extractCodeBlocks,
   _getDocCoverageReport: analytics.getDocCoverageReport,
-  _modules: { repos, markdownParser, sections, links, glossary, examples, analytics },
+  _modules: { repos, markdownParser, htmlParser, sections, links, glossary, examples, analytics },
 };

@@ -1,19 +1,182 @@
-// HTML scope builder — resource refs only (inline script bindings deferred to v1 limitation).
-// Covers: element_id, css_class, script_src.
+// HTML scope builder — walks a tree-sitter AST for DOM-aware scope bindings.
+// Covers: element_id, css_class, script_src, link_href, component_ref.
 
 const { addBinding, dedupBindings } = require('./shared');
 
-function buildHtmlScopeBindings(tree, source, _filePath) {
-  const bindings = [];
+function getTagName(tagNode) {
+  for (const ch of tagNode.children) {
+    if (ch.type === 'tag_name') {
+      return ch.text;
+    }
+  }
+  return '';
+}
 
-  // V1: Use regex-based extraction for HTML since tree-sitter HTML grammars
-  // Vary widely and the spec says inline scripts produce no scope bindings.
+function getAttrs(tagNode) {
+  const attrs = [];
+  for (const ch of tagNode.children) {
+    if (ch.type === 'attribute') {
+      let name = '';
+      let value = '';
+      for (const ac of ch.children) {
+        if (ac.type === 'attribute_name') {
+          name = ac.text;
+        }
+        if (ac.type === 'quoted_attribute_value') {
+          for (const vc of ac.children) {
+            if (vc.type === 'attribute_value') {
+              value = vc.text;
+            }
+          }
+        }
+      }
+      attrs.push({ name, value });
+    }
+  }
+  return attrs;
+}
+
+function buildHtmlScopeBindingsAst(tree, _source) {
+  const bindings = [];
+  const root = tree.rootNode;
+
+  function walk(node, depth) {
+    if (!node) {
+      return;
+    }
+
+    if (node.type === 'element' || node.type === 'script_element' || node.type === 'style_element') {
+      let startTag = null;
+      for (const ch of node.children) {
+        if (ch.type === 'start_tag' || ch.type === 'self_closing_tag') {
+          startTag = ch;
+          break;
+        }
+      }
+
+      if (startTag) {
+        const tagName = getTagName(startTag).toLowerCase();
+        const attrs = getAttrs(startTag);
+        const sl = startTag.startPosition.row + 1;
+        const el = node.endPosition ? node.endPosition.row + 1 : sl;
+        const sb = startTag.startIndex;
+        const eb = node.endIndex;
+
+        for (const attr of attrs) {
+          if (attr.name === 'id' && attr.value) {
+            addBinding(bindings, {
+              name: attr.value,
+              kind: 'element_id',
+              origin: 'local',
+              sourceModule: null,
+              sourceName: null,
+              lineStart: sl,
+              lineEnd: el,
+              scopeDepth: depth,
+              byteStart: sb,
+              byteEnd: eb,
+            });
+          }
+        }
+
+        for (const attr of attrs) {
+          if (attr.name === 'class' && attr.value) {
+            for (const cls of attr.value.split(/\s+/).filter(Boolean)) {
+              addBinding(bindings, {
+                name: cls,
+                kind: 'css_class',
+                origin: 'local',
+                sourceModule: null,
+                sourceName: null,
+                lineStart: sl,
+                lineEnd: el,
+                scopeDepth: depth,
+                byteStart: sb,
+                byteEnd: eb,
+              });
+            }
+          }
+        }
+
+        if (tagName === 'script') {
+          for (const attr of attrs) {
+            if (attr.name === 'src' && attr.value) {
+              addBinding(bindings, {
+                name: attr.value,
+                kind: 'script_src',
+                origin: 'external_file',
+                sourceModule: attr.value,
+                sourceName: null,
+                lineStart: sl,
+                lineEnd: el,
+                scopeDepth: depth,
+                byteStart: sb,
+                byteEnd: eb,
+              });
+            }
+          }
+        }
+
+        if (tagName === 'link') {
+          for (const attr of attrs) {
+            if (attr.name === 'href' && attr.value) {
+              addBinding(bindings, {
+                name: attr.value,
+                kind: 'link_href',
+                origin: 'external_file',
+                sourceModule: attr.value,
+                sourceName: null,
+                lineStart: sl,
+                lineEnd: sl,
+                scopeDepth: depth,
+                byteStart: sb,
+                byteEnd: eb,
+              });
+            }
+          }
+        }
+
+        const isCustom = tagName.includes('-') || /^[A-Z]/.test(getTagName(startTag));
+        if (isCustom) {
+          addBinding(bindings, {
+            name: getTagName(startTag),
+            kind: 'component_ref',
+            origin: 'local',
+            sourceModule: null,
+            sourceName: null,
+            lineStart: sl,
+            lineEnd: el,
+            scopeDepth: depth,
+            byteStart: sb,
+            byteEnd: eb,
+          });
+        }
+      }
+
+      for (const ch of node.children) {
+        if (ch.type === 'element' || ch.type === 'script_element' || ch.type === 'style_element') {
+          walk(ch, depth + 1);
+        }
+      }
+      return;
+    }
+
+    for (const ch of node.children) {
+      walk(ch, depth);
+    }
+  }
+
+  walk(root, 0);
+  return dedupBindings(bindings);
+}
+
+function buildHtmlScopeBindingsRegex(source) {
+  const bindings = [];
   const lines = source.split('\n');
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const lineNum = i + 1;
 
-    // Script src
     const scriptSrcMatch = line.match(/\bsrc\s*=\s*["']([^"']+)["']/i);
     if (scriptSrcMatch && /<script/i.test(line)) {
       addBinding(bindings, {
@@ -30,7 +193,6 @@ function buildHtmlScopeBindings(tree, source, _filePath) {
       });
     }
 
-    // Element IDs
     const idMatch = line.match(/\bid\s*=\s*["']([^"']+)["']/i);
     if (idMatch) {
       addBinding(bindings, {
@@ -47,11 +209,9 @@ function buildHtmlScopeBindings(tree, source, _filePath) {
       });
     }
 
-    // CSS classes (multiple per line)
     const classMatch = line.match(/\bclass\s*=\s*["']([^"']+)["']/i);
     if (classMatch) {
-      const classes = classMatch[1].split(/\s+/).filter(Boolean);
-      for (const cls of classes) {
+      for (const cls of classMatch[1].split(/\s+/).filter(Boolean)) {
         addBinding(bindings, {
           name: cls,
           kind: 'css_class',
@@ -67,8 +227,14 @@ function buildHtmlScopeBindings(tree, source, _filePath) {
       }
     }
   }
-
   return dedupBindings(bindings);
+}
+
+function buildHtmlScopeBindings(tree, source, _filePath) {
+  if (tree && tree.rootNode && typeof tree.rootNode.childCount === 'number') {
+    return buildHtmlScopeBindingsAst(tree, source);
+  }
+  return buildHtmlScopeBindingsRegex(source);
 }
 
 module.exports = { buildHtmlScopeBindings };
