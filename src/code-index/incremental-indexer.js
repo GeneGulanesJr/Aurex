@@ -5,6 +5,7 @@ const { RESULT_LIMITS, WORKER_POOL } = require('../../constants');
 const { hashContent } = require('../../utils');
 const { createCodeIndexRepository } = require('./repos');
 const { scanRepository } = require('./scanner');
+const { LOCK_FILE_RE } = require('./scanner');
 const { createParserRegistry, getLanguageForFile } = require('./parser-registry');
 const { extractSymbolsSplit, normalizeSymbolHot } = require('./symbol-extractor');
 const {
@@ -949,7 +950,10 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
   const gitDelta =
     explicitDelta || (fs.existsSync(existing.path) ? getGitDelta(existing.path, existing.head_commit) : null);
   const gitChangedFiles = gitDelta
-    ? gitDelta.changed.filter((filePath) => fs.existsSync(filePath) && registry.canParseFile(filePath))
+    ? gitDelta.changed.filter(
+        (filePath) =>
+          fs.existsSync(filePath) && registry.canParseFile(filePath) && !LOCK_FILE_RE.test(filePath.replace(/\\/g, '/')),
+      )
     : null;
   const gitDeletedFiles = gitDelta ? gitDelta.deleted : [];
   const explicitChangedPathMode = gitDelta && gitDelta.source === 'changed-paths';
