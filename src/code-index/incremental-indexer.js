@@ -1015,6 +1015,7 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
 
     const allSymbols = [];
     const scopeWork = [];
+    const fileMutations = [];
 
     for (let ci = 0; ci < changedRecords.length; ci++) {
       const { filePath, record, fileParams, prev } = changedRecords[ci];
@@ -1029,21 +1030,16 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
           hotSymbols.length,
         );
 
-        let fileId;
-        if (prev) {
-          repository.clearFileSymbols(prev.id);
-          repository.updateFile(prev.id, fileParams);
-          fileId = prev.id;
-        } else {
-          fileId = repository.insertFile(fileParams);
-        }
+        fileMutations.push({ prev, fileParams });
+        const mutationIndex = fileMutations.length - 1;
 
         for (let si = 0; si < hotSymbols.length; si++) {
           const hot = hotSymbols[si];
           const cold = coldSymbols[si] || {};
           allSymbols.push({
+            _mutationIndex: mutationIndex,
             repoId: existing.id,
-            fileId,
+            fileId: -1,
             filePath,
             name: hot.name,
             kind: hot.kind,
@@ -1068,34 +1064,65 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
         }
         symbolCount += hotSymbols.length;
         reindexed++;
-        changedFileIds.push(fileId);
-        scopeWork.push({ filePath, fileId, record, tree });
+        scopeWork.push({ filePath, tree, mutationIndex });
       } catch (e) {
         skipped.push({ file: filePath, error: e.message });
         recordDiagnostic(repository, existing.id, { filePath, content: '' }, 'error', e.message, 0);
       }
     }
 
-    if (allSymbols.length > 0) {
-      if (typeof repository.insertSymbolBulk === 'function') {
-        repository.insertSymbolBulk(allSymbols);
-      } else if (typeof repository.insertSymbolBatch === 'function') {
-        repository.insertSymbolBatch(allSymbols);
+    const applyMutations = () => {
+      const mutationFileIds = new Array(fileMutations.length);
+      for (let mi = 0; mi < fileMutations.length; mi++) {
+        const { prev, fileParams } = fileMutations[mi];
+        let fileId;
+        if (prev) {
+          repository.clearFileSymbols(prev.id);
+          repository.updateFile(prev.id, fileParams);
+          fileId = prev.id;
+        } else {
+          fileId = repository.insertFile(fileParams);
+        }
+        mutationFileIds[mi] = fileId;
+        changedFileIds.push(fileId);
       }
+
+      for (const sym of allSymbols) {
+        sym.fileId = mutationFileIds[sym._mutationIndex];
+        delete sym._mutationIndex;
+      }
+
+      if (allSymbols.length > 0) {
+        if (typeof repository.insertSymbolBulk === 'function') {
+          repository.insertSymbolBulk(allSymbols);
+        } else if (typeof repository.insertSymbolBatch === 'function') {
+          repository.insertSymbolBatch(allSymbols);
+        }
+      }
+
+      return mutationFileIds;
+    };
+
+    let mutationFileIds;
+    if (typeof repository.withTransaction === 'function') {
+      mutationFileIds = repository.withTransaction(applyMutations);
+    } else {
+      mutationFileIds = applyMutations();
     }
 
-    for (const { filePath, fileId, record, tree } of scopeWork) {
+    for (const { filePath, tree, mutationIndex } of scopeWork) {
       try {
+        const fileId = mutationFileIds[mutationIndex];
         const scopeBuilder = require('./scope-builder').getScopeBuilder;
         const builder = scopeBuilder(filePath);
         if (builder) {
           let treeObj = tree;
           if (!treeObj) {
-            const parseResult = registry.parseTree(filePath, record.content);
+            const parseResult = registry.parseTree(filePath, changedRecords[mutationIndex].record.content);
             treeObj = parseResult ? parseResult.tree : null;
           }
           if (treeObj) {
-            const scopeBindings = builder(treeObj, record.content, filePath);
+            const scopeBindings = builder(treeObj, changedRecords[mutationIndex].record.content, filePath);
             if (scopeBindings.length > 0) {
               insertScopeBindings(db, existing.id, fileId, scopeBindings);
             }

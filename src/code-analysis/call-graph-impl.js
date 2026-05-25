@@ -318,6 +318,10 @@ function buildCallGraph(db, repoId, opts = {}) {
     return null;
   }
 
+  const pendingEdges = [];
+  const totalFiles = symbolsByFile.size;
+  let processedFiles = 0;
+
   function processRegexFallback(sym, fileContent) {
     if (sym.end_byte <= sym.start_byte) {
       return;
@@ -357,9 +361,6 @@ function buildCallGraph(db, repoId, opts = {}) {
     }
   }
 
-  const pendingEdges = [];
-  const totalFiles = symbolsByFile.size;
-  let processedFiles = 0;
 
   for (const [fileId, fileSymbols] of symbolsByFile) {
     const meta = fileById.get(fileId);
