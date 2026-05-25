@@ -86,83 +86,56 @@ function createCodeIndexRepository(deps) {
       return this.createRepo({ name, path });
     },
     clearRepoIndex(repoId, options = {}) {
-      const batchSize = Math.max(1, Number(options.batchSize) || 1000);
       const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
       const emit = (message, extra = {}) => {
         if (onProgress) {
           onProgress({ message, ...extra });
         }
       };
-      const deleteByIdBatch = ({ label, selectSql, selectParams = [], idColumn = 'id' }) => {
-        let deleted = 0;
-        emit(`Clearing ${label.name}...`, { deleted });
-        for (;;) {
-          const rows = sqlJson(selectSql, [...selectParams, batchSize]);
-          if (!rows.length) {
-            break;
-          }
-          const ids = rows.map((row) => row[idColumn]);
-          const placeholders = ids.map(() => '?').join(', ');
-          sqlRun(`DELETE FROM ${label.table} WHERE ${idColumn} IN (${placeholders})`, ids);
-          deleted += ids.length;
-          emit(`Cleared ${deleted} ${label.name}`, { deleted });
-          if (ids.length < batchSize) {
-            break;
-          }
-        }
-        return deleted;
-      };
 
       const totals = {};
       _withTransaction(() => {
-        totals.symbolComplexity = deleteByIdBatch({
-          label: { table: 'symbol_complexity', name: 'complexity rows' },
-          selectSql:
-            'SELECT sc.id FROM symbol_complexity sc JOIN code_symbols s ON s.id = sc.symbol_id WHERE s.repo_id = ? LIMIT ?',
-          selectParams: [repoId],
-        });
-        totals.calls = deleteByIdBatch({
-          label: { table: 'code_calls', name: 'call edges' },
-          selectSql: 'SELECT id FROM code_calls WHERE repo_id = ? LIMIT ?',
-          selectParams: [repoId],
-        });
-        totals.imports = deleteByIdBatch({
-          label: { table: 'code_imports', name: 'import edges' },
-          selectSql: 'SELECT id FROM code_imports WHERE repo_id = ? LIMIT ?',
-          selectParams: [repoId],
-        });
-        totals.churn = deleteByIdBatch({
-          label: { table: 'churn_metrics', name: 'churn rows' },
-          selectSql: 'SELECT id FROM churn_metrics WHERE repo_id = ? LIMIT ?',
-          selectParams: [repoId],
-        });
-        totals.diagnostics = deleteByIdBatch({
-          label: { table: 'code_file_diagnostics', name: 'diagnostic rows' },
-          selectSql: 'SELECT id FROM code_file_diagnostics WHERE repo_id = ? LIMIT ?',
-          selectParams: [repoId],
-        });
-        totals.scopeResolution = deleteByIdBatch({
-          label: { table: 'scope_resolution', name: 'scope resolutions' },
-          selectSql:
-            'SELECT binding_id FROM scope_resolution WHERE binding_id IN (SELECT id FROM file_scope_bindings WHERE repo_id = ?) LIMIT ?',
-          selectParams: [repoId],
-          idColumn: 'binding_id',
-        });
-        totals.scopeBindings = deleteByIdBatch({
-          label: { table: 'file_scope_bindings', name: 'scope bindings' },
-          selectSql: 'SELECT id FROM file_scope_bindings WHERE repo_id = ? LIMIT ?',
-          selectParams: [repoId],
-        });
-        totals.symbols = deleteByIdBatch({
-          label: { table: 'code_symbols', name: 'symbols' },
-          selectSql: 'SELECT id FROM code_symbols WHERE repo_id = ? LIMIT ?',
-          selectParams: [repoId],
-        });
-        totals.files = deleteByIdBatch({
-          label: { table: 'code_files', name: 'files' },
-          selectSql: 'SELECT id FROM code_files WHERE repo_id = ? LIMIT ?',
-          selectParams: [repoId],
-        });
+        emit('Clearing complexity rows...');
+        const complexityResult = sqlRun(
+          'DELETE FROM symbol_complexity WHERE symbol_id IN (SELECT id FROM code_symbols WHERE repo_id = ?)',
+          [repoId],
+        );
+        totals.symbolComplexity = complexityResult.changes || 0;
+
+        emit('Clearing call edges...');
+        const callsResult = sqlRun('DELETE FROM code_calls WHERE repo_id = ?', [repoId]);
+        totals.calls = callsResult.changes || 0;
+
+        emit('Clearing import edges...');
+        const importsResult = sqlRun('DELETE FROM code_imports WHERE repo_id = ?', [repoId]);
+        totals.imports = importsResult.changes || 0;
+
+        emit('Clearing churn rows...');
+        const churnResult = sqlRun('DELETE FROM churn_metrics WHERE repo_id = ?', [repoId]);
+        totals.churn = churnResult.changes || 0;
+
+        emit('Clearing diagnostics...');
+        const diagResult = sqlRun('DELETE FROM code_file_diagnostics WHERE repo_id = ?', [repoId]);
+        totals.diagnostics = diagResult.changes || 0;
+
+        emit('Clearing scope resolutions...');
+        const scopeResResult = sqlRun(
+          'DELETE FROM scope_resolution WHERE binding_id IN (SELECT id FROM file_scope_bindings WHERE repo_id = ?)',
+          [repoId],
+        );
+        totals.scopeResolution = scopeResResult.changes || 0;
+
+        emit('Clearing scope bindings...');
+        const scopeBindResult = sqlRun('DELETE FROM file_scope_bindings WHERE repo_id = ?', [repoId]);
+        totals.scopeBindings = scopeBindResult.changes || 0;
+
+        emit('Clearing symbols...');
+        const symbolsResult = sqlRun('DELETE FROM code_symbols WHERE repo_id = ?', [repoId]);
+        totals.symbols = symbolsResult.changes || 0;
+
+        emit('Clearing files...');
+        const filesResult = sqlRun('DELETE FROM code_files WHERE repo_id = ?', [repoId]);
+        totals.files = filesResult.changes || 0;
       });
       return totals;
     },

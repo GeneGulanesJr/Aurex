@@ -162,52 +162,29 @@ describe('code-index symbol extractor', () => {
 });
 
 describe('code-index repository clearing', () => {
-  it('clears derived index rows in batches before source rows and emits progress', () => {
+  it('clears derived index rows with direct DELETE statements and emits progress', () => {
     const calls = [];
     const progress = [];
-    const rowsBySql = new Map();
-    const key = (sql) => sql.replace(/\s+/g, ' ').trim();
-
-    function queueRows(sql, batches) {
-      rowsBySql.set(
-        key(sql),
-        batches.map((batch) => batch.map((id) => ({ id }))),
-      );
-    }
-
-    function queueBindingRows(sql, batches) {
-      rowsBySql.set(
-        key(sql),
-        batches.map((batch) => batch.map((id) => ({ binding_id: id }))),
-      );
-    }
-
-    queueRows(
-      'SELECT sc.id FROM symbol_complexity sc JOIN code_symbols s ON s.id = sc.symbol_id WHERE s.repo_id = ? LIMIT ?',
-      [[1, 2], []],
-    );
-    queueRows('SELECT id FROM code_calls WHERE repo_id = ? LIMIT ?', [[3], []]);
-    queueRows('SELECT id FROM code_imports WHERE repo_id = ? LIMIT ?', [[]]);
-    queueRows('SELECT id FROM churn_metrics WHERE repo_id = ? LIMIT ?', [[]]);
-    queueRows('SELECT id FROM code_file_diagnostics WHERE repo_id = ? LIMIT ?', [[6], []]);
-    queueBindingRows(
-      'SELECT binding_id FROM scope_resolution WHERE binding_id IN (SELECT id FROM file_scope_bindings WHERE repo_id = ?) LIMIT ?',
-      [[7], []],
-    );
-    queueRows('SELECT id FROM file_scope_bindings WHERE repo_id = ? LIMIT ?', [[8], []]);
-    queueRows('SELECT id FROM code_symbols WHERE repo_id = ? LIMIT ?', [[4], []]);
-    queueRows('SELECT id FROM code_files WHERE repo_id = ? LIMIT ?', [[5], []]);
 
     const repository = createCodeIndexRepository({
-      sqlJson(sql) {
-        const batches = rowsBySql.get(key(sql));
-        if (!batches) {
-          throw new Error(`unexpected query: ${sql}`);
-        }
-        return batches.shift() || [];
+      sqlJson() {
+        throw new Error('clearRepoIndex should not use sqlJson');
       },
       sqlRun(sql, params) {
         calls.push([sql, params]);
+        const changes = {
+          'DELETE FROM symbol_complexity WHERE symbol_id IN (SELECT id FROM code_symbols WHERE repo_id = ?)': 2,
+          'DELETE FROM code_calls WHERE repo_id = ?': 1,
+          'DELETE FROM code_imports WHERE repo_id = ?': 0,
+          'DELETE FROM churn_metrics WHERE repo_id = ?': 0,
+          'DELETE FROM code_file_diagnostics WHERE repo_id = ?': 1,
+          'DELETE FROM scope_resolution WHERE binding_id IN (SELECT id FROM file_scope_bindings WHERE repo_id = ?)': 1,
+          'DELETE FROM file_scope_bindings WHERE repo_id = ?': 1,
+          'DELETE FROM code_symbols WHERE repo_id = ?': 1,
+          'DELETE FROM code_files WHERE repo_id = ?': 1,
+        };
+        const key = sql.replace(/\s+/g, ' ').trim();
+        return { changes: changes[key] || 0 };
       },
       withTransaction(fn) {
         calls.push(['BEGIN']);
@@ -217,7 +194,7 @@ describe('code-index repository clearing', () => {
       },
     });
 
-    const totals = repository.clearRepoIndex(42, { batchSize: 2, onProgress: (p) => progress.push(p.message) });
+    const totals = repository.clearRepoIndex(42, { onProgress: (p) => progress.push(p.message) });
 
     expect(totals).toMatchObject({
       symbolComplexity: 2,
@@ -230,17 +207,19 @@ describe('code-index repository clearing', () => {
     });
     expect(calls.map((call) => (Array.isArray(call) ? call[0] : call))).toEqual([
       'BEGIN',
-      'DELETE FROM symbol_complexity WHERE id IN (?, ?)',
-      'DELETE FROM code_calls WHERE id IN (?)',
-      'DELETE FROM code_file_diagnostics WHERE id IN (?)',
-      'DELETE FROM scope_resolution WHERE binding_id IN (?)',
-      'DELETE FROM file_scope_bindings WHERE id IN (?)',
-      'DELETE FROM code_symbols WHERE id IN (?)',
-      'DELETE FROM code_files WHERE id IN (?)',
+      'DELETE FROM symbol_complexity WHERE symbol_id IN (SELECT id FROM code_symbols WHERE repo_id = ?)',
+      'DELETE FROM code_calls WHERE repo_id = ?',
+      'DELETE FROM code_imports WHERE repo_id = ?',
+      'DELETE FROM churn_metrics WHERE repo_id = ?',
+      'DELETE FROM code_file_diagnostics WHERE repo_id = ?',
+      'DELETE FROM scope_resolution WHERE binding_id IN (SELECT id FROM file_scope_bindings WHERE repo_id = ?)',
+      'DELETE FROM file_scope_bindings WHERE repo_id = ?',
+      'DELETE FROM code_symbols WHERE repo_id = ?',
+      'DELETE FROM code_files WHERE repo_id = ?',
       'COMMIT',
     ]);
-    expect(progress).toContain('Cleared 2 complexity rows');
-    expect(progress).toContain('Cleared 1 symbols');
+    expect(progress).toContain('Clearing complexity rows...');
+    expect(progress).toContain('Clearing symbols...');
   });
 });
 

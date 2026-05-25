@@ -183,16 +183,16 @@ function _sqlJson(query, params = []) {
   }, 'sqlJson');
 }
 
-function _sqlRun(query, params = []) {
-  return retryOnBusy(() => {
-    try {
-      const stmt = _db.prepare(query);
-      stmt.run(...params);
-    } catch (e) {
-      throw new Error(`SQL error: ${e.message}\nQuery: ${query}`, { cause: e });
-    }
-  }, 'sqlRun');
-}
+ function _sqlRun(query, params = []) {
+   return retryOnBusy(() => {
+     try {
+       const stmt = _db.prepare(query);
+       return stmt.run(...params);
+     } catch (e) {
+       throw new Error(`SQL error: ${e.message}\nQuery: ${query}`, { cause: e });
+     }
+   }, 'sqlRun');
+ }
 
 function _sqlExec(sql) {
   return retryOnBusy(() => {
