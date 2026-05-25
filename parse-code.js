@@ -216,15 +216,6 @@ function parseContent(filePath, content) {
 
   const symbols = _routeToExtractor(filePath, content, cfg.parser, cfg.langConfig);
   if (symbols.length === 0 && content.trim().length > 0) {
-    const ext = path.extname(filePath).toLowerCase();
-    const isJsTs = ext === '.js' || ext === '.jsx' || ext === '.mjs' || ext === '.cjs' ||
-      ext === '.ts' || ext === '.mts' || ext === '.cts' || ext === '.tsx';
-    if (isJsTs) {
-      const hasCodePattern = /\b(function|class|const|let|var|import|export|interface|type|enum|async|yield)\s/.test(content);
-      if (!hasCodePattern) {
-        return [];
-      }
-    }
     return _fallbackExtractSymbols(filePath, content);
   }
   return symbols;
