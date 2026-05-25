@@ -1160,12 +1160,16 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
 
   if (changedRecords.length === 0 && unchanged === totalFiles) {
     const totalMs = Date.now() - t0;
+    // Preserve the existing total symbol count so the formatter shows
+    // the real index size, not "0 symbols" (which misleads users into
+    // thinking the index is empty when it's actually up-to-date).
+    const existingSymbolCount = (() => { try { const r = db.prepare('SELECT symbol_count FROM code_repos WHERE id = ?').get(existing.id); return r ? r.symbol_count : 0; } catch { return 0; } })();
     emitProgress(args, 'done', {
       message: `No files changed: ${unchanged} unchanged (${(totalMs / 1000).toFixed(1)}s)`,
-    }, { files_total: totalFiles, files_done: totalFiles, symbols: 0 });
+    }, { files_total: totalFiles, files_done: totalFiles, symbols: existingSymbolCount });
     return {
       success: true, repo, mode, name: repo,
-      file_count: totalFiles, symbol_count: 0, files_checked: totalFiles,
+      file_count: totalFiles, symbol_count: existingSymbolCount, files_checked: totalFiles,
       files_hashed: hashed, files_reindexed: 0, files_unchanged: unchanged,
       files_removed: 0, files_skipped: skipped.length, symbols_extracted: 0,
       strategy: gitDelta ? 'git-diff' : 'scan-hash',

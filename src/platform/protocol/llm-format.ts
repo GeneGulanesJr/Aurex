@@ -266,7 +266,14 @@ function formatCodeResult(mode: string, result: any): string {
       if (result.error) {
         return `Error: ${result.error}`;
       }
-      return `✅ Repo "${result.name || result.repo}" reindexed: ${result.file_count || 0} files, ${result.symbol_count || 0} symbols (${result.mode || 'incremental'})`;
+      const reindexSymbols = result.symbol_count || 0;
+      const reindexExtracted = result.symbols_extracted ?? null;
+      const reindexUnchanged = result.files_unchanged === result.file_count;
+      if (reindexUnchanged) {
+        return `✅ Repo "${result.name || result.repo}" already up-to-date: ${result.file_count || 0} files, ${reindexSymbols} symbols (no changes since last index)`;
+      }
+      const extractedNote = reindexExtracted !== null ? ` (${reindexExtracted} new)` : '';
+      return `✅ Repo "${result.name || result.repo}" reindexed: ${result.file_count || 0} files, ${reindexSymbols} symbols${extractedNote} (${result.mode || 'incremental'})`;
     }
     case 'index-docs': {
       if (result.error) {
