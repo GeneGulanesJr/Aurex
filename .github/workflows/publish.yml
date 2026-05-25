@@ -20,9 +20,10 @@ jobs:
   publish:
     needs: test
     runs-on: ubuntu-latest
+    environment: publish
     permissions:
       contents: read
-      id-token: write          # for npm provenance
+      id-token: write          # OIDC for npm Trusted Publishing
     steps:
       - uses: actions/checkout@v4
 
@@ -33,15 +34,12 @@ jobs:
 
       - run: npm ci
 
-      # Verify package.json version matches the release tag (prevent accidental mismatch)
+      # Verify package.json version matches the release tag
       - name: Verify version matches tag
         run: |
           PKG_VERSION=$(node -p "require('./package.json').version")
-          # Strip optional 'v' prefix from tag (supports both v1.0.0 and 1.0.0)
           TAG_VERSION="${GITHUB_REF_NAME#v}"
           echo "package.json: $PKG_VERSION  |  tag: $TAG_VERSION"
           [ "$PKG_VERSION" = "$TAG_VERSION" ] || { echo "::error::Version mismatch — tag=$TAG_VERSION pkg=$PKG_VERSION"; exit 1; }
 
       - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
