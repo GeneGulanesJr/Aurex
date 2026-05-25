@@ -456,7 +456,12 @@ describeIntegration('incremental derived rebuild integration', () => {
     });
 
     it('handles deleted files in incremental reindex', () => {
-      fs.unlinkSync(path.join(tmpRepo, 'y.js'));
+      const yPath = path.join(tmpRepo, 'y.js');
+      if (!fs.existsSync(yPath)) {
+        fs.writeFileSync(yPath, 'function y() { return 2; }');
+        run(`reindex-repo --repo ${name} --mode incremental`);
+      }
+      fs.unlinkSync(yPath);
       const result = run(`reindex-repo --repo ${name} --mode incremental`);
       expect(result.success).toBe(true);
       expect(result.files_removed).toBeGreaterThanOrEqual(1);

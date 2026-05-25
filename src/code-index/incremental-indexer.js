@@ -1158,11 +1158,18 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
     }
   }
 
-  if (changedRecords.length === 0 && unchanged === totalFiles) {
+  const currentFilesSet = new Set(files);
+  const staleFiles =
+    gitDelta || explicitChangedPathMode
+      ? [...existingFiles.entries()].filter(([filePath]) => gitDeletedFiles.includes(filePath))
+      : [...existingFiles.entries()].filter(([filePath]) => !currentFilesSet.has(filePath));
+  for (const [, fileInfo] of staleFiles) {
+    deletedFileIds.push(fileInfo.id);
+    repository.deleteFile(fileInfo.id);
+  }
+
+  if (changedRecords.length === 0 && unchanged === totalFiles && staleFiles.length === 0) {
     const totalMs = Date.now() - t0;
-    // Preserve the existing total symbol count so the formatter shows
-    // the real index size, not "0 symbols" (which misleads users into
-    // thinking the index is empty when it's actually up-to-date).
     const existingSymbolCount = (() => { try { const r = db.prepare('SELECT symbol_count FROM code_repos WHERE id = ?').get(existing.id); return r ? r.symbol_count : 0; } catch { return 0; } })();
     emitProgress(args, 'done', {
       message: `No files changed: ${unchanged} unchanged (${(totalMs / 1000).toFixed(1)}s)`,
@@ -1181,16 +1188,6 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
       skipped, skip_report: skipReport,
       timing_ms: { total: totalMs },
     };
-  }
-
-  const currentFilesSet = new Set(files);
-  const staleFiles =
-    gitDelta || explicitChangedPathMode
-      ? [...existingFiles.entries()].filter(([filePath]) => gitDeletedFiles.includes(filePath))
-      : [...existingFiles.entries()].filter(([filePath]) => !currentFilesSet.has(filePath));
-  for (const [, fileInfo] of staleFiles) {
-    deletedFileIds.push(fileInfo.id);
-    repository.deleteFile(fileInfo.id);
   }
 
   emitProgress(args, 'cleanup', {
