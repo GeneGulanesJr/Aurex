@@ -5,6 +5,7 @@ const { CODE_EXTENSIONS, IGNORE_DIRS_CODE } = require('../../utils');
 const DEFAULT_MAX_FILE_SIZE = 1024 * 1024;
 const DEFAULT_MAX_FILES = 20000;
 const SECRET_FILE_RE = /(^|[/\\])(\.env($|\.)|id_rsa$|id_dsa$|id_ecdsa$|id_ed25519$|.*\.(pem|key|p12|pfx)$)/i;
+const LOCK_FILE_RE = /(^|[/\\])(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Gemfile\.lock|poetry\.lock|Cargo\.lock|composer\.lock|pipfile\.lock|bun\.lockb|bun\.lock|conan\.lock|mix\.lock|podfile\.lock|go\.sum|requirements\.txt\.lock|\.yarn\/integrity)$|\.lock$|\.lock\.json$/i;
 const PRIORITY_DIRS = ['src/', 'lib/', 'pkg/', 'cmd/', 'internal/', 'app/', 'packages/'];
 
 function shouldSkipDir(dirName, extraIgnoreDirs = []) {
@@ -136,6 +137,7 @@ function scanRepository(repoPath, options = {}) {
     tooLarge: 0,
     binary: 0,
     secret: 0,
+    lock: 0,
     symlink: 0,
     pathTraversal: 0,
     unreadable: 0,
@@ -264,6 +266,11 @@ function scanRepository(repoPath, options = {}) {
         }
         if (SECRET_FILE_RE.test(relativePath.replace(/\\/g, '/'))) {
           mark('secret', entry.name, relativePath);
+          // oxlint-disable-next-line no-continue
+          continue;
+        }
+        if (LOCK_FILE_RE.test(relativePath.replace(/\\/g, '/'))) {
+          mark('lock', entry.name, relativePath);
           // oxlint-disable-next-line no-continue
           continue;
         }
