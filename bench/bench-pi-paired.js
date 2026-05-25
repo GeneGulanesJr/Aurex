@@ -339,12 +339,21 @@ function parsePiOutput(raw) {
   usage.total_tokens = usage.active_tokens + usage.cache_read_tokens;
   const answerParts =
     assistantByResponse.size > 0 ? [...assistantByResponse.values(), ...assistantParts] : assistantParts;
-  return {
+  const result = {
     usage,
     answer: answerParts.join('\n').trim() || raw.trim(),
     tool_counts: Object.fromEntries(toolCounts.entries()),
     behavior,
   };
+  if (
+    answerParts.length === 0 &&
+    assistantByResponse.size === 0 &&
+    seenUsage.size === 0 &&
+    raw.trim().length > 0
+  ) {
+    result.parse_warning = 'No valid Pi events found in output';
+  }
+  return result;
 }
 
 function gradeAnswer(answer, expectedFacts) {
@@ -374,6 +383,10 @@ async function runSide(side, commandTemplate, task, repo, outDir, cwd, timeoutMs
   benchLog(`[bench] ${task.id}: starting ${side}`);
   const run = await runCommand(command, cwd, timeoutMs, outFile);
   benchLog(`[bench] ${task.id}: finished ${side} in ${run.elapsed_ms}ms`);
+  if (run.status !== 0 && run.status != null) {
+    if (!run.error) run.error = `Command exited with status ${run.status}`;
+    benchLog(`[bench] WARNING: ${task.id} ${side}: command exited with status ${run.status}`);
+  }
 
   let raw = '';
   if (fs.existsSync(outFile)) {
@@ -423,6 +436,10 @@ function printRow(taskId, off, on, taskColumnWidth) {
   const savings = offTokens > 0 ? `${Math.round((1 - onTokens / offTokens) * 100)}%` : 'n/a';
   const offScore = `${off.grade.matched}/${off.grade.total}`;
   const onScore = `${on.grade.matched}/${on.grade.total}`;
+  const statusSuffix =
+    off.status !== 0 && off.status != null && on.status !== 0 && on.status != null
+      ? `  [off:${off.status} on:${on.status}]`
+      : '';
   benchLog(
     [
       taskId.padEnd(taskColumnWidth),
@@ -433,7 +450,7 @@ function printRow(taskId, off, on, taskColumnWidth) {
       savings.padStart(8),
       String(off.elapsed_ms).padStart(9),
       String(on.elapsed_ms).padStart(9),
-    ].join('  '),
+    ].join('  ') + statusSuffix,
   );
 }
 
@@ -478,6 +495,16 @@ async function main() {
       memory_on: on,
     });
     printRow(task.id, off, on, taskColumnWidth);
+  }
+
+  const allFailed = results.every(
+    (r) => r.memory_off.status !== 0 && r.memory_off.status != null && r.memory_on.status !== 0 && r.memory_on.status != null,
+  );
+  if (allFailed) {
+    benchLog('\n[bench] ERROR: All tasks failed. Are Pi commands available?');
+    benchLog(`[bench]   Off command: ${offCommand}`);
+    benchLog(`[bench]   On command:  ${onCommand}`);
+    process.exit(1);
   }
 
   const summary = buildSummary(results);
