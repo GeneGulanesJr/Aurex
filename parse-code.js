@@ -628,6 +628,12 @@ const _SCOPE_NODES = new Set([
 ]);
 
 function _extractJsTsSymbols(filePath, sourceStr, parser, languageName) {
+  // Skip tree-sitter parse for files with no recognizable symbol patterns in
+  // the first 2048 bytes. Prevents WASM hangs on trivial content like
+  // `module.exports = {};` while still parsing files with any realistic code.
+  if (!/\b(function|class|const|let|var|import|export|interface|type|enum|async|yield|=>|get |set |static )|\w+\s*\(/.test(sourceStr.slice(0, 2048))) {
+    return [];
+  }
   const tree = parser.parse(sourceStr);
   const root = tree.rootNode;
   const symbols = [];
