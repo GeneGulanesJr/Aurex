@@ -277,6 +277,8 @@ describe('code-index scanner hardening', () => {
     fs.mkdirSync(path.join(tmp, 'src'));
     fs.writeFileSync(path.join(tmp, 'src', 'app.js'), 'function app() {}');
     fs.writeFileSync(path.join(tmp, 'package-lock.json'), '{}');
+    fs.writeFileSync(path.join(tmp, 'package.json'), '{}');
+    fs.writeFileSync(path.join(tmp, 'tsconfig.json'), '{}');
     fs.writeFileSync(path.join(tmp, 'pnpm-lock.yaml'), 'lockfileVersion: 1');
     fs.writeFileSync(path.join(tmp, 'Gemfile.lock'), 'GEM');
     fs.writeFileSync(path.join(tmp, 'poetry.lock'), '[metadata]');
@@ -287,7 +289,7 @@ describe('code-index scanner hardening', () => {
     const result = scanRepository(tmp, {});
 
     expect(result.files.map((f) => path.basename(f))).toEqual(['app.js']);
-    expect(result.skipReport.lock).toBe(2);
+    expect(result.skipReport.lock).toBe(4);
     expect(result.skipReport.unsupportedExt).toBe(5);
   });
 });
