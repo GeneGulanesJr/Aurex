@@ -207,6 +207,37 @@ function resolveImportTarget(db, repoId, sourceFilePath, targetModule) {
   return null;
 }
 
+function resolveImportTargetLocal(filePathMap, sourceFilePath, targetModule) {
+  if (!targetModule.startsWith('.') && !targetModule.startsWith('/')) {
+    return null;
+  }
+
+  const sourceDir = path.dirname(sourceFilePath);
+  const resolved = path.resolve(sourceDir, targetModule);
+
+  const candidates = [
+    resolved,
+    `${resolved}.js`,
+    `${resolved}.mjs`,
+    `${resolved}.cjs`,
+    `${resolved}.ts`,
+    `${resolved}.mts`,
+    `${resolved}.cts`,
+    `${resolved}.tsx`,
+    path.join(resolved, 'index.js'),
+    path.join(resolved, 'index.ts'),
+    path.join(resolved, 'index.tsx'),
+  ];
+
+  for (const candidate of candidates) {
+    const id = filePathMap.get(candidate);
+    if (id !== undefined) {
+      return id;
+    }
+  }
+  return null;
+}
+
 function buildImportGraph(db, repoId) {
   const guard = _requireNativeDb(db);
   if (guard) {
@@ -220,6 +251,12 @@ function buildImportGraph(db, repoId) {
 
   const files = db.prepare('SELECT id, path FROM code_files WHERE repo_id = ?').all(repoId);
   const contentStmt = db.prepare('SELECT content FROM code_files WHERE id = ?');
+
+  const filePathMap = new Map();
+  for (const file of files) {
+    filePathMap.set(file.path, file.id);
+  }
+
   let totalEdges = 0;
 
   const runInTx = typeof db.transaction === 'function'
@@ -242,7 +279,7 @@ function buildImportGraph(db, repoId) {
       if (contentRow && contentRow.content) {
         const imports = extractImportsFromSource(contentRow.content);
         for (const imp of imports) {
-          const targetFileId = resolveImportTarget(db, repoId, file.path, imp.target_module);
+          const targetFileId = resolveImportTargetLocal(filePathMap, file.path, imp.target_module);
           insertStmt.run(repoId, file.id, imp.target_module, targetFileId, imp.import_type, imp.line_number);
           totalEdges++;
         }

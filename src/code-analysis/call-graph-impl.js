@@ -351,97 +351,100 @@ function buildCallGraph(db, repoId, opts = {}) {
 
         resolveCallee(calleeName, sym, null, fileContent);
         const lineNum = sym.start_line + body.substring(0, match.index).split('\n').length - 1;
-        insertStmt.run(repoId, sym.id, calleeName, _rr.calleeSymbolId, _rr.confidence, lineNum);
+        pendingEdges.push([repoId, sym.id, calleeName, _rr.calleeSymbolId, _rr.confidence, lineNum]);
         totalCalls++;
       }
     }
   }
 
+  const pendingEdges = [];
   const totalFiles = symbolsByFile.size;
   let processedFiles = 0;
+
+  for (const [fileId, fileSymbols] of symbolsByFile) {
+    const meta = fileById.get(fileId);
+    if (!meta) {
+      processedFiles++;
+      // oxlint-disable-next-line no-continue
+      continue;
+    }
+
+    const contentRow = contentStmt.get(fileId);
+    if (!contentRow || !contentRow.content) {
+      processedFiles++;
+      // oxlint-disable-next-line no-continue
+      continue;
+    }
+
+    const fileContent = contentRow.content;
+    const filePath = meta.path;
+    const fileSize = fileContent.length;
+
+    let fileCallees = [];
+    if (fileSize <= CALL_GRAPH.MAX_FILE_CONTENT_BYTES) {
+      try {
+        const extractFn = codeParser.extractCalleesFromContent || codeParser.extractCallees;
+        fileCallees = extractFn(filePath, fileContent);
+      } catch {
+        fileCallees = [];
+      }
+    }
+
+    if (fileCallees.length > 0) {
+      const calleeByLine = new Map();
+      for (const c of fileCallees) {
+        if (!calleeByLine.has(c.line)) {
+          calleeByLine.set(c.line, []);
+        }
+        calleeByLine.get(c.line).push(c);
+      }
+
+      const _seen = new Set();
+      for (const sym of fileSymbols) {
+        _seen.clear();
+        for (let line = sym.start_line; line <= sym.end_line; line++) {
+          const lineCallees = calleeByLine.get(line);
+          if (!lineCallees) {
+            // oxlint-disable-next-line no-continue
+            continue;
+          }
+          for (const c of lineCallees) {
+            if (_SKIP_CALLEE_NAMES.has(c.callee)) {
+              // oxlint-disable-next-line no-continue
+              continue;
+            }
+            const key = `${c.callee}:${c.line}`;
+            if (_seen.has(key)) {
+              // oxlint-disable-next-line no-continue
+              continue;
+            }
+            _seen.add(key);
+
+            resolveCallee(c.callee, sym, c.receiver || null, fileContent);
+            pendingEdges.push([repoId, sym.id, c.callee, _rr.calleeSymbolId, _rr.confidence, c.line]);
+            totalCalls++;
+          }
+        }
+      }
+    } else {
+      for (const sym of fileSymbols) {
+        processRegexFallback(sym, fileContent);
+      }
+    }
+
+    processedFiles++;
+    if (onProgress && processedFiles % CALL_GRAPH.PROGRESS_INTERVAL_FILES === 0) {
+      onProgress({ filesProcessed: processedFiles, totalFiles, callsFound: totalCalls });
+    }
+  }
 
   const runInTx = typeof db.transaction === 'function'
     ? (fn) => db.transaction(fn)()
     : (fn) => { db.exec('BEGIN'); try { const r = fn(); db.exec('COMMIT'); return r; } catch (e) { db.exec('ROLLBACK'); throw e; } };
 
   runInTx(() => {
-    for (const [fileId, fileSymbols] of symbolsByFile) {
-      const meta = fileById.get(fileId);
-      if (!meta) {
-        processedFiles++;
-        // oxlint-disable-next-line no-continue
-        continue;
-      }
-
-      const contentRow = contentStmt.get(fileId);
-      if (!contentRow || !contentRow.content) {
-        processedFiles++;
-        // oxlint-disable-next-line no-continue
-        continue;
-      }
-
-      const fileContent = contentRow.content;
-      const filePath = meta.path;
-      const fileSize = fileContent.length;
-
-      let fileCallees = [];
-      if (fileSize <= CALL_GRAPH.MAX_FILE_CONTENT_BYTES) {
-        try {
-          const extractFn = codeParser.extractCalleesFromContent || codeParser.extractCallees;
-          fileCallees = extractFn(filePath, fileContent);
-        } catch {
-          fileCallees = [];
-        }
-      }
-
-      if (fileCallees.length > 0) {
-        const calleeByLine = new Map();
-        for (const c of fileCallees) {
-          if (!calleeByLine.has(c.line)) {
-            calleeByLine.set(c.line, []);
-          }
-          calleeByLine.get(c.line).push(c);
-        }
-
-        // PERF(issue #134): Pre-allocated dedup Set — cleared per symbol instead of
-        // Allocating a new Set. For N symbols this eliminates N Set allocations.
-        const _seen = new Set();
-        for (const sym of fileSymbols) {
-          _seen.clear();
-          for (let line = sym.start_line; line <= sym.end_line; line++) {
-            const lineCallees = calleeByLine.get(line);
-            if (!lineCallees) {
-              // oxlint-disable-next-line no-continue
-              continue;
-            }
-            for (const c of lineCallees) {
-              if (_SKIP_CALLEE_NAMES.has(c.callee)) {
-                // oxlint-disable-next-line no-continue
-                continue;
-              }
-              const key = `${c.callee}:${c.line}`;
-              if (_seen.has(key)) {
-                // oxlint-disable-next-line no-continue
-                continue;
-              }
-              _seen.add(key);
-
-              resolveCallee(c.callee, sym, c.receiver || null, fileContent);
-              insertStmt.run(repoId, sym.id, c.callee, _rr.calleeSymbolId, _rr.confidence, c.line);
-              totalCalls++;
-            }
-          }
-        }
-      } else {
-        for (const sym of fileSymbols) {
-          processRegexFallback(sym, fileContent);
-        }
-      }
-
-      processedFiles++;
-      if (onProgress && processedFiles % CALL_GRAPH.PROGRESS_INTERVAL_FILES === 0) {
-        onProgress({ filesProcessed: processedFiles, totalFiles, callsFound: totalCalls });
-      }
+    for (const edge of pendingEdges) {
+      insertStmt.run(edge[0], edge[1], edge[2], edge[3], edge[4], edge[5]);
     }
   });
 

@@ -240,43 +240,6 @@ function recordDiagnostic(repository, repoId, record, status, message, symbolCou
   });
 }
 
-// PERF: AoS→SoA split variant (issue #130) — accepts hot/cold arrays so the
-// Caller can keep the tight loop on compact 8-field structs. Do NOT merge the
-// Arrays back into a single object before calling this; pass them as-is.
-function insertSymbolsSplit(repository, repoId, fileId, filePath, hotSymbols, coldSymbols) {
-  let count = 0;
-  for (let i = 0; i < hotSymbols.length; i++) {
-    const hot = hotSymbols[i];
-    const cold = coldSymbols[i] || {};
-    repository.insertSymbol({
-      repoId,
-      fileId,
-      filePath,
-      name: hot.name,
-      kind: hot.kind,
-      qualifiedName: hot.qualified_name,
-      startLine: hot.start_line,
-      endLine: hot.end_line,
-      startByte: hot.start_byte,
-      endByte: hot.end_byte,
-      signature: cold.signature || '',
-      docstring: cold.docstring || '',
-      bodyPreview: cold.body_preview || '',
-      language: cold.language || '',
-      parentName: cold.parent_name || '',
-      stableSymbolId: cold.stable_symbol_id || '',
-      contentHash: cold.content_hash || '',
-      summary: cold.summary || '',
-      decoratorsJson: cold.decorators_json || '[]',
-      keywordsJson: cold.keywords_json || '[]',
-      callReferencesJson: cold.call_references_json || '[]',
-      ecosystemContext: cold.ecosystem_context || '',
-    });
-    count++;
-  }
-  return count;
-}
-
 function insertSymbols(repository, repoId, fileId, filePath, symbols) {
   let count = 0;
   for (const sym of symbols) {
@@ -649,7 +612,7 @@ async function parsePhase(files, deps, repoId, args) {
               symbols.length,
             );
             const hotSymbols = symbols.map((s) => normalizeSymbolHot(s, record.filePath));
-            parsedRecords.push({ record, hotSymbols, coldSymbols: symbols });
+            parsedRecords.push({ record, hotSymbols, coldSymbols: symbols, tree: null });
           }
         } catch (e) {
           emitProgress(args, 'parsing', {
@@ -663,7 +626,7 @@ async function parsePhase(files, deps, repoId, args) {
       if (!useWorkers || parsedRecords.length === 0) {
         let parsedInBatch = 0;
         for (const record of validReads) {
-          const { hot: hotSymbols, cold: coldSymbols } = extractSymbolsSplit(record.filePath, registry, record.content);
+          const { hot: hotSymbols, cold: coldSymbols, tree } = extractSymbolsSplit(record.filePath, registry, record.content);
           const symbols = hotSymbols;
           validateSymbols(record, symbols);
           recordDiagnostic(
@@ -674,7 +637,7 @@ async function parsePhase(files, deps, repoId, args) {
             symbols.length === 0 && record.content.trim().length > 0 ? 'No symbols extracted from non-empty file' : '',
             symbols.length,
           );
-          parsedRecords.push({ record, hotSymbols, coldSymbols });
+          parsedRecords.push({ record, hotSymbols, coldSymbols, tree });
           parsedInBatch++;
           const absoluteDone = i + parsedInBatch;
           if (shouldEmitFileProgress(absoluteDone, totalFiles)) {
@@ -710,7 +673,7 @@ async function parsePhase(files, deps, repoId, args) {
       // The tight file×symbol iteration.
       const batchSymbols = [];
       const writeRecords = (insideTransaction = false) => {
-        for (const { record, hotSymbols, coldSymbols } of parsedRecords) {
+        for (const { record, hotSymbols, coldSymbols, tree: parsedTree } of parsedRecords) {
           try {
             const fileId = repository.insertFile(fileRecordToParams(repoId, record));
             for (let si = 0; si < hotSymbols.length; si++) {
@@ -750,13 +713,17 @@ async function parsePhase(files, deps, repoId, args) {
               const scopeBuilder = require('./scope-builder').getScopeBuilder;
               const builder = scopeBuilder(record.filePath);
               if (builder) {
-                const parseResult = registry.parseTree(record.filePath, record.content);
-                if (parseResult && parseResult.tree) {
-                  const scopeBindings = builder(parseResult.tree, record.content, record.filePath);
+                let tree = parsedTree || null;
+                if (!tree) {
+                  const fallback = registry.parseTree(record.filePath, record.content);
+                  tree = fallback ? fallback.tree : null;
+                }
+                if (tree) {
+                  const scopeBindings = builder(tree, record.content, record.filePath);
                   if (scopeBindings.length > 0) {
                     insertScopeBindings(db, repoId, fileId, scopeBindings);
                   }
-                  parseResult.tree.delete();
+                  tree.delete();
                 }
               }
             } catch {
@@ -992,6 +959,7 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
   const totalFiles = files.length;
   const changedFileIds = [];
   const deletedFileIds = [];
+  const changedRecords = [];
 
   for (let i = 0; i < files.length; i++) {
     const filePath = files[i];
@@ -1017,63 +985,7 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
       if (prev && prev.content_hash === fileParams.contentHash) {
         unchanged++;
       } else {
-        const writeChangedFile = () => {
-          let fileId;
-          if (prev) {
-            repository.clearFileSymbols(prev.id);
-            repository.updateFile(prev.id, fileParams);
-            fileId = prev.id;
-          } else {
-            fileId = repository.insertFile(fileParams);
-          }
-
-          emitProgress(args, 'parsing', {
-            step: 'extract-symbols',
-            current_file: progressPath(filePath, existing.path),
-            message: `Step 3/5: extracting symbols from changed file ${progressPath(filePath, existing.path)}`,
-          });
-          const { hot: hotSymbols, cold: coldSymbols } = extractSymbolsSplit(filePath, registry, record.content);
-          const symbols = hotSymbols;
-          recordDiagnostic(
-            repository,
-            existing.id,
-            record,
-            symbols.length === 0 && record.content.trim().length > 0 ? 'zero_symbols' : 'ok',
-            symbols.length === 0 && record.content.trim().length > 0 ? 'No symbols extracted from non-empty file' : '',
-            symbols.length,
-          );
-          emitProgress(args, 'parsing', {
-            step: 'store-index',
-            current_file: progressPath(filePath, existing.path),
-            message: `Step 3/5: storing updated index rows for ${progressPath(filePath, existing.path)} (${symbols.length} symbols)`,
-          });
-          symbolCount += insertSymbolsSplit(repository, existing.id, fileId, filePath, hotSymbols, coldSymbols);
-          reindexed++;
-          changedFileIds.push(fileId);
-
-          // ── Rebuild scope bindings for changed file (v10) ────
-          try {
-            const scopeBuilder = require('./scope-builder').getScopeBuilder;
-            const builder = scopeBuilder(filePath);
-            if (builder) {
-              const parseResult = registry.parseTree(filePath, record.content);
-              if (parseResult && parseResult.tree) {
-                const scopeBindings = builder(parseResult.tree, record.content, filePath);
-                if (scopeBindings.length > 0) {
-                  insertScopeBindings(require('../../db').getDb(), existing.id, fileId, scopeBindings);
-                }
-                parseResult.tree.delete();
-              }
-            }
-          } catch {
-            // Best-effort scope binding extraction
-          }
-        };
-        if (typeof repository.withTransaction === 'function') {
-          repository.withTransaction(writeChangedFile);
-        } else {
-          writeChangedFile();
-        }
+        changedRecords.push({ filePath, record, fileParams, prev });
       }
     } catch (e) {
       skipped.push({ file: filePath, error: e.message });
@@ -1088,10 +1000,111 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
         {
           step: 'check-file',
           current_file: progressPath(filePath, existing.path),
-          message: `Step 3/5: checked ${done}/${totalFiles}: ${progressPath(filePath, existing.path)} (${reindexed} changed, ${unchanged} unchanged)`,
+          message: `Step 3/5: checked ${done}/${totalFiles}: ${progressPath(filePath, existing.path)} (${changedRecords.length} changed, ${unchanged} unchanged)`,
         },
         { files_total: totalFiles, files_done: done, symbols: symbolCount },
       );
+    }
+  }
+
+  if (changedRecords.length > 0) {
+    emitProgress(args, 'parsing', {
+      step: 'extract-symbols',
+      message: `Step 3/5: extracting symbols from ${changedRecords.length} changed files...`,
+    }, { files_total: totalFiles, files_done: unchanged, symbols: symbolCount });
+
+    const allSymbols = [];
+    const scopeWork = [];
+
+    for (let ci = 0; ci < changedRecords.length; ci++) {
+      const { filePath, record, fileParams, prev } = changedRecords[ci];
+      try {
+        const { hot: hotSymbols, cold: coldSymbols, tree } = extractSymbolsSplit(filePath, registry, record.content);
+        recordDiagnostic(
+          repository,
+          existing.id,
+          record,
+          hotSymbols.length === 0 && record.content.trim().length > 0 ? 'zero_symbols' : 'ok',
+          hotSymbols.length === 0 && record.content.trim().length > 0 ? 'No symbols extracted from non-empty file' : '',
+          hotSymbols.length,
+        );
+
+        let fileId;
+        if (prev) {
+          repository.clearFileSymbols(prev.id);
+          repository.updateFile(prev.id, fileParams);
+          fileId = prev.id;
+        } else {
+          fileId = repository.insertFile(fileParams);
+        }
+
+        for (let si = 0; si < hotSymbols.length; si++) {
+          const hot = hotSymbols[si];
+          const cold = coldSymbols[si] || {};
+          allSymbols.push({
+            repoId: existing.id,
+            fileId,
+            filePath,
+            name: hot.name,
+            kind: hot.kind,
+            qualifiedName: hot.qualified_name,
+            startLine: hot.start_line,
+            endLine: hot.end_line,
+            startByte: hot.start_byte,
+            endByte: hot.end_byte,
+            signature: cold.signature || '',
+            docstring: cold.docstring || '',
+            bodyPreview: cold.body_preview || '',
+            language: cold.language || '',
+            parentName: cold.parent_name || '',
+            stableSymbolId: cold.stable_symbol_id || '',
+            contentHash: cold.content_hash || '',
+            summary: cold.summary || '',
+            decoratorsJson: cold.decorators_json || '[]',
+            keywordsJson: cold.keywords_json || '[]',
+            callReferencesJson: cold.call_references_json || '[]',
+            ecosystemContext: cold.ecosystem_context || '',
+          });
+        }
+        symbolCount += hotSymbols.length;
+        reindexed++;
+        changedFileIds.push(fileId);
+        scopeWork.push({ filePath, fileId, record, tree });
+      } catch (e) {
+        skipped.push({ file: filePath, error: e.message });
+        recordDiagnostic(repository, existing.id, { filePath, content: '' }, 'error', e.message, 0);
+      }
+    }
+
+    if (allSymbols.length > 0) {
+      if (typeof repository.insertSymbolBulk === 'function') {
+        repository.insertSymbolBulk(allSymbols);
+      } else if (typeof repository.insertSymbolBatch === 'function') {
+        repository.insertSymbolBatch(allSymbols);
+      }
+    }
+
+    for (const { filePath, fileId, record, tree } of scopeWork) {
+      try {
+        const scopeBuilder = require('./scope-builder').getScopeBuilder;
+        const builder = scopeBuilder(filePath);
+        if (builder) {
+          let treeObj = tree;
+          if (!treeObj) {
+            const parseResult = registry.parseTree(filePath, record.content);
+            treeObj = parseResult ? parseResult.tree : null;
+          }
+          if (treeObj) {
+            const scopeBindings = builder(treeObj, record.content, filePath);
+            if (scopeBindings.length > 0) {
+              insertScopeBindings(db, existing.id, fileId, scopeBindings);
+            }
+            treeObj.delete();
+          }
+        }
+      } catch {
+        // Best-effort scope binding extraction
+      }
     }
   }
 

@@ -135,7 +135,7 @@ function normalizeSymbol(symbol, fallbackFilePath, context = {}) {
 
 function _parseRawSymbols(filePath, reg, content) {
   if (!reg.canParseFile(filePath)) {
-    return { rawSymbols: [], source: '', callees: [] };
+    return { rawSymbols: [], source: '', callees: [], tree: null };
   }
   let rawSymbols;
   let source = content;
@@ -155,7 +155,12 @@ function _parseRawSymbols(filePath, reg, content) {
       callees = reg.extractCalleesFromContent(filePath, source);
     } catch {}
   }
-  return { rawSymbols, source, callees };
+  let tree = null;
+  try {
+    const parseResult = reg.parseTree(filePath, source || content);
+    tree = parseResult ? parseResult.tree : null;
+  } catch {}
+  return { rawSymbols, source, callees, tree };
 }
 
 // PERF: AoS→SoA variant (issue #130). Returns { hot: [...], cold: [...] } so the
@@ -163,7 +168,7 @@ function _parseRawSymbols(filePath, reg, content) {
 // Hashes) lives in a separate array accessed only at insert time.
 function extractSymbolsSplit(filePath, registry, content) {
   const reg = registry || createParserRegistry();
-  const { rawSymbols, source, callees } = _parseRawSymbols(filePath, reg, content);
+  const { rawSymbols, source, callees, tree } = _parseRawSymbols(filePath, reg, content);
   const ctx = { content: source || '', callees, relativeFile: path.basename(filePath) };
   const hot = [];
   const cold = [];
@@ -172,7 +177,7 @@ function extractSymbolsSplit(filePath, registry, content) {
     hot.push(h);
     cold.push(normalizeSymbolCold(h, raw, filePath, ctx));
   }
-  return { hot, cold };
+  return { hot, cold, tree };
 }
 
 function extractSymbolsFromFile(filePath, registry, content) {
