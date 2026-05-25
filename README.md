@@ -96,23 +96,23 @@ npm run bench:pi-paired
 
 Latest run: `bench/results/pi-paired-2026-05-24T14-47-20-651Z/report.json`
 
-| Metric        | Memory Off | Memory On | Delta     |
-| ------------- | ---------- | --------- | --------- |
-| Facts correct | 18/18      | 18/18     | no loss   |
-| Active tokens | 42,954     | 3,192     | -92.6%    |
-| Wall time     | ~233s      | ~86s      | -63.1%    |
-| Tool calls    | 49         | 6         | -87.8%    |
-| Failed tools  | 4          | 0         | -100%     |
+| Metric        | Memory On | Without Memory | Savings   |
+| ------------- | --------- | -------------- | --------- |
+| Facts correct | 18/18     | 18/18          | no loss   |
+| Active tokens | 3,192     | 42,954         | -92.6%    |
+| Wall time     | ~86s      | ~233s          | -63.1%    |
+| Tool calls    | 6         | 49             | -87.8%    |
+| Failed tools  | 0         | 4              | -100%     |
 
 #### Per-category Breakdown
 
-| Category         | Facts (off -> on) | Tokens (off -> on) | Savings |
-| ---------------- | ----------------- | ------------------ | ------- |
-| prior-decision   | 3/3 -> 3/3        | 12,505 -> 128      | 99.0%   |
-| bug-history      | 3/3 -> 3/3        | 10,430 -> 603      | 94.2%   |
-| staleness        | 3/3 -> 3/3        | 7,315 -> 426       | 94.2%   |
-| navigation       | 3/3 -> 3/3        | 6,976 -> 72        | 99.0%   |
-| negative-control | 6/6 -> 6/6        | 5,728 -> 1,963     | 65.7%   |
+| Category         | Facts (on)       | Tokens (on)        | Savings |
+| ---------------- | ---------------- | ------------------ | ------- |
+| prior-decision   | 3/3              | 128                | 99.0%   |
+| bug-history      | 3/3              | 603                | 94.2%   |
+| staleness        | 3/3              | 426                | 94.2%   |
+| navigation       | 3/3              | 72                 | 99.0%   |
+| negative-control | 6/6              | 1,963              | 65.7%   |
 
 #### What Each Category Tests
 
