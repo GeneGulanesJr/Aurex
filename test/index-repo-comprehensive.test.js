@@ -270,7 +270,12 @@ describe('index-repo (comprehensive)', () => {
     });
 
     it('should handle deleted files in incremental mode', () => {
-      fs.unlinkSync(path.join(tmpRepo, 'b.js'));
+      const bPath = path.join(tmpRepo, 'b.js');
+      if (!fs.existsSync(bPath)) {
+        fs.writeFileSync(bPath, 'function beta() { return 2; }');
+        run(`reindex-repo --repo ${name} --mode incremental`);
+      }
+      fs.unlinkSync(bPath);
 
       run(`reindex-repo --repo ${name} --mode incremental`);
 
