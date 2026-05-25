@@ -48,7 +48,7 @@ const LANGUAGE_MAP = {
   '.jsonc': { grammarFile: null, languageName: 'json', extractor: 'regex' },
   '.yaml': { grammarFile: null, languageName: 'yaml', extractor: 'regex' },
   '.yml': { grammarFile: null, languageName: 'yaml', extractor: 'regex' },
-  '.html': { grammarFile: null, languageName: 'html', extractor: 'regex' },
+  '.html': { grammarFile: 'tree-sitter-html.wasm', languageName: 'html', parserKey: 'html' },
   '.css': { grammarFile: null, languageName: 'css', extractor: 'regex' },
   '.scss': { grammarFile: null, languageName: 'scss', extractor: 'regex' },
   '.sql': { grammarFile: 'sql.wasm', languageName: 'sql', parserKey: 'sql', extractor: 'sql' },
@@ -89,7 +89,9 @@ async function init() {
 
       for (const [key, wasmFile] of uniqueEntries) {
         // oxlint-disable-next-line no-continue
-        if (!wasmFile || !key) {continue;} // Skip regex-based extractors (no WASM grammar)
+        if (!wasmFile || !key) {
+          continue;
+        } // Skip regex-based extractors (no WASM grammar)
         const wasmPath = path.join(GRAMMAR_DIR, wasmFile);
         if (!fs.existsSync(wasmPath)) {
           // Skip silently — grammar not bundled
@@ -144,9 +146,6 @@ function info() {
  */
 function _routeToExtractor(filePath, source, parser, langConfig) {
   if (langConfig.extractor === 'regex') {
-    if (langConfig.languageName === 'html') {
-      return _extractHtmlSymbols(filePath, source);
-    }
     if (langConfig.languageName === 'css' || langConfig.languageName === 'scss') {
       return _extractCssSymbols(filePath, source);
     }
@@ -162,6 +161,12 @@ function _routeToExtractor(filePath, source, parser, langConfig) {
     if (langConfig.languageName === 'sql') {
       return _extractSqlSymbolsRegex(filePath, source);
     }
+    return [];
+  }
+  if (langConfig.languageName === 'html') {
+    return _extractHtmlSymbolsAst(filePath, source, parser);
+  }
+  if (langConfig.languageName === 'sql') {
     return [];
   }
   if (langConfig.languageName === 'sql') {
@@ -182,7 +187,9 @@ function _routeToExtractor(filePath, source, parser, langConfig) {
 function _getLangConfig(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   const langConfig = LANGUAGE_MAP[ext];
-  if (!langConfig) {return null;}
+  if (!langConfig) {
+    return null;
+  }
   // Regex-based extractors don't need a tree-sitter parser
   if (langConfig.extractor === 'regex') {
     return { langConfig, parser: null };
@@ -196,13 +203,31 @@ function _getLangConfig(filePath) {
     return { langConfig: { ...langConfig, extractor: 'regex' }, parser: null };
   }
   const parser = _parsers[langConfig.parserKey];
-  if (!parser) {return null;}
+  if (!parser) {
+    return null;
+  }
   return { langConfig, parser };
 }
 
 function parseContent(filePath, content) {
   if (!_ready) {
-    return [{ name: '', kind: 'diagnostic', language: '', file: filePath, signature: 'parse-code not initialized: call init() first', qualified_name: '', start_line: 0, end_line: 0, start_byte: 0, end_byte: 0, docstring: '', body_preview: '', parent_name: '' }];
+    return [
+      {
+        name: '',
+        kind: 'diagnostic',
+        language: '',
+        file: filePath,
+        signature: 'parse-code not initialized: call init() first',
+        qualified_name: '',
+        start_line: 0,
+        end_line: 0,
+        start_byte: 0,
+        end_byte: 0,
+        docstring: '',
+        body_preview: '',
+        parent_name: '',
+      },
+    ];
   }
   const cfg = _getLangConfig(filePath);
   if (!cfg) {
@@ -211,7 +236,23 @@ function parseContent(filePath, content) {
     const msg = known
       ? `parse-code: language ${LANGUAGE_MAP[ext].languageName} has no WASM grammar loaded`
       : `parse-code: file extension ${ext || '(none)'} is not supported`;
-    return [{ name: '', kind: 'diagnostic', language: '', file: filePath, signature: msg, qualified_name: '', start_line: 0, end_line: 0, start_byte: 0, end_byte: 0, docstring: '', body_preview: '', parent_name: '' }];
+    return [
+      {
+        name: '',
+        kind: 'diagnostic',
+        language: '',
+        file: filePath,
+        signature: msg,
+        qualified_name: '',
+        start_line: 0,
+        end_line: 0,
+        start_byte: 0,
+        end_byte: 0,
+        docstring: '',
+        body_preview: '',
+        parent_name: '',
+      },
+    ];
   }
 
   const symbols = _routeToExtractor(filePath, content, cfg.parser, cfg.langConfig);
@@ -223,7 +264,23 @@ function parseContent(filePath, content) {
 
 function parseFile(filePath) {
   if (!_ready) {
-    return [{ name: '', kind: 'diagnostic', language: '', file: filePath, signature: 'parse-code not initialized: call init() first', qualified_name: '', start_line: 0, end_line: 0, start_byte: 0, end_byte: 0, docstring: '', body_preview: '', parent_name: '' }];
+    return [
+      {
+        name: '',
+        kind: 'diagnostic',
+        language: '',
+        file: filePath,
+        signature: 'parse-code not initialized: call init() first',
+        qualified_name: '',
+        start_line: 0,
+        end_line: 0,
+        start_byte: 0,
+        end_byte: 0,
+        docstring: '',
+        body_preview: '',
+        parent_name: '',
+      },
+    ];
   }
 
   const cfg = _getLangConfig(filePath);
@@ -233,7 +290,23 @@ function parseFile(filePath) {
     const msg = known
       ? `parse-code: language ${LANGUAGE_MAP[ext].languageName} has no WASM grammar loaded`
       : `parse-code: file extension ${ext || '(none)'} is not supported`;
-    return [{ name: '', kind: 'diagnostic', language: '', file: filePath, signature: msg, qualified_name: '', start_line: 0, end_line: 0, start_byte: 0, end_byte: 0, docstring: '', body_preview: '', parent_name: '' }];
+    return [
+      {
+        name: '',
+        kind: 'diagnostic',
+        language: '',
+        file: filePath,
+        signature: msg,
+        qualified_name: '',
+        start_line: 0,
+        end_line: 0,
+        start_byte: 0,
+        end_byte: 0,
+        docstring: '',
+        body_preview: '',
+        parent_name: '',
+      },
+    ];
   }
 
   let source;
@@ -288,7 +361,9 @@ function _fallbackExtractSymbols(filePath, content) {
 
   function add(name, kind, line, signature, startByte) {
     const key = `${name}:${kind}:${startByte}`;
-    if (seen.has(key)) {return;}
+    if (seen.has(key)) {
+      return;
+    }
     seen.add(key);
     symbols.push({
       name,
@@ -362,8 +437,14 @@ function _fallbackExtractSymbols(filePath, content) {
   } else if (ext === '.sql') {
     const sqlPatterns = [
       { re: /\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([`\[\]"']?\w+[`\[\]"']?)/gi, kind: 'table' },
-      { re: /\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMP(?:ORARY)?\s+)?VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?([`\[\]"']?\w+[`\[\]"']?)/gi, kind: 'view' },
-      { re: /\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMP(?:ORARY)?\s+)?FUNCTION\s+([`\[\]"']?\w+[`\[\]"']?)/gi, kind: 'function' },
+      {
+        re: /\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMP(?:ORARY)?\s+)?VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?([`\[\]"']?\w+[`\[\]"']?)/gi,
+        kind: 'view',
+      },
+      {
+        re: /\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMP(?:ORARY)?\s+)?FUNCTION\s+([`\[\]"']?\w+[`\[\]"']?)/gi,
+        kind: 'function',
+      },
       { re: /\bCREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+([`\[\]"']?\w+[`\[\]"']?)/gi, kind: 'trigger' },
       { re: /\bCREATE\s+PROCEDURE\s+([`\[\]"']?\w+[`\[\]"']?)/gi, kind: 'procedure' },
     ];
@@ -448,7 +529,10 @@ function _getDocstring(node) {
           for (const expr of child.children) {
             if (expr.type === 'string') {
               let text = expr.text;
-              if ((text.startsWith('"""') && text.endsWith('"""')) || (text.startsWith("'''") && text.endsWith("'''"))) {
+              if (
+                (text.startsWith('"""') && text.endsWith('"""')) ||
+                (text.startsWith("'''") && text.endsWith("'''"))
+              ) {
                 text = text.slice(3, -3);
               } else if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
                 text = text.slice(1, -1);
@@ -631,7 +715,11 @@ function _extractJsTsSymbols(filePath, sourceStr, parser, languageName) {
   // Skip tree-sitter parse for files with no recognizable symbol patterns in
   // the first 2048 bytes. Prevents WASM hangs on trivial content like
   // `module.exports = {};` while still parsing files with any realistic code.
-  if (!/\b(function|class|const|let|var|import|export|interface|type|enum|async|yield|=>|get |set |static )|\w+\s*\(/.test(sourceStr.slice(0, 2048))) {
+  if (
+    !/\b(function|class|const|let|var|import|export|interface|type|enum|async|yield|=>|get |set |static )|\w+\s*\(/.test(
+      sourceStr.slice(0, 2048),
+    )
+  ) {
     return [];
   }
   const tree = parser.parse(sourceStr);
@@ -910,7 +998,9 @@ function _extractPythonSymbols(filePath, sourceStr, parser) {
           if (left && left.type === 'identifier') {
             const name = left.text;
             // oxlint-disable-next-line no-continue
-            if (name === '_' || name.startsWith('__') && name.endsWith('__')) {continue;}
+            if (name === '_' || (name.startsWith('__') && name.endsWith('__'))) {
+              continue;
+            }
             const right = child.child(2);
             let assignKind = 'constant';
             if (right) {
@@ -959,7 +1049,10 @@ function _extractPythonSymbols(filePath, sourceStr, parser) {
       }
     }
     if (node.type === 'import_statement' || node.type === 'import_from_statement') {
-      const importPath = node.text.replace(/^from\s+/, '').split(/\s+import\b/)[0].trim();
+      const importPath = node.text
+        .replace(/^from\s+/, '')
+        .split(/\s+import\b/)[0]
+        .trim();
       const key = `import:${importPath}:${node.startIndex}`;
       if (!seen.has(key)) {
         seen.add(key);
@@ -1343,9 +1436,7 @@ function _extractRustSymbols(filePath, sourceStr, parser) {
                   kind: 'function',
                   language: 'rust',
                   file: filePath,
-                  signature: sourceStr
-                    .substring(n.startIndex, Math.min(n.startIndex + 200, n.endIndex))
-                    .split('\n')[0],
+                  signature: sourceStr.substring(n.startIndex, Math.min(n.startIndex + 200, n.endIndex)).split('\n')[0],
                   qualified_name: implName ? `${implName}.${methodName}` : methodName,
                   start_line: n.startPosition.row + 1,
                   end_line: n.endPosition.row + 1,
@@ -1457,7 +1548,9 @@ function _extractSqlSymbolsRegex(filePath, source) {
 
   function add(name, kind, startLine, startByte, endByte, sig) {
     const key = `${name}:${kind}:${startLine}`;
-    if (seen.has(key)) {return;}
+    if (seen.has(key)) {
+      return;
+    }
     seen.add(key);
     const bodyLines = source
       .substring(startByte, endByte)
@@ -1488,13 +1581,28 @@ function _extractSqlSymbolsRegex(filePath, source) {
   }
 
   const patterns = [
-    { re: /\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([`\[\]"']?\w+[`\[\]"']?(?:\.[`\[\]"']?\w+[`\[\]"']?)?)/gi, kind: 'table' },
-    { re: /\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMP(?:ORARY)?\s+)?VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?([`\[\]"']?\w+[`\[\]"']?(?:\.[`\[\]"']?\w+[`\[\]"']?)?)/gi, kind: 'view' },
-    { re: /\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?([`\[\]"']?\w+[`\[\]"']?(?:\.[`\[\]"']?\w+[`\[\]"']?)?)/gi, kind: 'index' },
-    { re: /\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMP(?:ORARY)?\s+)?FUNCTION\s+([`\[\]"']?\w+[`\[\]"']?(?:\.[`\[\]"']?\w+[`\[\]"']?)?)/gi, kind: 'function' },
+    {
+      re: /\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([`\[\]"']?\w+[`\[\]"']?(?:\.[`\[\]"']?\w+[`\[\]"']?)?)/gi,
+      kind: 'table',
+    },
+    {
+      re: /\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMP(?:ORARY)?\s+)?VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?([`\[\]"']?\w+[`\[\]"']?(?:\.[`\[\]"']?\w+[`\[\]"']?)?)/gi,
+      kind: 'view',
+    },
+    {
+      re: /\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?([`\[\]"']?\w+[`\[\]"']?(?:\.[`\[\]"']?\w+[`\[\]"']?)?)/gi,
+      kind: 'index',
+    },
+    {
+      re: /\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMP(?:ORARY)?\s+)?FUNCTION\s+([`\[\]"']?\w+[`\[\]"']?(?:\.[`\[\]"']?\w+[`\[\]"']?)?)/gi,
+      kind: 'function',
+    },
     { re: /\bCREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+([`\[\]"']?\w+[`\[\]"']?)/gi, kind: 'trigger' },
     { re: /\bALTER\s+TABLE\s+([`\[\]"']?\w+[`\[\]"']?(?:\.[`\[\]"']?\w+[`\[\]"']?)?)/gi, kind: 'alter' },
-    { re: /\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?([`\[\]"']?\w+[`\[\]"']?(?:\.[`\[\]"']?\w+[`\[\]"']?)?)/gi, kind: 'drop' },
+    {
+      re: /\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?([`\[\]"']?\w+[`\[\]"']?(?:\.[`\[\]"']?\w+[`\[\]"']?)?)/gi,
+      kind: 'drop',
+    },
     { re: /\bINSERT\s+INTO\s+([`\[\]"']?\w+[`\[\]"']?(?:\.[`\[\]"']?\w+[`\[\]"']?)?)/gi, kind: 'insert' },
     { re: /\bUPDATE\s+([`\[\]"']?\w+[`\[\]"']?(?:\.[`\[\]"']?\w+[`\[\]"']?)?)/gi, kind: 'update' },
     { re: /\bDELETE\s+FROM\s+([`\[\]"']?\w+[`\[\]"']?(?:\.[`\[\]"']?\w+[`\[\]"']?)?)/gi, kind: 'delete' },
@@ -1613,102 +1721,399 @@ function _extractSqlSymbols(filePath, sourceStr, parser) {
   return symbols;
 }
 
-// ── HTML regex-based extractor ──────────────────────────────
-
-const _HTML_ID_RE = /\bid\s*=\s*["']([^"']+)["']/g;
-const _HTML_CLASS_RE = /\bclass\s*=\s*["']([^"']+)["']/g;
-const _HTML_SCRIPT_RE = /<script[^>]*>([\s\S]*?)<\/script\s*>/gi;
-const _HTML_STYLE_RE = /<style[^>]*>([\s\S]*?)<\/style\s*>/gi;
-const _HTML_CUSTOM_ELEMENT_RE = /<\/?([A-Z][A-Za-z0-9]*|([a-z]+-[a-z][a-z0-9-]*))/g;
+// ── HTML AST-based extractor ──────────────────────────────
 
 const _STANDARD_HTML_TAGS = new Set([
-  'div', 'span', 'p', 'a', 'img', 'input', 'button', 'form', 'table',
-  'tr', 'td', 'th', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-  'head', 'body', 'html', 'title', 'meta', 'link', 'script', 'style',
-  'header', 'footer', 'main', 'section', 'article', 'aside', 'nav',
-  'pre', 'code', 'br', 'hr', 'label', 'select', 'option', 'textarea',
-  'template', 'slot', 'iframe', 'canvas', 'video', 'audio', 'source',
-  'noscript', 'details', 'summary', 'dialog', 'figure', 'figcaption',
+  'div',
+  'span',
+  'p',
+  'a',
+  'img',
+  'input',
+  'button',
+  'form',
+  'table',
+  'tr',
+  'td',
+  'th',
+  'ul',
+  'ol',
+  'li',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'head',
+  'body',
+  'html',
+  'title',
+  'meta',
+  'link',
+  'script',
+  'style',
+  'header',
+  'footer',
+  'main',
+  'section',
+  'article',
+  'aside',
+  'nav',
+  'pre',
+  'code',
+  'br',
+  'hr',
+  'label',
+  'select',
+  'option',
+  'textarea',
+  'template',
+  'slot',
+  'iframe',
+  'canvas',
+  'video',
+  'audio',
+  'source',
+  'noscript',
+  'details',
+  'summary',
+  'dialog',
+  'figure',
+  'figcaption',
 ]);
 
-function _extractHtmlSymbols(filePath, source) {
+const _SEMANTIC_ELEMENTS = new Set([
+  'header',
+  'footer',
+  'main',
+  'section',
+  'article',
+  'aside',
+  'nav',
+  'figure',
+  'figcaption',
+  'details',
+  'summary',
+  'dialog',
+  'mark',
+  'time',
+]);
+
+const _HEADING_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
+
+const _FORM_TAGS = new Set(['input', 'select', 'textarea', 'button', 'form']);
+
+const _RESOURCE_ATTRS = {
+  a: ['href'],
+  link: ['href'],
+  script: ['src'],
+  img: ['src'],
+  source: ['src'],
+  iframe: ['src'],
+  video: ['src', 'poster'],
+  audio: ['src'],
+};
+
+function _extractHtmlSymbolsAst(filePath, source, parser) {
+  const tree = parser.parse(source);
+  const root = tree.rootNode;
   const symbols = [];
   const seen = new Set();
 
-  function add(name, kind, startLine, signature) {
-    const key = `${name}:${kind}:${startLine}`;
-    if (seen.has(key)) {return;}
+  function add(name, kind, startLine, endLine, startByte, endByte, sig, parentName, docstr) {
+    const key = `${name}:${kind}:${startLine}:${startByte}`;
+    if (seen.has(key)) {
+      return;
+    }
     seen.add(key);
     symbols.push({
       name,
       kind,
       language: 'html',
       file: filePath,
-      qualified_name: name,
-      signature: signature || '',
+      qualified_name: parentName ? `${parentName} > ${name}` : name,
+      signature: sig || '',
       start_line: startLine,
-      end_line: startLine,
-      start_byte: 0,
-      end_byte: 0,
-      docstring: '',
+      end_line: endLine,
+      start_byte: startByte,
+      end_byte: endByte,
+      docstring: docstr || '',
       body_preview: '',
-      parent_name: '',
+      parent_name: parentName || '',
     });
   }
 
-  function getLine(index) {
-    return source.substring(0, index).split('\n').length;
+  function getTagName(startTagNode) {
+    for (const ch of startTagNode.children) {
+      if (ch.type === 'tag_name') {
+        return ch.text;
+      }
+    }
+    return '';
   }
 
-  // Extract id attributes
-  for (const match of source.matchAll(_HTML_ID_RE)) {
-    const name = match[1].trim();
-    // oxlint-disable-next-line no-continue
-    if (!name) {continue;}
-    add(name, 'id', getLine(match.index), `id="${name}"`);
+  function getAttrs(tagNode) {
+    const attrs = [];
+    for (const ch of tagNode.children) {
+      if (ch.type === 'attribute') {
+        let name = '';
+        let value = '';
+        for (const ac of ch.children) {
+          if (ac.type === 'attribute_name') {
+            name = ac.text;
+          }
+          if (ac.type === 'quoted_attribute_value') {
+            for (const vc of ac.children) {
+              if (vc.type === 'attribute_value') {
+                value = vc.text;
+              }
+            }
+          }
+        }
+        attrs.push({ name, value, node: ch });
+      }
+    }
+    return attrs;
   }
 
-  // Extract class attributes (split on whitespace, record each class)
-  for (const match of source.matchAll(_HTML_CLASS_RE)) {
-    const raw = match[1].trim();
-    // oxlint-disable-next-line no-continue
-    if (!raw) {continue;}
-    const line = getLine(match.index);
-    for (const cls of raw.split(/\s+/)) {
-      if (cls) {add(cls, 'css_class', line, `class="${cls}"`);}
+  function getTextContent(elementNode) {
+    const parts = [];
+    function collect(n) {
+      if (n.type === 'text') {
+        parts.push(n.text.trim());
+      }
+      for (const c of n.children) {
+        collect(c);
+      }
+    }
+    collect(elementNode);
+    return parts.filter(Boolean).join(' ').slice(0, 200);
+  }
+
+  function ancestorTagNames(node) {
+    const tags = [];
+    let p = node.parent;
+    while (p) {
+      if (p.type === 'element') {
+        for (const ch of p.children) {
+          if (ch.type === 'start_tag') {
+            const tn = getTagName(ch);
+            if (tn) {
+              tags.push(tn);
+            }
+            break;
+          }
+        }
+      }
+      p = p.parent;
+    }
+    return tags;
+  }
+
+  function walk(node, depth) {
+    if (node.type === 'element' || node.type === 'script_element' || node.type === 'style_element') {
+      let startTag = null;
+      let endTag = null;
+      let rawText = null;
+      const childElements = [];
+
+      for (const ch of node.children) {
+        if (ch.type === 'start_tag') {
+          startTag = ch;
+        } else if (ch.type === 'end_tag') {
+          endTag = ch;
+        } else if (ch.type === 'self_closing_tag') {
+          startTag = ch;
+        } else if (ch.type === 'raw_text') {
+          rawText = ch;
+        } else if (ch.type === 'element' || ch.type === 'script_element' || ch.type === 'style_element') {
+          childElements.push(ch);
+        }
+      }
+
+      if (startTag) {
+        const tagName = getTagName(startTag).toLowerCase();
+        const attrs = getAttrs(startTag);
+        const parentName = ancestorTagNames(node).find(() => true) || '';
+        const sig = source.substring(startTag.startIndex, Math.min(startTag.endIndex, startTag.startIndex + 200));
+        const sl = startTag.startPosition.row + 1;
+        const el = endTag ? endTag.endPosition.row + 1 : startTag.endPosition.row + 1;
+        const sb = startTag.startIndex;
+        const eb = endTag ? endTag.endIndex : startTag.endIndex;
+
+        for (const attr of attrs) {
+          if (attr.name === 'id' && attr.value) {
+            add(attr.value, 'id', sl, el, sb, eb, `id="${attr.value}"`, tagName);
+          }
+        }
+
+        for (const attr of attrs) {
+          if (attr.name === 'class' && attr.value) {
+            for (const cls of attr.value.split(/\s+/).filter(Boolean)) {
+              add(cls, 'css_class', sl, el, sb, eb, `class="${cls}"`, tagName);
+            }
+          }
+        }
+
+        const isCustom =
+          (tagName.includes('-') && !_STANDARD_HTML_TAGS.has(tagName)) || /^[A-Z]/.test(getTagName(startTag));
+        if (isCustom) {
+          const attrSig = attrs.map((a) => (a.value ? `${a.name}="${a.value}"` : a.name)).join(' ');
+          add(getTagName(startTag), 'component', sl, el, sb, eb, `<${getTagName(startTag)} ${attrSig}>`, parentName);
+        }
+
+        if (_SEMANTIC_ELEMENTS.has(tagName)) {
+          const text = getTextContent(node);
+          add(`<${tagName}>`, 'element', sl, el, sb, eb, sig, parentName, text);
+        }
+
+        if (_HEADING_TAGS.has(tagName)) {
+          const text = getTextContent(node);
+          add(text || `<${tagName}>`, 'heading', sl, el, sb, eb, sig, parentName);
+        }
+
+        if (tagName === 'meta') {
+          let metaName = '';
+          let metaContent = '';
+          for (const attr of attrs) {
+            if (attr.name === 'name' || attr.name === 'property') {
+              metaName = attr.value;
+            }
+            if (attr.name === 'content') {
+              metaContent = attr.value;
+            }
+          }
+          if (metaName) {
+            add(metaName, 'meta', sl, sl, sb, eb, `name="${metaName}" content="${metaContent}"`, '', metaContent);
+          }
+        }
+
+        const resAttrs = _RESOURCE_ATTRS[tagName];
+        if (resAttrs) {
+          for (const attr of attrs) {
+            if (resAttrs.includes(attr.name) && attr.value) {
+              add(attr.value, 'link_ref', sl, el, sb, eb, `<${tagName} ${attr.name}="${attr.value}">`, tagName);
+            }
+          }
+        }
+
+        if (_FORM_TAGS.has(tagName)) {
+          const formAttrs = {};
+          for (const attr of attrs) {
+            if (
+              ['name', 'type', 'action', 'method', 'placeholder', 'required', 'pattern', 'enctype'].includes(attr.name)
+            ) {
+              formAttrs[attr.name] = attr.value || 'true';
+            }
+          }
+          const formSig = Object.entries(formAttrs)
+            .map(([k, v]) => `${k}="${v}"`)
+            .join(' ');
+          const fname = formAttrs.name || formAttrs.type || tagName;
+          add(fname, 'form_control', sl, el, sb, eb, `<${tagName} ${formSig}>`, parentName);
+        }
+
+        for (const attr of attrs) {
+          if (attr.name === 'role' || attr.name.startsWith('aria-')) {
+            add(
+              attr.value || attr.name,
+              'aria',
+              sl,
+              sl,
+              attr.node.startIndex,
+              attr.node.endIndex,
+              `${attr.name}="${attr.value}"`,
+              tagName,
+            );
+          }
+        }
+
+        for (const attr of attrs) {
+          if (attr.name.startsWith('data-')) {
+            add(
+              attr.name,
+              'data_attr',
+              sl,
+              sl,
+              attr.node.startIndex,
+              attr.node.endIndex,
+              `${attr.name}="${attr.value}"`,
+              tagName,
+            );
+          }
+        }
+
+        for (const attr of attrs) {
+          if (attr.name === 'itemscope' || attr.name === 'itemtype' || attr.name === 'itemprop') {
+            add(
+              attr.value || attr.name,
+              'microdata',
+              sl,
+              sl,
+              attr.node.startIndex,
+              attr.node.endIndex,
+              `${attr.name}="${attr.value || ''}"`,
+              tagName,
+            );
+          }
+        }
+      }
+
+      if (node.type === 'script_element' && rawText) {
+        const body = rawText.text.trim();
+        if (body) {
+          const startTag2 = node.children.find((c) => c.type === 'start_tag');
+          let scriptType = '';
+          if (startTag2) {
+            for (const a of getAttrs(startTag2)) {
+              if (a.name === 'type') {
+                scriptType = a.value;
+              }
+            }
+          }
+          const sl2 = rawText.startPosition.row + 1;
+          const el2 = rawText.endPosition.row + 1;
+          const preview = body.split('\n').slice(0, 3).join('\n');
+          const sig = preview.length > 200 ? `${preview.slice(0, 197)}...` : preview;
+          add(
+            `[inline-script:${sl2}]`,
+            'script',
+            sl2,
+            el2,
+            rawText.startIndex,
+            rawText.endIndex,
+            sig,
+            '',
+            scriptType || 'javascript',
+          );
+        }
+      }
+
+      if (node.type === 'style_element' && rawText) {
+        const body = rawText.text.trim();
+        if (body) {
+          const sl2 = rawText.startPosition.row + 1;
+          const el2 = rawText.endPosition.row + 1;
+          const preview = body.split('\n').slice(0, 3).join('\n');
+          const sig = preview.length > 200 ? `${preview.slice(0, 197)}...` : preview;
+          add(`[inline-style:${sl2}]`, 'style', sl2, el2, rawText.startIndex, rawText.endIndex, sig);
+        }
+      }
+
+      for (const child of childElements) {
+        walk(child, depth + 1);
+      }
+      return;
+    }
+
+    for (const ch of node.children) {
+      walk(ch, depth + 1);
     }
   }
 
-  // Extract custom element / component tags (PascalCase or kebab-case)
-  for (const match of source.matchAll(_HTML_CUSTOM_ELEMENT_RE)) {
-    const tagName = match[1];
-    // oxlint-disable-next-line no-continue
-    if (_STANDARD_HTML_TAGS.has(tagName.toLowerCase())) {continue;}
-    add(tagName, 'component', getLine(match.index), `<${tagName}>`);
-  }
-
-  // Extract inline <script> blocks
-  for (const match of source.matchAll(_HTML_SCRIPT_RE)) {
-    const body = match[1].trim();
-    // oxlint-disable-next-line no-continue
-    if (!body) {continue;}
-    const startLine = getLine(match.index);
-    const preview = body.split('\n').slice(0, 3).join('\n');
-    const sig = preview.length > 200 ? `${preview.slice(0, 197)}...` : preview;
-    add(`[inline-script:${startLine}]`, 'script', startLine, sig);
-  }
-
-  // Extract inline <style> blocks
-  for (const match of source.matchAll(_HTML_STYLE_RE)) {
-    const body = match[1].trim();
-    // oxlint-disable-next-line no-continue
-    if (!body) {continue;}
-    const startLine = getLine(match.index);
-    const preview = body.split('\n').slice(0, 3).join('\n');
-    const sig = preview.length > 200 ? `${preview.slice(0, 197)}...` : preview;
-    add(`[inline-style:${startLine}]`, 'style', startLine, sig);
-  }
-
+  walk(root, 0);
+  tree.delete();
   return symbols;
 }
 
@@ -1731,7 +2136,9 @@ function _extractCssSymbols(filePath, source) {
 
   function add(name, kind, startLine, signature) {
     const key = `${name}:${kind}:${startLine}`;
-    if (seen.has(key)) {return;}
+    if (seen.has(key)) {
+      return;
+    }
     seen.add(key);
     symbols.push({
       name,
@@ -1775,10 +2182,14 @@ function _extractCssSymbols(filePath, source) {
     const selector = match[1].trim();
     // Skip @-rules, comments, properties, and empty selectors
     // oxlint-disable-next-line no-continue
-    if (!selector || selector.startsWith('@') || selector.startsWith('//') || selector.startsWith('/*')) {continue;}
+    if (!selector || selector.startsWith('@') || selector.startsWith('//') || selector.startsWith('/*')) {
+      continue;
+    }
     // Skip property-like patterns (word: value;) that aren't class/id selectors
     // oxlint-disable-next-line no-continue
-    if (/^\s*[\w-]+\s*:/.test(selector) && !selector.startsWith('.') && !selector.startsWith('#')) {continue;}
+    if (/^\s*[\w-]+\s*:/.test(selector) && !selector.startsWith('.') && !selector.startsWith('#')) {
+      continue;
+    }
     add(selector, 'selector', getLine(match.index), selector);
   }
 
@@ -1821,7 +2232,9 @@ function _makeRegexSymbol(filePath, source, language) {
   function add(name, kind, index, signature) {
     const startLine = source.substring(0, index).split('\n').length;
     const key = `${name}:${kind}:${startLine}`;
-    if (seen.has(key)) {return;}
+    if (seen.has(key)) {
+      return;
+    }
     seen.add(key);
     symbols.push({
       name,
@@ -1923,7 +2336,11 @@ function _walkCallees(root, _SKIP) {
               callees.push(entry);
             }
           }
-        } else if (calleeNode.type === 'member_expression' || calleeNode.type === 'selector_expression' || calleeNode.type === 'field_expression') {
+        } else if (
+          calleeNode.type === 'member_expression' ||
+          calleeNode.type === 'selector_expression' ||
+          calleeNode.type === 'field_expression'
+        ) {
           const propNode = calleeNode.child(calleeNode.childCount - 1);
           const objNode = calleeNode.child(0);
           const propTypes = ['property_identifier', 'identifier', 'field_identifier', 'name'];

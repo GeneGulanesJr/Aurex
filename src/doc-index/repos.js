@@ -3,6 +3,7 @@ const path = require('path');
 const { RESULT_LIMITS } = require('../../constants');
 const { hashContent, walkDirForDocs: walkDir } = require('../../utils');
 const { parseMarkdownSections } = require('./markdown-parser');
+const { extractHtmlSections, extractHtmlLinks: parseHtmlLinks } = require('./html-parser');
 const { buildSectionHierarchy } = require('./sections');
 const { extractLinks, resolveLinks } = require('./links');
 const { extractGlossaryTerms } = require('./glossary');
@@ -82,19 +83,22 @@ async function indexDocs(db, rootPath, repoName, ignoreGlob) {
     'INSERT INTO doc_code_blocks (section_id, lang, content, byte_start, byte_end) VALUES (?, ?, ?, ?, ?)',
   );
 
-  const useTx = typeof db.transaction === 'function'
-    ? (fn) => db.transaction(fn)()
-    : (fn) => {
-        db.exec('BEGIN');
-        try {
-          const result = fn();
-          db.exec('COMMIT');
-          return result;
-        } catch (e) {
-          try { db.exec('ROLLBACK'); } catch {}
-          throw e;
-        }
-      };
+  const useTx =
+    typeof db.transaction === 'function'
+      ? (fn) => db.transaction(fn)()
+      : (fn) => {
+          db.exec('BEGIN');
+          try {
+            const result = fn();
+            db.exec('COMMIT');
+            return result;
+          } catch (e) {
+            try {
+              db.exec('ROLLBACK');
+            } catch {}
+            throw e;
+          }
+        };
 
   const BATCH_SIZE = RESULT_LIMITS.DOC_BATCH_SIZE;
 
@@ -102,7 +106,10 @@ async function indexDocs(db, rootPath, repoName, ignoreGlob) {
     const { filePath, content, stat } = entry;
     const relPath = path.relative(rootPath, filePath);
     const fileId = insertFile.get(repoId, relPath, content, hashContent(content), stat.mtimeMs).id;
-    const withParent = buildSectionHierarchy(parseMarkdownSections(content, filePath));
+    const ext = path.extname(filePath).toLowerCase();
+    const isHtml = ext === '.html' || ext === '.htm';
+    const rawSections = isHtml ? extractHtmlSections(content, filePath) : parseMarkdownSections(content, filePath);
+    const withParent = buildSectionHierarchy(rawSections);
     const sectionIdMap = new Map();
 
     for (let idx = 0; idx < withParent.length; idx++) {
@@ -124,21 +131,30 @@ async function indexDocs(db, rootPath, repoName, ignoreGlob) {
       sectionIdMap.set(idx, sectionDbId);
       totalSections++;
 
-      for (const link of extractLinks(sec.content)) {
-        if (link.is_internal) {
-          insertLink.run(sectionDbId, link.target_path, null, link.link_text, 0);
+      if (isHtml) {
+        for (const link of parseHtmlLinks(sec.content)) {
+          insertLink.run(sectionDbId, link.href, null, link.text, 0);
           totalLinks++;
+        }
+      } else {
+        for (const link of extractLinks(sec.content)) {
+          if (link.is_internal) {
+            insertLink.run(sectionDbId, link.target_path, null, link.link_text, 0);
+            totalLinks++;
+          }
         }
       }
 
-      for (const term of extractGlossaryTerms(sec.content)) {
-        insertTerm.run(repoId, term.term, term.definition, sectionDbId);
-        totalTerms++;
-      }
+      if (!isHtml) {
+        for (const term of extractGlossaryTerms(sec.content)) {
+          insertTerm.run(repoId, term.term, term.definition, sectionDbId);
+          totalTerms++;
+        }
 
-      for (const block of extractCodeBlocks(sec.content, sec.byte_start)) {
-        insertCodeBlock.run(sectionDbId, block.lang, block.content, block.byte_start, block.byte_end);
-        totalCodeBlocks++;
+        for (const block of extractCodeBlocks(sec.content, sec.byte_start)) {
+          insertCodeBlock.run(sectionDbId, block.lang, block.content, block.byte_start, block.byte_end);
+          totalCodeBlocks++;
+        }
       }
     }
   }

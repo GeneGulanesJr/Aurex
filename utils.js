@@ -70,6 +70,8 @@ const CODE_EXTENSIONS = new Set([
 
 const MD_EXTENSIONS = new Set(['.md', '.mdx']);
 
+const DOC_EXTENSIONS = new Set(['.md', '.mdx', '.html', '.htm']);
+
 /* ── directory walking ──────────────────────────────────────── */
 
 function walkDirForCode(dirPath) {
@@ -119,7 +121,7 @@ function walkDirForDocs(dirPath, ignoreGlob) {
           continue;
         }
         walk(fullPath);
-      } else if (entry.isFile() && MD_EXTENSIONS.has(path.extname(entry.name))) {
+      } else if (entry.isFile() && DOC_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
         if (ignoreRe && ignoreRe.test(fullPath)) {
           // oxlint-disable-next-line no-continue
           continue;
@@ -198,6 +200,7 @@ module.exports = {
   IGNORE_DIRS_DOCS,
   CODE_EXTENSIONS,
   MD_EXTENSIONS,
+  DOC_EXTENSIONS,
   walkDirForCode,
   walkDirForDocs,
   hashContent,
