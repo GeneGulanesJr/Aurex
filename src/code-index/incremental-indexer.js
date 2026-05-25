@@ -1135,6 +1135,27 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
     }
   }
 
+  if (changedRecords.length === 0 && unchanged === totalFiles) {
+    const totalMs = Date.now() - t0;
+    emitProgress(args, 'done', {
+      message: `No files changed: ${unchanged} unchanged (${(totalMs / 1000).toFixed(1)}s)`,
+    }, { files_total: totalFiles, files_done: totalFiles, symbols: 0 });
+    return {
+      success: true, repo, mode, name: repo,
+      file_count: totalFiles, symbol_count: 0, files_checked: totalFiles,
+      files_hashed: hashed, files_reindexed: 0, files_unchanged: unchanged,
+      files_removed: 0, files_skipped: skipped.length, symbols_extracted: 0,
+      strategy: gitDelta ? 'git-diff' : 'scan-hash',
+      derived_scope: 'none',
+      git_base: gitDelta ? existing.head_commit : null,
+      git_head: gitDelta ? gitDelta.currentHead : null,
+      git_renames: gitDelta ? gitDelta.renamed : [],
+      import_edges: 0, call_edges: 0, complexity_symbols: 0,
+      skipped, skip_report: skipReport,
+      timing_ms: { total: totalMs },
+    };
+  }
+
   const currentFilesSet = new Set(files);
   const staleFiles =
     gitDelta || explicitChangedPathMode
