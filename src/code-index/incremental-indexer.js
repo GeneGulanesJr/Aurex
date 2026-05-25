@@ -767,6 +767,14 @@ async function parsePhase(files, deps, repoId, args) {
         writeRecords(false);
       }
     }
+  } catch (parseError) {
+    console.error(`[indexer] parsePhase failed: ${parseError.message}`);
+    emitProgress(args, 'error', {
+      step: 'parse-failed',
+      message: `Parse phase failed: ${parseError.message}. Index may be incomplete.`,
+    });
+    // Re-throw so the caller (indexRepository) knows parsing was incomplete
+    throw parseError;
   } finally {
     if (pool) {
       await pool.terminate();
@@ -839,10 +847,25 @@ async function indexRepository(deps, repoPath, repoName) {
     files_total: files.length,
   });
   const parseT0 = Date.now();
-  const parseResult = await parsePhase(files, { parserRegistry: registry, repository }, repoId, {
-    ...args,
-    repoRoot: absPath,
-  });
+  let parseResult;
+  try {
+    parseResult = await parsePhase(files, { parserRegistry: registry, repository }, repoId, {
+      ...args,
+      repoRoot: absPath,
+    });
+  } catch (parseError) {
+    console.error(`[indexer] indexRepository: parsePhase threw after clearRepoIndex - repo may be empty: ${parseError.message}`);
+    emitProgress(args, 'error', {
+      step: 'parse-failed',
+      message: `Fatal: parse phase failed after clearing index: ${parseError.message}. Run reindex again to restore.`,
+    });
+    // Return error so caller knows index is empty
+    return {
+      error: `Index rebuild failed during parse phase: ${parseError.message}. The index for "${repoName}" is now empty. Please re-run reindex to restore it.`,
+      repo: repoName,
+      files_cleared: clearTotals,
+    };
+  }
   const parseMs = Date.now() - parseT0;
 
   emitProgress(args, 'analysis', {
@@ -1206,7 +1229,7 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
     mode,
     name: repo,
     file_count: reindexed + unchanged,
-    symbol_count: symbolCount,
+    symbol_count: (() => { try { const r = db.prepare('SELECT symbol_count FROM code_repos WHERE id = ?').get(existing.id); return r ? r.symbol_count : symbolCount; } catch { return symbolCount; } })(),
     files_checked: totalFiles,
     files_hashed: hashed,
     files_reindexed: reindexed,
