@@ -146,7 +146,9 @@ function isBusyError(e) {
 
 function sleepMs(ms) {
   const end = Date.now() + ms;
-  while (Date.now() < end) { /* Spin */ }
+  while (Date.now() < end) {
+    /* Spin */
+  }
 }
 
 function retryOnBusy(fn, label) {
@@ -183,16 +185,16 @@ function _sqlJson(query, params = []) {
   }, 'sqlJson');
 }
 
- function _sqlRun(query, params = []) {
-   return retryOnBusy(() => {
-     try {
-       const stmt = _db.prepare(query);
-       return stmt.run(...params);
-     } catch (e) {
-       throw new Error(`SQL error: ${e.message}\nQuery: ${query}`, { cause: e });
-     }
-   }, 'sqlRun');
- }
+function _sqlRun(query, params = []) {
+  return retryOnBusy(() => {
+    try {
+      const stmt = _db.prepare(query);
+      return stmt.run(...params);
+    } catch (e) {
+      throw new Error(`SQL error: ${e.message}\nQuery: ${query}`, { cause: e });
+    }
+  }, 'sqlRun');
+}
 
 function _sqlExec(sql) {
   return retryOnBusy(() => {
@@ -763,7 +765,9 @@ function runMigrationV10() {
         first_seen_pass INTEGER NOT NULL DEFAULT 0
       )`);
       sqlRaw('CREATE INDEX IF NOT EXISTS idx_fsb_file_name ON file_scope_bindings(repo_id, file_id, name, line_start)');
-      sqlRaw('CREATE INDEX IF NOT EXISTS idx_fsb_file_range ON file_scope_bindings(repo_id, file_id, line_start, line_end)');
+      sqlRaw(
+        'CREATE INDEX IF NOT EXISTS idx_fsb_file_range ON file_scope_bindings(repo_id, file_id, line_start, line_end)',
+      );
       sqlRaw('CREATE INDEX IF NOT EXISTS idx_fsb_file_depth ON file_scope_bindings(file_id, scope_depth)');
 
       sqlRaw(`CREATE TABLE IF NOT EXISTS scope_resolution (
