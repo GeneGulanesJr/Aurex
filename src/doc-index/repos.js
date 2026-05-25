@@ -82,19 +82,22 @@ async function indexDocs(db, rootPath, repoName, ignoreGlob) {
     'INSERT INTO doc_code_blocks (section_id, lang, content, byte_start, byte_end) VALUES (?, ?, ?, ?, ?)',
   );
 
-  const useTx = typeof db.transaction === 'function'
-    ? (fn) => db.transaction(fn)()
-    : (fn) => {
-        db.exec('BEGIN');
-        try {
-          const result = fn();
-          db.exec('COMMIT');
-          return result;
-        } catch (e) {
-          try { db.exec('ROLLBACK'); } catch {}
-          throw e;
-        }
-      };
+  const useTx =
+    typeof db.transaction === 'function'
+      ? (fn) => db.transaction(fn)()
+      : (fn) => {
+          db.exec('BEGIN');
+          try {
+            const result = fn();
+            db.exec('COMMIT');
+            return result;
+          } catch (e) {
+            try {
+              db.exec('ROLLBACK');
+            } catch {}
+            throw e;
+          }
+        };
 
   const BATCH_SIZE = RESULT_LIMITS.DOC_BATCH_SIZE;
 

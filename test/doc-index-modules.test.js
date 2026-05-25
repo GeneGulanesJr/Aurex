@@ -1,4 +1,5 @@
 const markdownParser = require('../src/doc-index/markdown-parser');
+const htmlParser = require('../src/doc-index/html-parser');
 const links = require('../src/doc-index/links');
 const glossary = require('../src/doc-index/glossary');
 const examples = require('../src/doc-index/examples');
@@ -101,5 +102,73 @@ describe('doc-index focused modules', () => {
     expect(report.coverage_pct).toBe(50);
     expect(report.documented_list).toHaveLength(1);
     expect(report.undocumented_list).toHaveLength(1);
+  });
+});
+
+describe('html-parser module', () => {
+  it('extracts sections from HTML headings', () => {
+    const html = `<html><body><h1>Title</h1><p>Intro</p><h2>Section A</h2><p>Content A</p><h3>Sub</h3><p>Detail</p></body></html>`;
+    const sections = htmlParser.extractHtmlSections(html, 'test.html');
+    expect(sections.length).toBeGreaterThanOrEqual(3);
+    expect(sections.some((s) => s.title === 'Title' && s.level === 1)).toBe(true);
+    expect(sections.some((s) => s.title === 'Section A' && s.level === 2)).toBe(true);
+    expect(sections.some((s) => s.title === 'Sub' && s.level === 3)).toBe(true);
+  });
+
+  it('creates a single section for HTML without headings', () => {
+    const html = `<html><body><p>Just a paragraph.</p></body></html>`;
+    const sections = htmlParser.extractHtmlSections(html, 'test.html');
+    expect(sections).toHaveLength(1);
+    expect(sections[0].level).toBe(0);
+    expect(sections[0].content).toContain('Just a paragraph');
+  });
+
+  it('uses <title> as the file title', () => {
+    const html = `<html><head><title>My Page</title></head><body><p>Content</p></body></html>`;
+    const sections = htmlParser.extractHtmlSections(html, 'test.html');
+    expect(sections[0].title).toBe('My Page');
+  });
+
+  it('strips HTML tags from section content', () => {
+    const html = `<h1>Heading</h1><p>Hello <strong>world</strong> and <em>more</em></p>`;
+    const sections = htmlParser.extractHtmlSections(html, 'test.html');
+    const content = sections.find((s) => s.level > 0);
+    expect(content.content).toContain('Hello world and more');
+    expect(content.content).not.toContain('<strong>');
+    expect(content.content).not.toContain('<em>');
+  });
+
+  it('computes byte offsets for sections', () => {
+    const html = `<h1>Title</h1><p>Intro</p><h2>Next</h2><p>More</p>`;
+    const sections = htmlParser.extractHtmlSections(html, 'test.html');
+    for (const sec of sections) {
+      expect(sec.byte_start).toBeGreaterThanOrEqual(0);
+      expect(sec.byte_end).toBeGreaterThanOrEqual(sec.byte_start);
+      expect(sec.content_hash).toBeTruthy();
+    }
+  });
+
+  it('classifies HTML-specific roles', () => {
+    const navHtml = `<h1>Navigation Menu</h1><nav><a href="/">Home</a></nav>`;
+    const sections = htmlParser.extractHtmlSections(navHtml, 'test.html');
+    expect(sections.some((s) => s.role === 'navigation')).toBe(true);
+  });
+
+  it('extracts links from HTML content', () => {
+    const html = `<a href="/about">About Us</a><a href="/contact">Contact</a><a href="/about">About Us</a>`;
+    const htmlLinks = htmlParser.extractHtmlLinks(html);
+    expect(htmlLinks).toHaveLength(2);
+    expect(htmlLinks[0]).toEqual({ href: '/about', text: 'About Us' });
+    expect(htmlLinks[1]).toEqual({ href: '/contact', text: 'Contact' });
+  });
+
+  it('extracts title from <title> tag', () => {
+    expect(htmlParser.extractTitle('<head><title>Test Page</title></head>')).toBe('Test Page');
+    expect(htmlParser.extractTitle('<h1>Fallback</h1>')).toBe('Fallback');
+    expect(htmlParser.extractTitle('<p>Nothing</p>')).toBeNull();
+  });
+
+  it('strips HTML entities from text', () => {
+    expect(htmlParser.stripHtmlTags('<p>Hello &amp; world &lt;test&gt;</p>')).toBe('Hello & world <test>');
   });
 });
