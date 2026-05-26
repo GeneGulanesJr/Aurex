@@ -572,10 +572,6 @@ interface LaPisClient {
 
 **Note for Creator-Verifier audit**: the `authorId` value `"human"` is a known non-session actor. `creator-verifier.ts` must handle this explicitly — do not look up `"human"` in `agent_sessions` or the audit will produce spurious failures on every human guidance broadcast. Human guidance broadcasts are exempt from Creator-Verifier session checks by definition.
 
-**Note for Creator-Verifier audit**: `authorId: "human"` is a known non-session actor. `creator-verifier.ts` must handle this explicitly — do not look up `"human"` in `agent_sessions` or the audit will produce spurious failures on every human guidance broadcast. Human guidance broadcasts are exempt from Creator-Verifier session checks by definition.
-
-**Note for Creator-Verifier audit**:  is a known non-session actor.  must handle this explicitly — do not look up  in  or the audit will produce spurious failures on every human guidance broadcast. Human guidance broadcasts are exempt from Creator-Verifier session checks by definition.
-
 ---
 
 ## 7. Error Handling & Retry Rules
