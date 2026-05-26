@@ -9,5 +9,9 @@
   "engines": {
     "node": ">=20.0.0",
     "pnpm": ">=9.0.0"
+  },
+  "devDependencies": {
+    "minimatch": "^10.2.5",
+    "vitest": "^4.1.7"
   }
 }

@@ -1,110 +1,82 @@
-import { v4 as uuid } from 'uuid';
-import type {
-  NegotiatorVerdict,
-  NegotiatorDecision,
-  Handoff,
-  ValidationContract,
-} from '@aurex/shared';
-import { getDb } from '../db.js';
-import type { RouterClient } from '../clients/router-client.js';
+// packages/backend/src/orchestrator/negotiator.ts
+import type { LaPisClient } from "../clients/lapis-client";
+import type { ValidationVerdict, NegotiatorVerdict } from "@aurex/shared";
 
-export interface NegotiatorInput {
-  missionId: string;
-  milestoneId: string;
-  milestoneTitle: string;
-  milestoneDescription: string;
-  validationContracts: ValidationContract[];
-  handoffs: Handoff[];
-  validatorFindings: string[];
-  retryCount: number;
-  rescopeCount: number;
-  maxRetryCount: number;
-  maxRescopeCount: number;
+interface NegotiateResult {
+  decision: NegotiatorVerdict;
+  reason: string;
+  failedUnitIds?: string[];
 }
 
-export interface NegotiatorOutput {
-  decision: NegotiatorDecision;
-}
+export function createNegotiator(lapis: LaPisClient) {
+  return {
+    async negotiate(
+      milestoneId: string,
+      retryCount: number,
+      rescopeCount: number,
+      maxRetries: number,
+      maxRescopes: number,
+    ): Promise<NegotiateResult> {
+      const verdicts: ValidationVerdict[] = await lapis.getVerdicts(milestoneId);
 
-export function createNegotiator(
-  router: RouterClient,
-) {
-  async function negotiate(input: NegotiatorInput): Promise<NegotiatorOutput> {
-    const db = getDb();
+      // Check if all verdicts pass
+      const allPass = verdicts.every((v) => v.verdict === "pass");
+      if (allPass) {
+        return { decision: "pass", reason: "All validators passed" };
+      }
 
-    const prompt = `Milestone: ${input.milestoneTitle}
-Description: ${input.milestoneDescription}
-
-Validation Contracts:
-${input.validationContracts.map((c, i) => `${i + 1}. ${c.description} (${c.acceptanceCriteria.join(', ')})`).join('\n')}
-
-Worker Handoffs:
-${input.handoffs.map(h => `- [${h.status}] ${h.summary}\n  Rationale: ${h.rationale}\n  Files: ${h.filesModifiedJson}`).join('\n')}
-
-Validator Findings:
-${input.validatorFindings.map(f => `- ${f}`).join('\n')}
-
-Current retry count: ${input.retryCount}/${input.maxRetryCount}
-Current rescope count: ${input.rescopeCount}/${input.maxRescopeCount}
-
-Decide the next action.`;
-
-    const response = await router.negotiationCall(prompt, {
-      missionDescription: input.milestoneDescription,
-      previousFailures: input.validatorFindings,
-    });
-
-    const decision: NegotiatorDecision = {
-      verdict: response.verdict,
-      reasoning: response.reasoning,
-      rescopedSpec: response.rescopedSpec,
-      retryUnits: response.retryUnits,
-    };
-
-    const insertBroadcast = db.prepare(`
-      INSERT INTO broadcasts (id, mission_id, milestone_id, content, category, lifecycle)
-      VALUES (?, ?, ?, ?, 'decision', 'active')
-    `);
-
-    insertBroadcast.run(
-      uuid(),
-      input.missionId,
-      input.milestoneId,
-      `Negotiator verdict: ${decision.verdict} — ${decision.reasoning}`,
-    );
-
-    if (decision.verdict === 'rescope') {
-      const insertRescope = db.prepare(`
-        INSERT INTO rescope_history (id, mission_id, milestone_id, original_spec_json, revised_spec_json, reason, triggered_by)
-        VALUES (?, ?, ?, ?, ?, ?, 'negotiator')
-      `);
-
-      insertRescope.run(
-        uuid(),
-        input.missionId,
-        input.milestoneId,
-        JSON.stringify(input.milestoneDescription),
-        JSON.stringify(decision.rescopedSpec || ''),
-        decision.reasoning,
+      // User testing failure always blocks (override authority)
+      const userTestFailure = verdicts.find(
+        (v) => v.validatorType === "validator_user_testing" && v.verdict === "fail",
       );
-    }
+      if (userTestFailure) {
+        if (retryCount < maxRetries) {
+          return {
+            decision: "retry",
+            reason: "user_testing failed — always blocks",
+            failedUnitIds: userTestFailure.failedUnitIds,
+          };
+        }
+        if (rescopeCount < maxRescopes) {
+          return {
+            decision: "rescope",
+            reason: "user_testing failed, retries exhausted — rescope needed",
+          };
+        }
+        return { decision: "escalate", reason: "user_testing failed, all limits exhausted" };
+      }
 
-    const insertCost = db.prepare(`
-      INSERT INTO cost_entries (id, mission_id, milestone_id, role, model, input_tokens, output_tokens, estimated_cost_usd)
-      VALUES (?, ?, ?, 'negotiator', ?, ?, ?, 0)
-    `);
+      // Scrutiny-only failure — classify
+      const scrutinyFailure = verdicts.find(
+        (v) => v.validatorType === "validator_scrutiny" && v.verdict === "fail",
+      );
+      if (scrutinyFailure) {
+        const classification = scrutinyFailure.classification || "blocking";
 
-    insertCost.run(
-      uuid(),
-      input.missionId,
-      input.milestoneId,
-      response.modelUsed,
-      response.tokensUsed.input,
-      response.tokensUsed.output,
-    );
+        if (classification === "patchable" && retryCount < maxRetries) {
+          return {
+            decision: "retry",
+            reason: `scrutiny patchable: ${scrutinyFailure.findings}`,
+            failedUnitIds: scrutinyFailure.failedUnitIds,
+          };
+        }
 
-    return { decision };
-  }
+        if (retryCount < maxRetries) {
+          return {
+            decision: "retry",
+            reason: "scrutiny blocking — full retry",
+            failedUnitIds: scrutinyFailure.failedUnitIds,
+          };
+        }
 
-  return { negotiate };
+        if (rescopeCount < maxRescopes) {
+          return { decision: "rescope", reason: "scrutiny failed, retries exhausted" };
+        }
+
+        return { decision: "escalate", reason: "scrutiny failed, all limits exhausted" };
+      }
+
+      return { decision: "escalate", reason: "Unknown verdict state" };
+    },
+  };
 }

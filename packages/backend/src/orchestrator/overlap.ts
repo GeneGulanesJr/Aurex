@@ -1,75 +1,88 @@
-import type { WorkingUnit, SerializationMap, WorkingUnitBatch } from '@aurex/shared';
+// packages/backend/src/orchestrator/overlap.ts
+import type { WorkingUnit } from "@aurex/shared";
+import { minimatch } from "minimatch";
 
-export function computeOverlap(workingUnits: WorkingUnit[]): SerializationMap {
-  if (workingUnits.length === 0) {
-    return { batches: [] };
-  }
+interface ScopeDeclaration {
+  declaredPaths: string[];
+  declaredModules: string[];
+}
 
-  const filePaths = new Map<string, string[]>();
-  const modules = new Map<string, string[]>();
+export interface OverlapResult {
+  overlap: boolean;
+  overlappingUnits: string[];
+}
 
-  for (const unit of workingUnits) {
-    const files: string[] = JSON.parse(unit.filePathsJson || '[]');
-    const mods: string[] = JSON.parse(unit.modulesJson || '[]');
-    filePaths.set(unit.id, files);
-    modules.set(unit.id, mods);
-  }
+/**
+ * Pre-spawn scope check: uses declared_paths + declared_modules only.
+ * Git diff doesn't exist yet — the task branch hasn't been written to.
+ */
+export function checkPreSpawnOverlap(
+  newScope: ScopeDeclaration,
+  existingUnits: WorkingUnit[],
+): OverlapResult {
+  const newPaths = newScope.declaredPaths;
+  const newModules = newScope.declaredModules;
 
-  const conflictGraph = new Map<string, Set<string>>();
-  for (const unit of workingUnits) {
-    conflictGraph.set(unit.id, new Set());
-  }
+  const overlapping: string[] = [];
 
-  for (let i = 0; i < workingUnits.length; i++) {
-    for (let j = i + 1; j < workingUnits.length; j++) {
-      const a = workingUnits[i];
-      const b = workingUnits[j];
-      const aFiles = filePaths.get(a.id) || [];
-      const bFiles = filePaths.get(b.id) || [];
-      const aMods = modules.get(a.id) || [];
-      const bMods = modules.get(b.id) || [];
+  for (const unit of existingUnits) {
+    if (unit.status !== "working" && unit.status !== "spawned") continue;
 
-      const hasOverlap =
-        aFiles.some(f => bFiles.includes(f)) ||
-        aMods.some(m => bMods.includes(m));
+    // Check module overlap
+    const moduleOverlap = newModules.some((m) => unit.declaredModules.includes(m));
+    if (moduleOverlap) {
+      overlapping.push(unit.id);
+      continue;
+    }
 
-      if (hasOverlap) {
-        conflictGraph.get(a.id)!.add(b.id);
-        conflictGraph.get(b.id)!.add(a.id);
-      }
+    // Check path overlap using glob matching
+    const pathOverlap = newPaths.some((newPath) =>
+      unit.declaredPaths.some((existingPath) =>
+        minimatch(newPath, existingPath) || minimatch(existingPath, newPath),
+      ),
+    );
+    if (pathOverlap) {
+      overlapping.push(unit.id);
     }
   }
 
-  const batches: WorkingUnitBatch[] = [];
-  const assigned = new Set<string>();
+  return { overlap: overlapping.length > 0, overlappingUnits: overlapping };
+}
 
-  while (assigned.size < workingUnits.length) {
-    const batchUnits: string[] = [];
-    const batchConflicts = new Set<string>();
+/**
+ * Post-commit scope: unions declared scope with actual git diff files.
+ */
+export function computePostCommitScope(
+  declaredScope: ScopeDeclaration,
+  gitDiffFiles: string[],
+): string[] {
+  const declared = new Set(declaredScope.declaredPaths);
+  for (const file of gitDiffFiles) {
+    declared.add(file);
+  }
+  return Array.from(declared);
+}
 
-    for (const unit of workingUnits) {
-      if (assigned.has(unit.id)) continue;
-      if (batchConflicts.has(unit.id)) continue;
+/**
+ * Detect if a set of file paths overlaps with any existing working unit's scope.
+ */
+export function detectOverlap(
+  filePaths: string[],
+  existingUnits: WorkingUnit[],
+): OverlapResult {
+  const overlapping: string[] = [];
 
-      batchUnits.push(unit.id);
-      assigned.add(unit.id);
+  for (const unit of existingUnits) {
+    if (unit.status !== "working" && unit.status !== "spawned") continue;
 
-      const conflicts = conflictGraph.get(unit.id);
-      if (conflicts) {
-        for (const c of conflicts) {
-          batchConflicts.add(c);
-        }
-      }
+    const hasOverlap = filePaths.some((file) =>
+      unit.declaredPaths.some((pattern) => minimatch(file, pattern)),
+    );
+
+    if (hasOverlap) {
+      overlapping.push(unit.id);
     }
-
-    const dependsOn = batches.length > 0 ? [batches.length - 1] : [];
-
-    batches.push({
-      batchIndex: batches.length,
-      unitIds: batchUnits,
-      dependsOnBatches: dependsOn,
-    });
   }
 
-  return { batches };
+  return { overlap: overlapping.length > 0, overlappingUnits: overlapping };
 }

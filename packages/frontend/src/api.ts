@@ -1,55 +1,30 @@
-import type {
-  CreateMissionResponse,
-  GetMissionResponse,
-  ListMissionsResponse,
-  CheckpointResponse,
-} from '@aurex/shared';
+import type { CheckpointDecision } from "@aurex/shared";
 
-const API_BASE = '/api';
-
-async function parseResponse<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    let message = `Request failed (${res.status})`;
-    try {
-      const body = await res.json() as Record<string, unknown>;
-      if (typeof body.error === 'string') message = body.error;
-    } catch {
-      // use default message
-    }
-    throw new Error(message);
-  }
-  return (await res.json()) as T;
-}
-
-export async function createMission(description: string): Promise<CreateMissionResponse> {
-  const res = await fetch(`${API_BASE}/missions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+export async function createMission(description: string) {
+  const res = await fetch("/api/missions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ description }),
   });
-  return parseResponse<CreateMissionResponse>(res);
-}
-
-export async function getMission(id: string): Promise<GetMissionResponse> {
-  const res = await fetch(`${API_BASE}/missions/${id}`);
-  return parseResponse<GetMissionResponse>(res);
-}
-
-export async function listMissions(status?: string): Promise<ListMissionsResponse> {
-  const params = status ? `?status=${encodeURIComponent(status)}` : '';
-  const res = await fetch(`${API_BASE}/missions${params}`);
-  return parseResponse<ListMissionsResponse>(res);
+  return res.json() as Promise<{ missionId: string; status: string }>;
 }
 
 export async function submitCheckpoint(
   missionId: string,
-  decision: 'approve' | 'reject' | 'override',
-  overrideReason?: string,
-): Promise<CheckpointResponse> {
-  const res = await fetch(`${API_BASE}/missions/${missionId}/checkpoint`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ decision, overrideReason }),
+  checkpointId: string,
+  decision: CheckpointDecision,
+  guidance?: string,
+  reason?: string,
+) {
+  const res = await fetch(`/api/missions/${missionId}/checkpoints`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ checkpointId, decision, guidance, reason }),
   });
-  return parseResponse<CheckpointResponse>(res);
+  return res.json() as Promise<{ accepted: boolean; duplicate?: boolean }>;
+}
+
+export async function getHealth() {
+  const res = await fetch("/health");
+  return res.json() as Promise<{ status: string; lapis: boolean; pinyx: boolean }>;
 }

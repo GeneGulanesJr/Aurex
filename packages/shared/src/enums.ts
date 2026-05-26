@@ -1,34 +1,30 @@
-export type MissionStatus = 'planning' | 'running' | 'paused' | 'complete' | 'failed';
+// packages/shared/src/enums.ts
 
-export type MilestoneStatus =
-  | 'pending'
-  | 'in_progress'
-  | 'validating'
-  | 'passed'
-  | 'failed'
-  | 'rescoped';
+// Mission lifecycle
+export type MissionStatus = "planning" | "running" | "paused" | "completed" | "failed" | "aborted";
+export type MilestoneStatus = "planned" | "in_progress" | "validating" | "completed" | "failed";
 
-export type WorkerStatus =
-  | 'pending'
-  | 'spawned'
-  | 'running'
-  | 'completed'
-  | 'timed_out'
-  | 'rejected';
+// Agent statuses
+export type AgentStatus = "spawned" | "planning" | "working" | "reviewing" | "researching" | "committing" | "completed" | "timed_out" | "failed";
+export type WorkerStatus = "spawned" | "working" | "committing" | "completed" | "timed_out" | "failed";
 
-export type NegotiatorVerdict = 'pass' | 'retry' | 'rescope' | 'escalate';
+// Agent types
+export type AgentType = "orchestrator" | "worker" | "validator_scrutiny" | "validator_user_testing" | "research";
 
-export type BroadcastCategory = 'info' | 'warning' | 'decision' | 'blocker';
-export type BroadcastLifecycle = 'active' | 'superseded' | 'resolved' | 'expired';
+// Negotiation
+export type NegotiatorVerdict = "pass" | "retry" | "rescope" | "escalate";
 
-export type ResearchLifecycle = 'active' | 'superseded' | 'archived';
-export type ResearchRelevance = 'high' | 'medium' | 'low';
-export type ResearchSource = 'subagent' | 'validator' | 'negotiator';
+// Broadcasts
+export type BroadcastLifecycle = "active" | "superseded" | "archived" | "expired";
+export type BroadcastCategory = "info" | "warning" | "decision" | "constraint";
 
-export type CheckpointTrigger =
-  | 'milestone_approval'
-  | 'rescope_limit'
-  | 'unclassifiable_error'
-  | 'timeout';
+// Research
+export type ResearchLifecycle = "unverified" | "verified" | "superseded" | "rejected" | "expired";
+export type ResearchRelevance = "high" | "medium" | "low";
 
-export type CheckpointDecision = 'approve' | 'reject' | 'override';
+// Checkpoints
+export type CheckpointTrigger = "milestone_complete" | "rescope_limit" | "unclassifiable_error";
+export type CheckpointDecision = "approve" | "reject" | "rescope";
+
+// Compression
+export type CompressionTrigger = "post_milestone" | "manual" | "budget_threshold";
