@@ -90,7 +90,18 @@ LaPis owns a single SQLite database. The backend connects via HTTP (`LAPIS_ENDPO
 - Transaction + locking for concurrent agent writes
 - Broadcast TTL auto-expiry at compression checkpoints
 
-### 2b. Git Branch Strategy & Merge Flow
+### 2b. Overlap Detection — Pre-spawn vs Post-commit
+
+Two distinct phases of scope evaluation:
+
+- **Pre-spawn scope** (at spawn decision): `declared_paths ∪ declared_modules` only. Git diff doesn't exist yet — the task branch hasn't been written to. This determines concurrent vs serialized execution.
+- **Post-commit scope** (before merging to develop): `declared_paths ∪ declared_modules ∪ git_diff_files(task_branch, develop)`. Catches declaration drift.
+
+The runtime re-checks overlap at merge time using post-commit scope. If a Worker's actual scope overlaps with a concurrently-running Worker's scope (discovered post-commit), the merge to `develop` is blocked until the other Worker completes and a merge conflict check passes.
+
+Declaration drift (declared vs actual scope divergence) is logged to shared state. Repeated drift signals spec decomposition needs tightening.
+
+### 2c. Git Branch Strategy & Merge Flow
 
 ```
 main
@@ -114,13 +125,13 @@ release/milestone-x ──(human approval)──▶ main
 - Git hooks in each worktree reject commits to non-`task/*` branches
 - Failed release branches are abandoned, not force-pushed. Main stays clean.
 
-**Overlap detection** uses union of declared scope + actual git diff:
+### 2c. Git Branch Strategy & Merge Flow
 
-```
-effective_scope = declared_paths ∪ declared_modules ∪ git_diff_files(task_branch, develop)
-```
-
-Declaration drift (declared vs actual scope divergence) is logged to shared state. Repeated drift signals spec decomposition needs tightening.
+**Runtime enforcement:**
+- Orchestrator creates full hierarchy at mission start
+- Workers spawned into worktrees with `task/*` pre-checked out
+- Git hooks in each worktree reject commits to non-`task/*` branches
+- Failed release branches are abandoned, not force-pushed. Main stays clean.
 
 ---
 
@@ -179,6 +190,19 @@ async function createAgentSession(config: AgentConfig): Promise<AgentSession> {
 
 **Memory-layer extension** loaded for Workers and Research only. Orchestrator uses a direct LaPis client for planning queries and shared state writes. Validators access LaPis through the backend, not an extension.
 
+**Orchestrator memory re-injection**: the Orchestrator re-injects context each time it re-activates for a new milestone. This is a richer, targeted query — not the 3-memory injection Workers get at spawn:
+
+```
+Orchestrator re-activates for milestone N:
+  1. LaPis searchMemory("milestone N context, outcomes of milestone N-1")
+  2. Read all active broadcasts
+  3. Read all verified research findings for this mission
+  4. Read completed milestone handoff summaries
+  5. Build planning context from union of above
+```
+
+The skill prompt (`orchestrator.md`) specifies the re-activation context-gathering protocol. The direct LaPis client (`searchMemory`) is the mechanism.
+
 ### 3c. Agent Lifecycle
 
 ```
@@ -227,8 +251,9 @@ packages/backend/src/
 ├── config.ts                    # AppConfig from env vars
 │
 ├── clients/
-│   ├── lapis-client.ts          # LaPis shared state client (HTTP). Replaces old CLI-subprocess
-│   │                           # module. Do not confuse with old lapis-client.ts.
+│   ├── lapis-client.ts          # LaPis shared state client (HTTP). New implementation.
+│   │                           # Migration: old CLI-subprocess version renamed to
+│   │                           # lapis-client.old.ts during transition, deleted after tests pass.
 │   └── pinyx-client.ts          # PiNyx LLM gateway client. Replaces old router-client.ts
 │
 ├── agents/
@@ -265,7 +290,7 @@ packages/backend/src/
 │   │   └── principles.md        # ~70 lines (hard cap)
 │   ├── orchestrator.md          # ~250 lines (hard cap)
 │   ├── worker.md                # ~150 lines (hard cap)
-│   ├── validator.md             # ~150 lines (hard cap, split if needed)
+│   ├── validator.md             # ~150 lines combined (hard cap). One file with conditional sections per validator type. Split into validator-scrutiny.md + validator-user-testing.md (75 lines each) if prompts diverge.
 │   └── research.md              # ~80 lines (hard cap)
 │
 └── types.ts                     # Shared TypeScript types
@@ -538,7 +563,8 @@ interface LaPisClient {
   incrementRetry(milestoneId: string): Promise<RetryCounter>;
   logRescope(milestoneId: string, event: RescopeEvent): Promise<void>;
 
-  // State compression (stubbed — no-op, logs skip)
+  // State compression (stubbed — logs skip with trigger and missionId, never silent)
+  // Example log: [compression] Skipped — not implemented (trigger: post_milestone, missionId: abc)
   runCompression(missionId: string, trigger: CompressionTrigger): Promise<void>;
 
   // Connectivity
@@ -547,6 +573,10 @@ interface LaPisClient {
 ```
 
 `supersedeContract` atomically writes the new contract and rescope event in one transaction — intentional coupling per spec §5 (rescope event mandatory when superseding).
+
+**Checkpoint dedup semantics**: Frontend generates `checkpointId` (UUID) before any submission. First submission processed normally → `{ accepted: true }`. Submissions with same `checkpointId` → `{ accepted: true, duplicate: true }` (decision already applied). Frontend shows success on duplicate, does not re-submit. New `checkpointId` per escalation event, never reused.
+
+**Human guidance broadcasts**: when a human provides guidance via `unclassifiable_error` checkpoint: `authorId: "human"`, `authorType: "orchestrator"`, `category: "decision"`, `ttl: null` (no auto-expiry). Human acts through Orchestrator authority channel. Lifecycle rules still apply.
 
 ---
 
@@ -848,8 +878,7 @@ interface ResearchFinding {
   content: string;
   relevance: ResearchRelevance;
   status: ResearchLifecycle;
-  verifiedBy: string | null;       // Worker session ID (ephemeral)
-  verifiedTaskId: string | null;   // Worker task ID (durable, used for historical standing)
+  verifiedTaskId: string | null;   // Worker task ID (durable reference for standing checks)
   ttl: number | null;
   expiresAt: string | null;
   createdAt: string;
