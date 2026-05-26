@@ -1,96 +1,62 @@
-import Fastify from 'fastify';
-import cors from '@fastify/cors';
-import rateLimit from '@fastify/rate-limit';
-import websocket from '@fastify/websocket';
-import { loadConfig } from './config.js';
-import { openDatabase, closeDatabase } from './db.js';
-import { runMigrations } from './migrator.js';
-import { missionRoutes } from './routes/missions.js';
-import { MilestoneLoop } from './orchestrator/milestone-loop.js';
-import { createPiProcessManager } from './spawn/pi-process-manager.js';
-import { createLaPisClient } from './clients/lapis-client.js';
-import { createRouterClient } from './clients/router-client.js';
-import { onMissionEvent } from './events.js';
+// packages/backend/src/server.ts
+import Fastify from "fastify";
+import { loadConfig } from "./config.js";
+import { createLaPisClient } from "./clients/lapis-client.js";
+import { createPinyxClient } from "./clients/pinyx-client.js";
+import { createEventBus } from "./ws/events.js";
+import { missionRoutes } from "./routes/missions.js";
+import { checkpointRoutes } from "./routes/checkpoints.js";
 
 async function main() {
   const config = loadConfig();
-  const db = openDatabase(config);
+  const lapis = createLaPisClient({ lapisEndpoint: config.lapisEndpoint });
+  const pinyx = createPinyxClient({ endpoint: config.pinyxEndpoint });
+  const eventBus = createEventBus();
 
-  console.log('Running migrations...');
-  runMigrations(db);
-  console.log('Migrations complete.');
+  // Startup healthchecks
+  try {
+    await lapis.ping();
+    console.log("[startup] LaPis connected");
+  } catch {
+    console.error("[startup] LaPis UNREACHABLE — exiting");
+    process.exit(1);
+  }
 
-  const fastify = Fastify({
-    logger: {
-      level: process.env.LOG_LEVEL || 'info',
+  try {
+    await pinyx.ping();
+    console.log("[startup] PiNyx connected");
+  } catch {
+    console.error("[startup] PiNyx UNREACHABLE — exiting");
+    process.exit(1);
+  }
+
+  const app = Fastify({ logger: true });
+
+  // Health endpoint
+  app.get("/health", async () => {
+    const lapisOk = await lapis.ping().then(() => true, () => false);
+    const pinyxOk = await pinyx.ping().then(() => true, () => false);
+    const ok = lapisOk && pinyxOk;
+    return { status: ok ? "ok" : "degraded", lapis: lapisOk, pinyx: pinyxOk };
+  });
+
+  // REST routes
+  await app.register(missionRoutes, { lapis });
+  await app.register(checkpointRoutes, {
+    resolveCheckpoint: async (missionId, decision, guidance, reason) => {
+      console.log(`[checkpoint] ${missionId}: ${decision} guidance=${guidance} reason=${reason}`);
+      return { accepted: true };
     },
   });
 
-  await fastify.register(cors, { origin: true });
-  await fastify.register(rateLimit, {
-    max: 100,
-    timeWindow: '1 minute',
-  });
-  await fastify.register(websocket);
-
-  const lapis = createLaPisClient(config);
-  const router = createRouterClient(config);
-  const piManager = createPiProcessManager(config);
-  const milestoneLoop = new MilestoneLoop(piManager, router, lapis);
-
-  fastify.register(missionRoutes, { prefix: '/api', milestoneLoop });
-
-  fastify.get('/health', async () => {
-    let dbOk = false;
-    try {
-      db.prepare('SELECT 1').get();
-      dbOk = true;
-    } catch {
-      // db not available
-    }
-    return { status: dbOk ? 'ok' : 'degraded', timestamp: new Date().toISOString(), db: dbOk };
-  });
-
-  fastify.get('/ws/:missionId', { websocket: true }, (socket, request) => {
-    const { missionId } = request.params as { missionId: string };
-
-    const unsubscribe = onMissionEvent(missionId, (event) => {
-      try {
-        socket.send(JSON.stringify(event));
-      } catch {
-        // socket may be closed
-      }
-    });
-
-    socket.on('close', () => {
-      unsubscribe();
-    });
-
-    socket.on('error', () => {
-      unsubscribe();
-    });
-  });
-
-  const shutdown = async (signal: string) => {
-    console.log(`Received ${signal}, shutting down...`);
-    await fastify.close();
-    closeDatabase();
-    process.exit(0);
-  };
-
-  process.on('SIGINT', () => shutdown('SIGINT'));
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-
+  // Start
   try {
-    await fastify.listen({ port: config.port, host: config.host });
-    console.log(`Aurex backend listening on ${config.host}:${config.port}`);
+    await app.listen({ port: config.port, host: "0.0.0.0" });
+    console.log(`[server] Listening on port ${config.port}`);
   } catch (err) {
-    fastify.log.error(err);
+    app.log.error(err);
     process.exit(1);
   }
 }
 
-main().catch((err) => {
-  console.error('Fatal error:', err);
-  process.exit(1);
-});
+main().catch(console.error);
