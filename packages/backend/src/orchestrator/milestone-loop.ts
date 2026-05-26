@@ -6,6 +6,8 @@ import type {
   Handoff,
   ValidationContract,
   MissionConfig,
+  NegotiatorDecision,
+  CheckpointDecision,
 } from '@aurex/shared';
 import { getDb } from '../db.js';
 import { computeOverlap } from './overlap.js';
@@ -16,7 +18,7 @@ import type { LaPisClient } from '../clients/lapis-client.js';
 import { emitEvent } from '../events.js';
 
 export interface CheckpointHandle {
-  resolve: (decision: string) => void;
+  resolve: (decision: CheckpointDecision) => void;
 }
 
 export class MilestoneLoop {
@@ -28,7 +30,7 @@ export class MilestoneLoop {
     private lapis: LaPisClient,
   ) {}
 
-  resolveCheckpoint(missionId: string, decision: string): boolean {
+  resolveCheckpoint(missionId: string, decision: CheckpointDecision): boolean {
     const handle = this.checkpoints.get(missionId);
     if (!handle) return false;
     handle.resolve(decision);
@@ -42,7 +44,7 @@ export class MilestoneLoop {
       ? JSON.parse(mission.configJson)
       : { workerTimeoutMs: 300000, validatorTimeoutMs: 120000, researchTimeoutMs: 180000, maxRetryCount: 3, maxRescopeCount: 2, maxMilestoneCount: 10 };
 
-    const negotiator = createNegotiator(this.router, this.lapis);
+    const negotiator = createNegotiator(this.router);
 
     const milestones = db.prepare(
       `SELECT * FROM milestones WHERE mission_id = ? ORDER BY seq`,
@@ -57,12 +59,10 @@ export class MilestoneLoop {
 
     try {
       for (const milestone of milestones) {
-        const success = await this.runMilestone(
-          mission, milestone, config, negotiator,
-        );
+        const result = await this.runMilestone(mission, milestone, config, negotiator);
 
-        if (!success) {
-          db.prepare(`UPDATE missions SET status = 'failed', completed_at = datetime('now') WHERE id = ?`)
+        if (result === 'failed') {
+          db.prepare(`UPDATE missions SET status = 'failed', completed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`)
             .run(mission.id);
 
           emitEvent({
@@ -73,9 +73,22 @@ export class MilestoneLoop {
           });
           return;
         }
+
+        if (result === 'rejected') {
+          db.prepare(`UPDATE missions SET status = 'failed', completed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`)
+            .run(mission.id);
+
+          emitEvent({
+            type: 'mission_failed',
+            missionId: mission.id,
+            timestamp: new Date().toISOString(),
+            data: { reason: 'Mission rejected by human' },
+          });
+          return;
+        }
       }
 
-      db.prepare(`UPDATE missions SET status = 'complete', completed_at = datetime('now') WHERE id = ?`)
+      db.prepare(`UPDATE missions SET status = 'complete', completed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`)
         .run(mission.id);
 
       emitEvent({
@@ -99,8 +112,12 @@ export class MilestoneLoop {
         // best-effort
       }
     } catch (err) {
-      db.prepare(`UPDATE missions SET status = 'failed', completed_at = datetime('now') WHERE id = ?`)
-        .run(mission.id);
+      try {
+        db.prepare(`UPDATE missions SET status = 'failed', completed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`)
+          .run(mission.id);
+      } catch {
+        // DB may be the error cause; nothing we can do
+      }
 
       emitEvent({
         type: 'mission_failed',
@@ -116,10 +133,10 @@ export class MilestoneLoop {
     milestone: Milestone,
     config: MissionConfig,
     negotiator: ReturnType<typeof createNegotiator>,
-  ): Promise<boolean> {
+  ): Promise<'passed' | 'failed' | 'rejected'> {
     const db = getDb();
 
-    db.prepare(`UPDATE milestones SET status = 'in_progress' WHERE id = ?`).run(milestone.id);
+    db.prepare(`UPDATE milestones SET status = 'in_progress', updated_at = datetime('now') WHERE id = ?`).run(milestone.id);
 
     emitEvent({
       type: 'milestone_started',
@@ -128,6 +145,8 @@ export class MilestoneLoop {
       timestamp: new Date().toISOString(),
       data: { seq: milestone.seq, title: milestone.title, workingUnitCount: 0 },
     });
+
+    this.resetWorkingUnitsForMilestone(milestone.id);
 
     const workingUnits = db.prepare(
       `SELECT * FROM working_units WHERE milestone_id = ?`,
@@ -168,7 +187,7 @@ export class MilestoneLoop {
     ).all(milestone.id) as Handoff[];
 
     if (completedHandoffs.length === 0) {
-      db.prepare(`UPDATE milestones SET status = 'failed', completed_at = datetime('now') WHERE id = ?`)
+      db.prepare(`UPDATE milestones SET status = 'failed', completed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`)
         .run(milestone.id);
 
       emitEvent({
@@ -179,7 +198,7 @@ export class MilestoneLoop {
         data: { seq: milestone.seq, title: milestone.title, reason: 'No completed handoffs' },
       });
 
-      return false;
+      return 'failed';
     }
 
     emitEvent({
@@ -214,13 +233,8 @@ export class MilestoneLoop {
     if (reviewResult.success) validatorFindings.push(reviewResult.output);
     if (contractResult.success) validatorFindings.push(contractResult.output);
 
-    const retryCount = (db.prepare(
-      `SELECT SUM(attempt_count) as total FROM retry_counters WHERE mission_id = ? AND milestone_id = ?`,
-    ).get(mission.id, milestone.id) as { total: number | null })?.total || 0;
-
-    const rescopeCount = (db.prepare(
-      `SELECT COUNT(*) as cnt FROM rescope_history WHERE mission_id = ? AND milestone_id = ?`,
-    ).get(mission.id, milestone.id) as { cnt: number })?.cnt || 0;
+    const retryCount = this.getRetryCount(mission.id, milestone.id);
+    const rescopeCount = this.getRescopeCount(mission.id, milestone.id);
 
     const negotiatorInput: NegotiatorInput = {
       missionId: mission.id,
@@ -248,7 +262,7 @@ export class MilestoneLoop {
 
     switch (decision.verdict) {
       case 'pass':
-        db.prepare(`UPDATE milestones SET status = 'passed', completed_at = datetime('now') WHERE id = ?`)
+        db.prepare(`UPDATE milestones SET status = 'passed', completed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`)
           .run(milestone.id);
 
         emitEvent({
@@ -258,81 +272,98 @@ export class MilestoneLoop {
           timestamp: new Date().toISOString(),
           data: { seq: milestone.seq, title: milestone.title },
         });
-        return true;
+        return 'passed';
 
       case 'retry':
         if (retryCount >= config.maxRetryCount) {
-          emitEvent({
-            type: 'checkpoint_required',
-            missionId: mission.id,
-            milestoneId: milestone.id,
-            timestamp: new Date().toISOString(),
-            data: {
-              milestoneId: milestone.id,
-              trigger: 'rescope_limit' as const,
-              milestoneTitle: milestone.title,
-              validationContracts: contracts,
-              handoffs: completedHandoffs,
-              validatorFindings: [],
-              retryCount,
-              rescopeCount,
-            },
-          });
-
-          await this.waitForCheckpoint(mission.id);
-          return true;
+          return this.handleCheckpoint(mission, milestone, contracts, completedHandoffs, retryCount, rescopeCount, 'retry_limit');
         }
         return await this.runMilestone(mission, milestone, config, negotiator);
 
-      case 'rescope':
+      case 'rescope': {
         if (rescopeCount >= config.maxRescopeCount) {
-          emitEvent({
-            type: 'checkpoint_required',
-            missionId: mission.id,
-            milestoneId: milestone.id,
-            timestamp: new Date().toISOString(),
-            data: {
-              milestoneId: milestone.id,
-              trigger: 'rescope_limit' as const,
-              milestoneTitle: milestone.title,
-              validationContracts: contracts,
-              handoffs: completedHandoffs,
-              validatorFindings: [],
-              retryCount,
-              rescopeCount,
-            },
-          });
-
-          await this.waitForCheckpoint(mission.id);
-          return true;
+          return this.handleCheckpoint(mission, milestone, contracts, completedHandoffs, retryCount, rescopeCount, 'rescope_limit');
         }
 
-        db.prepare(`UPDATE milestones SET status = 'rescoped' WHERE id = ?`).run(milestone.id);
+        if (decision.rescopedSpec) {
+          db.prepare(`UPDATE milestones SET description = ?, status = 'pending', updated_at = datetime('now') WHERE id = ?`)
+            .run(decision.rescopedSpec, milestone.id);
+        }
+
         return await this.runMilestone(mission, milestone, config, negotiator);
+      }
 
       case 'escalate':
-        emitEvent({
-          type: 'checkpoint_required',
-          missionId: mission.id,
-          milestoneId: milestone.id,
-          timestamp: new Date().toISOString(),
-          data: {
-            milestoneId: milestone.id,
-            trigger: 'unclassifiable_error' as const,
-            milestoneTitle: milestone.title,
-            validationContracts: contracts,
-            handoffs: completedHandoffs,
-            validatorFindings: [],
-            retryCount,
-            rescopeCount,
-          },
-        });
-
-        await this.waitForCheckpoint(mission.id);
-        return true;
+        return this.handleCheckpoint(mission, milestone, contracts, completedHandoffs, retryCount, rescopeCount, 'unclassifiable_error');
 
       default:
-        return false;
+        return 'failed';
+    }
+  }
+
+  private resetWorkingUnitsForMilestone(milestoneId: string): void {
+    const db = getDb();
+
+    db.prepare(`DELETE FROM handoffs WHERE milestone_id = ?`).run(milestoneId);
+
+    db.prepare(
+      `UPDATE working_units SET status = 'pending', pi_pid = NULL, started_at = NULL, completed_at = NULL, updated_at = datetime('now') WHERE milestone_id = ?`,
+    ).run(milestoneId);
+  }
+
+  private getRetryCount(missionId: string, milestoneId: string): number {
+    const db = getDb();
+    const row = db.prepare(
+      `SELECT COALESCE(SUM(attempt_count), 0) as total FROM retry_counters WHERE mission_id = ? AND milestone_id = ?`,
+    ).get(missionId, milestoneId) as { total: number };
+    return row.total;
+  }
+
+  private getRescopeCount(missionId: string, milestoneId: string): number {
+    const db = getDb();
+    const row = db.prepare(
+      `SELECT COUNT(*) as cnt FROM rescope_history WHERE mission_id = ? AND milestone_id = ?`,
+    ).get(missionId, milestoneId) as { cnt: number };
+    return row.cnt;
+  }
+
+  private async handleCheckpoint(
+    mission: Mission,
+    milestone: Milestone,
+    contracts: ValidationContract[],
+    handoffs: Handoff[],
+    retryCount: number,
+    rescopeCount: number,
+    trigger: string,
+  ): Promise<'passed' | 'failed' | 'rejected'> {
+    emitEvent({
+      type: 'checkpoint_required',
+      missionId: mission.id,
+      milestoneId: milestone.id,
+      timestamp: new Date().toISOString(),
+      data: {
+        milestoneId: milestone.id,
+        trigger,
+        milestoneTitle: milestone.title,
+        validationContracts: contracts,
+        handoffs,
+        validatorFindings: [],
+        retryCount,
+        rescopeCount,
+      },
+    });
+
+    const decision = await this.waitForCheckpoint(mission.id);
+
+    switch (decision) {
+      case 'approve':
+        return 'passed';
+      case 'reject':
+        return 'rejected';
+      case 'override':
+        return 'passed';
+      default:
+        return 'failed';
     }
   }
 
@@ -356,11 +387,11 @@ export class MilestoneLoop {
 
     if (!rationale || !Array.isArray(assumptions) || assumptions.length === 0) {
       db.prepare(
-        `UPDATE working_units SET status = 'rejected' WHERE id = ?`,
+        `UPDATE working_units SET status = 'rejected', updated_at = datetime('now') WHERE id = ?`,
       ).run(unit.id);
 
       db.prepare(
-        `INSERT INTO broadcasts (id, mission_id, milestone_id, source_worker_id, content, category, lifecycle) VALUES (?, ?, ?, ?, ?, 'warning', 'active')`,
+        `INSERT INTO broadcasts (id, mission_id, milestone_id, source_working_unit_id, content, category, lifecycle) VALUES (?, ?, ?, ?, ?, 'warning', 'active')`,
       ).run(
         uuid(),
         missionId,
@@ -398,7 +429,7 @@ export class MilestoneLoop {
     );
   }
 
-  private waitForCheckpoint(missionId: string): Promise<string> {
+  private waitForCheckpoint(missionId: string): Promise<CheckpointDecision> {
     return new Promise((resolve) => {
       this.checkpoints.set(missionId, { resolve });
     });

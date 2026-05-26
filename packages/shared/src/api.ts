@@ -1,4 +1,4 @@
-import type { PlannedMilestone } from './types.js';
+import type { PlannedMilestone, ValidationContract, PlannedWorkingUnit } from './types.js';
 
 export interface CreateMissionRequest {
   description: string;
@@ -6,11 +6,9 @@ export interface CreateMissionRequest {
 
 export interface CreateMissionResponse {
   missionId: string;
-  plan: MissionPlan;
-}
-
-export interface MissionPlan {
-  milestones: PlannedMilestone[];
+  plan: {
+    milestones: PlannedMilestone[];
+  };
 }
 
 export interface GetMissionResponse {

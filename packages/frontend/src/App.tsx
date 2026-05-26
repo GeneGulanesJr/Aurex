@@ -1,26 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { WsEvent, CheckpointRequiredData } from '@aurex/shared';
+import type { WsEvent, CheckpointRequiredData, GetMissionResponse, ListMissionsResponse, ValidationContract, MissionListItem, MilestoneSummary, ActiveWorker, BroadcastSummary } from '@aurex/shared';
 import { createMission, getMission, listMissions, submitCheckpoint } from './api.js';
 import { MissionWebSocket } from './websocket.js';
 import './styles.css';
 
-interface MissionState {
-  id: string;
-  description: string;
-  status: string;
-  currentMilestone: string | null;
-  milestones: Array<{ id: string; seq: number; title: string; status: string }>;
-  activeWorkers: Array<{ id: string; title: string; status: string; elapsedMs: number }>;
-  recentBroadcasts: Array<{ id: string; category: string; content: string; created_at: string }>;
-  costTotal: number;
-  retryCount: number;
-  rescopeCount: number;
-}
-
 export function App() {
   const [view, setView] = useState<'list' | 'mission'>('list');
   const [missionId, setMissionId] = useState<string | null>(null);
-  const [missions, setMissions] = useState<Array<{ id: string; description: string; status: string; created_at: string }>>([]);
+  const [missions, setMissions] = useState<MissionListItem[]>([]);
   const [missionDesc, setMissionDesc] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -54,16 +41,18 @@ export function App() {
     }
   };
 
-  const handleSelectMission = (id: string) => {
+  const handleSelectMission = useCallback((id: string) => {
     setMissionId(id);
     setView('mission');
-  };
+    setError(null);
+  }, []);
 
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
     setMissionId(null);
     setView('list');
+    setError(null);
     loadMissions();
-  };
+  }, [loadMissions]);
 
   return (
     <div className="app">
@@ -105,7 +94,7 @@ function MissionList({
   creating,
   onSelect,
 }: {
-  missions: Array<{ id: string; description: string; status: string; created_at: string }>;
+  missions: ListMissionsResponse['missions'];
   missionDesc: string;
   setMissionDesc: (v: string) => void;
   onCreate: () => void;
@@ -134,7 +123,7 @@ function MissionList({
             <div className="empty-state">No missions yet</div>
           ) : (
             <ul className="mission-list">
-              {missions.map((m) => (
+              {missions.map((m: MissionListItem) => (
                 <li key={m.id} onClick={() => onSelect(m.id)}>
                   <span className="desc">{m.description}</span>
                   <span className={`status-badge ${m.status}`}>{m.status}</span>
@@ -149,7 +138,7 @@ function MissionList({
 }
 
 function MissionView({ missionId }: { missionId: string }) {
-  const [mission, setMission] = useState<MissionState | null>(null);
+  const [mission, setMission] = useState<GetMissionResponse | null>(null);
   const [checkpoint, setCheckpoint] = useState<CheckpointRequiredData | null>(null);
   const [overrideReason, setOverrideReason] = useState('');
   const wsRef = useRef<MissionWebSocket | null>(null);
@@ -213,7 +202,7 @@ function MissionView({ missionId }: { missionId: string }) {
         <div className="panel full-width">
           <div className="panel-header">Milestones</div>
           <div className="milestone-bar">
-            {mission.milestones.map((m) => (
+            {mission.milestones.map((m: MilestoneSummary) => (
               <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                 <span className={`milestone-dot ${m.status}`} />
                 <span className="milestone-label">{m.title}</span>
@@ -231,7 +220,7 @@ function MissionView({ missionId }: { missionId: string }) {
             {mission.activeWorkers.length === 0 ? (
               <div className="empty-state">No active workers</div>
             ) : (
-              mission.activeWorkers.map((w) => (
+              mission.activeWorkers.map((w: ActiveWorker) => (
                 <div key={w.id} className="worker-card">
                   <div className="title">{w.title}</div>
                   <div className="meta">
@@ -262,10 +251,12 @@ function MissionView({ missionId }: { missionId: string }) {
             {mission.recentBroadcasts.length === 0 ? (
               <div className="empty-state">No broadcasts yet</div>
             ) : (
-              mission.recentBroadcasts.map((b) => (
+              mission.recentBroadcasts.map((b: BroadcastSummary) => (
                 <div key={b.id} className="broadcast-item">
-                  <span className={`category ${b.category}`}>{b.category}</span>
-                  <span className="time">{new Date(b.created_at).toLocaleTimeString()}</span>
+                  <div>
+                    <span className={`category ${b.category}`}>{b.category}</span>
+                    <span className="time">{new Date(b.createdAt).toLocaleTimeString()}</span>
+                  </div>
                   <div className="content">{b.content}</div>
                 </div>
               ))
@@ -304,7 +295,7 @@ function CheckpointOverlay({
     `Milestone: ${checkpoint.milestoneTitle}`,
     '',
     'Validation Contracts:',
-    ...checkpoint.validationContracts.map((c, i) => `  ${i + 1}. ${c.description}`),
+    ...checkpoint.validationContracts.map((c: ValidationContract, i: number) => `  ${i + 1}. ${c.description}`),
     '',
     `Retries: ${checkpoint.retryCount} | Rescopes: ${checkpoint.rescopeCount}`,
   ].join('\n');

@@ -1,8 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import { v4 as uuid } from 'uuid';
 import { getDb } from '../db.js';
 import type { MilestoneLoop } from '../orchestrator/milestone-loop.js';
-import { emitEvent } from '../events.js';
 
 export async function missionRoutes(
   fastify: FastifyInstance,
@@ -18,8 +16,6 @@ export async function missionRoutes(
     if (!description || typeof description !== 'string' || description.trim().length === 0) {
       return reply.status(400).send({ error: 'description is required' });
     }
-
-    const db = getDb();
 
     const { createPlanner } = await import('../orchestrator/planner.js');
     const { createLaPisClient } = await import('../clients/lapis-client.js');
@@ -72,20 +68,20 @@ export async function missionRoutes(
     Body: { decision: string; overrideReason?: string; revisedSpec?: string };
   }>('/missions/:id/checkpoint', async (request, reply) => {
     const { id } = request.params;
-    const { decision, overrideReason, revisedSpec } = request.body || {};
+    const { decision } = request.body || {};
 
     if (!decision || !['approve', 'reject', 'override'].includes(decision)) {
       return reply.status(400).send({ error: 'decision must be approve, reject, or override' });
     }
 
-    const resolved = milestoneLoop.resolveCheckpoint(id, decision);
+    const resolved = milestoneLoop.resolveCheckpoint(id, decision as 'approve' | 'reject' | 'override');
     if (!resolved) {
       return reply.status(409).send({ error: 'No pending checkpoint for this mission' });
     }
 
-    const db = getDb();
     if (decision === 'reject') {
-      db.prepare(`UPDATE missions SET status = 'failed', completed_at = datetime('now') WHERE id = ?`).run(id);
+      const db = getDb();
+      db.prepare(`UPDATE missions SET status = 'failed', completed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`).run(id);
     }
 
     return reply.send({ accepted: true });
@@ -143,8 +139,13 @@ export async function missionRoutes(
         status: w.status,
         elapsedMs: w.started_at ? Date.now() - new Date(w.started_at).getTime() : 0,
       })),
-      recentBroadcasts,
-      costTotal: costRow.total,
+      recentBroadcasts: recentBroadcasts.map(b => ({
+        id: b.id,
+        category: b.category,
+        content: b.content,
+        createdAt: b.created_at,
+      })),
+      costTotal: costRow.total / 10000,
       retryCount: retryRow.total,
       rescopeCount: rescopeRow.cnt,
     });
@@ -153,7 +154,12 @@ export async function missionRoutes(
   fastify.get<{
     Querystring: { status?: string; limit?: string; offset?: string };
   }>('/missions', async (request, reply) => {
-    const { status, limit = '50', offset = '0' } = request.query;
+    const { status } = request.query;
+    const rawLimit = parseInt(request.query.limit || '50', 10);
+    const rawOffset = parseInt(request.query.offset || '0', 10);
+    const limit = Number.isNaN(rawLimit) ? 50 : Math.max(1, Math.min(rawLimit, 200));
+    const offset = Number.isNaN(rawOffset) ? 0 : Math.max(0, rawOffset);
+
     const db = getDb();
 
     let query = `SELECT id, description, status, created_at FROM missions`;
@@ -165,7 +171,7 @@ export async function missionRoutes(
     }
 
     query += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`;
-    params.push(parseInt(limit, 10), parseInt(offset, 10));
+    params.push(limit, offset);
 
     const missions = db.prepare(query).all(...params) as Array<{
       id: string;
@@ -180,6 +186,14 @@ export async function missionRoutes(
     const countParams = status ? [status] : [];
     const { total } = db.prepare(countQuery).get(...countParams) as { total: number };
 
-    return reply.send({ missions, total });
+    return reply.send({
+      missions: missions.map(m => ({
+        id: m.id,
+        description: m.description,
+        status: m.status,
+        createdAt: m.created_at,
+      })),
+      total,
+    });
   });
 }

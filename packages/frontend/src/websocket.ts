@@ -9,12 +9,22 @@ export class MissionWebSocket {
   private maxReconnectAttempts = 20;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private missionId: string;
+  private disposed = false;
 
   constructor(missionId: string) {
     this.missionId = missionId;
   }
 
   connect(): void {
+    if (this.disposed) return;
+
+    if (this.ws) {
+      this.ws.onclose = null;
+      this.ws.onerror = null;
+      this.ws.close();
+      this.ws = null;
+    }
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const url = `${protocol}//${window.location.host}/ws/${this.missionId}`;
 
@@ -36,21 +46,29 @@ export class MissionWebSocket {
     };
 
     this.ws.onclose = () => {
-      this.scheduleReconnect();
+      this.ws = null;
+      if (!this.disposed) {
+        this.scheduleReconnect();
+      }
     };
 
     this.ws.onerror = () => {
-      this.ws?.close();
+      // onclose will fire after onerror, which handles reconnect
     };
   }
 
   disconnect(): void {
+    this.disposed = true;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    this.ws?.close();
-    this.ws = null;
+    if (this.ws) {
+      this.ws.onclose = null;
+      this.ws.onerror = null;
+      this.ws.close();
+      this.ws = null;
+    }
     this.listeners.clear();
   }
 
@@ -62,9 +80,11 @@ export class MissionWebSocket {
   }
 
   private scheduleReconnect(): void {
+    if (this.disposed) return;
     if (this.reconnectAttempts >= this.maxReconnectAttempts) return;
     this.reconnectAttempts++;
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
-    this.reconnectTimer = setTimeout(() => this.connect(), delay);
+    const base = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
+    const jitter = Math.random() * 500;
+    this.reconnectTimer = setTimeout(() => this.connect(), base + jitter);
   }
 }

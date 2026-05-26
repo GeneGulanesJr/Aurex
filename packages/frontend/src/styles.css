@@ -80,11 +80,18 @@ body {
   letter-spacing: 0.05em;
 }
 
-.status-badge.running { background: rgba(66, 165, 245, 0.15); color: var(--blue); }
-.status-badge.complete { background: rgba(76, 175, 80, 0.15); color: var(--green); }
+.status-badge.planning { background: rgba(108, 108, 240, 0.15); color: var(--accent); }
+.status-badge.running, .status-badge.in_progress { background: rgba(66, 165, 245, 0.15); color: var(--blue); }
+.status-badge.complete, .status-badge.passed { background: rgba(76, 175, 80, 0.15); color: var(--green); }
 .status-badge.failed { background: rgba(239, 83, 80, 0.15); color: var(--red); }
 .status-badge.paused { background: rgba(255, 193, 7, 0.15); color: var(--yellow); }
-.status-badge.planning { background: rgba(108, 108, 240, 0.15); color: var(--accent); }
+.status-badge.pending { background: rgba(136, 136, 160, 0.15); color: var(--text-dim); }
+.status-badge.validating { background: rgba(255, 152, 0, 0.15); color: var(--orange); }
+.status-badge.rescoped { background: rgba(255, 193, 7, 0.15); color: var(--yellow); }
+.status-badge.spawned { background: rgba(108, 108, 240, 0.15); color: var(--accent); }
+.status-badge.completed { background: rgba(76, 175, 80, 0.15); color: var(--green); }
+.status-badge.timed_out { background: rgba(239, 83, 80, 0.15); color: var(--red); }
+.status-badge.rejected { background: rgba(239, 83, 80, 0.15); color: var(--red); }
 
 .grid {
   display: grid;
@@ -92,6 +99,12 @@ body {
   gap: 1rem;
   flex: 1;
   min-height: 0;
+}
+
+@media (max-width: 700px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .panel {
@@ -125,6 +138,7 @@ body {
   gap: 0.5rem;
   padding: 0.5rem 0.75rem;
   border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
 }
 
 .milestone-dot {
@@ -136,8 +150,10 @@ body {
 
 .milestone-dot.pending { background: var(--text-dim); }
 .milestone-dot.in_progress { background: var(--blue); animation: pulse 1.5s infinite; }
-.milestone-dot.passed { background: var(--green); }
+.milestone-dot.passed, .milestone-dot.complete { background: var(--green); }
 .milestone-dot.failed { background: var(--red); }
+.milestone-dot.validating { background: var(--orange); animation: pulse 1.5s infinite; }
+.milestone-dot.rescoped { background: var(--yellow); }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }
@@ -192,15 +208,14 @@ body {
 .broadcast-item .category.decision { background: rgba(108, 108, 240, 0.15); color: var(--accent); }
 .broadcast-item .category.blocker { background: rgba(239, 83, 80, 0.15); color: var(--red); }
 
-.broadcast-item .content {
-  margin-top: 0.25rem;
-  color: var(--text);
-}
-
 .broadcast-item .time {
   font-size: 0.7rem;
   color: var(--text-dim);
-  margin-top: 0.15rem;
+}
+
+.broadcast-item .content {
+  margin-top: 0.25rem;
+  color: var(--text);
 }
 
 .cost-counter {
@@ -287,6 +302,7 @@ body {
 }
 
 .btn:hover { border-color: var(--text-dim); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .btn.approve { border-color: var(--green); color: var(--green); }
 .btn.approve:hover { background: rgba(76, 175, 80, 0.15); }
@@ -335,6 +351,7 @@ body {
 .create-form input:focus {
   outline: none;
   border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(108, 108, 240, 0.3);
 }
 
 .mission-list {
@@ -377,6 +394,11 @@ body {
 .back-btn:hover {
   color: var(--text);
   border-color: var(--text-dim);
+}
+
+.back-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .error-msg {

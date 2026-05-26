@@ -37,20 +37,15 @@ export interface LaPisClient {
 }
 
 export function createLaPisClient(config: AppConfig): LaPisClient {
-  const dbFlag = config.lapisDbPath ? ['--db', config.lapisDbPath] : [];
+  const dbArgs = ['--db', config.lapisDbPath];
 
-  function buildArgs(command: string, extra: string[]): string[] {
-    if (config.lapisCliPath) {
-      return [config.lapisCliPath, command, ...dbFlag, ...extra];
-    }
-    return [command, ...dbFlag, ...extra];
-  }
+  async function runCli(command: string, extra: string[]): Promise<string> {
+    const args = [command, ...dbArgs, ...extra];
 
-  async function runCli(args: string[]): Promise<string> {
-    const cmd = config.lapisCliPath ? 'node' : 'node';
+    const cmd = config.lapisCliPath || 'npx';
     const fullArgs = config.lapisCliPath
-      ? [config.lapisCliPath, ...args.slice(1)]
-      : args;
+      ? args
+      : ['@genegulanesjr/lapis', ...args];
 
     try {
       const { stdout } = await execFileAsync(cmd, fullArgs, {
@@ -70,8 +65,7 @@ export function createLaPisClient(config: AppConfig): LaPisClient {
     async saveMemory({ type, title, content, project }) {
       const extra = ['--type', type, '--title', title, '--content', content];
       if (project) extra.push('--project', project);
-      const args = buildArgs('save', extra);
-      const output = await runCli(args);
+      const output = await runCli('save', extra);
       const parsed = JSON.parse(output);
       return { id: String(parsed.id || parsed) };
     },
@@ -80,14 +74,13 @@ export function createLaPisClient(config: AppConfig): LaPisClient {
       const extra = ['--query', query];
       if (opts.project) extra.push('--project', opts.project);
       if (opts.includeCode) extra.push('--include-code');
-      const args = buildArgs('search', extra);
-      const output = await runCli(args);
+      const output = await runCli('search', extra);
       return JSON.parse(output) as MemoryResult[];
     },
 
     async getContext(project) {
-      const args = buildArgs('context', ['--project', project]);
-      const output = await runCli(args);
+      const args = ['--project', project];
+      const output = await runCli('context', args);
       return JSON.parse(output) as ContextResult;
     },
 
@@ -96,8 +89,7 @@ export function createLaPisClient(config: AppConfig): LaPisClient {
         '--session', sessionId,
         '--memory-ids', memoryIds.join(','),
       ];
-      const args = buildArgs('inject', extra);
-      await runCli(args);
+      await runCli('inject', extra);
     },
   };
 }

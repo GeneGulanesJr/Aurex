@@ -2,7 +2,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import websocket from '@fastify/websocket';
-import { loadConfig, type AppConfig } from './config.js';
+import { loadConfig } from './config.js';
 import { openDatabase, closeDatabase } from './db.js';
 import { runMigrations } from './migrator.js';
 import { missionRoutes } from './routes/missions.js';
@@ -41,7 +41,14 @@ async function main() {
   fastify.register(missionRoutes, { milestoneLoop });
 
   fastify.get('/health', async () => {
-    return { status: 'ok', timestamp: new Date().toISOString() };
+    let dbOk = false;
+    try {
+      db.prepare('SELECT 1').get();
+      dbOk = true;
+    } catch {
+      // db not available
+    }
+    return { status: dbOk ? 'ok' : 'degraded', timestamp: new Date().toISOString(), db: dbOk };
   });
 
   fastify.get('/ws/:missionId', { websocket: true }, (socket, request) => {

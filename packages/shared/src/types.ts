@@ -146,22 +146,6 @@ export interface CostEntry {
   createdAt: string;
 }
 
-export interface CheckpointEvent {
-  missionId: string;
-  milestoneId: string;
-  trigger: CheckpointTrigger;
-  context: {
-    milestoneTitle: string;
-    milestoneDescription: string;
-    validationContracts: ValidationContract[];
-    handoffs: Handoff[];
-    validatorFindings: ResearchFinding[];
-    negotiatorReasoning: string | null;
-    retryCount: number;
-    rescopeCount: number;
-  };
-}
-
 export interface CheckpointSubmission {
   decision: CheckpointDecision;
   overrideReason?: string;

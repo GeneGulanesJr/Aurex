@@ -7,7 +7,6 @@ import type {
 } from '@aurex/shared';
 import { getDb } from '../db.js';
 import type { RouterClient } from '../clients/router-client.js';
-import type { LaPisClient } from '../clients/lapis-client.js';
 
 export interface NegotiatorInput {
   missionId: string;
@@ -29,7 +28,6 @@ export interface NegotiatorOutput {
 
 export function createNegotiator(
   router: RouterClient,
-  lapis: LaPisClient,
 ) {
   async function negotiate(input: NegotiatorInput): Promise<NegotiatorOutput> {
     const db = getDb();

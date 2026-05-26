@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import type { MissionConfig } from '@aurex/shared';
 
 export interface AppConfig {
@@ -53,7 +52,7 @@ export function loadConfig(): AppConfig {
   _config = {
     port: envInt('PORT', 3000),
     host: env('HOST', '0.0.0.0'),
-    lapisDbPath: env('LAPIS_DB_PATH'),
+    lapisDbPath: env('LAPIS_DB_PATH', '/data/lapis/memory.db'),
     pinyxEndpoint: env('PINYX_ENDPOINT', 'http://localhost:7331'),
     workspacePath: env('WORKSPACE_PATH', '/workspace'),
     lapisCliPath: env('LAPIS_CLI_PATH', ''),

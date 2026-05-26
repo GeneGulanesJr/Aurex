@@ -1,5 +1,4 @@
 import type { WorkingUnit, SerializationMap, WorkingUnitBatch } from '@aurex/shared';
-import { getDb } from '../db.js';
 
 export function computeOverlap(workingUnits: WorkingUnit[]): SerializationMap {
   if (workingUnits.length === 0) {

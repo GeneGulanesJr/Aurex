@@ -1,9 +1,4 @@
-import type {
-  PlannedMilestone,
-  ValidationContract,
-  NegotiatorVerdict,
-} from '@aurex/shared';
-import type { Milestone } from '@aurex/shared';
+import type { PlannedMilestone, NegotiatorVerdict } from '@aurex/shared';
 import type { MemoryResult } from './lapis-client.js';
 import type { AppConfig } from '../config.js';
 
@@ -70,15 +65,21 @@ export function createRouterClient(config: AppConfig): RouterClient {
     });
 
     if (!response.ok) {
-      const body = await response.text();
+      const body = await response.text().catch(() => 'unknown error');
       throw new Error(`Router call failed (${response.status}): ${body}`);
     }
 
-    const data = await response.json() as {
+    let data: {
       choices: Array<{ message: { content: string } }>;
       model: string;
       usage: { prompt_tokens: number; completion_tokens: number };
     };
+
+    try {
+      data = await response.json() as typeof data;
+    } catch {
+      throw new Error('Router returned non-JSON response');
+    }
 
     return {
       content: data.choices[0]?.message?.content ?? '',
@@ -88,13 +89,36 @@ export function createRouterClient(config: AppConfig): RouterClient {
   }
 
   function parseJsonFromResponse<T>(content: string): T {
-    const jsonMatch = content.match(/```json\s*([\s\S]*?)```/) ||
-                      content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('No JSON found in router response');
+    const codeBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      try {
+        return JSON.parse(codeBlockMatch[1].trim()) as T;
+      } catch {
+        // fall through to next attempt
+      }
     }
-    const jsonStr = jsonMatch[1] || jsonMatch[0];
-    return JSON.parse(jsonStr) as T;
+
+    const firstBrace = content.indexOf('{');
+    const lastBrace = content.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      const candidate = content.slice(firstBrace, lastBrace + 1);
+      let depth = 0;
+      let end = -1;
+      for (let i = 0; i < candidate.length; i++) {
+        if (candidate[i] === '{') depth++;
+        else if (candidate[i] === '}') depth--;
+        if (depth === 0) { end = i; break; }
+      }
+      if (end !== -1) {
+        try {
+          return JSON.parse(candidate.slice(0, end + 1)) as T;
+        } catch {
+          // fall through
+        }
+      }
+    }
+
+    throw new Error('No valid JSON found in router response');
   }
 
   return {
@@ -202,7 +226,7 @@ Respond with JSON:
       };
     },
 
-    async negotiationCall(prompt, context) {
+    async negotiationCall(prompt, _context) {
       const systemPrompt = `You are a code review negotiator. Given worker handoffs and validator verdicts, decide the next action.
 
 Respond with JSON:

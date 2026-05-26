@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { v4 as uuid } from 'uuid';
 import { kill } from 'node:process';
 import type { WorkingUnit, MissionConfig } from '@aurex/shared';
@@ -9,6 +9,7 @@ import { emitEvent } from '../events.js';
 export interface SpawnResult {
   success: boolean;
   output: string;
+  stderr: string;
   timedOut: boolean;
   exitCode: number | null;
 }
@@ -39,52 +40,57 @@ function runProcess(
   timeoutMs: number,
 ): Promise<SpawnResult> {
   return new Promise((resolve) => {
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    let settled = false;
+
     const proc = spawn(command, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env },
     });
 
-    let output = '';
-    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      proc.kill('SIGTERM');
+      setTimeout(() => {
+        try { proc.kill('SIGKILL'); } catch { /* already dead */ }
+      }, 5000);
+    }, timeoutMs);
 
     proc.stdout?.on('data', (data: Buffer) => {
-      output += data.toString();
+      stdout += data.toString();
     });
 
     proc.stderr?.on('data', (data: Buffer) => {
-      output += data.toString();
+      stderr += data.toString();
     });
 
     proc.stdin?.write(input);
     proc.stdin?.end();
 
-    const timer = setTimeout(() => {
-      timedOut = true;
-      proc.kill('SIGTERM');
-      setTimeout(() => {
-        try {
-          proc.kill('SIGKILL');
-        } catch {
-          // process already dead
-        }
-      }, 5000);
-    }, timeoutMs);
-
-    proc.on('close', (code) => {
+    const finish = (code: number | null) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       resolve({
         success: !timedOut && code === 0,
-        output,
+        output: stdout,
+        stderr,
         timedOut,
         exitCode: code,
       });
-    });
+    };
 
+    proc.on('close', finish);
     proc.on('error', (err) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       resolve({
         success: false,
-        output: err.message,
+        output: '',
+        stderr: err.message,
         timedOut: false,
         exitCode: null,
       });
@@ -98,7 +104,7 @@ export function createPiProcessManager(config: AppConfig): PiProcessManager {
       const db = getDb();
 
       db.prepare(
-        `UPDATE working_units SET status = 'running', started_at = datetime('now') WHERE id = ?`,
+        `UPDATE working_units SET status = 'running', started_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`,
       ).run(unit.id);
 
       emitEvent({
@@ -118,7 +124,7 @@ export function createPiProcessManager(config: AppConfig): PiProcessManager {
 
       if (result.timedOut) {
         db.prepare(
-          `UPDATE working_units SET status = 'timed_out', completed_at = datetime('now') WHERE id = ?`,
+          `UPDATE working_units SET status = 'timed_out', completed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`,
         ).run(unit.id);
 
         const retryType = 'worker_timeout';
@@ -128,7 +134,7 @@ export function createPiProcessManager(config: AppConfig): PiProcessManager {
 
         if (existing) {
           db.prepare(
-            `UPDATE retry_counters SET attempt_count = attempt_count + 1, last_attempt_at = datetime('now') WHERE id = ?`,
+            `UPDATE retry_counters SET attempt_count = attempt_count + 1, last_attempt_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`,
           ).run(existing.id);
         } else {
           db.prepare(
@@ -145,7 +151,7 @@ export function createPiProcessManager(config: AppConfig): PiProcessManager {
         });
       } else {
         db.prepare(
-          `UPDATE working_units SET status = 'completed', completed_at = datetime('now') WHERE id = ?`,
+          `UPDATE working_units SET status = 'completed', completed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`,
         ).run(unit.id);
 
         emitEvent({
