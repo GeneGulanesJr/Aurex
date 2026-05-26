@@ -125,14 +125,6 @@ release/milestone-x ──(human approval)──▶ main
 - Git hooks in each worktree reject commits to non-`task/*` branches
 - Failed release branches are abandoned, not force-pushed. Main stays clean.
 
-### 2c. Git Branch Strategy & Merge Flow
-
-**Runtime enforcement:**
-- Orchestrator creates full hierarchy at mission start
-- Workers spawned into worktrees with `task/*` pre-checked out
-- Git hooks in each worktree reject commits to non-`task/*` branches
-- Failed release branches are abandoned, not force-pushed. Main stays clean.
-
 ---
 
 ## 3. Agent Architecture
@@ -578,6 +570,12 @@ interface LaPisClient {
 
 **Human guidance broadcasts**: when a human provides guidance via `unclassifiable_error` checkpoint: `authorId: "human"`, `authorType: "orchestrator"`, `category: "decision"`, `ttl: null` (no auto-expiry). Human acts through Orchestrator authority channel. Lifecycle rules still apply.
 
+**Note for Creator-Verifier audit**: the `authorId` value `"human"` is a known non-session actor. `creator-verifier.ts` must handle this explicitly — do not look up `"human"` in `agent_sessions` or the audit will produce spurious failures on every human guidance broadcast. Human guidance broadcasts are exempt from Creator-Verifier session checks by definition.
+
+**Note for Creator-Verifier audit**: `authorId: "human"` is a known non-session actor. `creator-verifier.ts` must handle this explicitly — do not look up `"human"` in `agent_sessions` or the audit will produce spurious failures on every human guidance broadcast. Human guidance broadcasts are exempt from Creator-Verifier session checks by definition.
+
+**Note for Creator-Verifier audit**:  is a known non-session actor.  must handle this explicitly — do not look up  in  or the audit will produce spurious failures on every human guidance broadcast. Human guidance broadcasts are exempt from Creator-Verifier session checks by definition.
+
 ---
 
 ## 7. Error Handling & Retry Rules
@@ -745,7 +743,7 @@ services:
 
 **Docker socket NOT mounted** — agents don't need Docker access. Added only if future need arises with explicit security documentation.
 
-**Git worktree permissions**: container user UID matches host repo owner. `git config --global safe.directory '*'` in Dockerfile. Entryoint handles `chown` if UID mismatch unavoidable.
+**Git worktree permissions**: container user UID matches host repo owner. `git config --global safe.directory '*'` in Dockerfile. Entrypoint handles `chown` if UID mismatch unavoidable.
 
 ### 8c. Deployment Model
 
