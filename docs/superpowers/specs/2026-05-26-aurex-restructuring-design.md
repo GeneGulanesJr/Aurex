@@ -73,8 +73,9 @@ LaPis owns a single SQLite database. The backend connects via HTTP (`LAPIS_ENDPO
 | `missions` | Mission definitions, status, config | Status: planning → running → paused → completed/failed |
 | `milestones` | Ordered execution units within a mission | Linked to current (non-superseded) validation contract |
 | `working_units` | Individual work assignments | Declared scope (paths + modules) set by Orchestrator at spawn |
-| `handoffs` | Worker exit reports | Structural validation at runtime (§7d) |
+| `handoffs` | Worker exit reports | Structural validation at runtime (§7c) |
 | `validation_contracts` | Immutable acceptance criteria | Append-only with versioning |
+| `validation_verdicts` | Validator evaluation results | Linked to contract + validator session, read by Negotiator |
 | `broadcasts` | Agent status, constraints, new context | Lifecycle enforced with actor authorization |
 | `research_findings` | Research subagent outputs | Epistemic lifecycle with standing checks |
 | `agent_sessions` | Spawning records with session IDs | Enables Creator-Verifier audit |
@@ -135,7 +136,7 @@ Each agent type maps to a Pi SDK session configuration. The factory creates isol
 
 ```typescript
 interface AgentConfig {
-  type: "orchestrator" | "worker" | "validator" | "research";
+  type: AgentType; // "orchestrator" | "worker" | "validator_scrutiny" | "validator_user_testing" | "research"
   sessionId: string;
   spec: AgentSpec;
   lapisClient: LaPisClient;
@@ -143,12 +144,12 @@ interface AgentConfig {
   missionId: string;
 }
 
-async function createAgentSession(config: AgentConfig): Promise<AgentSession> {
+async function createAurexAgent(config: AgentConfig): Promise<AgentSession> {
   const tools = AGENT_TOOLS[config.type];
   const skillFile = AGENT_SKILL[config.type];
   const cwd = resolveWorktreePath(config);
 
-  return createAgentSession({
+  return createPiSession({
     cwd,
     tools,
     model: resolveModel(config.type),
@@ -312,7 +313,7 @@ server.ts
   │     └── enforcement/*
   │
   └── ws/events.ts
-        └── streams: agent_status, milestone_state, cost, escalation
+        └── streams: agent_status, milestone_progress, cost, escalation
 ```
 
 Note: `agents/worker.ts` and `agents/research.ts` call through enforcement for lifecycle transitions during execution, not just at milestone loop gates.
@@ -378,9 +379,20 @@ packages/frontend/src/
 
 `CheckpointPanel` renders different content depending on the escalation trigger:
 
-- **`milestone_complete`**: milestone summary, validation results, release branch name, cost summary. Actions: Approve (merge to main) / Reject (abandon release).
-- **`rescope_limit`**: full attempt history with each attempt's scope, outcome, and cost. Actions: Review & Rescope / Abort Mission.
-- **`unclassifiable_error`**: the error, last attempt context, what the Orchestrator tried. Actions: Retry with modified scope / Abort Mission / Provide Guidance (free-text broadcast injection).
+- **`milestone_complete`**: milestone summary, validation results, release branch name, cost summary.
+  - **Approve** → `decision: "approve"` (merge to main)
+  - **Reject** → `decision: "reject"` (abandon release)
+
+- **`rescope_limit`**: full attempt history with each attempt's scope, outcome, and cost.
+  - **Review & Rescope** → `decision: "rescope"` (decompose and re-plan)
+  - **Abort Mission** → `decision: "reject"`, `reason: "abort"` (terminate mission)
+
+- **`unclassifiable_error`**: the error, last attempt context, what the Orchestrator tried.
+  - **Retry with modified scope** → `decision: "rescope"`, `guidance: <modified scope>`
+  - **Abort Mission** → `decision: "reject"`, `reason: "abort"`
+  - **Provide Guidance** → `decision: "rescope"`, `guidance: <free-text broadcast injection>`
+
+**Action-to-decision mapping**: all UI actions map to the three `CheckpointDecision` values (`approve`, `reject`, `rescope`). The `guidance` and `reason` fields carry action-specific context. There are no hidden decision types.
 
 ### 5c. WebSocket Event Contract
 
@@ -421,9 +433,9 @@ type EscalationTrigger =
 │  ├── CheckpointPanel (trigger-specific)     │
 │  ├── AttemptHistory (if rescope_limit)      │
 │  └── DecisionActions                        │
-│        ├── Approve → POST /checkpoints      │
-│        ├── Reject  → POST /checkpoints      │
-│        └── Rescope → POST /checkpoints      │
+│        ├── Approve → POST /api/missions/:id/checkpoints      │
+│        ├── Reject  → POST /api/missions/:id/checkpoints      │
+│        └── Rescope → POST /api/missions/:id/checkpoints      │
 │                                             │
 └──────────────────┬──────────────────────────┘
                    │
@@ -528,7 +540,11 @@ interface LaPisClient {
   // Validation contracts (append-only)
   createContract(milestoneId: string, contract: ValidationContract): Promise<Contract>;
   supersedeContract(oldId: string, newContract: ValidationContract, rescopeEvent: RescopeEvent): Promise<Contract>;
-  getContractHistory(milestoneId: string): Promise<Contract[]>; // Full chain for AttemptHistory
+  getContractHistory(milestoneId: string): Promise<Contract[]>;
+
+  // Validation verdicts
+  writeVerdict(verdict: ValidationVerdict): Promise<ValidationVerdict>;
+  getVerdicts(milestoneId: string): Promise<ValidationVerdict[]>; // Full chain for AttemptHistory
 
   // Broadcasts (with lifecycle enforcement)
   writeBroadcast(agentId: string, broadcast: Broadcast): Promise<Broadcast>;
@@ -714,7 +730,6 @@ services:
     env_file: .env
     volumes:
       - ${REPO_ROOT}:/workspace
-      - ${LAPIS_DB_PATH}:/data/lapis
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
@@ -906,6 +921,19 @@ interface RescopeEvent {
   reason: string;
   previousScope: string;
   newScope: string;
+  timestamp: string;
+}
+
+interface ValidationVerdict {
+  id: string;
+  milestoneId: string;
+  contractId: string;
+  validatorType: "validator_scrutiny" | "validator_user_testing";
+  sessionId: string;
+  verdict: "pass" | "fail";
+  classification?: "patchable" | "blocking";  // Set by Orchestrator for scrutiny failures
+  findings: string;
+  failedUnitIds: string[];
   timestamp: string;
 }
 ```
