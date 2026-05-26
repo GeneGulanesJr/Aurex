@@ -398,7 +398,7 @@ packages/frontend/src/
 
 ```typescript
 type WsClientEvent =
-  | { type: "agent_status"; agentId: string; agentType: AgentType; status: WorkerStatus; milestoneId: string }
+  | { type: "agent_status"; agentId: string; agentType: AgentType; status: AgentStatus; milestoneId: string }
   | { type: "milestone_progress"; milestoneId: string; status: MilestoneStatus; completedUnits: number; totalUnits: number }
   | { type: "cost_update"; missionId: string; totalCost: number; totalTokens: number; delta: number }
   | { type: "escalation"; missionId: string; trigger: EscalationTrigger; context: EscalationContext }
@@ -450,7 +450,7 @@ type EscalationTrigger =
 
 | Animation | Component | Purpose |
 |---|---|---|
-| Agent node pulse/spin | `AgentNode.tsx` | Working = spinning, Reviewing = pulsing, Idle = still |
+| Agent node pulse/spin | `AgentNode.tsx` | Working = spinning, Reviewing = pulsing, Researching = scanning, Idle/still = static |
 | Grid stagger entrance | `AgentGrid.tsx` | New agents appear with staggered fade-in |
 | Cost counter tick | `CostCounter.tsx` | Number animates to new value |
 | Milestone progress | `MilestoneBar.tsx` | Width transitions smoothly |
@@ -543,7 +543,8 @@ interface LaPisClient {
   getContractHistory(milestoneId: string): Promise<Contract[]>;
 
   // Validation verdicts
-  writeVerdict(verdict: ValidationVerdict): Promise<ValidationVerdict>;
+  writeVerdict(sessionId: string, verdict: Omit<ValidationVerdict, "id" | "sessionId">): Promise<ValidationVerdict>;
+  classifyVerdict(verdictId: string, classification: "patchable" | "blocking"): Promise<ValidationVerdict>;
   getVerdicts(milestoneId: string): Promise<ValidationVerdict[]>; // Full chain for AttemptHistory
 
   // Broadcasts (with lifecycle enforcement)
@@ -557,7 +558,7 @@ interface LaPisClient {
   getFindings(missionId: string, status?: ResearchLifecycle): Promise<ResearchFinding[]>;
 
   // Agent sessions (Creator-Verifier audit)
-  registerAgentSession(agentType: AgentType, sessionId: string, missionId: string): Promise<void>;
+  registerAgentSession(agentType: AgentType, sessionId: string, missionId: string, milestoneId?: string, unitId?: string): Promise<void>;
   getSessionsForMilestone(milestoneId: string): Promise<AgentSessionRecord[]>;
 
   // Memory (orchestrator-level, NOT memory-layer extension)
@@ -608,8 +609,8 @@ Escalated Errors
 └── Unclassifiable error        → human checkpoint
 
 Terminal Errors
-├── Human aborts mission        → cleanup, archive state
-└── Unrecoverable git state     → archive, surface to human
+├── Human aborts mission        → cleanup, set status to "aborted"
+└── Unrecoverable git state     → set status to "failed", surface to human
 ```
 
 ### 7b. Retry & Re-scope Rules
@@ -782,8 +783,9 @@ Host Machine
 ### 9a. Enums
 
 ```typescript
-type MissionStatus = "planning" | "running" | "paused" | "completed" | "failed";
+type MissionStatus = "planning" | "running" | "paused" | "completed" | "failed" | "aborted";
 type MilestoneStatus = "planned" | "in_progress" | "validating" | "completed" | "failed";
+type AgentStatus = "spawned" | "planning" | "working" | "reviewing" | "researching" | "committing" | "completed" | "timed_out" | "failed";
 type WorkerStatus = "spawned" | "working" | "committing" | "completed" | "timed_out" | "failed";
 type AgentType = "orchestrator" | "worker" | "validator_scrutiny" | "validator_user_testing" | "research";
 type NegotiatorVerdict = "pass" | "retry" | "rescope" | "escalate";
@@ -931,7 +933,7 @@ interface ValidationVerdict {
   validatorType: "validator_scrutiny" | "validator_user_testing";
   sessionId: string;
   verdict: "pass" | "fail";
-  classification?: "patchable" | "blocking";  // Set by Orchestrator for scrutiny failures
+  classification?: "patchable" | "blocking";  // Set by Orchestrator via classifyVerdict(), not by Validator
   findings: string;
   failedUnitIds: string[];
   timestamp: string;
