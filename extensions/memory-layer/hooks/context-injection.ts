@@ -11,6 +11,11 @@ interface ContextDeps {
   mem: typeof mem;
   getKnownRepos: typeof getKnownRepos;
   isRepoStale: typeof isRepoStale;
+  /**
+   * Optional settings reader provided by the extension host.
+   * Returns the `contextLimit` setting value (number) or undefined when not set.
+   */
+  getSettings?: () => { contextLimit?: number };
 }
 
 export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
@@ -35,7 +40,11 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
       return;
     }
 
-    const contextLimit = promptQuery ? CONTEXT.PROMPT_RELEVANT_LIMIT : CONTEXT.PROJECT_SUMMARY_LIMIT;
+    // Read optional contextLimit override from extension settings; fall back to defaults
+    const settingsContextLimit = deps.getSettings?.().contextLimit;
+    const contextLimit = settingsContextLimit != null && settingsContextLimit > 0
+      ? settingsContextLimit
+      : (promptQuery ? CONTEXT.PROMPT_RELEVANT_LIMIT : CONTEXT.PROJECT_SUMMARY_LIMIT);
     const contextResult = await deps.mem('context', {
       project: deps.state.currentProject,
       limit: String(contextLimit),
@@ -58,8 +67,7 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
         message: {
           customType: 'memory-context',
           content:
-            '⚠️ **Memory context failed to load.** Memory operations may be unreliable this session.\n' +
-            'Use `memory-search` and `memory-save` manually if needed.',
+            '⚠️ Memory context failed to load. Use `memory-search` and `memory-save` manually.',
           display: true,
         },
       };
@@ -76,19 +84,12 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
         topic_key: string;
         trust_score: number;
         type_priority: number;
-      }>) || [];
-
-    const personal =
-      (effectiveContext.personal as Array<{
-        id: number;
-        title: string;
-        type: string;
+        content?: string;
       }>) || [];
 
     const stats = effectiveContext.stats as { total_memories: number; total_personal: number };
-    const topic = effectiveContext.topic as string | null;
 
-    // Resolve repo staleness early (needed for lightweight path decision)
+    // Resolve repo staleness
     const repos = await deps.getKnownRepos();
     const resolvedCwd = path.resolve(ctx.cwd);
     const cwdRepo =
@@ -105,77 +106,42 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
 
     deps.state.hasInjectedContext = true;
 
-    const topicNote = topic ? ` | topic: ${topic}` : '';
-    const lines: string[] = ['## Memory Context (auto-loaded)', ''];
     const projectDir = cwdRepo?.path || ctx.cwd;
     const projectSummary = getProjectSummary(projectDir);
+    const lines: string[] = [];
 
+    // --- Lean header (one line) ---
     if (isNewProject) {
       lines.push(
-        `Project: **${deps.state.currentProject}** | new project | ${effectiveStats?.total_memories || 0} total memories across all projects`,
+        `🧠 **${deps.state.currentProject}** — new project · ${effectiveStats?.total_memories || 0} memories across all projects`,
       );
-      lines.push('');
     } else {
+      const indexPart = cwdRepo
+        ? `${cwdRepo.file_count} files indexed${isStale ? ' (stale)' : ''}`
+        : 'not indexed';
       lines.push(
-        `Project: **${deps.state.currentProject}** | ${effectiveStats?.total_memories || 0} memories | ${effectiveStats?.total_personal || 0} personal preferences${topicNote}`,
+        `🧠 **${deps.state.currentProject}** — ${effectiveStats?.total_memories || 0} memories · ${indexPart} · ${projectSummary}`,
       );
-      lines.push('');
     }
 
-    lines.push('### Project Context');
-    lines.push(`- Directory: \`${projectDir}\``);
-    lines.push(`- Summary: ${projectSummary}`);
-    if (cwdRepo) {
-      const staleLabel = isStale ? ' (stale)' : '';
-      lines.push(`- Code index: \`${cwdRepo.name}\` with ${cwdRepo.file_count} files / ${cwdRepo.symbol_count} symbols${staleLabel}`);
-    } else {
-      lines.push(`- Code index: not indexed for this project`);
-    }
-    if ((effectiveStats?.active_workflows || 0) > 0) {
-      lines.push(`- Active workflows: ${effectiveStats.active_workflows}`);
-    }
-    lines.push('');
-
+    // --- Prompt-matched observation: max 1, high trust only, title only ---
     if (effectiveObservations.length > 0) {
-      lines.push('### Prompt-Matched Memory');
-      for (const o of effectiveObservations.slice(0, CONTEXT.PROMPT_INJECT_LIMIT)) {
-        let trust = '';
-        if (o.trust_score < 0.5) {
-          trust = ' ⚠️';
-        } else if (o.trust_score < 0.8) {
-          trust = ' 🔎';
-        }
-        lines.push(`- [${o.type}] ${o.title}${trust}`);
-        const snippet = summarizeMemoryContent(o.content);
-        if (snippet) {
-          lines.push(`  ${snippet}`);
-        }
+      const top = effectiveObservations[0];
+      if ((top.trust_score ?? 0) >= CONTEXT.MIN_OBSERVATION_TRUST) {
+        lines.push(`- [${top.type}] ${top.title}`);
       }
-      lines.push('');
     }
 
-    if (promptQuery && personal.length > 0) {
-      lines.push('### Personal Preferences');
-      for (const p of personal.slice(0, CONTEXT.PERSONAL_INJECT_LIMIT)) {
-        lines.push(`- ${p.title}`);
-      }
-      lines.push('');
-    }
-
-    lines.push('Use `memory-search` for deeper recall and `memory-save` for durable decisions.');
-
-    if (!cwdRepo) {
-      lines.push('');
-      lines.push(
-        `⚠️ **Code not indexed:** Project "${deps.state.currentProject}" has no code index yet. Run \`memory-code index-repo --path ${ctx.cwd} --name ${deps.state.currentProject}\` to enable memory-code analysis.`,
+    // --- Footer (one line) ---
+    const footerParts = ['`memory-search` for recall', '`memory-save` for decisions'];
+    if (isStale && cwdRepo) {
+      footerParts.push(`reindex: \`memory-code reindex-repo --repo ${cwdRepo.name}\``);
+    } else if (!cwdRepo) {
+      footerParts.push(
+        `index: \`memory-code index-repo --path ${ctx.cwd} --name ${deps.state.currentProject}\``,
       );
-    } else if (isStale && !isHistoricalMemoryPrompt(promptQuery)) {
-      lines.push('');
-      lines.push(CONTEXT.STALE_GUIDANCE.replace('{repo}', cwdRepo.name));
     }
-
-    // Extension location hint
-    appendExtensionHint(lines, ctx.cwd);
+    lines.push(footerParts.join(' · '));
 
     return {
       message: {
@@ -269,34 +235,6 @@ export function isHistoricalMemoryPrompt(prompt: string | null): boolean {
   );
 }
 
-function summarizeMemoryContent(content: unknown): string | null {
-  if (typeof content !== 'string') {
-    return null;
-  }
-
-  const lines = content
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const priority = lines.filter((line) => /^\*\*(What|Why|Where)\*\*:/i.test(line));
-  const selected = (priority.length > 0 ? priority : lines).slice(0, 3);
-  if (selected.length === 0) {
-    return null;
-  }
-
-  const normalized = selected
-    .join(' ')
-    .replace(/\*\*(What|Why|Where)\*\*:\s*/gi, '$1: ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (!normalized) {
-    return null;
-  }
-
-  const limit = CONTEXT.PROMPT_MEMORY_SNIPPET_LENGTH || 280;
-  return normalized.length > limit ? `${normalized.slice(0, limit - 1)}…` : normalized;
-}
-
 function contentToText(content: unknown): string | null {
   if (typeof content === 'string') {
     const trimmed = content.trim();
@@ -336,24 +274,6 @@ function getProjectSummary(cwd: string): string {
     // Non-Node projects or unreadable package files fall back to directory name.
   }
   return `Local project directory ${path.basename(cwd) || cwd}.`;
-}
-
-/**
- * Append a one-line hint about the extension source location when the project
- * has a local extensions/memory-layer/ directory. This prevents the LLM from
- * searching ~/.pi/agent/ paths when looking for extension code.
- */
-function appendExtensionHint(lines: string[], cwd: string) {
-  const extensionDir = path.join(cwd, 'extensions', 'memory-layer');
-  try {
-    const extStat = fs.statSync(extensionDir);
-    if (extStat.isDirectory()) {
-      lines.push('');
-      lines.push('📂 Extension source: `extensions/memory-layer/` in this project repo.');
-    }
-  } catch {
-    // No local extension dir — skip hint
-  }
 }
 
 export function registerContextReminder(pi: ExtensionAPI, deps: ContextDeps) {

@@ -1,153 +1,244 @@
-
 /**
- * Tests for context-injection lightweight mode logic.
+ * Tests for lean context injection format.
  *
- * These test the decision logic, not the full hook (which requires Pi API mocks).
- * The logic is: when the code index is stale AND there are no relevant observations
- * AND no personal preferences, emit a short stale-only context instead of the full
- * observation list.
+ * Tests the output format of buildLeanContext, which mirrors the
+ * lines-building logic in context-injection.ts registerBeforeAgentStart.
  */
 
-function buildLightweightContext({ observations, personal, isStale, projectName, stats, staleGuidance }) {
-  const hasObservations = observations && observations.length > 0;
-  const hasPersonal = personal && personal.length > 0;
-  const lines = ['## Memory Context (auto-loaded)', ''];
+const CONTEXT = {
+  MIN_OBSERVATION_TRUST: 0.8,
+  PROMPT_INJECT_LIMIT: 1,
+  PERSONAL_INJECT_LIMIT: 0,
+};
 
-  if (isStale && !hasObservations && !hasPersonal) {
-    // Lightweight: stale-only mode
+function buildLeanContext({ observations, personal, isStale, projectName, stats, cwdRepo, projectSummary }) {
+  const lines = [];
+
+  // Header
+  if (!cwdRepo) {
     lines.push(
-      `Project: **${projectName}** | ${stats.total_memories} memories | ${stats.total_personal} personal preferences`,
+      `🧠 **${projectName}** — new project · ${stats.total_memories} memories across all projects`,
     );
-    lines.push('');
-    lines.push(staleGuidance);
-    lines.push('');
-    lines.push('Use `memory-save`, `memory-search`, and `memory-get` tools to interact with memory.');
   } else {
-    // Full context
+    const indexPart = cwdRepo
+      ? `${cwdRepo.file_count} files indexed${isStale ? ' (stale)' : ''}`
+      : 'not indexed';
     lines.push(
-      `Project: **${projectName}** | ${stats.total_memories} memories | ${stats.total_personal} personal preferences`,
+      `🧠 **${projectName}** — ${stats.total_memories} memories · ${indexPart} · ${projectSummary}`,
     );
-    lines.push('');
-    if (hasObservations) {
-      lines.push('### Recent Relevant Memory');
-      for (const o of observations) {
-        let trust = '';
-        if ((o.trust_score ?? 1) < 0.5) {
-          trust = '⚠️';
-        } else if ((o.trust_score ?? 1) < 0.8) {
-          trust = '🔎';
-        }
-        lines.push(`- [${o.type}] ${o.title}${trust}`);
-      }
-      lines.push('');
-    }
-    if (hasPersonal) {
-      lines.push('### Your Preferences (cross-project)');
-      for (const p of personal.slice(0, 5)) {
-        lines.push(`- ${p.title}`);
-      }
-      lines.push('');
-    }
-    lines.push('Use `memory-save`, `memory-search`, and `memory-get` tools to interact with memory.');
-    if (isStale) {
-      lines.push('');
-      lines.push(staleGuidance);
-    }
   }
+
+  // Observation: max 1, trust >= 0.8, title only
+  const top = observations?.[0];
+  if (top && (top.trust_score ?? 0) >= CONTEXT.MIN_OBSERVATION_TRUST) {
+    lines.push(`- [${top.type}] ${top.title}`);
+  }
+
+  // Footer
+  const footerParts = ['`memory-search` for recall', '`memory-save` for decisions'];
+  if (isStale && cwdRepo) {
+    footerParts.push(`reindex: \`memory-code reindex-repo --repo ${cwdRepo.name}\``);
+  }
+  lines.push(footerParts.join(' · '));
 
   return lines;
 }
 
-const STALE_GUIDANCE =
-  '📝 **Stale code index:** indexed code may not match current source files. Run `memory-code reindex-repo --repo TestRepo` to update. Verify current source before relying on code-index results.';
-
-describe('context-injection lightweight mode', () => {
-  test('stale + no observations → lightweight context', () => {
-    const result = buildLightweightContext({
+describe('lean context injection', () => {
+  test('basic stale project with no observations', () => {
+    const result = buildLeanContext({
       observations: [],
-      personal: [],
       isStale: true,
-      projectName: 'TestProject',
-      stats: { total_memories: 300, total_personal: 3 },
-      staleGuidance: STALE_GUIDANCE,
+      projectName: 'PiMemoryExtension',
+      stats: { total_memories: 408 },
+      cwdRepo: { name: 'PiMemoryExtension', file_count: 292 },
+      projectSummary: '💎 LaPis persistent memory',
     });
     const text = result.join('\n');
 
-    expect(text).toContain('Stale code index');
-    expect(text).not.toContain('Recent Relevant Memory');
-    expect(text).not.toContain('Your Preferences');
-    expect(result.length).toBeLessThan(8);
+    expect(result.length).toBe(2);
+    expect(text).toContain('🧠 **PiMemoryExtension** — 408 memories · 292 files indexed (stale) · 💎 LaPis persistent memory');
+    expect(text).toContain('reindex: `memory-code reindex-repo --repo PiMemoryExtension`');
+    expect(text).not.toContain('###');
+    expect(text).not.toContain('Personal');
   });
 
-  test('stale + has observations → full context with stale warning', () => {
-    const result = buildLightweightContext({
-      observations: [{ type: 'decision', title: 'Some decision', trust_score: 0.9 }],
-      personal: [],
-      isStale: true,
-      projectName: 'TestProject',
-      stats: { total_memories: 300, total_personal: 3 },
-      staleGuidance: STALE_GUIDANCE,
-    });
-    const text = result.join('\n');
-
-    expect(text).toContain('Recent Relevant Memory');
-    expect(text).toContain('Stale code index');
-  });
-
-  test('stale + has personal prefs → full context', () => {
-    const result = buildLightweightContext({
+  test('fresh project with no observations', () => {
+    const result = buildLeanContext({
       observations: [],
-      personal: [{ title: 'My preference' }],
-      isStale: true,
-      projectName: 'TestProject',
-      stats: { total_memories: 300, total_personal: 3 },
-      staleGuidance: STALE_GUIDANCE,
-    });
-    const text = result.join('\n');
-
-    expect(text).toContain('Your Preferences');
-    expect(text).toContain('Stale code index');
-  });
-
-  test('not stale + no observations → minimal context (no stale warning)', () => {
-    const result = buildLightweightContext({
-      observations: [],
-      personal: [],
       isStale: false,
-      projectName: 'TestProject',
-      stats: { total_memories: 300, total_personal: 3 },
-      staleGuidance: STALE_GUIDANCE,
+      projectName: 'PiMemoryExtension',
+      stats: { total_memories: 408 },
+      cwdRepo: { name: 'PiMemoryExtension', file_count: 292 },
+      projectSummary: '💎 LaPis persistent memory',
     });
     const text = result.join('\n');
 
-    expect(text).not.toContain('Stale code index');
-    expect(text).not.toContain('Recent Relevant Memory');
+    expect(result.length).toBe(2);
+    expect(text).toContain('292 files indexed');
+    expect(text).not.toContain('(stale)');
+    expect(text).not.toContain('reindex');
   });
 
-  test('lightweight is significantly shorter than full context', () => {
-    const lightweight = buildLightweightContext({
-      observations: [],
-      personal: [],
-      isStale: true,
-      projectName: 'TestProject',
-      stats: { total_memories: 300, total_personal: 3 },
-      staleGuidance: STALE_GUIDANCE,
+  test('high-trust observation is included (title only)', () => {
+    const result = buildLeanContext({
+      observations: [{ type: 'decision', title: 'Architecture: context injection wiring', trust_score: 0.92 }],
+      isStale: false,
+      projectName: 'PiMemoryExtension',
+      stats: { total_memories: 408 },
+      cwdRepo: { name: 'PiMemoryExtension', file_count: 292 },
+      projectSummary: '💎 LaPis persistent memory',
     });
-    const full = buildLightweightContext({
-      observations: [
-        { type: 'decision', title: 'Decision 1', trust_score: 0.9 },
-        { type: 'bugfix', title: 'Bug fix 1', trust_score: 0.8 },
-        { type: 'decision', title: 'Decision 2', trust_score: 0.7 },
-      ],
-      personal: [{ title: 'Pref 1' }, { title: 'Pref 2' }],
-      isStale: true,
-      projectName: 'TestProject',
-      stats: { total_memories: 300, total_personal: 3 },
-      staleGuidance: STALE_GUIDANCE,
+    const text = result.join('\n');
+
+    expect(result.length).toBe(3);
+    expect(text).toContain('- [decision] Architecture: context injection wiring');
+    expect(text).not.toContain('What:');
+    expect(text).not.toContain('Why:');
+  });
+
+  test('low-trust observation is filtered out (the "lol" case)', () => {
+    const result = buildLeanContext({
+      observations: [{ type: 'bugfix', title: 'Bug fix: comprehensive review', trust_score: 0.35 }],
+      isStale: false,
+      projectName: 'PiMemoryExtension',
+      stats: { total_memories: 408 },
+      cwdRepo: { name: 'PiMemoryExtension', file_count: 292 },
+      projectSummary: '💎 LaPis persistent memory',
+    });
+    const text = result.join('\n');
+
+    expect(result.length).toBe(2);
+    expect(text).not.toContain('Bug fix');
+    expect(text).not.toContain('comprehensive review');
+  });
+
+  test('medium-trust observation (0.6) is filtered out', () => {
+    const result = buildLeanContext({
+      observations: [{ type: 'architecture', title: 'Some architecture note', trust_score: 0.6 }],
+      isStale: false,
+      projectName: 'PiMemoryExtension',
+      stats: { total_memories: 408 },
+      cwdRepo: { name: 'PiMemoryExtension', file_count: 292 },
+      projectSummary: '💎 LaPis persistent memory',
     });
 
-    const lightLen = lightweight.join('\n').length;
-    const fullLen = full.join('\n').length;
-    expect(lightLen).toBeLessThan(fullLen * 0.75);
+    expect(result.length).toBe(2);
+    expect(result.join('\n')).not.toContain('Some architecture note');
+  });
+
+  test('trust threshold boundary: 0.79 filtered, 0.80 included', () => {
+    const below = buildLeanContext({
+      observations: [{ type: 'decision', title: 'Below threshold', trust_score: 0.79 }],
+      isStale: false,
+      projectName: 'PiMemoryExtension',
+      stats: { total_memories: 408 },
+      cwdRepo: { name: 'PiMemoryExtension', file_count: 292 },
+      projectSummary: '💎 LaPis persistent memory',
+    });
+    expect(below.length).toBe(2);
+
+    const atThreshold = buildLeanContext({
+      observations: [{ type: 'decision', title: 'At threshold', trust_score: 0.80 }],
+      isStale: false,
+      projectName: 'PiMemoryExtension',
+      stats: { total_memories: 408 },
+      cwdRepo: { name: 'PiMemoryExtension', file_count: 292 },
+      projectSummary: '💎 LaPis persistent memory',
+    });
+    expect(atThreshold.length).toBe(3);
+    expect(atThreshold.join('\n')).toContain('- [decision] At threshold');
+  });
+
+  test('only top observation is included even with multiple high-trust', () => {
+    const result = buildLeanContext({
+      observations: [
+        { type: 'decision', title: 'First decision', trust_score: 0.95 },
+        { type: 'bugfix', title: 'Second bugfix', trust_score: 0.90 },
+      ],
+      isStale: false,
+      projectName: 'PiMemoryExtension',
+      stats: { total_memories: 408 },
+      cwdRepo: { name: 'PiMemoryExtension', file_count: 292 },
+      projectSummary: '💎 LaPis persistent memory',
+    });
+    const text = result.join('\n');
+
+    expect(result.length).toBe(3);
+    expect(text).toContain('First decision');
+    expect(text).not.toContain('Second bugfix');
+  });
+
+  test('new project (no cwdRepo) format', () => {
+    const result = buildLeanContext({
+      observations: [],
+      isStale: false,
+      projectName: 'MyNewApp',
+      stats: { total_memories: 12 },
+      cwdRepo: null,
+      projectSummary: '',
+    });
+    const text = result.join('\n');
+
+    expect(result.length).toBe(2);
+    expect(text).toContain('🧠 **MyNewApp** — new project · 12 memories across all projects');
+    expect(text).not.toContain('reindex');
+  });
+
+  test('no personal preferences are ever injected', () => {
+    const result = buildLeanContext({
+      observations: [],
+      personal: [{ title: 'My preference' }, { title: 'Another preference' }],
+      isStale: false,
+      projectName: 'PiMemoryExtension',
+      stats: { total_memories: 408 },
+      cwdRepo: { name: 'PiMemoryExtension', file_count: 292 },
+      projectSummary: '💎 LaPis persistent memory',
+    });
+    const text = result.join('\n');
+
+    expect(text).not.toContain('preference');
+    expect(text).not.toContain('Personal');
+  });
+
+  test('lean output is significantly shorter than old format', () => {
+    const lean = buildLeanContext({
+      observations: [{ type: 'decision', title: 'Architecture decision', trust_score: 0.9 }],
+      isStale: true,
+      projectName: 'PiMemoryExtension',
+      stats: { total_memories: 408 },
+      cwdRepo: { name: 'PiMemoryExtension', file_count: 292 },
+      projectSummary: '💎 LaPis persistent memory',
+    });
+
+    // Simulate old format size
+    const oldLines = [
+      '## Memory Context (auto-loaded)',
+      '',
+      'Project: **PiMemoryExtension** | 408 memories | 3 personal preferences | topic: something',
+      '',
+      '### Project Context',
+      '- Directory: `/home/user/project`',
+      '- Summary: 💎 LaPis persistent memory',
+      '- Code index: `PiMemoryExtension` with 292 files / 6967 symbols (stale)',
+      '',
+      '### Prompt-Matched Memory',
+      '- [decision] Architecture decision 🔎',
+      '  What: The architecture was decided Where: src/something.js',
+      '',
+      '### Personal Preferences',
+      '- Context test personal',
+      '- Timestamp check',
+      '',
+      'Use `memory-search` for deeper recall and `memory-save` for durable decisions.',
+      '',
+      '📝 **Stale code index:** indexed code may not match current source files. Run `memory-code reindex-repo --repo PiMemoryExtension` to update.',
+      '',
+      '📂 Extension source: `extensions/memory-layer/` in this project repo.',
+    ];
+
+    const leanLen = lean.join('\n').length;
+    const oldLen = oldLines.join('\n').length;
+    expect(leanLen).toBeLessThan(oldLen * 0.35);
   });
 });
