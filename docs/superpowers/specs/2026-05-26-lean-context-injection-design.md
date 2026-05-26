@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-26
 **Status:** Draft
-**Affects:** `extensions/memory-layer/hooks/context-injection.ts`, `src/memory-domain/context.js`, `constants.js`, `test/context-injection.test.js`
+**Affects:** `extensions/memory-layer/hooks/context-injection.ts`, `constants.js`, `test/context-injection.test.js`
 
 ## Problem
 
@@ -98,7 +98,7 @@ In `constants.js`, `CONTEXT`:
 |---|---|---|---|
 | `PROMPT_INJECT_LIMIT` | 2 | 1 | Max 1 observation |
 | `PERSONAL_INJECT_LIMIT` | 2 | 0 | Personal prefs removed |
-| `PROMPT_MEMORY_SNIPPET_LENGTH` | 280 | 0 | No snippet shown |
+| `PROMPT_MEMORY_SNIPPET_LENGTH` | 280 | *(removed)* | Snippet logic removed from injection path |
 | `MIN_OBSERVATION_TRUST` | (new) | 0.8 | Trust threshold for injection |
 
 `PROMPT_RELEVANT_LIMIT` stays at 5 (the query to `mem('context')` can still return up to 5 — we filter at injection). This lets the agent `memory-search` get richer results while the auto-injection stays lean.
@@ -112,6 +112,20 @@ When `crossProjectResult` is used (new project, no project-specific memories), t
 ```
 
 No observations, no personal prefs. Just the header + footer.
+
+### Unchanged: source-authoritative prompts
+
+When `isSourceAuthoritativePrompt()` returns true (prompts containing "current source", "from the code", etc.), the existing short-circuit still applies — it returns `memory-code-guidance` instead of the context block. **This path is unchanged.**
+
+### Failure: `mem('context')` returns null
+
+```
+⚠️ Memory context failed to load. Use `memory-search` and `memory-save` manually.
+```
+
+### Dropped: `topic` field
+
+The old format showed `topic: <user prompt>` in the header line. This is dropped — the LLM already knows the user's prompt, and echoing it back as a "topic" adds no value while costing tokens.
 
 ## Complete output examples
 
@@ -158,4 +172,4 @@ No observations, no personal prefs. Just the header + footer.
 
 - Changing `mem('context')` query logic or ranking (`src/memory-domain/context.js`)
 - Adding a settings toggle (we can add `contextMode` later if users want the old format)
-- Changing the context reminder (`registerContextReminder`) — that's a separate concern
+- Changing the context reminder (`registerContextReminder`) — that's a separate concern. Note: the reminder currently says "Use `memory-search` before decisions" which partially overlaps with the new footer. May want to update the reminder text or bump the interval later.
