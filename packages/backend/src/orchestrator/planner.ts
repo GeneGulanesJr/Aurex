@@ -1,185 +1,80 @@
-import { v4 as uuid } from 'uuid';
-import type {
-  Mission,
-  Milestone,
-  WorkingUnit,
-  ValidationContract,
-  PlannedMilestone,
-  MissionConfig,
-} from '@aurex/shared';
-import { getDb } from '../db.js';
-import type { LaPisClient, MemoryResult } from '../clients/lapis-client.js';
-import type { RouterClient } from '../clients/router-client.js';
-import type { AppConfig } from '../config.js';
+// packages/backend/src/orchestrator/planner.ts
+import type { LaPisClient } from "../clients/lapis-client";
+import type { PinyxClient } from "../clients/pinyx-client";
 
-export interface PlanResult {
-  mission: Mission;
-  milestones: Milestone[];
-  workingUnits: WorkingUnit[];
-  relevantMemories: MemoryResult[];
+interface PlannedUnit {
+  description: string;
+  declaredPaths: string[];
+  declaredModules: string[];
 }
 
-export function createPlanner(
-  lapis: LaPisClient,
-  router: RouterClient,
-  config: AppConfig,
-) {
-  async function plan(missionDescription: string): Promise<PlanResult> {
-    const db = getDb();
+interface PlannedMilestoneRaw {
+  title: string;
+  description: string;
+  units: PlannedUnit[];
+  criteria: string[];
+  testCommands: string[];
+}
 
-    let relevantMemories: MemoryResult[] = [];
-    try {
-      relevantMemories = await lapis.searchMemory(missionDescription, {
-        includeCode: true,
+export interface PlanResult {
+  milestones: Array<{
+    id: string;
+    title: string;
+    units: Array<{ id: string; description: string }>;
+  }>;
+}
+
+export function createPlanner(lapis: LaPisClient, pinyx: PinyxClient) {
+  return {
+    async plan(missionDescription: string, missionId: string): Promise<PlanResult> {
+      // 1. Gather memory context
+      const memories = await lapis.searchMemory(missionDescription, { limit: 10 });
+
+      // 2. Ask PiNyx to decompose into milestones
+      const response = await pinyx.chat({
+        model: "reasoning-strong",
+        messages: [
+          {
+            role: "system",
+            content: "You are a mission planner. Decompose the mission into ordered milestones. Each milestone has working units with declared paths and modules, validation criteria, and test commands. Respond with JSON only.",
+          },
+          {
+            role: "user",
+            content: `Mission: ${missionDescription}\n\nRelevant context: ${memories.map((m) => m.content).join("\n")}`,
+          },
+        ],
       });
-    } catch {
-      // memory search is best-effort
-    }
 
-    const planResponse = await router.planningCall(missionDescription, {
-      missionDescription,
-      relevantMemories,
-    });
+      const plan = JSON.parse(response.content) as { milestones: PlannedMilestoneRaw[] };
 
-    if (planResponse.milestones.length > config.defaultConfig.maxMilestoneCount) {
-      throw new Error(
-        `Plan has ${planResponse.milestones.length} milestones, max is ${config.defaultConfig.maxMilestoneCount}`,
-      );
-    }
-
-    const missionId = uuid();
-    const missionConfig: MissionConfig = { ...config.defaultConfig };
-
-    const insertMission = db.prepare(`
-      INSERT INTO missions (id, description, status, plan_json, config_json)
-      VALUES (?, ?, 'running', ?, ?)
-    `);
-
-    const insertMilestone = db.prepare(`
-      INSERT INTO milestones (id, mission_id, seq, title, description, status, validation_contracts_json)
-      VALUES (?, ?, ?, ?, ?, 'pending', ?)
-    `);
-
-    const insertWorkingUnit = db.prepare(`
-      INSERT INTO working_units (id, milestone_id, mission_id, title, description, task_spec_json, file_paths_json, modules_json, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-    `);
-
-    const insertCost = db.prepare(`
-      INSERT INTO cost_entries (id, mission_id, role, model, input_tokens, output_tokens, estimated_cost_usd)
-      VALUES (?, ?, 'planner', ?, ?, ?, 0)
-    `);
-
-    const transaction = db.transaction(() => {
-      insertMission.run(
-        missionId,
-        missionDescription,
-        JSON.stringify(planResponse),
-        JSON.stringify(missionConfig),
-      );
-
-      const milestones: Milestone[] = [];
-      const workingUnits: WorkingUnit[] = [];
-
-      for (let i = 0; i < planResponse.milestones.length; i++) {
-        const planned = planResponse.milestones[i];
-        const milestoneId = uuid();
-        const contracts: ValidationContract[] = planned.validationContracts || [];
-
-        insertMilestone.run(
-          milestoneId,
-          missionId,
-          i,
-          planned.title,
-          planned.description,
-          JSON.stringify(contracts),
-        );
-
-        milestones.push({
-          id: milestoneId,
-          missionId,
-          seq: i,
-          title: planned.title,
-          description: planned.description,
-          status: 'pending',
-          validationContractsJson: JSON.stringify(contracts),
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          completedAt: null,
+      // 3. Create milestones, units, and contracts in LaPis
+      const result: PlanResult["milestones"] = [];
+      for (let i = 0; i < plan.milestones.length; i++) {
+        const ms = plan.milestones[i];
+        const milestone = await lapis.createMilestone(missionId, {
+          title: ms.title,
+          description: ms.description,
+          orderIndex: i,
         });
 
-        for (const plannedUnit of planned.workingUnits || []) {
-          const unitId = uuid();
-          insertWorkingUnit.run(
-            unitId,
-            milestoneId,
-            missionId,
-            plannedUnit.title,
-            plannedUnit.description,
-            plannedUnit.taskSpec || plannedUnit.description,
-            JSON.stringify(plannedUnit.filePaths || []),
-            JSON.stringify(plannedUnit.modules || []),
-          );
-
-          workingUnits.push({
-            id: unitId,
-            milestoneId,
-            missionId,
-            title: plannedUnit.title,
-            description: plannedUnit.description,
-            taskSpecJson: plannedUnit.taskSpec || plannedUnit.description,
-            filePathsJson: JSON.stringify(plannedUnit.filePaths || []),
-            modulesJson: JSON.stringify(plannedUnit.modules || []),
-            status: 'pending',
-            piPid: null,
-            startedAt: null,
-            completedAt: null,
-            createdAt: new Date().toISOString(),
-          });
+        const units: Array<{ id: string; description: string }> = [];
+        for (const unit of ms.units) {
+          const created = await lapis.createWorkingUnit(milestone.id, unit);
+          units.push({ id: created.id, description: created.description });
         }
+
+        await lapis.createContract(milestone.id, {
+          content: {
+            criteria: ms.criteria,
+            testCommands: ms.testCommands,
+            acceptanceBehavior: ms.criteria.join("; "),
+          },
+        });
+
+        result.push({ id: milestone.id, title: ms.title, units });
       }
 
-      insertCost.run(
-        uuid(),
-        missionId,
-        planResponse.modelUsed,
-        planResponse.tokensUsed.input,
-        planResponse.tokensUsed.output,
-      );
-
-      return { milestones, workingUnits };
-    });
-
-    const { milestones, workingUnits } = transaction();
-
-    const mission: Mission = {
-      id: missionId,
-      description: missionDescription,
-      status: 'running',
-      planJson: JSON.stringify(planResponse),
-      configJson: JSON.stringify(missionConfig),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      completedAt: null,
-    };
-
-    try {
-      await lapis.saveMemory({
-        type: 'mission_plan',
-        title: `Mission: ${missionDescription.slice(0, 80)}`,
-        content: JSON.stringify({
-          missionId,
-          description: missionDescription,
-          milestoneCount: milestones.length,
-          reasoning: planResponse.reasoning,
-        }),
-      });
-    } catch {
-      // memory save is best-effort
-    }
-
-    return { mission, milestones, workingUnits, relevantMemories };
-  }
-
-  return { plan };
+      return { milestones: result };
+    },
+  };
 }
