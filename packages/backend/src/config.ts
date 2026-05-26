@@ -1,19 +1,43 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import type { MissionConfig } from '@aurex/shared';
+// packages/backend/src/config.ts
 
 export interface AppConfig {
-  port: number;
-  host: string;
-  lapisDbPath: string;
-  pinyxEndpoint: string;
-  workspacePath: string;
-  lapisCliPath: string;
-  piBinaryPath: string;
-  defaultConfig: MissionConfig;
-}
+  // LaPis (shared state) — HTTP only
+  lapisEndpoint: string;
 
-let _config: AppConfig | null = null;
+  // PiNyx (LLM gateway)
+  pinyxEndpoint: string;
+
+  // Agent model hints (passed to PiNyx routing)
+  modelHints: {
+    orchestrator: string;
+    worker: string;
+    validator_scrutiny: string;
+    validator_user_testing: string;
+    research: string;
+  };
+
+  // Agent timeouts (ms)
+  workerTimeouts: {
+    simple: number;
+    build: number;
+    testHeavy: number;
+  };
+  validatorTimeout: number;
+  researchTimeout: number;
+
+  // Mission limits
+  maxValidatorRetries: number;
+  maxRescopes: number;
+  missionCostCap: number;
+
+  // Git
+  repoRoot: string;
+  gitMainBranch: string;
+
+  // Server
+  port: number;
+  wsPort: number;
+}
 
 function env(key: string, fallback?: string): string {
   const val = process.env[key] ?? fallback;
@@ -28,44 +52,47 @@ function envInt(key: string, fallback: number): number {
   return val ? parseInt(val, 10) : fallback;
 }
 
-export function loadConfig(): AppConfig {
-  if (_config) return _config;
+function envFloat(key: string, fallback: number): number {
+  const val = process.env[key];
+  return val ? parseFloat(val) : fallback;
+}
 
-  try {
-    const envPath = resolve(process.cwd(), '.env');
-    const content = readFileSync(envPath, 'utf-8');
-    for (const line of content.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const eq = trimmed.indexOf('=');
-      if (eq === -1) continue;
-      const key = trimmed.slice(0, eq).trim();
-      const val = trimmed.slice(eq + 1).trim();
-      if (!process.env[key]) {
-        process.env[key] = val;
-      }
+export function loadConfig(): AppConfig {
+  const required = ["LAPIS_ENDPOINT", "PINYX_ENDPOINT", "REPO_ROOT"];
+  for (const key of required) {
+    if (!process.env[key]) {
+      throw new Error(`Missing required env var: ${key}`);
     }
-  } catch {
-    // .env file is optional
   }
 
-  _config = {
-    port: envInt('PORT', 3000),
-    host: env('HOST', '0.0.0.0'),
-    lapisDbPath: env('LAPIS_DB_PATH', '/data/lapis/memory.db'),
-    pinyxEndpoint: env('PINYX_ENDPOINT', 'http://localhost:7331'),
-    workspacePath: env('WORKSPACE_PATH', '/workspace'),
-    lapisCliPath: env('LAPIS_CLI_PATH', ''),
-    piBinaryPath: env('PI_BINARY_PATH', 'pi'),
-    defaultConfig: {
-      workerTimeoutMs: envInt('DEFAULT_WORKER_TIMEOUT_MS', 300000),
-      validatorTimeoutMs: envInt('DEFAULT_VALIDATOR_TIMEOUT_MS', 120000),
-      researchTimeoutMs: envInt('DEFAULT_RESEARCH_TIMEOUT_MS', 180000),
-      maxRetryCount: envInt('MAX_RETRY_COUNT', 3),
-      maxRescopeCount: envInt('MAX_RESCOPE_COUNT', 2),
-      maxMilestoneCount: envInt('MAX_MILESTONE_COUNT', 10),
-    },
-  };
+  return {
+    lapisEndpoint: env("LAPIS_ENDPOINT"),
+    pinyxEndpoint: env("PINYX_ENDPOINT"),
 
-  return _config;
+    modelHints: {
+      orchestrator: env("MODEL_ORCHESTRATOR", "reasoning-strong"),
+      worker: env("MODEL_WORKER", "code-fast"),
+      validator_scrutiny: env("MODEL_VALIDATOR_SCRUTINY", "reasoning"),
+      validator_user_testing: env("MODEL_VALIDATOR_USER_TESTING", "computer-use"),
+      research: env("MODEL_RESEARCH", "fast-cheap"),
+    },
+
+    workerTimeouts: {
+      simple: envInt("WORKER_TIMEOUT_SIMPLE", 120_000),
+      build: envInt("WORKER_TIMEOUT_BUILD", 300_000),
+      testHeavy: envInt("WORKER_TIMEOUT_TEST_HEAVY", 600_000),
+    },
+    validatorTimeout: envInt("VALIDATOR_TIMEOUT", 180_000),
+    researchTimeout: envInt("RESEARCH_TIMEOUT", 120_000),
+
+    maxValidatorRetries: envInt("MAX_VALIDATOR_RETRIES", 2),
+    maxRescopes: envInt("MAX_RESCOPES_PER_MILESTONE", 5),
+    missionCostCap: envFloat("MISSION_COST_CAP", 50.0),
+
+    repoRoot: env("REPO_ROOT"),
+    gitMainBranch: env("GIT_MAIN_BRANCH", "main"),
+
+    port: envInt("PORT", 3000),
+    wsPort: envInt("WS_PORT", 3001),
+  };
 }
