@@ -4,8 +4,8 @@
   "type": "module",
   "main": "./dist/server.js",
   "scripts": {
-    "build": "tsc -b",
-    "clean": "rm -rf dist",
+    "build": "tsc -b && cp -r src/migrations dist/migrations",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
     "typecheck": "tsc --noEmit",
     "dev": "node --watch --loader ts-node/esm src/server.ts",
     "start": "node dist/server.js"

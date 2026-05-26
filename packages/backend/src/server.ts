@@ -38,7 +38,7 @@ async function main() {
   const piManager = createPiProcessManager(config);
   const milestoneLoop = new MilestoneLoop(piManager, router, lapis);
 
-  fastify.register(missionRoutes, { milestoneLoop });
+  fastify.register(missionRoutes, { prefix: '/api', milestoneLoop });
 
   fastify.get('/health', async () => {
     let dbOk = false;
