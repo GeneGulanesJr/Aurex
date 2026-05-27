@@ -9,6 +9,13 @@ function createWorkingUnit(repo) {
   };
 }
 
+function getWorkingUnitsForMilestone(repo) {
+  return async (req, res, ctx) => {
+    const rows = repo.getWorkingUnitsForMilestone(ctx.params.milestoneId);
+    jsonOk(res, rows);
+  };
+}
+
 function updateWorkingUnitStatus(repo) {
   return async (req, res, ctx) => {
     const { status } = ctx.body;
@@ -17,4 +24,4 @@ function updateWorkingUnitStatus(repo) {
   };
 }
 
-module.exports = { createWorkingUnit, updateWorkingUnitStatus };
+module.exports = { createWorkingUnit, getWorkingUnitsForMilestone, updateWorkingUnitStatus };

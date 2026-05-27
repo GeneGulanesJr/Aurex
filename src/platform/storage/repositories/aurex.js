@@ -43,6 +43,9 @@ function createAurexRepository(deps) {
     getWorkingUnit(id) {
       return sqlJson('SELECT * FROM working_units WHERE id = ?', [id]);
     },
+    getWorkingUnitsForMilestone(milestoneId) {
+      return sqlJson('SELECT * FROM working_units WHERE milestone_id = ?', [milestoneId]);
+    },
     updateWorkingUnitStatus(id, status) {
       sqlRun('UPDATE working_units SET status = ? WHERE id = ?', [status, id]);
     },

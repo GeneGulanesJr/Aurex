@@ -116,6 +116,11 @@ describe('Aurex repository', () => {
     expect(rows[0].description).toBe('Implement X');
   });
 
+  it('lists working units for a milestone', () => {
+    const rows = repo.getWorkingUnitsForMilestone('ms1');
+    expect(rows.some((row) => row.id === 'wu1')).toBe(true);
+  });
+
   it('updates working unit status', () => {
     repo.updateWorkingUnitStatus('wu1', 'working');
     const rows = repo.getWorkingUnit('wu1');
@@ -366,6 +371,12 @@ describe('HTTP server E2E — Aurex endpoints', () => {
     expect(res.status).toBe(201);
     expect(res.body.description).toBe('Implement feature');
     unitId = res.body.id;
+  });
+
+  it('lists working units for a milestone over HTTP', async () => {
+    const res = await req('GET', `/milestones/${milestoneId}/units`);
+    expect(res.status).toBe(200);
+    expect(res.body.some((row) => row.id === unitId)).toBe(true);
   });
 
   it('updates working unit status', async () => {
