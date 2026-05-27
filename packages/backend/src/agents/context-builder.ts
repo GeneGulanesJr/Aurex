@@ -1,4 +1,5 @@
 // packages/backend/src/agents/context-builder.ts
+import type { HandoffRecord } from "@aurex/shared";
 
 export interface WorkerContextInput {
   missionDescription: string;
@@ -18,6 +19,7 @@ export interface ValidatorUnitContext {
   declaredModules: string[];
   taskBranch: string;
   worktreePath: string;
+  handoff?: HandoffRecord;
 }
 
 export interface ValidatorContextInput {
@@ -135,6 +137,7 @@ export function buildValidatorContext(input: ValidatorContextInput): string {
             `- Task branch: ${unit.taskBranch}`,
             `- Worktree path: ${unit.worktreePath}`,
             `- Declared scope: ${scope}`,
+            unit.handoff ? formatHandoff(unit.handoff) : "- Handoff: not returned by LaPis",
           ].join("\n");
         }),
       ].join("\n\n"),
@@ -146,4 +149,27 @@ export function buildValidatorContext(input: ValidatorContextInput): string {
   );
 
   return sections.join("\n\n");
+}
+
+function formatHandoff(handoff: HandoffRecord): string {
+  const commands = handoff.commandsRun.length > 0
+    ? handoff.commandsRun.map((c) => `${c.command} (exit ${c.exitCode})`).join("; ")
+    : "none";
+
+  return [
+    "- Handoff:",
+    `  - Record ID: ${handoff.id}`,
+    `  - Status: ${handoff.status}`,
+    `  - Feature: ${handoff.featureName}`,
+    `  - Description: ${handoff.description}`,
+    `  - Implemented: ${handoff.implemented}`,
+    `  - Remaining: ${handoff.remaining}`,
+    `  - Rationale: ${handoff.rationale}`,
+    `  - Assumptions: ${handoff.assumptions}`,
+    `  - Unresolved uncertainties: ${handoff.unresolvedUncertainties}`,
+    `  - Errors encountered: ${handoff.errorsEncountered}`,
+    `  - Commands run: ${commands}`,
+    `  - Git commit: ${handoff.gitCommitHash}`,
+    `  - Created at: ${handoff.createdAt}`,
+  ].join("\n");
 }

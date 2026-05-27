@@ -75,6 +75,7 @@ function createMockLapis(): LaPisClient {
     getContractHistory: vi.fn().mockResolvedValue([
       { id: "c-1", content: { criteria: [], testCommands: [], acceptanceBehavior: "" } },
     ]),
+    getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
     getVerdicts: vi.fn().mockResolvedValue([
       { verdict: "pass", validatorType: "validator_scrutiny" },
     ]),

@@ -77,6 +77,9 @@ describe("milestone loop validator E2E", () => {
         handoffs.push(handoff);
         return { accepted: true, errors: [] };
       }),
+      getHandoffsForMilestone: vi.fn().mockImplementation(async () => (
+        handoffs.map((handoff, index) => makeHandoffRecord(handoff, index))
+      )),
       writeVerdict: vi.fn().mockImplementation(async (sessionId: string, verdict: Omit<ValidationVerdict, "id" | "sessionId">) => {
         const written = { id: `verdict-${verdicts.length + 1}`, sessionId, ...verdict };
         verdicts.push(written);
@@ -223,6 +226,9 @@ describe("milestone loop validator E2E", () => {
         handoffs.push(handoff);
         return { accepted: true, errors: [] };
       }),
+      getHandoffsForMilestone: vi.fn().mockImplementation(async () => (
+        handoffs.map((handoff, index) => makeHandoffRecord(handoff, index))
+      )),
       writeVerdict: vi.fn().mockImplementation(async (sessionId: string, verdict: Omit<ValidationVerdict, "id" | "sessionId">) => {
         const written = { id: `verdict-${verdicts.length + 1}`, sessionId, ...verdict };
         verdicts.push(written);
@@ -377,5 +383,17 @@ function makeUnit(): WorkingUnit {
     taskBranch: "",
     worktreePath: "",
     sessionId: "",
+  };
+}
+
+function makeHandoffRecord(handoff: unknown, index: number) {
+  return {
+    id: `handoff-${index + 1}`,
+    missionId: "mission-e2e",
+    milestoneId: "ms-e2e",
+    status: "accepted" as const,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+    ...(handoff as Record<string, unknown>),
   };
 }

@@ -181,6 +181,12 @@ export function createMilestoneLoop(
           };
         }
 
+        const handoffs = await lapis.getHandoffsForMilestone(milestone.id);
+        const handoffsByUnitId = new Map(handoffs.map((handoff) => [handoff.unitId, handoff]));
+        for (const unit of validatorUnits) {
+          unit.handoff = handoffsByUnitId.get(unit.id);
+        }
+
         const contractContent = (contract as any)?.content ?? {};
         const contractId = (contract as any)?.id || milestone.validationContractId || "unknown-contract";
         const criteria = contractContent.criteria ?? [];
