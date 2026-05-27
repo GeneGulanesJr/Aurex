@@ -36,6 +36,44 @@ describe("POST /api/missions", () => {
     expect(runner.start).toHaveBeenCalledWith("m-1");
   });
 
+  it("creates missions with configured concrete PiNyx model hints", async () => {
+    const app = Fastify();
+    const mockLapis = {
+      createMission: vi.fn().mockResolvedValue({ id: "m-1", status: "planning" }),
+    } as unknown as LaPisClient;
+
+    app.register(missionRoutes, {
+      lapis: mockLapis,
+      runner: createMockRunner(),
+      missionConfig: {
+        modelHints: {
+          orchestrator: "kilo/kilo-auto/free",
+          worker: "kilo/kilo-auto/free",
+          validator_scrutiny: "kilo/kilo-auto/free",
+          validator_user_testing: "kilo/kilo-auto/free",
+          research: "kilo/kilo-auto/free",
+        },
+        workerTimeouts: { simple: 1, build: 2, testHeavy: 3 },
+        costCap: 10,
+        maxValidatorRetries: 1,
+        maxRescopes: 1,
+      },
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/api/missions",
+      payload: { description: "Build auth system" },
+    });
+
+    expect(mockLapis.createMission).toHaveBeenCalledWith(
+      "Build auth system",
+      expect.objectContaining({
+        modelHints: expect.objectContaining({ orchestrator: "kilo/kilo-auto/free" }),
+      }),
+    );
+  });
+
   it("rejects missing description", async () => {
     const app = Fastify();
     const mockLapis = {} as unknown as LaPisClient;

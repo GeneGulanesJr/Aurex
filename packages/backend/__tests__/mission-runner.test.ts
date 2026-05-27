@@ -148,4 +148,42 @@ describe("MissionRunner", () => {
     expect(lapis.updateMissionStatus).toHaveBeenCalledWith("m-1", "completed");
     expect(runner.getStatus().state).toBe("completed");
   });
+
+  it("passes the mission orchestrator model hint to the planner", async () => {
+    const lapis = createMockLapis();
+    const pinyx = createMockPinyx();
+    (lapis.getMission as any).mockResolvedValue({
+      id: "m-1",
+      description: "Build auth",
+      status: "planning",
+      configJson: {
+        modelHints: {
+          orchestrator: "kilo/kilo-auto/free",
+          worker: "kilo/kilo-auto/free",
+          validator_scrutiny: "kilo/kilo-auto/free",
+          validator_user_testing: "kilo/kilo-auto/free",
+          research: "kilo/kilo-auto/free",
+        },
+        workerTimeouts: { simple: 120000, build: 300000, testHeavy: 600000 },
+        costCap: 50,
+        maxValidatorRetries: 2,
+        maxRescopes: 5,
+      },
+      createdAt: "2026-01-01",
+    });
+    const runner = createMissionRunner({
+      lapis,
+      pinyx,
+      eventBus: mockEventBus as any,
+      agentDir: "/test/.pi/agent",
+      repoRoot: "/test/repo",
+      gitMainBranch: "main",
+    });
+
+    const done = runner.waitForCompletion();
+    runner.start("m-1");
+    await done;
+
+    expect(pinyx.chat).toHaveBeenCalledWith(expect.objectContaining({ model: "kilo/kilo-auto/free" }));
+  });
 });

@@ -24,7 +24,13 @@ export interface PlanResult {
   }>;
 }
 
-export function createPlanner(lapis: LaPisClient, pinyx: PinyxClient) {
+export function createPlanner(
+  lapis: LaPisClient,
+  pinyx: PinyxClient,
+  opts?: { model?: string },
+) {
+  const model = opts?.model ?? "reasoning-strong";
+
   return {
     async plan(missionDescription: string, missionId: string): Promise<PlanResult> {
       // 1. Gather memory context
@@ -32,7 +38,7 @@ export function createPlanner(lapis: LaPisClient, pinyx: PinyxClient) {
 
       // 2. Ask PiNyx to decompose into milestones
       const response = await pinyx.chat({
-        model: "reasoning-strong",
+        model,
         messages: [
           {
             role: "system",

@@ -36,4 +36,27 @@ describe("planner", () => {
     expect(mockLapis.createMilestone).toHaveBeenCalled();
     expect(mockLapis.createContract).toHaveBeenCalled();
   });
+
+  it("uses the configured orchestrator model for PiNyx planning", async () => {
+    const mockLapis = {
+      searchMemory: vi.fn().mockResolvedValue([]),
+      createMilestone: vi.fn().mockResolvedValue({ id: "ms-1", title: "Smoke" }),
+      createWorkingUnit: vi.fn(),
+      createContract: vi.fn().mockResolvedValue({ id: "c-1" }),
+    } as unknown as LaPisClient;
+
+    const mockPinyx = {
+      chat: vi.fn().mockResolvedValue({
+        content: JSON.stringify({
+          milestones: [{ title: "Smoke", description: "No-op", units: [], criteria: [], testCommands: [] }],
+        }),
+        usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+      }),
+    };
+
+    const planner = createPlanner(mockLapis, mockPinyx as never, { model: "kilo/kilo-auto/free" });
+    await planner.plan("Smoke mission", "m-1");
+
+    expect(mockPinyx.chat).toHaveBeenCalledWith(expect.objectContaining({ model: "kilo/kilo-auto/free" }));
+  });
 });
