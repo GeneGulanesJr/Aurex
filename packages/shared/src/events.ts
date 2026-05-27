@@ -1,12 +1,14 @@
 // packages/shared/src/events.ts
-import type { AgentType, AgentStatus, MilestoneStatus } from "./enums";
-import type { AttemptSummary, EscalationContext } from "./types";
+import type { AgentType, AgentStatus, MilestoneStatus } from "./enums.js";
+import type { AttemptSummary, EscalationContext } from "./types.js";
 
 export type WsClientEvent =
   | { type: "agent_status"; agentId: string; agentType: AgentType; status: AgentStatus; milestoneId: string }
   | { type: "milestone_progress"; milestoneId: string; status: MilestoneStatus; completedUnits: number; totalUnits: number }
   | { type: "cost_update"; missionId: string; totalCost: number; totalTokens: number; delta: number }
   | { type: "escalation"; missionId: string; trigger: EscalationTrigger; context: EscalationContext };
+
+export type WsEvent = WsClientEvent;
 
 export type EscalationTrigger =
   | { kind: "milestone_complete"; milestoneId: string; releaseBranch: string }

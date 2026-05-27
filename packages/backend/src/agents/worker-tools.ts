@@ -1,7 +1,7 @@
 // packages/backend/src/agents/worker-tools.ts
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import type { LaPisClient } from "../clients/lapis-client";
+import type { LaPisClient } from "../clients/lapis-client.js";
 import type { Handoff } from "@aurex/shared";
 
 export function createWorkerTools(lapis: LaPisClient, unitId: string) {

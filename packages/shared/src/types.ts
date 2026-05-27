@@ -3,7 +3,7 @@ import type {
   MissionStatus, MilestoneStatus, AgentType, AgentStatus, WorkerStatus,
   BroadcastLifecycle, BroadcastCategory, ResearchLifecycle, ResearchRelevance,
   NegotiatorVerdict, CompressionTrigger, CheckpointDecision, CheckpointTrigger,
-} from "./enums";
+} from "./enums.js";
 
 export interface Mission {
   id: string;
@@ -183,6 +183,16 @@ export interface MilestoneSpec {
   title: string;
   description: string;
   orderIndex: number;
+}
+
+export interface PlannedWorkingUnit extends WorkingUnitSpec {}
+
+export interface PlannedMilestone {
+  title: string;
+  description: string;
+  units: PlannedWorkingUnit[];
+  criteria: string[];
+  testCommands: string[];
 }
 
 export interface MemoryResult {

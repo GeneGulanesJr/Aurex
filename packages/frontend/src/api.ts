@@ -1,4 +1,11 @@
-import type { CheckpointDecision } from "@aurex/shared";
+import type { CheckpointDecision, CostSummary, Milestone, Mission, WorkingUnit } from "@aurex/shared";
+
+export interface CurrentMissionPayload {
+  mission: Mission;
+  milestones: Milestone[];
+  activeWorkers: WorkingUnit[];
+  cost: CostSummary;
+}
 
 export async function createMission(description: string) {
   const res = await fetch("/api/missions", {
@@ -7,6 +14,13 @@ export async function createMission(description: string) {
     body: JSON.stringify({ description }),
   });
   return res.json() as Promise<{ missionId: string; status: string }>;
+}
+
+export async function getCurrentMission(): Promise<CurrentMissionPayload | null> {
+  const res = await fetch("/api/missions/current");
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Failed to hydrate current mission: ${res.status}`);
+  return res.json() as Promise<CurrentMissionPayload>;
 }
 
 export async function submitCheckpoint(

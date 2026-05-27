@@ -1,5 +1,5 @@
 // packages/backend/src/orchestrator/negotiator.ts
-import type { LaPisClient } from "../clients/lapis-client";
+import type { LaPisClient } from "../clients/lapis-client.js";
 import type { ValidationVerdict, NegotiatorVerdict } from "@aurex/shared";
 
 interface NegotiateResult {

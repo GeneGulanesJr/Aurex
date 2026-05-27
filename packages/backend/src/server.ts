@@ -1,9 +1,10 @@
 // packages/backend/src/server.ts
 import Fastify from "fastify";
+import websocket from "@fastify/websocket";
 import { loadConfig } from "./config.js";
 import { createLaPisClient } from "./clients/lapis-client.js";
 import { createPinyxClient } from "./clients/pinyx-client.js";
-import { createEventBus } from "./ws/events.js";
+import { createEventBus, registerWebSocketRoutes } from "./ws/events.js";
 import { createMissionRunner } from "./orchestrator/mission-runner.js";
 import { missionRoutes } from "./routes/missions.js";
 import { checkpointRoutes } from "./routes/checkpoints.js";
@@ -51,6 +52,8 @@ async function main() {
   }
 
   const app = Fastify({ logger: true });
+  await app.register(websocket);
+  registerWebSocketRoutes(app, eventBus);
 
   // Health endpoint
   app.get("/health", async () => {

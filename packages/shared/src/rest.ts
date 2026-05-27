@@ -1,5 +1,5 @@
 // packages/shared/src/rest.ts
-import type { Mission, Milestone, WorkingUnit, CostSummary } from "./types";
+import type { Mission, Milestone, WorkingUnit, CostSummary } from "./types.js";
 
 export interface CreateMissionRequest {
   description: string;
