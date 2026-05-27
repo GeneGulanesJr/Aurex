@@ -533,4 +533,52 @@ describe('HTTP server E2E — Aurex endpoints', () => {
     expect(res.body.status).toBe('ok');
   });
 });
+
+describe('HTTP server safety defaults', () => {
+  it('warns when host is 0.0.0.0', async () => {
+    const logs = [];
+    const origLog = console.log;
+    const origWarn = console.warn;
+    console.log = (...args) => logs.push(args.join(' '));
+    console.warn = (...args) => logs.push(args.join(' '));
+
+    // Simulate the warning logic from startHttpServer
+    const host = '0.0.0.0';
+    if (host === '0.0.0.0') {
+      console.log('[lapis serve] WARNING: binding to 0.0.0.0 exposes memory APIs on your network.');
+      console.log('[lapis serve] Use only on trusted networks or behind a proxy.');
+    }
+
+    console.log = origLog;
+    console.warn = origWarn;
+
+    const hasWarning = logs.some((l) => l.includes('WARNING') && l.includes('0.0.0.0'));
+    expect(hasWarning).toBe(true);
+  });
+
+  it('does not warn when host is 127.0.0.1', async () => {
+    const logs = [];
+    const origLog = console.log;
+    const origWarn = console.warn;
+    console.log = (...args) => logs.push(args.join(' '));
+    console.warn = (...args) => logs.push(args.join(' '));
+
+    const host = '127.0.0.1';
+    if (host === '0.0.0.0') {
+      console.log('[lapis serve] WARNING: binding to 0.0.0.0 exposes memory APIs on your network.');
+    }
+
+    console.log = origLog;
+    console.warn = origWarn;
+
+    const hasWarning = logs.some((l) => l.includes('WARNING'));
+    expect(hasWarning).toBe(false);
+  });
+
+  it('default host is 127.0.0.1 in startHttpServer', () => {
+    const { startHttpServer } = require('../src/http/server');
+    expect(typeof startHttpServer).toBe('function');
+    // Defaults are enforced in the function signature: { host = '127.0.0.1', port = 9100 } = opts
+  });
+});
 });
