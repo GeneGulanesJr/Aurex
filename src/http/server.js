@@ -63,6 +63,7 @@ function buildRoutes(deps) {
   const costs = require('./handlers/costs');
   const compression = require('./handlers/compression');
   const retry = require('./handlers/retry');
+  const checkpoints = require('./handlers/checkpoints');
 
   return [
     // Health
@@ -70,6 +71,7 @@ function buildRoutes(deps) {
 
     // Missions
     { method: 'POST', pattern: '/missions', handler: missions.createMission(aurex) },
+    { method: 'GET', pattern: '/missions', handler: checkpoints.listMissions(aurex) },
     { method: 'GET', pattern: '/missions/:id', handler: missions.getMission(aurex) },
     { method: 'PATCH', pattern: '/missions/:id/status', handler: missions.updateMissionStatus(aurex) },
 
@@ -121,6 +123,12 @@ function buildRoutes(deps) {
 
     // Compression (stub)
     { method: 'POST', pattern: '/missions/:missionId/compression', handler: compression.runCompression() },
+
+    // Checkpoints
+    { method: 'POST', pattern: '/checkpoints', handler: checkpoints.createCheckpoint(aurex) },
+    { method: 'GET', pattern: '/checkpoints/:id', handler: checkpoints.getCheckpoint(aurex) },
+    { method: 'PATCH', pattern: '/checkpoints/:id', handler: checkpoints.resolveCheckpoint(aurex) },
+    { method: 'GET', pattern: '/missions/:missionId/checkpoints', handler: checkpoints.getPendingCheckpoints(aurex) },
   ];
 }
 

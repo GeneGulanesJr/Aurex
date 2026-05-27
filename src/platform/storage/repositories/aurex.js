@@ -171,6 +171,40 @@ function createAurexRepository(deps) {
         [`re-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, milestoneId, event.contractId || '', event.reason || '', event.previousScope || '', event.newScope || ''],
       );
     },
+
+    // --- Checkpoints ---
+    createCheckpoint({ id, missionId, trigger, milestoneId, summary }) {
+      sqlRun(
+        'INSERT INTO checkpoints (id, mission_id, trigger, milestone_id, summary) VALUES (?, ?, ?, ?, ?)',
+        [id, missionId, trigger, milestoneId, summary],
+      );
+      return sqlJson('SELECT * FROM checkpoints WHERE id = ?', [id]);
+    },
+    getCheckpoint(id) {
+      return sqlJson('SELECT * FROM checkpoints WHERE id = ?', [id]);
+    },
+    resolveCheckpoint(id, decision, guidance, reason) {
+      const existing = sqlJson('SELECT * FROM checkpoints WHERE id = ?', [id]);
+      if (existing.length > 0 && existing[0].status === 'resolved') {
+        return existing;
+      }
+      sqlRun(
+        "UPDATE checkpoints SET status = 'resolved', decision = ?, guidance = ?, reason = ?, resolved_at = datetime('now') WHERE id = ?",
+        [decision, guidance || null, reason || null, id],
+      );
+      return sqlJson('SELECT * FROM checkpoints WHERE id = ?', [id]);
+    },
+    getPendingCheckpoints(missionId) {
+      return sqlJson("SELECT * FROM checkpoints WHERE mission_id = ? AND status = 'pending'", [missionId]);
+    },
+
+    // --- Mission listing ---
+    listMissions(status) {
+      if (status) {
+        return sqlJson('SELECT * FROM missions WHERE status = ?', [status]);
+      }
+      return sqlJson('SELECT * FROM missions');
+    },
   };
 
   return Object.freeze(repository);
