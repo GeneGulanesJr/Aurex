@@ -446,7 +446,7 @@ function runMigrations() {
     console.error('[db] Failed to read user_version:', e.message);
   }
 
-  if (version >= 11) {
+  if (version >= 12) {
     return { migrated: false, version };
   }
 
@@ -461,6 +461,7 @@ function runMigrations() {
     { to: 9, run: runMigrationV9 },
     { to: 10, run: runMigrationV10 },
     { to: 11, run: runMigrationV11 },
+    { to: 12, run: runMigrationV12 },
   ];
 
   const fromVersion = version;
@@ -920,6 +921,33 @@ function runMigrationV11() {
     });
   } catch (e) {
     errors.push(`V11: ${e.message}`);
+  }
+  return errors;
+}
+
+function runMigrationV12() {
+  const errors = [];
+  try {
+    withTransaction(() => {
+      sqlRaw(`CREATE TABLE IF NOT EXISTS checkpoints (
+        id TEXT PRIMARY KEY,
+        mission_id TEXT NOT NULL REFERENCES missions(id),
+        trigger TEXT NOT NULL,
+        milestone_id TEXT NOT NULL,
+        summary TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'pending',
+        decision TEXT,
+        guidance TEXT,
+        reason TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        resolved_at TEXT
+      )`);
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_checkpoints_mission ON checkpoints(mission_id)');
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_checkpoints_status ON checkpoints(status)');
+      sqlRaw('PRAGMA user_version = 12');
+    });
+  } catch (e) {
+    errors.push(`V12: ${e.message}`);
   }
   return errors;
 }

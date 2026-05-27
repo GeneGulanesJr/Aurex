@@ -59,6 +59,11 @@ describe('DB schema migration', () => {
     const rows = sqlJson("SELECT name FROM sqlite_master WHERE type='table' AND name='rescope_events'");
     expect(rows.length).toBe(1);
   });
+
+  it('creates checkpoints table after migration', () => {
+    const rows = sqlJson("SELECT name FROM sqlite_master WHERE type='table' AND name='checkpoints'");
+    expect(rows.length).toBe(1);
+  });
 });
 
 describe('Aurex repository', () => {
