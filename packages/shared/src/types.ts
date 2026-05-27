@@ -210,3 +210,17 @@ export interface AgentSpec {
   declaredPaths: string[];
   declaredModules: string[];
 }
+
+export interface CheckpointRecord {
+  id: string;
+  missionId: string;
+  trigger: CheckpointTrigger;
+  milestoneId: string;
+  summary: string;
+  status: "pending" | "resolved";
+  decision?: CheckpointDecision;
+  guidance?: string;
+  reason?: string;
+  createdAt: string;
+  resolvedAt?: string;
+}
