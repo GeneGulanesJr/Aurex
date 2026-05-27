@@ -220,4 +220,70 @@ describe('Aurex repository', () => {
     expect(rows.some(r => r.reason === 'scope changed')).toBe(true);
   });
 });
+
+const http = require('http');
+
+describe('HTTP server framework', () => {
+  let server;
+  let baseUrl;
+
+  beforeAll(async () => {
+    const { createHttpServer } = require('../src/http/server');
+    server = createHttpServer({ repositories: { aurex: createAurexRepository({ sqlJson, sqlRun }) } });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    baseUrl = `http://127.0.0.1:${server.address().port}`;
+  });
+
+  afterAll(() => new Promise((resolve) => server.close(resolve)));
+
+  function request(method, path, body) {
+    return new Promise((resolve, reject) => {
+      const url = new URL(path, baseUrl);
+      const opts = { method, hostname: url.hostname, port: url.port, path: url.pathname + url.search, headers: { 'Content-Type': 'application/json' } };
+      const req = http.request(opts, (res) => {
+        let data = '';
+        res.on('data', (chunk) => (data += chunk));
+        res.on('end', () => {
+          try { resolve({ status: res.statusCode, body: JSON.parse(data) }); }
+          catch { resolve({ status: res.statusCode, body: data }); }
+        });
+      });
+      req.on('error', reject);
+      if (body) req.write(JSON.stringify(body));
+      req.end();
+    });
+  }
+
+  it('GET /health returns ok', async () => {
+    const res = await request('GET', '/health');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ status: 'ok', db: true });
+  });
+
+  it('returns 404 for unknown routes', async () => {
+    const res = await request('GET', '/nonexistent');
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('not_found');
+  });
+
+  it('returns 400 for invalid JSON body', async () => {
+    const res = await new Promise((resolve, reject) => {
+      const url = new URL('/missions', baseUrl);
+      const opts = { method: 'POST', hostname: url.hostname, port: url.port, path: url.pathname, headers: { 'Content-Type': 'application/json' } };
+      const req = http.request(opts, (res) => {
+        let data = '';
+        res.on('data', (chunk) => (data += chunk));
+        res.on('end', () => {
+          try { resolve({ status: res.statusCode, body: JSON.parse(data) }); }
+          catch { resolve({ status: res.statusCode, body: data }); }
+        });
+      });
+      req.on('error', reject);
+      req.write('{invalid json');
+      req.end();
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('bad_request');
+  });
+});
 });
