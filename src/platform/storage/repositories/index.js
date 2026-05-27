@@ -4,6 +4,7 @@ const { createCodeIndexRepository } = require('./code-index');
 const { createDocIndexRepository } = require('./doc-index');
 const { createTrustSyncRepository } = require('./trust-sync');
 const { createAnalyticsRepository } = require('./analytics');
+const { createAurexRepository } = require('./aurex');
 
 function createRepositories(deps) {
   return Object.freeze({
@@ -13,6 +14,7 @@ function createRepositories(deps) {
     docIndex: createDocIndexRepository(deps),
     trustSync: createTrustSyncRepository(deps),
     analytics: createAnalyticsRepository(deps),
+    aurex: createAurexRepository(deps),
   });
 }
 
@@ -24,4 +26,5 @@ module.exports = {
   createDocIndexRepository,
   createTrustSyncRepository,
   createAnalyticsRepository,
+  createAurexRepository,
 };
