@@ -1,7 +1,7 @@
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import type { AgentType, ValidationVerdict } from "@aurex/shared";
-import type { LaPisClient } from "../clients/lapis-client";
+import type { LaPisClient } from "../clients/lapis-client.js";
 
 export interface ValidatorToolContext {
   milestoneId: string;
@@ -57,7 +57,7 @@ export function createValidatorTools(lapis: LaPisClient, context: ValidatorToolC
             text: `Verdict accepted: ${written.verdict}. Your validation result has been recorded.`,
           },
         ],
-        details: { verdictId: written.id },
+        details: { verdictId: written.id } as Record<string, unknown>,
       };
     },
   });

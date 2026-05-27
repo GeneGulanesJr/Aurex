@@ -1,13 +1,13 @@
 // packages/backend/src/orchestrator/milestone-loop.ts
 import type { CheckpointTrigger, Mission, Milestone, WorkingUnit } from "@aurex/shared";
-import type { LaPisClient } from "../clients/lapis-client";
-import type { PinyxClient } from "../clients/pinyx-client";
-import { createNegotiator } from "./negotiator";
-import { createWorktreeManager } from "./worktree";
-import { checkPreSpawnOverlap } from "./overlap";
-import { createAgentSpawner } from "../agents/agent-spawner";
-import { buildValidatorContext, buildWorkerContext, type ValidatorUnitContext } from "../agents/context-builder";
-import { createIntegrationLifecycle } from "./integration-lifecycle";
+import type { LaPisClient } from "../clients/lapis-client.js";
+import type { PinyxClient } from "../clients/pinyx-client.js";
+import { createNegotiator } from "./negotiator.js";
+import { createWorktreeManager } from "./worktree.js";
+import { checkPreSpawnOverlap } from "./overlap.js";
+import { createAgentSpawner } from "../agents/agent-spawner.js";
+import { buildValidatorContext, buildWorkerContext, type ValidatorUnitContext } from "../agents/context-builder.js";
+import { createIntegrationLifecycle } from "./integration-lifecycle.js";
 
 export type MilestoneLoopResult =
   | { status: "completed" }
@@ -82,7 +82,7 @@ export function createMilestoneLoop(
 
           // Pre-spawn overlap check
           const activeUnits = units.filter(
-            (u) => u.status === "working" || u.status === "spawned",
+            (u: WorkingUnit) => u.status === "working" || u.status === "spawned",
           );
           const overlap = checkPreSpawnOverlap(
             { declaredPaths: unit.declaredPaths, declaredModules: unit.declaredModules },
@@ -182,7 +182,7 @@ export function createMilestoneLoop(
         }
 
         const handoffs = await lapis.getHandoffsForMilestone(milestone.id);
-        const handoffsByUnitId = new Map(handoffs.map((handoff) => [handoff.unitId, handoff]));
+        const handoffsByUnitId = new Map(handoffs.map((handoff: any) => [handoff.unitId, handoff]));
         for (const unit of validatorUnits) {
           unit.handoff = handoffsByUnitId.get(unit.id);
         }

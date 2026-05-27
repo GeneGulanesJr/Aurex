@@ -1,5 +1,5 @@
 import type { WorkingUnit } from "@aurex/shared";
-import type { WorktreeManager } from "./worktree";
+import type { WorktreeManager } from "./worktree.js";
 
 export interface IntegrationLifecycleResult {
   integrationBranch: string;
