@@ -1,12 +1,13 @@
 // packages/backend/src/orchestrator/milestone-loop.ts
 import type { CheckpointTrigger, Mission, Milestone, WorkingUnit } from "@aurex/shared";
-import type { LaPisClient } from "../clients/lapis-client.js";
-import type { PinyxClient } from "../clients/pinyx-client.js";
-import { createNegotiator } from "./negotiator.js";
-import { createWorktreeManager } from "./worktree.js";
-import { checkPreSpawnOverlap } from "./overlap.js";
-import { createAgentSpawner } from "../agents/agent-spawner.js";
-import { buildWorkerContext } from "../agents/context-builder.js";
+import type { LaPisClient } from "../clients/lapis-client";
+import type { PinyxClient } from "../clients/pinyx-client";
+import { createNegotiator } from "./negotiator";
+import { createWorktreeManager } from "./worktree";
+import { checkPreSpawnOverlap } from "./overlap";
+import { createAgentSpawner } from "../agents/agent-spawner";
+import { buildValidatorContext, buildWorkerContext, type ValidatorUnitContext } from "../agents/context-builder";
+import { createIntegrationLifecycle } from "./integration-lifecycle";
 
 export type MilestoneLoopResult =
   | { status: "completed" }
@@ -33,6 +34,7 @@ export function createMilestoneLoop(
   loopConfig: MilestoneLoopConfig,
 ) {
   const worktreeManager = createWorktreeManager(loopConfig.repoRoot);
+  const integrationLifecycle = createIntegrationLifecycle(worktreeManager);
   const spawner = createAgentSpawner({
     lapis,
     agentDir: loopConfig.agentDir,
@@ -60,10 +62,21 @@ export function createMilestoneLoop(
 
         let completedCount = 0;
         let failedCount = 0;
+        const integrationUnits: WorkingUnit[] = [];
+        const validatorUnits: ValidatorUnitContext[] = [];
 
         for (const unit of units) {
           if (unit.status === "completed") {
             completedCount++;
+            integrationUnits.push(unit);
+            validatorUnits.push({
+              id: unit.id,
+              description: unit.description,
+              declaredPaths: unit.declaredPaths,
+              declaredModules: unit.declaredModules,
+              taskBranch: unit.taskBranch,
+              worktreePath: unit.worktreePath,
+            });
             continue;
           }
 
@@ -127,6 +140,15 @@ export function createMilestoneLoop(
             await lapis.updateWorkingUnitStatus(unit.id, "completed");
             callbacks.onAgentStatus(agentId, "worker", "completed", milestone.id);
             completedCount++;
+            integrationUnits.push({ ...unit, taskBranch, worktreePath });
+            validatorUnits.push({
+              id: unit.id,
+              description: unit.description,
+              declaredPaths: unit.declaredPaths,
+              declaredModules: unit.declaredModules,
+              taskBranch,
+              worktreePath,
+            });
           } else if (result.status === "timed_out") {
             await lapis.updateWorkingUnitStatus(unit.id, "timed_out");
             callbacks.onAgentStatus(agentId, "worker", "timed_out", milestone.id);
@@ -145,6 +167,82 @@ export function createMilestoneLoop(
             completedCount,
             units.length,
           );
+        }
+
+        if (failedCount > 0) {
+          const trigger: CheckpointTrigger = "unclassifiable_error";
+          const summary = `${failedCount} worker unit(s) failed before validation`;
+          callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary });
+          return {
+            status: "checkpoint_needed",
+            trigger,
+            milestoneId: milestone.id,
+            summary,
+          };
+        }
+
+        const handoffs = await lapis.getHandoffsForMilestone(milestone.id);
+        const handoffsByUnitId = new Map(handoffs.map((handoff) => [handoff.unitId, handoff]));
+        for (const unit of validatorUnits) {
+          unit.handoff = handoffsByUnitId.get(unit.id);
+        }
+
+        const contractContent = (contract as any)?.content ?? {};
+        const contractId = (contract as any)?.id || milestone.validationContractId || "unknown-contract";
+        const criteria = contractContent.criteria ?? [];
+        const testCommands = contractContent.testCommands ?? [];
+        const acceptanceBehavior = contractContent.acceptanceBehavior ?? "";
+
+        await lapis.updateMilestoneStatus(milestone.id, "validating");
+        callbacks.onMilestoneProgress(milestone.id, "validating", completedCount, units.length);
+
+        const validatorTypes: Array<"validator_scrutiny" | "validator_user_testing"> = [
+          "validator_scrutiny",
+        ];
+        if (acceptanceBehavior.trim().length > 0 && acceptanceBehavior.trim().toLowerCase() !== "none") {
+          validatorTypes.push("validator_user_testing");
+        }
+
+        for (const validatorType of validatorTypes) {
+          const agentId = `${validatorType}-${milestone.id}`;
+          const contextContent = buildValidatorContext({
+            validatorType,
+            missionDescription: mission.description,
+            milestoneTitle: milestone.title,
+            milestoneDescription: milestone.description,
+            contractId,
+            contractCriteria: criteria,
+            testCommands,
+            acceptanceBehavior,
+            baseBranch: loopConfig.gitMainBranch,
+            units: validatorUnits,
+          });
+
+          callbacks.onAgentStatus(agentId, validatorType, "spawned", milestone.id);
+
+          const handle = await spawner.spawn({
+            agentType: validatorType,
+            missionId: mission.id,
+            milestoneId: milestone.id,
+            contractId,
+            cwd: loopConfig.repoRoot,
+            skillFilePath: `${loopConfig.repoRoot}/packages/backend/src/skills/validator.md`,
+            contextContent,
+            taskPrompt: `Validate milestone "${milestone.title}" as ${validatorType}. Use write_verdict when done.`,
+            timeout: config.workerTimeouts.testHeavy,
+          });
+
+          callbacks.onAgentStatus(agentId, validatorType, "reviewing", milestone.id);
+
+          const result = await handle.completed;
+
+          if (result.status === "completed") {
+            callbacks.onAgentStatus(agentId, validatorType, "completed", milestone.id);
+          } else {
+            callbacks.onAgentStatus(agentId, validatorType, result.status, milestone.id);
+          }
+
+          handle.dispose();
         }
 
         // Negotiate verdicts
@@ -169,8 +267,37 @@ export function createMilestoneLoop(
         }
 
         if (decision.decision === "pass") {
+          let integration;
+          try {
+            integration = await integrationLifecycle.integrate({
+              missionId: mission.id,
+              milestoneId: milestone.id,
+              milestoneOrderIndex: milestone.orderIndex,
+              baseBranch: loopConfig.gitMainBranch,
+              units: integrationUnits,
+            });
+          } catch (error) {
+            const trigger: CheckpointTrigger = "unclassifiable_error";
+            const summary = `Integration failed after validation pass: ${error instanceof Error ? error.message : String(error)}`;
+            callbacks.onEscalation(
+              mission.id,
+              { kind: trigger, milestoneId: milestone.id },
+              { summary, phase: "integration" },
+            );
+            return {
+              status: "checkpoint_needed",
+              trigger,
+              milestoneId: milestone.id,
+              summary,
+            };
+          }
           await lapis.updateMilestoneStatus(milestone.id, "completed");
           callbacks.onMilestoneProgress(milestone.id, "completed", completedCount, units.length);
+          callbacks.onEscalation(
+            mission.id,
+            { kind: "milestone_complete", milestoneId: milestone.id, releaseBranch: integration.releaseBranch },
+            integration,
+          );
         }
       }
 

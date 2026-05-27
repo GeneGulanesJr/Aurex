@@ -89,6 +89,15 @@ describe("LaPisClient (HTTP)", () => {
     );
   });
 
+  it("getHandoffsForMilestone fetches handoff records for a milestone", async () => {
+    mockFetch.mockReturnValue(mockResponse([]));
+    await client.getHandoffsForMilestone("ms-1");
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:9100/milestones/ms-1/handoffs",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
   it("throws on non-2xx response", async () => {
     mockFetch.mockReturnValue(mockResponse({ error: "not found" }, 404));
     await expect(client.getMission("nonexistent")).rejects.toThrow();

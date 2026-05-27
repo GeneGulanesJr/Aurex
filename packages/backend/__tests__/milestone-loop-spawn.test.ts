@@ -55,11 +55,15 @@ function createMockLapis(units: WorkingUnit[] = []): LaPisClient {
     updateMilestoneStatus: vi.fn().mockResolvedValue(undefined),
     updateWorkingUnitStatus: vi.fn().mockResolvedValue(undefined),
     incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
-    getVerdicts: vi.fn().mockResolvedValue([]),
+    getVerdicts: vi.fn().mockResolvedValue([
+      { verdict: "pass", validatorType: "validator_scrutiny" },
+      { verdict: "pass", validatorType: "validator_user_testing" },
+    ]),
     getWorkingUnitsForMilestone: vi.fn().mockResolvedValue(units),
     getContractHistory: vi.fn().mockResolvedValue([{
       content: { criteria: ["works"], testCommands: ["npm test"], acceptanceBehavior: "works" },
     }]),
+    getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
     registerAgentSession: vi.fn().mockResolvedValue(undefined),
     logCost: vi.fn().mockResolvedValue(undefined),
     writeHandoff: vi.fn().mockResolvedValue({ accepted: true, errors: [] }),
@@ -200,6 +204,7 @@ describe("milestone loop with spawner", () => {
 
     // A worker should have been spawned (session created)
     expect(mockCreateAgentSession).toHaveBeenCalled();
+    expect(mockCreateAgentSession).toHaveBeenCalledTimes(3);
 
     // Agent status callbacks should have been called
     expect(callbacks.onAgentStatus).toHaveBeenCalledWith(
@@ -207,6 +212,12 @@ describe("milestone loop with spawner", () => {
     );
     expect(callbacks.onAgentStatus).toHaveBeenCalledWith(
       "worker-unit-1", "worker", "working", "ms-1",
+    );
+    expect(callbacks.onAgentStatus).toHaveBeenCalledWith(
+      "validator_scrutiny-ms-1", "validator_scrutiny", "reviewing", "ms-1",
+    );
+    expect(callbacks.onAgentStatus).toHaveBeenCalledWith(
+      "validator_user_testing-ms-1", "validator_user_testing", "reviewing", "ms-1",
     );
 
     // Unit should be marked completed
