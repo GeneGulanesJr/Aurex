@@ -26,6 +26,7 @@ export interface LaPisClient {
 
   // Working units
   createWorkingUnit(milestoneId: string, unit: WorkingUnitSpec): Promise<WorkingUnit>;
+  getWorkingUnitsForMilestone(milestoneId: string): Promise<WorkingUnit[]>;
   updateWorkingUnitStatus(id: string, status: WorkerStatus): Promise<void>;
 
   // Handoffs
@@ -123,6 +124,9 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
     // Working units
     createWorkingUnit(milestoneId, unit) {
       return post(`/milestones/${milestoneId}/units`, unit);
+    },
+    getWorkingUnitsForMilestone(milestoneId) {
+      return get(`/milestones/${milestoneId}/units`);
     },
     updateWorkingUnitStatus(id, status) {
       return patch(`/units/${id}/status`, { status });

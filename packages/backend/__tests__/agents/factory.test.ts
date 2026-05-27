@@ -28,11 +28,11 @@ describe("agent factory", () => {
   });
 
   it("skill files map correctly", () => {
-    expect(AGENT_SKILL["orchestrator"]).toContain("orchestrator.md");
-    expect(AGENT_SKILL["worker"]).toContain("worker.md");
-    expect(AGENT_SKILL["validator_scrutiny"]).toContain("validator.md");
-    expect(AGENT_SKILL["validator_user_testing"]).toContain("validator.md");
-    expect(AGENT_SKILL["research"]).toContain("research.md");
+    expect(AGENT_SKILL["orchestrator"]).toContain("src/skills/orchestrator.md");
+    expect(AGENT_SKILL["worker"]).toContain("src/skills/worker.md");
+    expect(AGENT_SKILL["validator_scrutiny"]).toContain("src/skills/validator.md");
+    expect(AGENT_SKILL["validator_user_testing"]).toContain("src/skills/validator.md");
+    expect(AGENT_SKILL["research"]).toContain("src/skills/research.md");
   });
 
   it("memory-layer for workers and research only", () => {

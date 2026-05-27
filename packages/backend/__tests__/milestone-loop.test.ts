@@ -3,6 +3,38 @@ import { createMilestoneLoop } from "../src/orchestrator/milestone-loop";
 import type { LaPisClient } from "../src/clients/lapis-client";
 import type { Mission, Milestone } from "@aurex/shared";
 
+// Mock Pi SDK so milestone-loop doesn't try to import it for real
+vi.mock("@earendil-works/pi-coding-agent", () => {
+  class MockResourceLoader {
+    reload = vi.fn().mockResolvedValue(undefined);
+    getSkills = vi.fn().mockReturnValue([]);
+    getExtensions = vi.fn().mockReturnValue([]);
+    getAgentsFiles = vi.fn().mockReturnValue({ agentsFiles: [], diagnostics: [] });
+  }
+  return {
+    createAgentSession: vi.fn().mockResolvedValue({
+      session: {
+        prompt: vi.fn().mockResolvedValue(undefined),
+        subscribe: vi.fn().mockReturnValue(() => {}),
+        abort: vi.fn(),
+        dispose: vi.fn(),
+        sessionId: "mock-session",
+      },
+    }),
+    SessionManager: { inMemory: vi.fn() },
+    DefaultResourceLoader: MockResourceLoader,
+    defineTool: vi.fn(),
+  };
+});
+
+// Mock git exec calls from worktree manager
+vi.mock("node:child_process", () => ({
+  exec: vi.fn(),
+}));
+vi.mock("node:util", () => ({
+  promisify: () => vi.fn().mockResolvedValue({ stdout: "", stderr: "" }),
+}));
+
 describe("milestone loop", () => {
   const mission: Mission = {
     id: "m-1",
@@ -29,6 +61,8 @@ describe("milestone loop", () => {
       updateMilestoneStatus: vi.fn(),
       incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-2", retries: 0, rescopes: 0 }),
       getVerdicts: vi.fn().mockResolvedValue([]),
+      getWorkingUnitsForMilestone: vi.fn().mockResolvedValue([]),
+      getContractHistory: vi.fn().mockResolvedValue([]),
     } as unknown as LaPisClient;
 
     const callbacks = {
@@ -38,7 +72,11 @@ describe("milestone loop", () => {
       onCostUpdate: vi.fn(),
     };
 
-    const loop = createMilestoneLoop(mockLapis, {} as never, callbacks);
+    const loop = createMilestoneLoop(mockLapis, {} as never, callbacks, {
+      agentDir: "/test/.pi/agent",
+      repoRoot: "/test/repo",
+      gitMainBranch: "main",
+    });
     const result = await loop.run(mission, milestones);
 
     expect(result).toBe(true);
@@ -58,6 +96,8 @@ describe("milestone loop", () => {
       getVerdicts: vi.fn().mockResolvedValue([
         { verdict: "fail", validatorType: "validator_scrutiny", classification: "blocking" },
       ]),
+      getWorkingUnitsForMilestone: vi.fn().mockResolvedValue([]),
+      getContractHistory: vi.fn().mockResolvedValue([]),
     } as unknown as LaPisClient;
 
     const callbacks = {
@@ -67,7 +107,11 @@ describe("milestone loop", () => {
       onCostUpdate: vi.fn(),
     };
 
-    const loop = createMilestoneLoop(mockLapis, {} as never, callbacks);
+    const loop = createMilestoneLoop(mockLapis, {} as never, callbacks, {
+      agentDir: "/test/.pi/agent",
+      repoRoot: "/test/repo",
+      gitMainBranch: "main",
+    });
     const result = await loop.run(mission, milestones);
 
     expect(result).toBe(false);
