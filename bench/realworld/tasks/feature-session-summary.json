@@ -1,0 +1,22 @@
+{
+  "id": "feature-session-summary",
+  "category": "feature",
+  "repo": "PiMemoryExtension",
+  "setup": {
+    "checkout": "cf6b83bb2046a2d1cc32f9a0e1b8e7202d74cef3",
+    "seed_memory": "memory-seeds/session-lifecycle.json"
+  },
+  "prompt": "Add a new hook 'onCompact' to the session-lifecycle module that gets called when Pi's context is compacted. It should save a lightweight session summary with the topics discussed and the turn count. Add a test for the new hook.",
+  "success": {
+    "tests": ["npm test -- test/session-lifecycle.test.js --reporter=verbose 2>&1"],
+    "must_touch": ["extensions/memory-layer/hooks/session-lifecycle.ts"],
+    "must_not_touch": ["db.js"],
+    "expected_facts": [
+      {
+        "id": "on-compact-hook",
+        "description": "A new onCompact hook saves session summaries after compaction",
+        "aliases": ["onCompact", "compact", "session summary", "topics discussed"]
+      }
+    ]
+  }
+}

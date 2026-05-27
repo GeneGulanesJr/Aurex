@@ -1,0 +1,23 @@
+{
+  "id": "bugfix-createdb-config",
+  "category": "bugfix",
+  "repo": "PiMemoryExtension",
+  "setup": {
+    "checkout": "cf6b83bb2046a2d1cc32f9a0e1b8e7202d74cef3",
+    "apply_patch": "patches/break-createdb-config.patch",
+    "seed_memory": "memory-seeds/createdb-history.json"
+  },
+  "prompt": "The createDb function in db.js is broken. When a test creates an isolated database and then the main code tries to use the global database, the config is corrupted because createDb doesn't properly save and restore the global config state. Fix the config isolation in createDb so that creating a temporary DB doesn't affect the global singleton. After fixing, run: npx vitest run test/config.test.js",
+  "success": {
+    "tests": ["npx vitest run test/config.test.js 2>&1"],
+    "must_touch": ["db.js"],
+    "must_not_touch": ["test/config.test.js"],
+    "expected_facts": [
+      {
+        "id": "config-mutation-bug",
+        "description": "createDb was mutating or not isolating config between instances",
+        "aliases": ["mutating", "overwriting", "not isolating", "config isolation", "shared config", "getConfig._cached", "save and restore"]
+      }
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+[
+  {
+    "type": "architecture",
+    "title": "Context injection hook wiring",
+    "content": "What: Automatic memory context is wired via extensions/memory-layer/hooks/context-injection.ts using the before_agent_start event hook. The hook is registered by extensions/memory-layer/index.ts. Why: When a Pi session starts, the hook injects recent relevant memories as system-level context. Where: extensions/memory-layer/hooks/context-injection.ts, registered in extensions/memory-layer/index.ts. Learned: The hook uses CONTEXT.DEFAULT_LIMIT (10) for primary context. Low-signal types are excluded by CONTEXT.EXCLUDED_TYPES.",
+    "project": "PiMemoryExtension"
+  },
+  {
+    "type": "architecture",
+    "title": "Extension composition and registration",
+    "content": "What: The extension root file extensions/memory-layer/index.ts composes and registers all hooks. It wires context injection, passive capture, session lifecycle, tool guardrails, and trust sync. Why: Each concern is isolated while sharing a common state object and mem() client. Where: extensions/memory-layer/index.ts. Learned: The register() function is the entry point called by Pi's extension API.",
+    "project": "PiMemoryExtension"
+  }
+]

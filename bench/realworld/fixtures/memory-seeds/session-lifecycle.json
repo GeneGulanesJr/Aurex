@@ -1,0 +1,8 @@
+[
+  {
+    "type": "architecture",
+    "title": "Session lifecycle hook architecture",
+    "content": "What: Session lifecycle is managed by extensions/memory-layer/hooks/session-lifecycle.ts. It handles session start and end events, saving session summaries with topics and turn counts. Why: Enables auto-recovery of incomplete sessions and provides a record of what was discussed. Where: extensions/memory-layer/hooks/session-lifecycle.ts. Learned: The module registers onSessionStart and onSessionEnd listeners. Session summaries are saved automatically.",
+    "project": "PiMemoryExtension"
+  }
+]

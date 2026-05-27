@@ -71,3 +71,71 @@ The default task pack lives at `bench/fixtures/pi-memory-tasks.json`. It intenti
 Each task has expected facts with aliases. The built-in grader is intentionally simple and deterministic; for publishable numbers, review misses manually or replace it with a stricter evaluator.
 
 Use this benchmark as an internal regression and directional signal, not a comprehensive scientific evaluation. The harness is legitimate for comparing real memory-off and memory-on Pi runs because it records raw transcripts, structured reports, token usage, cache reads, elapsed time, tool counts, and expected-fact matches under `--no-session`. Its limits are that each side runs once, memory-off is vanilla Pi rather than a separately optimized retrieval baseline, memory-off always runs before memory-on by default, the grader is substring/alias based, and the task pack is intentionally small. For stronger external claims, add repeated runs, randomized side ordering, stricter/manual grading, and broader task coverage.
+
+## Realworld Pi memory benchmark
+
+`bench/realworld/bench-pi-realworld.js` runs Pi against real code-editing tasks — bugfixes, feature implementations, refactors, PR reviews — and measures whether memory-on improves completion rate, reduces wrong turns, and preserves project decisions better than memory-off.
+
+Run:
+
+```bash
+npm run bench:pi-realworld
+```
+
+By default, the harness:
+1. Creates a fresh git worktree for each run
+2. Applies bug-injection patches to introduce failures
+3. Runs Pi with the task prompt (memory-off first, then memory-on)
+4. Grades results on three axes: tests pass, diff touches correct files, answer contains expected facts
+5. Repeats each task 3 times for statistical signal
+
+Options:
+
+```bash
+# More repetitions
+node bench/realworld/bench-pi-realworld.js --runs 5
+
+# Single task for debugging
+node bench/realworld/bench-pi-realworld.js --only bugfix-createdb-config
+
+# Keep worktrees for inspection
+node bench/realworld/bench-pi-realworld.js --no-cleanup
+
+# Custom timeout
+node bench/realworld/bench-pi-realworld.js --timeout-ms 300000
+```
+
+Results are written under `bench/realworld/results/` with JSONL transcripts and a `report.json` summary.
+
+The task pack lives in `bench/realworld/tasks/` with 8 tasks:
+- 2 bugfix tasks (createDb config isolation, search ranking)
+- 2 feature tasks (context hook limit, session summary hook)
+- 1 refactor task (FTS5 rank scoring weights)
+- 1 stale-index task (verify code index accuracy)
+- 1 PR review task (evaluate trust-sync change)
+- 1 negative-control task (README lookup)
+
+Each task has:
+- A `setup.checkout` pointing to a known-good commit
+- Optional `setup.apply_patch` to inject a bug
+- Optional `setup.seed_memory` to pre-populate LaPis with relevant memories
+- `success.tests` — test commands that must pass after Pi edits
+- `success.must_touch` / `success.must_not_touch` — file constraints
+- `success.expected_facts` — answer content expectations
+
+The report shows a comparison table:
+
+```
+╔════════════════════════╤════════════╤═══════════╗
+║ Metric                 │ Memory Off │ Memory On ║
+╟────────────────────────┼────────────┼───────────╢
+║ Tasks solved           │       3/6  │      5/6  ║
+║ Tests passed           │       2/6  │      5/6  ║
+║ Median active tokens   │     18,400 │     7,900 ║
+║ Median wall time       │     4m 20s │    2m 10s ║
+║ Median tool calls      │         14 │         8 ║
+║ Wrong-file edits       │          3 │         1 ║
+╚════════════════════════╧════════════╧═══════════╝
+```
+
+This complements the paired benchmark. The paired benchmark tests knowledge retrieval; this benchmark tests code editing and problem-solving.

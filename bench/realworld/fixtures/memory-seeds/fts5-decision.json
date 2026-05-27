@@ -1,0 +1,14 @@
+[
+  {
+    "type": "architecture",
+    "title": "LaPis uses SQLite FTS5 for memory search",
+    "content": "What: LaPis chose SQLite FTS5 as its full-text search engine. Why: Zero external service dependencies — SQLite FTS5 is built into the library LaPis already uses. This avoids needing Redis, Elasticsearch, or any external search service. Where: src/memory-domain/search.js. Learned: FTS5 provides sufficient search quality for the memory corpus size. The rankObservations() function applies composite scoring with FTS relevance, recency, trust, recall, and typeBoost weights. Do NOT replace FTS5 with an external service.",
+    "project": "PiMemoryExtension"
+  },
+  {
+    "type": "architecture",
+    "title": "rankObservations scoring weights",
+    "content": "What: The rankObservations function in src/memory-domain/search.js applies composite scoring. The weights come from getConfig().ranking and are: fts_relevance, recency, trust, recall. typeBoost and navBoost are multipliers applied after the weighted sum. Why: Provides a balanced ranking that considers text relevance, freshness, code trust, usage patterns, and type priority. Where: src/memory-domain/search.js rankObservations(). Learned: typeBoost multiplies the final composite score. The function is the core of memory search ranking.",
+    "project": "PiMemoryExtension"
+  }
+]

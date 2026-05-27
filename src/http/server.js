@@ -1,0 +1,153 @@
+const http = require('http');
+const { matchRoute } = require('./routes');
+const { jsonError } = require('./errors');
+
+function createHttpServer(deps) {
+  const routes = buildRoutes(deps);
+
+  const server = http.createServer(async (req, res) => {
+    const parsed = new URL(req.url, `http://${req.headers.host}`);
+    const match = matchRoute(req.method, parsed.pathname, routes);
+
+    if (!match) {
+      return jsonError(res, 404, 'not_found', `No route for ${req.method} ${parsed.pathname}`);
+    }
+
+    let body = null;
+    if (req.method === 'POST' || req.method === 'PATCH') {
+      body = await parseBody(req, res);
+      if (body === undefined) return; // parseBody already sent error
+    }
+
+    try {
+      await match.handler(req, res, { params: match.params, query: parsed.searchParams, body });
+    } catch (e) {
+      jsonError(res, 500, 'internal_error', e.message);
+    }
+  });
+
+  return server;
+}
+
+function parseBody(req, res) {
+  return new Promise((resolve) => {
+    let raw = '';
+    req.on('data', (chunk) => (raw += chunk));
+    req.on('end', () => {
+      if (!raw) { resolve({}); return; }
+      try {
+        resolve(JSON.parse(raw));
+      } catch {
+        jsonError(res, 400, 'bad_request', 'Invalid JSON body');
+        resolve(undefined);
+      }
+    });
+  });
+}
+
+function buildRoutes(deps) {
+  const { repositories } = deps;
+  const aurex = repositories.aurex;
+
+  const health = require('./handlers/health');
+  const missions = require('./handlers/missions');
+  const milestones = require('./handlers/milestones');
+  const units = require('./handlers/units');
+  const handoffs = require('./handlers/handoffs');
+  const contracts = require('./handlers/contracts');
+  const verdicts = require('./handlers/verdicts');
+  const broadcasts = require('./handlers/broadcasts');
+  const findings = require('./handlers/findings');
+  const sessions = require('./handlers/sessions');
+  const memory = require('./handlers/memory');
+  const costs = require('./handlers/costs');
+  const compression = require('./handlers/compression');
+  const retry = require('./handlers/retry');
+
+  return [
+    // Health
+    { method: 'GET', pattern: '/health', handler: health.healthCheck(deps) },
+
+    // Missions
+    { method: 'POST', pattern: '/missions', handler: missions.createMission(aurex) },
+    { method: 'GET', pattern: '/missions/:id', handler: missions.getMission(aurex) },
+    { method: 'PATCH', pattern: '/missions/:id/status', handler: missions.updateMissionStatus(aurex) },
+
+    // Milestones
+    { method: 'POST', pattern: '/missions/:missionId/milestones', handler: milestones.createMilestone(aurex) },
+    { method: 'PATCH', pattern: '/milestones/:id/status', handler: milestones.updateMilestoneStatus(aurex) },
+
+    // Working units
+    { method: 'POST', pattern: '/milestones/:milestoneId/units', handler: units.createWorkingUnit(aurex) },
+    { method: 'PATCH', pattern: '/units/:id/status', handler: units.updateWorkingUnitStatus(aurex) },
+
+    // Handoffs
+    { method: 'POST', pattern: '/units/:unitId/handoff', handler: handoffs.writeHandoff(aurex) },
+
+    // Contracts
+    { method: 'POST', pattern: '/milestones/:milestoneId/contracts', handler: contracts.createContract(aurex) },
+    { method: 'POST', pattern: '/contracts/:oldId/supersede', handler: contracts.supersedeContract(aurex) },
+    { method: 'GET', pattern: '/milestones/:milestoneId/contracts', handler: contracts.getContractHistory(aurex) },
+
+    // Verdicts
+    { method: 'POST', pattern: '/verdicts', handler: verdicts.writeVerdict(aurex) },
+    { method: 'PATCH', pattern: '/verdicts/:id', handler: verdicts.classifyVerdict(aurex) },
+    { method: 'GET', pattern: '/milestones/:milestoneId/verdicts', handler: verdicts.getVerdicts(aurex) },
+
+    // Broadcasts
+    { method: 'POST', pattern: '/broadcasts', handler: broadcasts.writeBroadcast(aurex) },
+    { method: 'PATCH', pattern: '/broadcasts/:id', handler: broadcasts.transitionBroadcast(aurex) },
+    { method: 'GET', pattern: '/missions/:missionId/broadcasts', handler: broadcasts.getBroadcasts(aurex) },
+
+    // Findings
+    { method: 'POST', pattern: '/findings', handler: findings.writeFinding(aurex) },
+    { method: 'PATCH', pattern: '/findings/:id', handler: findings.transitionFinding(aurex) },
+    { method: 'GET', pattern: '/missions/:missionId/findings', handler: findings.getFindings(aurex) },
+
+    // Sessions
+    { method: 'POST', pattern: '/sessions', handler: sessions.registerSession(aurex) },
+    { method: 'GET', pattern: '/milestones/:milestoneId/sessions', handler: sessions.getSessionsForMilestone(aurex) },
+
+    // Memory
+    { method: 'POST', pattern: '/memory/search', handler: memory.searchMemory(deps) },
+
+    // Costs
+    { method: 'POST', pattern: '/costs', handler: costs.logCost(aurex) },
+    { method: 'GET', pattern: '/missions/:missionId/costs', handler: costs.getMissionCost(aurex) },
+
+    // Retry / Rescope
+    { method: 'POST', pattern: '/milestones/:milestoneId/retry', handler: retry.incrementRetry(aurex) },
+    { method: 'POST', pattern: '/milestones/:milestoneId/rescope', handler: retry.logRescope(aurex) },
+
+    // Compression (stub)
+    { method: 'POST', pattern: '/missions/:missionId/compression', handler: compression.runCompression() },
+  ];
+}
+
+async function startHttpServer(opts) {
+  const { host = '127.0.0.1', port = 9100 } = opts;
+
+  const db = require('../db');
+  db.ensureDb();
+
+  const { sqlJson, sqlRun } = db;
+  const { createAurexRepository } = require('../platform/storage/repositories/aurex');
+  const aurex = createAurexRepository({ sqlJson, sqlRun });
+
+  const server = createHttpServer({
+    repositories: { aurex },
+    sqlJson,
+    sqlRun,
+  });
+
+  if (host === '0.0.0.0') {
+    console.log('[lapis serve] WARNING: binding to 0.0.0.0 exposes memory APIs on your network.');
+    console.log('[lapis serve] Use only on trusted networks or behind a proxy.');
+  }
+
+  await new Promise((resolve) => server.listen(port, host, resolve));
+  console.log(`[lapis serve] Listening on ${host}:${port}`);
+  return server;
+}
+
+module.exports = { createHttpServer, startHttpServer };

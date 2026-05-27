@@ -1,0 +1,15 @@
+diff --git a/src/memory-domain/search.js b/src/memory-domain/search.js
+index c7ae3e2..5425fc8 100644
+--- a/src/memory-domain/search.js
++++ b/src/memory-domain/search.js
+@@ -64,9 +64,7 @@ function rankObservations(rows, query = '') {
+         (ftsScore * ranking.fts_relevance +
+           recencyScore * ranking.recency +
+           trustScore * ranking.trust +
+-          recallScore * ranking.recall) *
+-        typeBoost *
+-        navBoost;
++          recallScore * ranking.recall);
+       return { ...row, _score: composite };
+     })
+     .sort((a, b) => b._score - a._score);

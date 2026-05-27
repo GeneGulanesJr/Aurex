@@ -85,6 +85,15 @@ const args = parseArgs(process.argv);
 const cmd = process.argv[2];
 
 (async () => {
+  if (cmd === 'serve') {
+    const { startHttpServer } = require('./src/http/server');
+    await startHttpServer({
+      host: args.host ?? '127.0.0.1',
+      port: Number(args.port ?? 9100),
+    });
+    return;
+  }
+
   ensureDb();
   const format = args.format || 'json';
 

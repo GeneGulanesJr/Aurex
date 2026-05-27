@@ -1,0 +1,26 @@
+{
+  "id": "negative-control-readme",
+  "category": "negative-control",
+  "repo": "PiMemoryExtension",
+  "setup": {
+    "checkout": "cf6b83bb2046a2d1cc32f9a0e1b8e7202d74cef3"
+  },
+  "prompt": "What does the README say about running the test suite? Quote the exact command and explain what test framework is used. Answer from the current source only.",
+  "success": {
+    "tests": [],
+    "must_touch": [],
+    "must_not_touch": [],
+    "expected_facts": [
+      {
+        "id": "test-command",
+        "description": "The README mentions npm test or vitest for running tests",
+        "aliases": ["npm test", "vitest", "npm run test"]
+      },
+      {
+        "id": "test-framework",
+        "description": "The test framework is vitest",
+        "aliases": ["vitest", "Vitest"]
+      }
+    ]
+  }
+}

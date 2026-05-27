@@ -74,6 +74,7 @@
     "postinstall": "node postinstall.js",
     "test": "vitest run",
     "bench:pi-paired": "node bench/bench-pi-paired.js",
+    "bench:pi-realworld": "node bench/realworld/bench-pi-realworld.js",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "format": "oxfmt",

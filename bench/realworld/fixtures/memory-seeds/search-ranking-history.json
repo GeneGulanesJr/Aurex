@@ -1,0 +1,8 @@
+[
+  {
+    "type": "architecture",
+    "title": "rankObservations composite scoring",
+    "content": "What: The rankObservations function in src/memory-domain/search.js computes a composite score from ftsScore, recencyScore, trustScore, recallScore, typeBoost, and navBoost. Why: Provides balanced ranking considering text relevance, freshness, code trust, usage patterns, and type priority. Where: src/memory-domain/search.js. Learned: typeBoost and navBoost multiply the final composite score. The composite formula is: (ftsScore*fts_relevance + recencyScore*recency + trustScore*trust + recallScore*recall) * typeBoost * navBoost.",
+    "project": "PiMemoryExtension"
+  }
+]
