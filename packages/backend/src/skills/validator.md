@@ -56,7 +56,7 @@ You are a **User-Testing Validator** — your job is behavioral verification.
 
 ## Verdict Format
 
-Write to LaPis via `writeVerdict`:
+Write to LaPis via `write_verdict`:
 - `verdict`: `"pass"` or `"fail"` — no other values
 - `findings`: Detailed explanation. For failures, explain what's wrong and why.
 - `failedUnitIds`: Array of unit IDs that failed (empty array if pass)

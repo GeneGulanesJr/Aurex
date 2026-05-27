@@ -7,6 +7,7 @@ import {
 import type { AgentType, WorkerStatus } from "@aurex/shared";
 import { AGENT_TOOLS } from "./factory";
 import { createWorkerTools } from "./worker-tools";
+import { createValidatorTools } from "./validator-tools";
 import type { LaPisClient } from "../clients/lapis-client";
 import path from "node:path";
 
@@ -18,9 +19,10 @@ export interface AgentSpawnerConfig {
 
 export interface SpawnOptions {
   agentType: AgentType;
-  unitId: string;
+  unitId?: string;
   missionId: string;
   milestoneId: string;
+  contractId?: string;
   cwd: string;
   skillFilePath: string;
   contextContent: string;
@@ -51,7 +53,8 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
     async spawn(opts: SpawnOptions): Promise<SpawnHandle> {
       const timeout = opts.timeout ?? defaultTimeout;
       const tools = AGENT_TOOLS[opts.agentType];
-      const workerTools = createWorkerTools(lapis, opts.unitId);
+      let sessionId = "";
+      const customTools = createCustomTools(lapis, opts, () => sessionId);
 
       // Build ResourceLoader with injected context and skill
       const skillBaseDir = path.dirname(opts.skillFilePath);
@@ -89,10 +92,11 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
         cwd: opts.cwd,
         agentDir,
         tools,
-        customTools: workerTools,
+        customTools,
         resourceLoader: loader,
         sessionManager: SessionManager.inMemory(opts.cwd),
       });
+      sessionId = session.sessionId;
 
       // Register in LaPis
       await lapis.registerAgentSession(
@@ -104,7 +108,9 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
       );
 
       // Update unit status
-      await lapis.updateWorkingUnitStatus(opts.unitId, "spawned" as WorkerStatus);
+      if (opts.agentType === "worker" && opts.unitId) {
+        await lapis.updateWorkingUnitStatus(opts.unitId, "spawned" as WorkerStatus);
+      }
 
       // Set up completion tracking
       let resolveCompleted!: (result: SpawnResult) => void;
@@ -181,4 +187,31 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
       // Future: track all active handles and abort them
     },
   };
+}
+
+function createCustomTools(
+  lapis: LaPisClient,
+  opts: SpawnOptions,
+  getSessionId: () => string,
+) {
+  if (opts.agentType === "worker") {
+    if (!opts.unitId) {
+      throw new Error("worker spawn requires unitId");
+    }
+    return createWorkerTools(lapis, opts.unitId);
+  }
+
+  if (opts.agentType === "validator_scrutiny" || opts.agentType === "validator_user_testing") {
+    if (!opts.contractId) {
+      throw new Error(`${opts.agentType} spawn requires contractId`);
+    }
+    return createValidatorTools(lapis, {
+      milestoneId: opts.milestoneId,
+      contractId: opts.contractId,
+      validatorType: opts.agentType,
+      getSessionId,
+    });
+  }
+
+  return [];
 }

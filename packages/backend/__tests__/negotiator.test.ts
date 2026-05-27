@@ -4,6 +4,18 @@ import type { LaPisClient } from "../src/clients/lapis-client";
 import type { ValidationVerdict } from "@aurex/shared";
 
 describe("negotiator", () => {
+  it("escalates when no validator verdicts were recorded", async () => {
+    const mockLapis = {
+      getVerdicts: vi.fn().mockResolvedValue([]),
+    } as unknown as LaPisClient;
+
+    const negotiator = createNegotiator(mockLapis);
+    const result = await negotiator.negotiate("ms-1", 0, 0, 2, 5);
+
+    expect(result.decision).toBe("escalate");
+    expect(result.reason).toContain("No validator verdicts");
+  });
+
   it("returns pass when all verdicts pass", async () => {
     const mockLapis = {
       getVerdicts: vi.fn().mockResolvedValue([
