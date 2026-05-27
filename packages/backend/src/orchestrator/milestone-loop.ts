@@ -1,5 +1,5 @@
 // packages/backend/src/orchestrator/milestone-loop.ts
-import type { CheckpointTrigger, Mission, Milestone, WorkingUnit } from "@aurex/shared";
+import type { CheckpointTrigger, CompressionTrigger, Mission, Milestone, WorkingUnit } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { PinyxClient } from "../clients/pinyx-client.js";
 import { createNegotiator } from "./negotiator.js";
@@ -291,6 +291,10 @@ export function createMilestoneLoop(
             { kind: "milestone_complete", milestoneId: milestone.id, releaseBranch: integration.releaseBranch },
             integration,
           );
+
+          // Post-milestone compression — summarize completed milestone state
+          const compressionTrigger: CompressionTrigger = "post_milestone";
+          await lapis.runCompression(mission.id, compressionTrigger);
         }
       }
 

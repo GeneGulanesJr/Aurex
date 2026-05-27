@@ -71,6 +71,10 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
           },
           onCostUpdate: (mId, totalCost, totalTokens, delta) => {
             eventBus.emit({ type: "cost_update", missionId: mId, totalCost, totalTokens, delta } as any);
+            // Trigger compression when cost exceeds 80% of budget
+            if (mission.configJson.costCap > 0 && totalCost >= mission.configJson.costCap * 0.8) {
+              lapis.runCompression(mId, "budget_threshold" as any).catch(() => {});
+            }
           },
         },
         { agentDir, repoRoot, gitMainBranch },

@@ -74,6 +74,7 @@ describe("milestone loop", () => {
       ]),
       getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
       registerAgentSession: vi.fn(),
+      runCompression: vi.fn().mockResolvedValue(undefined),
     } as unknown as LaPisClient;
 
     const callbacks = {
@@ -113,6 +114,7 @@ describe("milestone loop", () => {
       ]),
       getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
       registerAgentSession: vi.fn(),
+      runCompression: vi.fn().mockResolvedValue(undefined),
     } as unknown as LaPisClient;
 
     const callbacks = {

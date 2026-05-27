@@ -89,6 +89,7 @@ function createMockLapis(): LaPisClient {
     resolveCheckpoint: vi.fn().mockResolvedValue({ id: "cp-1", status: "resolved", decision: "approve" }),
     getPendingCheckpoints: vi.fn().mockResolvedValue([]),
     listMissions: vi.fn().mockResolvedValue([]),
+    runCompression: vi.fn().mockResolvedValue(undefined),
   } as unknown as LaPisClient;
 }
 
