@@ -10,11 +10,11 @@ export const AGENT_TOOLS: Record<AgentType, string[]> = {
 };
 
 export const AGENT_SKILL: Record<AgentType, string> = {
-  orchestrator: "skills/orchestrator.md",
-  worker: "skills/worker.md",
-  validator_scrutiny: "skills/validator.md",
-  validator_user_testing: "skills/validator.md",
-  research: "skills/research.md",
+  orchestrator: "src/skills/orchestrator.md",
+  worker: "src/skills/worker.md",
+  validator_scrutiny: "src/skills/validator.md",
+  validator_user_testing: "src/skills/validator.md",
+  research: "src/skills/research.md",
 };
 
 export function needsMemoryLayer(type: AgentType): boolean {
