@@ -59,6 +59,11 @@ describe('DB schema migration', () => {
     const rows = sqlJson("SELECT name FROM sqlite_master WHERE type='table' AND name='rescope_events'");
     expect(rows.length).toBe(1);
   });
+
+  it('creates checkpoints table after migration', () => {
+    const rows = sqlJson("SELECT name FROM sqlite_master WHERE type='table' AND name='checkpoints'");
+    expect(rows.length).toBe(1);
+  });
 });
 
 describe('Aurex repository', () => {
@@ -579,6 +584,72 @@ describe('HTTP server safety defaults', () => {
     const { startHttpServer } = require('../src/http/server');
     expect(typeof startHttpServer).toBe('function');
     // Defaults are enforced in the function signature: { host = '127.0.0.1', port = 9100 } = opts
+  });
+});
+
+describe('Checkpoints', () => {
+  let repo;
+  let missionId;
+
+  beforeAll(() => {
+    repo = createAurexRepository({ sqlJson, sqlRun });
+    const id = `m-cp-${Date.now()}`;
+    sqlRun(
+      "INSERT INTO missions (id, description, status, config_json) VALUES (?, ?, ?, ?)",
+      [id, 'Test mission for checkpoints', 'running', '{}'],
+    );
+    missionId = id;
+  });
+
+  it('creates a checkpoint', () => {
+    const rows = repo.createCheckpoint({
+      id: `cp-create-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      missionId,
+      trigger: 'rescope_limit',
+      milestoneId: 'ms-1',
+      summary: 'Test checkpoint',
+    });
+    expect(rows.length).toBe(1);
+    expect(rows[0].status).toBe('pending');
+    expect(rows[0].trigger).toBe('rescope_limit');
+  });
+
+  it('gets a checkpoint by id', () => {
+    const id = `cp-get-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    repo.createCheckpoint({ id, missionId, trigger: 'unclassifiable_error', milestoneId: 'ms-2', summary: 'Test' });
+    const rows = repo.getCheckpoint(id);
+    expect(rows.length).toBe(1);
+    expect(rows[0].id).toBe(id);
+  });
+
+  it('resolves a checkpoint', () => {
+    const id = `cp-resolve-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    repo.createCheckpoint({ id, missionId, trigger: 'rescope_limit', milestoneId: 'ms-3', summary: 'Test' });
+    const rows = repo.resolveCheckpoint(id, 'approve', undefined, undefined);
+    expect(rows[0].status).toBe('resolved');
+    expect(rows[0].decision).toBe('approve');
+  });
+
+  it('resolving an already-resolved checkpoint is idempotent', () => {
+    const id = `cp-idem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    repo.createCheckpoint({ id, missionId, trigger: 'rescope_limit', milestoneId: 'ms-4', summary: 'Test' });
+    repo.resolveCheckpoint(id, 'approve');
+    const rows = repo.resolveCheckpoint(id, 'reject');
+    expect(rows[0].decision).toBe('approve');
+  });
+
+  it('gets pending checkpoints for a mission', () => {
+    const id = `cp-pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    repo.createCheckpoint({ id, missionId, trigger: 'rescope_limit', milestoneId: 'ms-5', summary: 'Pending' });
+    const rows = repo.getPendingCheckpoints(missionId);
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    expect(rows.every(r => r.status === 'pending')).toBe(true);
+  });
+
+  it('lists missions by status', () => {
+    const rows = repo.listMissions('running');
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    expect(rows.every(r => r.status === 'running')).toBe(true);
   });
 });
 });
