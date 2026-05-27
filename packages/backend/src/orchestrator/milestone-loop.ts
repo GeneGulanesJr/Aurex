@@ -1,5 +1,5 @@
 // packages/backend/src/orchestrator/milestone-loop.ts
-import type { Mission, Milestone, WorkingUnit } from "@aurex/shared";
+import type { CheckpointTrigger, Mission, Milestone, WorkingUnit } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client";
 import type { PinyxClient } from "../clients/pinyx-client";
 import { createNegotiator } from "./negotiator";
@@ -7,6 +7,11 @@ import { createWorktreeManager } from "./worktree";
 import { checkPreSpawnOverlap } from "./overlap";
 import { createAgentSpawner } from "../agents/agent-spawner";
 import { buildWorkerContext } from "../agents/context-builder";
+
+export type MilestoneLoopResult =
+  | { status: "completed" }
+  | { status: "checkpoint_needed"; trigger: CheckpointTrigger; milestoneId: string; summary: string }
+  | { status: "failed"; reason: string };
 
 export interface MilestoneLoopCallbacks {
   onEscalation: (missionId: string, trigger: unknown, context: unknown) => void;
@@ -35,7 +40,7 @@ export function createMilestoneLoop(
   });
 
   return {
-    async run(mission: Mission, milestones: Milestone[]): Promise<boolean> {
+    async run(mission: Mission, milestones: Milestone[]): Promise<MilestoneLoopResult> {
       const config = mission.configJson;
       const negotiator = createNegotiator(lapis);
 
@@ -153,8 +158,14 @@ export function createMilestoneLoop(
         );
 
         if (decision.decision === "escalate") {
-          callbacks.onEscalation(mission.id, { kind: "rescope_limit", milestoneId: milestone.id }, {});
-          return false;
+          const trigger: CheckpointTrigger = "rescope_limit";
+          callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, {});
+          return {
+            status: "checkpoint_needed",
+            trigger,
+            milestoneId: milestone.id,
+            summary: decision.reason,
+          };
         }
 
         if (decision.decision === "pass") {
@@ -164,7 +175,7 @@ export function createMilestoneLoop(
       }
 
       await lapis.updateMissionStatus(mission.id, "completed");
-      return true;
+      return { status: "completed" };
     },
   };
 }

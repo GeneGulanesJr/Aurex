@@ -140,7 +140,7 @@ describe("milestone loop with spawner", () => {
     const completedMilestone = makeMilestone({ status: "completed" });
 
     const result = await loop.run(mission, [completedMilestone]);
-    expect(result).toBe(true);
+    expect(result.status).toBe("completed");
     // No milestones to process, mission completed
     expect(lapis.updateMissionStatus).toHaveBeenCalledWith("m-1", "completed");
   });
