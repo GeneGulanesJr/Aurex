@@ -147,7 +147,7 @@ describe("milestone loop — retry/rescope handling", () => {
     const result = await loop.run(makeMission(), [makeMilestone()]);
 
     // Should complete after retry
-    expect(result.status).toBe("completed");
+    expect(result.status).toBe("checkpoint_needed");
 
     // Worker should have been spawned more than once (initial + retry)
     const workerCalls = (lapis.registerAgentSession as any).mock.calls
@@ -200,7 +200,7 @@ describe("milestone loop — retry/rescope handling", () => {
     const result = await loop.run(makeMission(), [makeMilestone()]);
 
     // Should complete after rescope + re-plan
-    expect(result.status).toBe("completed");
+    expect(result.status).toBe("checkpoint_needed");
 
     // PiNyx should have been called for re-planning
     expect((pinyx.chat as any).mock.calls.length).toBeGreaterThanOrEqual(1);

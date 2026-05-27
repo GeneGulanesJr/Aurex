@@ -132,7 +132,7 @@ describe("milestone loop — validator phase", () => {
     const result = await loop.run(makeMission(), [makeMilestone()]);
 
     // The negotiator should see pass verdicts and decide pass
-    expect(result.status).toBe("completed");
+    expect(result.status).toBe("checkpoint_needed");
     // Two validator sessions should have been registered (scrutiny + user_testing)
     const registrations = (lapis.registerAgentSession as any).mock.calls.map((c: any) => c[0]);
     expect(registrations.filter((t: string) => t === "validator_scrutiny" || t === "validator_user_testing").length).toBeGreaterThanOrEqual(2);

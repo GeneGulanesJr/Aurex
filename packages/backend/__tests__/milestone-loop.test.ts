@@ -91,7 +91,10 @@ describe("milestone loop", () => {
     });
     const result = await loop.run(mission, milestones);
 
-    expect(result.status).toBe("completed");
+    expect(result.status).toBe("checkpoint_needed");
+    if (result.status === "checkpoint_needed") {
+      expect(result.trigger).toBe("milestone_complete");
+    }
     // Should only update ms-2 (ms-1 is completed, skipped)
     expect(callbacks.onMilestoneProgress).toHaveBeenCalledWith("ms-2", "in_progress", 0, 0);
   });

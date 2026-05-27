@@ -85,7 +85,7 @@ function createMockLapis(): LaPisClient {
     searchMemory: vi.fn().mockResolvedValue([]),
     writeHandoff: vi.fn().mockResolvedValue({ accepted: true, errors: [] }),
     createCheckpoint: vi.fn().mockResolvedValue({ id: "cp-1", status: "pending" }),
-    getCheckpoint: vi.fn().mockResolvedValue({ id: "cp-1", status: "pending" }),
+    getCheckpoint: vi.fn().mockResolvedValue({ id: "cp-1", status: "resolved", decision: "approve" }),
     resolveCheckpoint: vi.fn().mockResolvedValue({ id: "cp-1", status: "resolved", decision: "approve" }),
     getPendingCheckpoints: vi.fn().mockResolvedValue([]),
     listMissions: vi.fn().mockResolvedValue([]),
@@ -197,5 +197,63 @@ describe("MissionRunner", () => {
     await done;
 
     expect(pinyx.chat).toHaveBeenCalledWith(expect.objectContaining({ model: "kilo/kilo-auto/free" }));
+  });
+
+  it("resolves milestone_complete checkpoint and continues to next milestone", async () => {
+    const lapis = createMockLapis();
+    const pinyx = createMockPinyx();
+
+    // Plan returns 2 milestones
+    (pinyx.chat as any).mockResolvedValue({
+      content: JSON.stringify({
+        milestones: [
+          { title: "M1", description: "First", units: [], criteria: [], testCommands: [] },
+          { title: "M2", description: "Second", units: [], criteria: [], testCommands: [] },
+        ],
+      }),
+      finishReason: "stop",
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+    });
+
+    // Milestone loop returns checkpoint_needed for M1, then completed for M2
+    let loopCallCount = 0;
+    const originalRun = lapis.getWorkingUnitsForMilestone;
+    
+    // We need the milestone loop to return checkpoint_needed first, then completed
+    // The mock milestone loop behavior is controlled by the verdicts/getWorkingUnits
+    // For simplicity, we'll test at the runner level by mocking the loop directly
+    // Actually, the runner creates the loop internally. Let me use the checkpoint resolution.
+    
+    // Make checkpointManager.waitForResolution resolve immediately with "approve"
+    // The first checkpoint is for milestone_complete on M1
+    const checkpointCreate = lapis.createCheckpoint as any;
+    const checkpointResolve = lapis.resolveCheckpoint as any;
+    
+    // resolveCheckpoint returns approved checkpoint
+    (checkpointResolve as any).mockResolvedValue({
+      id: "cp-1", status: "resolved", decision: "approve",
+    });
+
+    const runner = createMissionRunner({
+      lapis,
+      pinyx,
+      eventBus: mockEventBus as any,
+      agentDir: "/test/.pi/agent",
+      repoRoot: "/test/repo",
+      gitMainBranch: "main",
+    });
+
+    const done = runner.waitForCompletion();
+    runner.start("m-1");
+    await done;
+
+    // Mission should complete after checkpoint resolution
+    expect(runner.getStatus().state).toBe("completed");
+    
+    // Should have created a checkpoint
+    expect(lapis.createCheckpoint).toHaveBeenCalled();
+    
+    // Should have marked the milestone as completed after approval
+    expect(lapis.updateMilestoneStatus).toHaveBeenCalledWith(expect.any(String), "completed");
   });
 });

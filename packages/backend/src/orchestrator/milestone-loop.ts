@@ -287,8 +287,8 @@ export function createMilestoneLoop(
             callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary, phase: "integration" });
             return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
           }
-          await lapis.updateMilestoneStatus(milestone.id, "completed");
-          callbacks.onMilestoneProgress(milestone.id, "completed", completedCount, units.length);
+
+          // Human must approve the release before merging to main
           callbacks.onEscalation(
             mission.id,
             { kind: "milestone_complete", milestoneId: milestone.id, releaseBranch: integration.releaseBranch },
@@ -298,6 +298,13 @@ export function createMilestoneLoop(
           // Post-milestone compression — summarize completed milestone state
           const compressionTrigger: CompressionTrigger = "post_milestone";
           await lapis.runCompression(mission.id, compressionTrigger);
+
+          return {
+            status: "checkpoint_needed",
+            trigger: "milestone_complete",
+            milestoneId: milestone.id,
+            summary: `Milestone "${milestone.title}" passed validation. Release branch: ${integration.releaseBranch}`,
+          };
         }
       }
 

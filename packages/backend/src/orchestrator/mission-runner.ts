@@ -1,4 +1,4 @@
-import type { CheckpointDecision, Milestone } from "@aurex/shared";
+import type { CheckpointDecision, CheckpointTrigger, Milestone } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { PinyxClient } from "../clients/pinyx-client.js";
 import type { EventBus } from "../ws/events.js";
@@ -90,31 +90,33 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         validationContractId: "",
       }));
 
-      const latestMission = await lapis.getMission(missionId);
-      const result = await loop.run(latestMission, plannedMilestones);
+      // Run milestone loop — handles checkpoint_needed by re-running
+      let currentMilestones = plannedMilestones;
+      let refreshedMission = await lapis.getMission(missionId);
+      let loopResult = await loop.run(refreshedMission, currentMilestones);
 
-      if (abortController?.signal.aborted) {
-        await lapis.updateMissionStatus(missionId, "aborted");
-        setStatus("failed", missionId);
-        return;
-      }
+      while (loopResult.status === "checkpoint_needed") {
+        if (abortController?.signal.aborted) {
+          await lapis.updateMissionStatus(missionId, "aborted");
+          setStatus("failed", missionId);
+          return;
+        }
 
-      if (result.status === "checkpoint_needed") {
         setStatus("waiting_checkpoint", missionId);
         await lapis.updateMissionStatus(missionId, "paused");
 
         const checkpointId = await checkpointManager.create({
           missionId,
-          trigger: result.trigger,
-          milestoneId: result.milestoneId,
-          summary: result.summary,
+          trigger: loopResult.trigger,
+          milestoneId: loopResult.milestoneId,
+          summary: loopResult.summary,
         });
 
         eventBus.emit({
           type: "escalation",
           missionId,
-          trigger: { kind: result.trigger, milestoneId: result.milestoneId },
-          context: { summary: result.summary, checkpointId },
+          trigger: { kind: loopResult.trigger, milestoneId: loopResult.milestoneId },
+          context: { summary: loopResult.summary, checkpointId },
         } as any);
 
         const resolved = await checkpointManager.waitForResolution(checkpointId);
@@ -126,11 +128,25 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
           return;
         }
 
+        // For milestone_complete: mark the milestone done, then continue
+        const cpResult = loopResult as { status: "checkpoint_needed"; trigger: CheckpointTrigger; milestoneId: string; summary: string };
+        if (cpResult.trigger === "milestone_complete") {
+          await lapis.updateMilestoneStatus(cpResult.milestoneId, "completed");
+        }
+
         await lapis.updateMissionStatus(missionId, "running");
         setStatus("executing", missionId);
+
+        // Re-run loop with updated milestones (completed ones are skipped)
+        const refreshedMission = await lapis.getMission(missionId);
+        // Update the milestone statuses to reflect checkpoint resolution
+        currentMilestones = currentMilestones.map((ms) =>
+          ms.id === cpResult.milestoneId ? { ...ms, status: "completed" as const } : ms,
+        );
+        loopResult = await loop.run(refreshedMission, currentMilestones);
       }
 
-      if (result.status === "failed") {
+      if (loopResult.status === "failed") {
         await lapis.updateMissionStatus(missionId, "failed");
         setStatus("failed", missionId);
         return;
