@@ -30,6 +30,7 @@ export interface SpawnOptions {
   contextContent: string;
   taskPrompt: string;
   timeout?: number;
+  validatorContext?: ValidatorToolContext;
 }
 
 export interface SpawnHandle {
@@ -101,6 +102,11 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
         sessionManager: SessionManager.inMemory(opts.cwd),
       });
       sessionId = session.sessionId;
+
+      // Set sessionId on validator context (captured by reference in tools)
+      if ((opts as any)._validatorCtx) {
+        (opts as any)._validatorCtx.sessionId = session.sessionId;
+      }
 
       // Register in LaPis
       await lapis.registerAgentSession(
