@@ -38,6 +38,9 @@ export function createMilestoneLoop(
     lapis,
     agentDir: loopConfig.agentDir,
     defaultTimeout: 120_000,
+    onCost: (missionId, totalCost, totalTokens, delta) => {
+      callbacks.onCostUpdate(missionId, totalCost, totalTokens, delta);
+    },
   });
 
   return {
