@@ -127,7 +127,7 @@ function buildRoutes(deps) {
 async function startHttpServer(opts) {
   const { host = '127.0.0.1', port = 9100 } = opts;
 
-  const db = require('../db');
+  const db = require('../../db');
   db.ensureDb();
 
   const { sqlJson, sqlRun } = db;
