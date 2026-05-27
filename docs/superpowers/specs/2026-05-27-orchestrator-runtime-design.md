@@ -156,6 +156,7 @@ POST   /checkpoints              Create checkpoint (status: pending)
 GET    /checkpoints/:id          Get checkpoint (poll for status change)
 PATCH  /checkpoints/:id          Resolve checkpoint (writes decision, status: resolved)
 GET    /missions/:id/checkpoints Get checkpoints for mission (startup recovery)
+GET    /missions?status=pending  List missions by status (for startup recovery)
 ```
 
 New migration in PiMemoryExtension:
@@ -177,6 +178,14 @@ CREATE TABLE IF NOT EXISTS checkpoints (
 );
 ```
 
+## Gated Checkpoint Triggers
+
+The full spec has three checkpoint triggers, but `milestone_complete` requires validator spawning + release branch cutting which aren't built yet. The runner will support all three trigger types in the `MilestoneLoopResult`, but only `rescope_limit` and `unclassifiable_error` will fire in practice until validators are implemented.
+
+- `rescope_limit` — **active now**. Emitted when the negotiator's 5x rescope limit is hit.
+- `unclassifiable_error` — **active now**. Emitted when the negotiator hits an unknown verdict state.
+- `milestone_complete` — **deferred**. Will fire after validators pass and a release branch is cut, requiring human approval to merge to main. Currently the runner treats a pass verdict as continuing to the next milestone without a checkpoint.
+
 ## File Changes
 
 ### New Files
@@ -196,9 +205,9 @@ CREATE TABLE IF NOT EXISTS checkpoints (
 | `packages/backend/src/server.ts` | Wire MissionRunner — create on POST, inject into routes, startup recovery |
 | `packages/backend/src/routes/missions.ts` | Trigger runner on mission creation, return active mission for GET /current |
 | `packages/backend/src/routes/checkpoints.ts` | Write decisions to LaPis via CheckpointManager |
-| `packages/backend/src/clients/lapis-client.ts` | Add checkpoint methods (createCheckpoint, getCheckpoint, resolveCheckpoint, getPendingCheckpoints) |
+| `packages/backend/src/clients/lapis-client.ts` | Add checkpoint methods (createCheckpoint, getCheckpoint, resolveCheckpoint, getPendingCheckpoints, listMissions) |
 | `packages/shared/src/types.ts` | Add CheckpointRecord type |
-| `PiMemoryExtension: migration + handlers` | Checkpoints table + 4 endpoints |
+| `PiMemoryExtension: migration + handlers` | Checkpoints table + 4 endpoints + list missions by status endpoint |
 
 ## Startup Recovery
 
@@ -206,7 +215,7 @@ On server startup, after LaPis healthcheck passes:
 
 ```typescript
 // Check for paused missions with pending checkpoints
-const pausedMissions = await lapis.getMissions({ status: "paused" });
+const pausedMissions = await lapis.listMissions({ status: "paused" });
 for (const mission of pausedMissions) {
   const pending = await checkpointManager.getPendingForMission(mission.id);
   if (pending.length > 0) {
@@ -215,6 +224,8 @@ for (const mission of pausedMissions) {
   }
 }
 ```
+
+Note: `listMissions` is a new method on the LaPis client backed by `GET /missions?status=pending` in the LaPis HTTP server.
 
 ## What This Does NOT Do
 
