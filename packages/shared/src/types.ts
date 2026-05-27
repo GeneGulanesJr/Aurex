@@ -2,7 +2,7 @@
 import type {
   MissionStatus, MilestoneStatus, AgentType, AgentStatus, WorkerStatus,
   BroadcastLifecycle, BroadcastCategory, ResearchLifecycle, ResearchRelevance,
-  NegotiatorVerdict, CompressionTrigger,
+  NegotiatorVerdict, CompressionTrigger, CheckpointDecision, CheckpointTrigger,
 } from "./enums";
 
 export interface Mission {
