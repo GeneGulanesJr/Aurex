@@ -37,6 +37,9 @@ export interface AppConfig {
   // Server
   port: number;
   wsPort: number;
+
+  // Authentication
+  apiKey: string | null;
 }
 
 function env(key: string, fallback?: string): string {
@@ -94,5 +97,6 @@ export function loadConfig(): AppConfig {
 
     port: envInt("PORT", 3000),
     wsPort: envInt("WS_PORT", 3001),
+    apiKey: process.env.API_KEY || null,
   };
 }

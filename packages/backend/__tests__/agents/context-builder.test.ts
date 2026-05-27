@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildValidatorContext, buildWorkerContext } from "../../src/agents/context-builder";
+import { buildValidatorContext, buildWorkerContext, buildResearchContext } from "../../src/agents/context-builder";
 
 describe("buildWorkerContext", () => {
   it("includes mission description", () => {
@@ -64,6 +64,37 @@ describe("buildWorkerContext", () => {
     });
     expect(ctx).toContain("1. `npm test`");
     expect(ctx).toContain("2. `npm run lint`");
+  });
+});
+
+describe("buildResearchContext", () => {
+  it("includes mission and milestone context", () => {
+    const ctx = buildResearchContext({
+      missionDescription: "Build user authentication",
+      milestoneTitle: "Auth module",
+      milestoneDescription: "Implement JWT auth",
+      unitDescriptions: ["Create login endpoint", "Create register endpoint"],
+      declaredPaths: ["src/auth/**"],
+      declaredModules: ["auth"],
+    });
+    expect(ctx).toContain("Build user authentication");
+    expect(ctx).toContain("Auth module");
+    expect(ctx).toContain("Create login endpoint");
+    expect(ctx).toContain("src/auth/**");
+    expect(ctx).toContain("auth");
+  });
+
+  it("includes finding submission instructions", () => {
+    const ctx = buildResearchContext({
+      missionDescription: "X",
+      milestoneTitle: "Y",
+      milestoneDescription: "Z",
+      unitDescriptions: [],
+      declaredPaths: [],
+      declaredModules: [],
+    });
+    expect(ctx).toContain("write_finding");
+    expect(ctx).toContain("FINDINGS");
   });
 });
 
