@@ -5,10 +5,10 @@ import {
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentType, WorkerStatus } from "@aurex/shared";
-import { AGENT_TOOLS } from "./factory";
-import { createWorkerTools } from "./worker-tools";
-import { createValidatorTools } from "./validator-tools";
-import type { LaPisClient } from "../clients/lapis-client";
+import { AGENT_TOOLS } from "./factory.js";
+import { createWorkerTools } from "./worker-tools.js";
+import { createValidatorTools } from "./validator-tools.js";
+import type { LaPisClient } from "../clients/lapis-client.js";
 import path from "node:path";
 
 export interface AgentSpawnerConfig {
