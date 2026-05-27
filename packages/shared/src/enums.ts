@@ -23,7 +23,7 @@ export type ResearchLifecycle = "unverified" | "verified" | "superseded" | "reje
 export type ResearchRelevance = "high" | "medium" | "low";
 
 // Checkpoints
-export type CheckpointTrigger = "milestone_complete" | "rescope_limit" | "unclassifiable_error";
+export type CheckpointTrigger = "milestone_complete" | "rescope_limit" | "unclassifiable_error" | "cost_cap_exceeded";
 export type CheckpointDecision = "approve" | "reject" | "rescope";
 
 // Compression
