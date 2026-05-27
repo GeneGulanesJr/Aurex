@@ -81,6 +81,7 @@ function buildRoutes(deps) {
 
     // Working units
     { method: 'POST', pattern: '/milestones/:milestoneId/units', handler: units.createWorkingUnit(aurex) },
+    { method: 'GET', pattern: '/milestones/:milestoneId/units', handler: units.getWorkingUnitsForMilestone(aurex) },
     { method: 'PATCH', pattern: '/units/:id/status', handler: units.updateWorkingUnitStatus(aurex) },
 
     // Handoffs
