@@ -229,8 +229,7 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
 
     // State compression (stubbed — logs skip, never silent)
     runCompression(missionId, trigger) {
-      console.log(`[compression] Skipped — not implemented (trigger: ${trigger}, missionId: ${missionId})`);
-      return Promise.resolve();
+      return post(`/missions/${missionId}/compress`, { trigger });
     },
 
     // Checkpoints

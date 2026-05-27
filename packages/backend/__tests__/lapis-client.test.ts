@@ -103,10 +103,14 @@ describe("LaPisClient (HTTP)", () => {
     await expect(client.getMission("nonexistent")).rejects.toThrow();
   });
 
-  it("runCompression logs skip message", async () => {
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  it("runCompression calls the compress endpoint", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true, status: 200, text: () => Promise.resolve("{}"), json: () => Promise.resolve({}),
+    });
     await client.runCompression("m-1", "post_milestone");
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("[compression] Skipped"));
-    logSpy.mockRestore();
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining("/missions/m-1/compress"),
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 });

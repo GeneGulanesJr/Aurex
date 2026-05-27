@@ -16,6 +16,7 @@ export interface AgentSpawnerConfig {
   lapis: LaPisClient;
   agentDir: string;
   defaultTimeout: number;
+  onCost?: (missionId: string, totalCost: number, totalTokens: number, delta: number) => void;
 }
 
 export interface SpawnOptions {
@@ -56,6 +57,8 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
       const tools = AGENT_TOOLS[opts.agentType];
       let sessionId = "";
       const customTools = createCustomTools(lapis, opts, () => sessionId);
+      let cumulativeCost = 0;
+      let cumulativeTokens = 0;
 
       // Build ResourceLoader with injected context and skill
       const skillBaseDir = path.dirname(opts.skillFilePath);
@@ -137,6 +140,26 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
               sessionId: session.sessionId,
               error: event.assistantMessageEvent.message ?? "unknown error",
             });
+          }
+
+          // Parse usage data from Pi SDK events
+          const usage = event.assistantMessageEvent?.usage;
+          if (usage && typeof usage.cost === "number") {
+            const delta = usage.cost;
+            cumulativeCost += delta;
+            cumulativeTokens += usage.totalTokens ?? 0;
+
+            lapis.logCost({
+              missionId: opts.missionId,
+              agentSessionId: session.sessionId,
+              model: opts.agentType,
+              promptTokens: usage.promptTokens ?? 0,
+              completionTokens: usage.completionTokens ?? 0,
+              cost: delta,
+              timestamp: new Date().toISOString(),
+            }).catch(() => {});
+
+            config.onCost?.(opts.missionId, cumulativeCost, cumulativeTokens, delta);
           }
         }
       });
