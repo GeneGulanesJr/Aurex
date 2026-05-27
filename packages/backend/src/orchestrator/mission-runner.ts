@@ -50,7 +50,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
     try {
       setStatus("planning", missionId);
       const mission = await lapis.getMission(missionId);
-      const planner = createPlanner(lapis, pinyx);
+      const planner = createPlanner(lapis, pinyx, { model: mission.configJson.modelHints.orchestrator });
       const planResult = await planner.plan(mission.description, missionId);
 
       await lapis.updateMissionStatus(missionId, "running");

@@ -61,7 +61,17 @@ async function main() {
   });
 
   // REST routes
-  await app.register(missionRoutes, { lapis, runner });
+  await app.register(missionRoutes, {
+    lapis,
+    runner,
+    missionConfig: {
+      modelHints: config.modelHints,
+      workerTimeouts: config.workerTimeouts,
+      costCap: config.missionCostCap,
+      maxValidatorRetries: config.maxValidatorRetries,
+      maxRescopes: config.maxRescopes,
+    },
+  });
   await app.register(checkpointRoutes, { lapis });
 
   // Start

@@ -1,30 +1,37 @@
 // packages/backend/src/routes/missions.ts
 import type { FastifyInstance } from "fastify";
+import type { MissionConfig } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { MissionRunner } from "../orchestrator/mission-runner.js";
 
+const defaultMissionConfig: MissionConfig = {
+  modelHints: {
+    orchestrator: "reasoning-strong",
+    worker: "code-fast",
+    validator_scrutiny: "reasoning",
+    validator_user_testing: "computer-use",
+    research: "fast-cheap",
+  },
+  workerTimeouts: { simple: 120000, build: 300000, testHeavy: 600000 },
+  costCap: 50,
+  maxValidatorRetries: 2,
+  maxRescopes: 5,
+};
+
 export async function missionRoutes(
   app: FastifyInstance,
-  { lapis, runner }: { lapis: LaPisClient; runner: MissionRunner },
+  { lapis, runner, missionConfig = defaultMissionConfig }: {
+    lapis: LaPisClient;
+    runner: MissionRunner;
+    missionConfig?: MissionConfig;
+  },
 ) {
   app.post("/api/missions", async (request, reply) => {
     const { description } = request.body as { description: string };
     if (!description) {
       return reply.status(400).send({ error: "description is required" });
     }
-    const mission = await lapis.createMission(description, {
-      modelHints: {
-        orchestrator: "reasoning-strong",
-        worker: "code-fast",
-        validator_scrutiny: "reasoning",
-        validator_user_testing: "computer-use",
-        research: "fast-cheap",
-      },
-      workerTimeouts: { simple: 120000, build: 300000, testHeavy: 600000 },
-      costCap: 50,
-      maxValidatorRetries: 2,
-      maxRescopes: 5,
-    });
+    const mission = await lapis.createMission(description, missionConfig);
     runner.start(mission.id);
     return reply.status(201).send({ missionId: mission.id, status: mission.status });
   });
