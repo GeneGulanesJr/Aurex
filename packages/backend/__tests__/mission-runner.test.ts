@@ -11,6 +11,13 @@ vi.mock("@earendil-works/pi-coding-agent", () => {
     createAgentSession: vi.fn().mockResolvedValue({
       session: {
         prompt: vi.fn().mockImplementation(function (this: any) {
+          this.subscriber?.({
+            type: "message_update",
+            assistantMessageEvent: {
+              type: "message_stop",
+              usage: { promptTokens: 500, completionTokens: 500, totalTokens: 1000, cost: 1 },
+            },
+          });
           this.subscriber?.({ type: "agent_end" });
           return Promise.resolve();
         }),
@@ -255,5 +262,74 @@ describe("MissionRunner", () => {
     
     // Should have marked the milestone as completed after approval
     expect(lapis.updateMilestoneStatus).toHaveBeenCalledWith(expect.any(String), "completed");
+  });
+
+  it("approval of cost_cap_exceeded checkpoint lets the mission continue", async () => {
+    const lapis = createMockLapis();
+    const pinyx = createMockPinyx();
+
+    // Make the plan include a worker so the mocked session emits usage before validation.
+    (pinyx.chat as any).mockResolvedValue({
+      content: JSON.stringify({
+        milestones: [{ title: "M1", description: "First", units: [{ description: "Do work", declaredPaths: ["src/a.ts"], declaredModules: ["a"] }], criteria: [], testCommands: [] }],
+      }),
+      finishReason: "stop",
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+    });
+
+    (lapis.getMission as any).mockResolvedValue({
+      id: "m-1",
+      description: "Build auth",
+      status: "planning",
+      configJson: {
+        modelHints: {
+          orchestrator: "reasoning-strong",
+          worker: "code-fast",
+          validator_scrutiny: "reasoning",
+          validator_user_testing: "computer-use",
+          research: "fast-cheap",
+        },
+        workerTimeouts: { simple: 120000, build: 300000, testHeavy: 600000 },
+        costCap: 0.5,
+        maxValidatorRetries: 2,
+        maxRescopes: 5,
+      },
+      createdAt: "2026-01-01",
+    });
+
+    const unit = {
+      id: "u-1",
+      milestoneId: "ms-1",
+      description: "Do work",
+      declaredPaths: ["src/a.ts"],
+      declaredModules: ["a"],
+      status: "planned",
+      taskBranch: "",
+      worktreePath: "",
+      sessionId: "",
+    };
+    (lapis.createWorkingUnit as any).mockResolvedValue(unit);
+    (lapis.getWorkingUnitsForMilestone as any).mockResolvedValue([unit]);
+
+    const runner = createMissionRunner({
+      lapis,
+      pinyx,
+      eventBus: mockEventBus as any,
+      agentDir: "/test/.pi/agent",
+      repoRoot: "/test/repo",
+      gitMainBranch: "main",
+    });
+
+    const done = runner.waitForCompletion();
+    runner.start("m-1");
+    await done;
+
+    const checkpointTriggers = (lapis.createCheckpoint as any).mock.calls.map((call: any[]) => call[0].trigger);
+    expect(checkpointTriggers).toContain("cost_cap_exceeded");
+    // Approval should continue execution, not mark the milestone complete immediately.
+    // The mission should still reach the normal milestone_complete gate afterwards.
+    expect(checkpointTriggers).toContain("milestone_complete");
+    expect(lapis.updateMissionStatus).toHaveBeenCalledWith("m-1", "completed");
+    expect(runner.getStatus().state).toBe("completed");
   });
 });

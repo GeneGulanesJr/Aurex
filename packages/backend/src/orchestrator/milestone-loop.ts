@@ -34,11 +34,13 @@ export function createMilestoneLoop(
 ) {
   const worktreeManager = createWorktreeManager(loopConfig.repoRoot);
   const integrationLifecycle = createIntegrationLifecycle(worktreeManager);
+  let cumulativeCost = 0;
   const spawner = createAgentSpawner({
     lapis,
     agentDir: loopConfig.agentDir,
     defaultTimeout: 120_000,
     onCost: (missionId, totalCost, totalTokens, delta) => {
+      cumulativeCost = totalCost;
       callbacks.onCostUpdate(missionId, totalCost, totalTokens, delta);
     },
   });
@@ -167,6 +169,13 @@ export function createMilestoneLoop(
             const trigger: CheckpointTrigger = "unclassifiable_error";
             const summary = `${failedCount} worker unit(s) failed before validation`;
             callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary });
+            return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
+          }
+
+          // Cost cap check — pause if budget exceeded
+          if (config.costCap > 0 && cumulativeCost >= config.costCap) {
+            const trigger: CheckpointTrigger = "cost_cap_exceeded";
+            const summary = `Mission cost cap exceeded: $${cumulativeCost.toFixed(2)} >= $${config.costCap.toFixed(2)}`;
             return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
           }
 

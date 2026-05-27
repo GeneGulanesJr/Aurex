@@ -92,6 +92,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
 
       // Run milestone loop — handles checkpoint_needed by re-running
       let currentMilestones = plannedMilestones;
+      let costCapApproved = false;
       let refreshedMission = await lapis.getMission(missionId);
       let loopResult = await loop.run(refreshedMission, currentMilestones);
 
@@ -128,22 +129,29 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
           return;
         }
 
-        // For milestone_complete: mark the milestone done, then continue
         const cpResult = loopResult as { status: "checkpoint_needed"; trigger: CheckpointTrigger; milestoneId: string; summary: string };
+
+        // For milestone_complete: mark the milestone done, then continue.
+        // For cost_cap_exceeded: approval means continue this mission run over budget.
         if (cpResult.trigger === "milestone_complete") {
           await lapis.updateMilestoneStatus(cpResult.milestoneId, "completed");
+          currentMilestones = currentMilestones.map((ms) =>
+            ms.id === cpResult.milestoneId ? { ...ms, status: "completed" as const } : ms,
+          );
+        }
+        if (cpResult.trigger === "cost_cap_exceeded") {
+          costCapApproved = true;
         }
 
         await lapis.updateMissionStatus(missionId, "running");
         setStatus("executing", missionId);
 
         // Re-run loop with updated milestones (completed ones are skipped)
-        const refreshedMission = await lapis.getMission(missionId);
-        // Update the milestone statuses to reflect checkpoint resolution
-        currentMilestones = currentMilestones.map((ms) =>
-          ms.id === cpResult.milestoneId ? { ...ms, status: "completed" as const } : ms,
-        );
-        loopResult = await loop.run(refreshedMission, currentMilestones);
+        const baseMission = await lapis.getMission(missionId);
+        const nextMission = costCapApproved
+          ? { ...baseMission, configJson: { ...baseMission.configJson, costCap: 0 } }
+          : baseMission;
+        loopResult = await loop.run(nextMission, currentMilestones);
       }
 
       if (loopResult.status === "failed") {
