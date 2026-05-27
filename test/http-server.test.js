@@ -286,4 +286,251 @@ describe('HTTP server framework', () => {
     expect(res.body.error.code).toBe('bad_request');
   });
 });
+
+describe('HTTP server E2E — Aurex endpoints', () => {
+  let server;
+  let baseUrl;
+  let req;
+
+  beforeAll(async () => {
+    const { createHttpServer } = require('../src/http/server');
+    const aurex = createAurexRepository({ sqlJson, sqlRun });
+    server = createHttpServer({ repositories: { aurex }, sqlJson, sqlRun });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    baseUrl = `http://127.0.0.1:${server.address().port}`;
+
+    req = (method, path, body) => new Promise((resolve, reject) => {
+      const url = new URL(path, baseUrl);
+      const opts = { method, hostname: url.hostname, port: url.port, path: url.pathname + url.search, headers: { 'Content-Type': 'application/json' } };
+      const httpReq = http.request(opts, (res) => {
+        let data = '';
+        res.on('data', (chunk) => (data += chunk));
+        res.on('end', () => {
+          try { resolve({ status: res.statusCode, body: JSON.parse(data) }); }
+          catch { resolve({ status: res.statusCode, body: data }); }
+        });
+      });
+      httpReq.on('error', reject);
+      if (body) httpReq.write(JSON.stringify(body));
+      httpReq.end();
+    });
+  });
+
+  afterAll(() => new Promise((resolve) => server.close(resolve)));
+
+  let missionId;
+  let milestoneId;
+  let unitId;
+  let contractId;
+
+  it('creates a mission', async () => {
+    const res = await req('POST', '/missions', { description: 'E2E mission', config: { modelHints: {} } });
+    expect(res.status).toBe(201);
+    expect(res.body.description).toBe('E2E mission');
+    expect(res.body.id).toBeDefined();
+    missionId = res.body.id;
+  });
+
+  it('gets the mission', async () => {
+    const res = await req('GET', `/missions/${missionId}`);
+    expect(res.status).toBe(200);
+    expect(res.body.description).toBe('E2E mission');
+  });
+
+  it('updates mission status', async () => {
+    const res = await req('PATCH', `/missions/${missionId}/status`, { status: 'running' });
+    expect(res.status).toBe(200);
+    const updated = await req('GET', `/missions/${missionId}`);
+    expect(updated.body.status).toBe('running');
+  });
+
+  it('creates a milestone', async () => {
+    const res = await req('POST', `/missions/${missionId}/milestones`, { title: 'Phase 1', description: 'Setup', orderIndex: 0 });
+    expect(res.status).toBe(201);
+    expect(res.body.title).toBe('Phase 1');
+    milestoneId = res.body.id;
+  });
+
+  it('updates milestone status', async () => {
+    const res = await req('PATCH', `/milestones/${milestoneId}/status`, { status: 'in_progress' });
+    expect(res.status).toBe(200);
+  });
+
+  it('creates a working unit', async () => {
+    const res = await req('POST', `/milestones/${milestoneId}/units`, { description: 'Implement feature', declaredPaths: ['src/feature.js'], declaredModules: [] });
+    expect(res.status).toBe(201);
+    expect(res.body.description).toBe('Implement feature');
+    unitId = res.body.id;
+  });
+
+  it('updates working unit status', async () => {
+    const res = await req('PATCH', `/units/${unitId}/status`, { status: 'working' });
+    expect(res.status).toBe(200);
+  });
+
+  it('writes a handoff', async () => {
+    const res = await req('POST', `/units/${unitId}/handoff`, {
+      featureName: 'Test feature',
+      description: 'Implemented X',
+      implemented: 'src/feature.js',
+      remaining: 'Tests',
+      rationale: 'Needed for Y',
+      assumptions: 'Z is stable',
+      unresolvedUncertainties: 'None',
+      errorsEncountered: 'None',
+      commandsRun: [{ command: 'npm test', exitCode: 0 }],
+      gitCommitHash: 'abc123',
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.accepted).toBe(true);
+  });
+
+  it('creates a contract', async () => {
+    const res = await req('POST', `/milestones/${milestoneId}/contracts`, {
+      content: { criteria: ['test passes'], testCommands: ['npm test'], acceptanceBehavior: 'All green' },
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.version).toBe(1);
+    contractId = res.body.id;
+  });
+
+  it('gets contract history', async () => {
+    const res = await req('GET', `/milestones/${milestoneId}/contracts`);
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('writes a verdict', async () => {
+    const res = await req('POST', '/verdicts', {
+      sessionId: 's-e2e',
+      milestoneId,
+      contractId,
+      validatorType: 'validator_scrutiny',
+      verdict: 'pass',
+      findings: 'All criteria met',
+      failedUnitIds: [],
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.verdict).toBe('pass');
+  });
+
+  it('gets verdicts for milestone', async () => {
+    const res = await req('GET', `/milestones/${milestoneId}/verdicts`);
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('writes a broadcast', async () => {
+    const res = await req('POST', '/broadcasts', {
+      agentId: 'worker-1',
+      missionId,
+      authorType: 'worker',
+      category: 'info',
+      title: 'Progress update',
+      content: 'Phase 1 complete',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.title).toBe('Progress update');
+  });
+
+  it('gets broadcasts for mission', async () => {
+    const res = await req('GET', `/missions/${missionId}/broadcasts`);
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('writes a research finding', async () => {
+    const res = await req('POST', '/findings', {
+      agentId: 'worker-1',
+      missionId,
+      domain: ['testing'],
+      title: 'Test pattern',
+      content: 'Found useful pattern',
+      relevance: 'high',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.title).toBe('Test pattern');
+  });
+
+  it('gets findings for mission', async () => {
+    const res = await req('GET', `/missions/${missionId}/findings`);
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('registers an agent session', async () => {
+    const res = await req('POST', '/sessions', {
+      agentType: 'worker',
+      sessionId: 's-e2e',
+      missionId,
+      milestoneId,
+      unitId,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+  });
+
+  it('gets sessions for milestone', async () => {
+    const res = await req('GET', `/milestones/${milestoneId}/sessions`);
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('logs a cost entry', async () => {
+    const res = await req('POST', '/costs', {
+      missionId,
+      agentSessionId: 's-e2e',
+      model: 'gpt-4',
+      promptTokens: 100,
+      completionTokens: 50,
+      cost: 0.15,
+      timestamp: new Date().toISOString(),
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+  });
+
+  it('gets mission costs', async () => {
+    const res = await req('GET', `/missions/${missionId}/costs`);
+    expect(res.status).toBe(200);
+    expect(res.body.totalCost).toBe(0.15);
+    expect(res.body.entries).toBe(1);
+  });
+
+  it('increments retry', async () => {
+    const res = await req('POST', `/milestones/${milestoneId}/retry`, {});
+    expect(res.status).toBe(200);
+    expect(res.body.retries).toBeGreaterThanOrEqual(1);
+  });
+
+  it('logs rescope', async () => {
+    const res = await req('POST', `/milestones/${milestoneId}/rescope`, {
+      contractId,
+      reason: 'Scope expanded',
+      previousScope: 'old scope',
+      newScope: 'new scope',
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+  });
+
+  it('runs compression (stub)', async () => {
+    const res = await req('POST', `/missions/${missionId}/compression`, { trigger: 'post_milestone' });
+    expect(res.status).toBe(200);
+    expect(res.body.accepted).toBe(true);
+    expect(res.body.skipped).toBe(true);
+  });
+
+  it('searches memory', async () => {
+    const res = await req('POST', '/memory/search', { query: 'test', limit: 5 });
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+  });
+
+  it('GET /health still works after all operations', async () => {
+    const res = await req('GET', '/health');
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ok');
+  });
+});
 });
