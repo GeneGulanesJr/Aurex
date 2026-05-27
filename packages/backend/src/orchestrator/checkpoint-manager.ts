@@ -1,4 +1,4 @@
-import type { LaPisClient } from "../clients/lapis-client";
+import type { LaPisClient } from "../clients/lapis-client.js";
 import type { CheckpointDecision, CheckpointRecord, CheckpointTrigger } from "@aurex/shared";
 
 export interface CheckpointManager {

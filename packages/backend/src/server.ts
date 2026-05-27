@@ -4,6 +4,7 @@ import { loadConfig } from "./config.js";
 import { createLaPisClient } from "./clients/lapis-client.js";
 import { createPinyxClient } from "./clients/pinyx-client.js";
 import { createEventBus } from "./ws/events.js";
+import { createMissionRunner } from "./orchestrator/mission-runner.js";
 import { missionRoutes } from "./routes/missions.js";
 import { checkpointRoutes } from "./routes/checkpoints.js";
 
@@ -30,6 +31,25 @@ async function main() {
     process.exit(1);
   }
 
+  const runner = createMissionRunner({
+    lapis,
+    pinyx,
+    eventBus,
+    agentDir: process.env.PI_AGENT_DIR || `${process.env.HOME}/.pi/agent`,
+    repoRoot: config.repoRoot,
+    gitMainBranch: config.gitMainBranch,
+  });
+
+  try {
+    const paused = await lapis.listMissions({ status: "paused" });
+    for (const mission of paused) {
+      console.log(`[startup] Resuming paused mission: ${mission.id}`);
+      runner.start(mission.id);
+    }
+  } catch (err) {
+    console.warn("[startup] Could not check for paused missions:", err instanceof Error ? err.message : err);
+  }
+
   const app = Fastify({ logger: true });
 
   // Health endpoint
@@ -41,13 +61,8 @@ async function main() {
   });
 
   // REST routes
-  await app.register(missionRoutes, { lapis });
-  await app.register(checkpointRoutes, {
-    resolveCheckpoint: async (missionId, decision, guidance, reason) => {
-      console.log(`[checkpoint] ${missionId}: ${decision} guidance=${guidance} reason=${reason}`);
-      return { accepted: true };
-    },
-  });
+  await app.register(missionRoutes, { lapis, runner });
+  await app.register(checkpointRoutes, { lapis });
 
   // Start
   try {

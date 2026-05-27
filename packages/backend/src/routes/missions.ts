@@ -1,8 +1,12 @@
 // packages/backend/src/routes/missions.ts
 import type { FastifyInstance } from "fastify";
-import type { LaPisClient } from "../clients/lapis-client";
+import type { LaPisClient } from "../clients/lapis-client.js";
+import type { MissionRunner } from "../orchestrator/mission-runner.js";
 
-export async function missionRoutes(app: FastifyInstance, { lapis }: { lapis: LaPisClient }) {
+export async function missionRoutes(
+  app: FastifyInstance,
+  { lapis, runner }: { lapis: LaPisClient; runner: MissionRunner },
+) {
   app.post("/api/missions", async (request, reply) => {
     const { description } = request.body as { description: string };
     if (!description) {
@@ -21,11 +25,22 @@ export async function missionRoutes(app: FastifyInstance, { lapis }: { lapis: La
       maxValidatorRetries: 2,
       maxRescopes: 5,
     });
+    runner.start(mission.id);
     return reply.status(201).send({ missionId: mission.id, status: mission.status });
   });
 
   app.get("/api/missions/current", async (_request, reply) => {
-    return reply.status(404).send({ error: "No active mission" });
+    const missionId = runner.getActiveMissionId();
+    if (!missionId) {
+      return reply.status(404).send({ error: "No active mission" });
+    }
+    try {
+      const mission = await lapis.getMission(missionId);
+      const cost = await lapis.getMissionCost(missionId);
+      return { mission, milestones: [], activeWorkers: [], cost };
+    } catch {
+      return reply.status(404).send({ error: "Mission not found" });
+    }
   });
 
   app.get("/api/missions/:id", async (request, reply) => {

@@ -1,10 +1,10 @@
 import type { CheckpointDecision, Milestone } from "@aurex/shared";
-import type { LaPisClient } from "../clients/lapis-client";
-import type { PinyxClient } from "../clients/pinyx-client";
-import type { EventBus } from "../ws/events";
-import { createCheckpointManager } from "./checkpoint-manager";
-import { createMilestoneLoop } from "./milestone-loop";
-import { createPlanner } from "./planner";
+import type { LaPisClient } from "../clients/lapis-client.js";
+import type { PinyxClient } from "../clients/pinyx-client.js";
+import type { EventBus } from "../ws/events.js";
+import { createCheckpointManager } from "./checkpoint-manager.js";
+import { createMilestoneLoop } from "./milestone-loop.js";
+import { createPlanner } from "./planner.js";
 
 export interface RunnerStatus {
   state: "idle" | "planning" | "executing" | "waiting_checkpoint" | "completed" | "failed";
