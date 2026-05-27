@@ -7,6 +7,12 @@ export interface CurrentMissionPayload {
   cost: CostSummary;
 }
 
+export interface ActiveMission {
+  missionId: string;
+  state: string;
+  queuePosition?: number;
+}
+
 export async function createMission(description: string) {
   const res = await fetch("/api/missions", {
     method: "POST",
@@ -21,6 +27,23 @@ export async function getCurrentMission(): Promise<CurrentMissionPayload | null>
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Failed to hydrate current mission: ${res.status}`);
   return res.json() as Promise<CurrentMissionPayload>;
+}
+
+export async function getActiveMissions(): Promise<{ missions: ActiveMission[] }> {
+  const res = await fetch("/api/missions/active");
+  if (!res.ok) throw new Error(`Failed to fetch active missions: ${res.status}`);
+  return res.json() as Promise<{ missions: ActiveMission[] }>;
+}
+
+export async function getMission(id: string): Promise<CurrentMissionPayload> {
+  const res = await fetch(`/api/missions/${id}`);
+  if (!res.ok) throw new Error(`Failed to fetch mission: ${res.status}`);
+  return res.json() as Promise<CurrentMissionPayload>;
+}
+
+export async function abortMission(missionId: string) {
+  const res = await fetch(`/api/missions/${missionId}/abort`, { method: "POST" });
+  return res.json() as Promise<{ aborted: boolean }>;
 }
 
 export async function submitCheckpoint(

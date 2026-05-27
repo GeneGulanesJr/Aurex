@@ -2,13 +2,17 @@ import { describe, it, expect, vi } from "vitest";
 import Fastify from "fastify";
 import { missionRoutes } from "../../src/routes/missions";
 import type { LaPisClient } from "../../src/clients/lapis-client";
+import type { MissionRunnerPool } from "../../src/orchestrator/mission-runner-pool";
 
-function createMockRunner(activeMissionId: string | null = null) {
+function createMockPool(activeMissions: Array<{ missionId: string; state: string; queuePosition?: number }> = []): MissionRunnerPool {
   return {
-    start: vi.fn(),
+    submit: vi.fn(),
     abort: vi.fn(),
-    getStatus: vi.fn().mockReturnValue({ state: activeMissionId ? "executing" : "idle", missionId: activeMissionId }),
-    getActiveMissionId: vi.fn().mockReturnValue(activeMissionId),
+    getStatus: vi.fn().mockImplementation((id: string) => {
+      const found = activeMissions.find((m) => m.missionId === id);
+      return found ?? null;
+    }),
+    getActiveMissions: vi.fn().mockReturnValue(activeMissions),
     waitForCompletion: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -19,9 +23,9 @@ describe("POST /api/missions", () => {
     const mockLapis = {
       createMission: vi.fn().mockResolvedValue({ id: "m-1", status: "planning" }),
     } as unknown as LaPisClient;
-    const runner = createMockRunner();
+    const pool = createMockPool();
 
-    app.register(missionRoutes, { lapis: mockLapis, runner });
+    app.register(missionRoutes, { lapis: mockLapis, pool });
 
     const response = await app.inject({
       method: "POST",
@@ -33,7 +37,7 @@ describe("POST /api/missions", () => {
     const body = response.json();
     expect(body.missionId).toBe("m-1");
     expect(body.status).toBe("planning");
-    expect(runner.start).toHaveBeenCalledWith("m-1");
+    expect(pool.submit).toHaveBeenCalledWith("m-1");
   });
 
   it("creates missions with configured concrete PiNyx model hints", async () => {
@@ -44,7 +48,7 @@ describe("POST /api/missions", () => {
 
     app.register(missionRoutes, {
       lapis: mockLapis,
-      runner: createMockRunner(),
+      pool: createMockPool(),
       missionConfig: {
         modelHints: {
           orchestrator: "kilo/kilo-auto/free",
@@ -77,7 +81,7 @@ describe("POST /api/missions", () => {
   it("rejects missing description", async () => {
     const app = Fastify();
     const mockLapis = {} as unknown as LaPisClient;
-    app.register(missionRoutes, { lapis: mockLapis, runner: createMockRunner() });
+    app.register(missionRoutes, { lapis: mockLapis, pool: createMockPool() });
 
     const response = await app.inject({
       method: "POST",
@@ -93,7 +97,7 @@ describe("GET /api/missions/current", () => {
   it("returns 404 when no active mission", async () => {
     const app = Fastify();
     const mockLapis = {} as unknown as LaPisClient;
-    app.register(missionRoutes, { lapis: mockLapis, runner: createMockRunner() });
+    app.register(missionRoutes, { lapis: mockLapis, pool: createMockPool() });
 
     const response = await app.inject({
       method: "GET",

@@ -133,7 +133,7 @@ describe("MissionRunner", () => {
     expect(runner.getActiveMissionId()).toBeNull();
   });
 
-  it("rejects start when already running", () => {
+  it("ignores start when already running", () => {
     const lapis = createMockLapis();
     (lapis.searchMemory as any).mockImplementation(() => new Promise(() => {}));
     const runner = createMissionRunner({
@@ -145,7 +145,7 @@ describe("MissionRunner", () => {
       gitMainBranch: "main",
     });
     runner.start("m-1");
-    expect(() => runner.start("m-2")).toThrow(/already running/);
+    expect(() => runner.start("m-2")).not.toThrow();
   });
 
   it("transitions through planning → executing → completed", async () => {

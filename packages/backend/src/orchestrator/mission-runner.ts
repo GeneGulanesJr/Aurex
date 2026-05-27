@@ -174,7 +174,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
   return {
     start(missionId) {
       if (!["idle", "completed", "failed"].includes(status.state)) {
-        throw new Error(`Runner already running (state: ${status.state}, mission: ${status.missionId})`);
+        return;
       }
 
       abortController = new AbortController();
