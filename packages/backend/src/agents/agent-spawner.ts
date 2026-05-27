@@ -8,6 +8,7 @@ import type { AgentType, WorkerStatus } from "@aurex/shared";
 import { AGENT_TOOLS } from "./factory.js";
 import { createWorkerTools } from "./worker-tools.js";
 import { createValidatorTools } from "./validator-tools.js";
+import { createResearchTools } from "./research-tools.js";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import path from "node:path";
 
@@ -210,6 +211,13 @@ function createCustomTools(
       contractId: opts.contractId,
       validatorType: opts.agentType,
       getSessionId,
+    });
+  }
+
+  if (opts.agentType === "research") {
+    return createResearchTools(lapis, {
+      missionId: opts.missionId,
+      authorId: getSessionId(),
     });
   }
 
