@@ -74,6 +74,15 @@ export interface Handoff {
   gitCommitHash: string;
 }
 
+export interface HandoffRecord extends Handoff {
+  id: string;
+  missionId: string;
+  milestoneId: string;
+  status: "pending" | "accepted" | "rejected";
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface HandoffResult {
   accepted: boolean;
   errors: string[];

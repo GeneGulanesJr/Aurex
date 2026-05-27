@@ -63,6 +63,7 @@ function createMockLapis(units: WorkingUnit[] = []): LaPisClient {
     getContractHistory: vi.fn().mockResolvedValue([{
       content: { criteria: ["works"], testCommands: ["npm test"], acceptanceBehavior: "works" },
     }]),
+    getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
     registerAgentSession: vi.fn().mockResolvedValue(undefined),
     logCost: vi.fn().mockResolvedValue(undefined),
     writeHandoff: vi.fn().mockResolvedValue({ accepted: true, errors: [] }),

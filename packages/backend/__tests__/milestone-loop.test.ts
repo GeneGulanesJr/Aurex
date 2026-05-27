@@ -72,6 +72,7 @@ describe("milestone loop", () => {
       getContractHistory: vi.fn().mockResolvedValue([
         { id: "c-2", content: { criteria: [], testCommands: [], acceptanceBehavior: "" } },
       ]),
+      getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
       registerAgentSession: vi.fn(),
     } as unknown as LaPisClient;
 
@@ -110,6 +111,7 @@ describe("milestone loop", () => {
       getContractHistory: vi.fn().mockResolvedValue([
         { id: "c-1", content: { criteria: [], testCommands: [], acceptanceBehavior: "" } },
       ]),
+      getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
       registerAgentSession: vi.fn(),
     } as unknown as LaPisClient;
 
