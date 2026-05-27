@@ -2,7 +2,7 @@
 import type {
   MissionStatus, MilestoneStatus, AgentType, AgentStatus, WorkerStatus,
   BroadcastLifecycle, BroadcastCategory, ResearchLifecycle, ResearchRelevance,
-  NegotiatorVerdict, CompressionTrigger,
+  NegotiatorVerdict, CompressionTrigger, CheckpointDecision, CheckpointTrigger,
 } from "./enums";
 
 export interface Mission {
@@ -209,4 +209,18 @@ export interface AgentSpec {
   instructions: string;
   declaredPaths: string[];
   declaredModules: string[];
+}
+
+export interface CheckpointRecord {
+  id: string;
+  missionId: string;
+  trigger: CheckpointTrigger;
+  milestoneId: string;
+  summary: string;
+  status: "pending" | "resolved";
+  decision?: CheckpointDecision;
+  guidance?: string;
+  reason?: string;
+  createdAt: string;
+  resolvedAt?: string;
 }

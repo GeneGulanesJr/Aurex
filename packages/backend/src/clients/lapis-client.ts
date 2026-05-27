@@ -6,9 +6,9 @@ import type {
   ResearchFinding, ResearchLifecycle, StandingContext,
   AgentSessionRecord, CostSummary,
   RetryCounter, RescopeEvent, MemoryResult,
-  ValidationVerdict,
+  ValidationVerdict, CheckpointRecord,
 } from "@aurex/shared";
-import type { AgentType, CompressionTrigger } from "@aurex/shared";
+import type { AgentType, CheckpointDecision, CompressionTrigger } from "@aurex/shared";
 
 export interface LaPisClientConfig {
   lapisEndpoint: string;
@@ -69,6 +69,15 @@ export interface LaPisClient {
 
   // State compression (stubbed)
   runCompression(missionId: string, trigger: CompressionTrigger): Promise<void>;
+
+  // Checkpoints
+  createCheckpoint(checkpoint: Omit<CheckpointRecord, "id" | "status" | "createdAt" | "resolvedAt">): Promise<CheckpointRecord>;
+  getCheckpoint(id: string): Promise<CheckpointRecord>;
+  resolveCheckpoint(id: string, decision: CheckpointDecision, guidance?: string, reason?: string): Promise<CheckpointRecord>;
+  getPendingCheckpoints(missionId: string): Promise<CheckpointRecord[]>;
+
+  // Mission listing
+  listMissions(opts?: { status?: string }): Promise<Mission[]>;
 
   // Connectivity
   ping(): Promise<void>;
@@ -218,6 +227,28 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
     runCompression(missionId, trigger) {
       console.log(`[compression] Skipped — not implemented (trigger: ${trigger}, missionId: ${missionId})`);
       return Promise.resolve();
+    },
+
+    // Checkpoints
+    createCheckpoint(checkpoint) {
+      return post("/checkpoints", checkpoint);
+    },
+    getCheckpoint(id) {
+      return get(`/checkpoints/${id}`);
+    },
+    resolveCheckpoint(id, decision, guidance, reason) {
+      return patch(`/checkpoints/${id}`, { decision, guidance, reason });
+    },
+    getPendingCheckpoints(missionId) {
+      return get(`/missions/${missionId}/checkpoints?status=pending`);
+    },
+
+    // Mission listing
+    listMissions(opts) {
+      const params = new URLSearchParams();
+      if (opts?.status) params.set("status", opts.status);
+      const qs = params.toString();
+      return get(`/missions${qs ? `?${qs}` : ""}`);
     },
 
     // Connectivity
