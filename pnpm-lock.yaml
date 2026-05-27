@@ -60,6 +60,9 @@ importers:
 
   packages/frontend:
     dependencies:
+      '@aurex/shared':
+        specifier: workspace:*
+        version: link:../shared
       animejs:
         specifier: ^4.0.0
         version: 4.4.1

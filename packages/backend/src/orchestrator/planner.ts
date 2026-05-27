@@ -1,6 +1,6 @@
 // packages/backend/src/orchestrator/planner.ts
-import type { LaPisClient } from "../clients/lapis-client";
-import type { PinyxClient } from "../clients/pinyx-client";
+import type { LaPisClient } from "../clients/lapis-client.js";
+import type { PinyxClient } from "../clients/pinyx-client.js";
 
 interface PlannedUnit {
   description: string;

@@ -8,7 +8,6 @@ import type { WsClientEvent, CheckpointDecision } from "@aurex/shared";
 
 export function App() {
   const { state, dispatch, handleWsEvent } = useMission();
-  const { connected } = useWebSocket(handleWsEvent);
   const eventsRef = useRef<WsClientEvent[]>([]);
 
   // Track events for the feed
@@ -16,6 +15,8 @@ export function App() {
     eventsRef.current = [...eventsRef.current.slice(-49), event];
     handleWsEvent(event);
   }, [handleWsEvent]);
+
+  const { connected } = useWebSocket(trackedHandle);
 
   const handleDecision = useCallback(async (decision: CheckpointDecision, guidance?: string, reason?: string) => {
     if (!state.mission) return;

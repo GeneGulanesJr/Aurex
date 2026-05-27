@@ -1,4 +1,5 @@
 // packages/backend/src/ws/events.ts
+import type { FastifyInstance } from "fastify";
 import type { WsClientEvent } from "@aurex/shared";
 
 export type EventHandler = (event: WsClientEvent) => void;
@@ -24,4 +25,20 @@ export function createEventBus(): EventBus {
       };
     },
   };
+}
+
+export function registerWebSocketRoutes(app: FastifyInstance, eventBus: EventBus): void {
+  app.get("/ws", { websocket: true }, (socket) => {
+    const unsubscribe = eventBus.subscribe((event) => {
+      if (socket.readyState === socket.OPEN) {
+        socket.send(JSON.stringify({ event }));
+      }
+    });
+
+    socket.on("close", unsubscribe);
+    socket.on("error", unsubscribe);
+    socket.on("message", () => {
+      // Client messages are accepted for forward compatibility; subscription is implicit.
+    });
+  });
 }

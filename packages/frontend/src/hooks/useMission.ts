@@ -1,5 +1,6 @@
-import { useReducer, useCallback } from "react";
+import { useReducer, useCallback, useEffect } from "react";
 import type { Mission, Milestone, WorkingUnit, CostSummary, WsClientEvent } from "@aurex/shared";
+import { getCurrentMission } from "../api";
 
 interface MissionState {
   mission: Mission | null;
@@ -36,6 +37,29 @@ function reducer(state: MissionState, action: Action): MissionState {
 
 export function useMission() {
   const [state, dispatch] = useReducer(reducer, initial);
+
+  useEffect(() => {
+    let cancelled = false;
+    getCurrentMission()
+      .then((payload) => {
+        if (!cancelled && payload) {
+          dispatch({
+            type: "SET_MISSION",
+            mission: payload.mission,
+            milestones: payload.milestones,
+            workers: payload.activeWorkers,
+            cost: payload.cost,
+          });
+        }
+      })
+      .catch(() => {
+        // The dashboard can still receive state through websocket events later.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleWsEvent = useCallback((event: WsClientEvent) => {
     switch (event.type) {

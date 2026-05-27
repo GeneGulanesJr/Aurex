@@ -60,7 +60,10 @@ describe("milestone loop", () => {
       updateMissionStatus: vi.fn(),
       updateMilestoneStatus: vi.fn(),
       incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-2", retries: 0, rescopes: 0 }),
-      getVerdicts: vi.fn().mockResolvedValue([]),
+      getVerdicts: vi.fn().mockResolvedValue([
+        { verdict: "pass", validatorType: "validator_scrutiny" },
+        { verdict: "pass", validatorType: "validator_user_testing" },
+      ]),
       getWorkingUnitsForMilestone: vi.fn().mockResolvedValue([]),
       getContractHistory: vi.fn().mockResolvedValue([]),
     } as unknown as LaPisClient;

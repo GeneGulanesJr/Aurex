@@ -1,12 +1,12 @@
 // packages/backend/src/orchestrator/milestone-loop.ts
 import type { CheckpointTrigger, Mission, Milestone, WorkingUnit } from "@aurex/shared";
-import type { LaPisClient } from "../clients/lapis-client";
-import type { PinyxClient } from "../clients/pinyx-client";
-import { createNegotiator } from "./negotiator";
-import { createWorktreeManager } from "./worktree";
-import { checkPreSpawnOverlap } from "./overlap";
-import { createAgentSpawner } from "../agents/agent-spawner";
-import { buildWorkerContext } from "../agents/context-builder";
+import type { LaPisClient } from "../clients/lapis-client.js";
+import type { PinyxClient } from "../clients/pinyx-client.js";
+import { createNegotiator } from "./negotiator.js";
+import { createWorktreeManager } from "./worktree.js";
+import { checkPreSpawnOverlap } from "./overlap.js";
+import { createAgentSpawner } from "../agents/agent-spawner.js";
+import { buildWorkerContext } from "../agents/context-builder.js";
 
 export type MilestoneLoopResult =
   | { status: "completed" }

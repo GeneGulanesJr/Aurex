@@ -95,7 +95,7 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
       const text = await res.text().catch(() => "unknown error");
       throw new Error(`LaPis ${res.status}: ${path} — ${text}`);
     }
-    return res.json();
+    return res.json() as Promise<T>;
   }
 
   function post<T>(path: string, body: unknown): Promise<T> {

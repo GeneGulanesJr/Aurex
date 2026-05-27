@@ -1,5 +1,5 @@
 // packages/backend/src/orchestrator/negotiator.ts
-import type { LaPisClient } from "../clients/lapis-client";
+import type { LaPisClient } from "../clients/lapis-client.js";
 import type { ValidationVerdict, NegotiatorVerdict } from "@aurex/shared";
 
 interface NegotiateResult {
@@ -18,6 +18,10 @@ export function createNegotiator(lapis: LaPisClient) {
       maxRescopes: number,
     ): Promise<NegotiateResult> {
       const verdicts: ValidationVerdict[] = await lapis.getVerdicts(milestoneId);
+
+      if (verdicts.length === 0) {
+        return { decision: "escalate", reason: "No validation verdicts were written for this milestone" };
+      }
 
       // Check if all verdicts pass
       const allPass = verdicts.every((v) => v.verdict === "pass");
