@@ -1,0 +1,36 @@
+{
+  "id": "api-migration-hooks-to-events",
+  "category": "api-migration",
+  "horizon": "long",
+  "repo": "PiMemoryExtension",
+  "setup": {
+    "checkout": "cf6b83bb2046a2d1cc32f9a0e1b8e7202d74cef3",
+    "seed_memory": "memory-seeds/hooks-architecture.json"
+  },
+  "prompt": "Refactor the hook registration system in the memory-layer extension. Currently, each hook module exports a registration function that takes `(pi, deps)` and directly calls `pi.on()`. Migrate to an event-emitter pattern where:\n\n1. Create a new file `extensions/memory-layer/hooks/event-bus.ts` that exports a typed EventEmitter with these events:\n   - `before_agent_start` (with payload: { sessionId, project })\n   - `after_agent_response` (with payload: { sessionId, content, role })\n   - `tool_execution_start` (with payload: { toolName, input })\n   - `tool_execution_end` (with payload: { toolName, result })\n   - `session_start` (with payload: { sessionId, project })\n   - `session_end` (with payload: { sessionId })\n   - `git_operation` (with payload: { command })\n\n2. Update `extensions/memory-layer/index.ts` to create the EventBus and pass it to all hook registrations instead of the raw `pi` object\n\n3. Update ALL 5 hook modules to use the EventBus instead of `pi.on()`:\n   - context-injection.ts\n   - session-lifecycle.ts\n   - passive-capture.ts\n   - tool-guardrails.ts\n   - trust-sync.ts\n\n4. The EventBus should translate Pi's native events to the typed events above. Add the translation layer in index.ts.\n\nThis is a pure refactor — no behavior should change. Run tests to verify:\n  npm test -- test/context-injection.test.js test/trust-sync.test.js test/tool-guardrails.test.js test/passive-capture-patterns.test.js --reporter=verbose\n\nKeep backward compatibility: the old registration functions should still work as thin wrappers.",
+  "success": {
+    "tests": ["npm test -- test/context-injection.test.js test/trust-sync.test.js test/tool-guardrails.test.js test/passive-capture-patterns.test.js --reporter=verbose 2>&1"],
+    "must_touch": ["extensions/memory-layer/index.ts", "extensions/memory-layer/hooks/context-injection.ts", "extensions/memory-layer/hooks/trust-sync.ts"],
+    "must_not_touch": ["db.js", "test/context-injection.test.js"],
+    "expected_facts": [
+      {
+        "id": "event-bus-created",
+        "description": "A new EventBus module was created as the centralized event system",
+        "aliases": ["EventBus", "event-bus", "EventEmitter", "typed events"]
+      },
+      {
+        "id": "hooks-migrated",
+        "description": "The hook modules were updated to use the EventBus instead of direct pi.on()",
+        "aliases": ["hook", "migrated", "event", "subscribe", "on(", "pi.on"]
+      }
+    ],
+    "constraints": [
+      {
+        "id": "no-external-event-lib",
+        "type": "must_not_contain",
+        "pattern": "require\\(['\"](?:eventemitter3|mitt|wolfy87-eventemitter)",
+        "message": "Use Node's built-in EventEmitter, not an external library"
+      }
+    ]
+  }
+}

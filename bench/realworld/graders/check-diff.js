@@ -2,7 +2,6 @@
 'use strict';
 
 const { execSync } = require('child_process');
-const path = require('path');
 
 /**
  * Check that the diff in a worktree respects must_touch / must_not_touch constraints.
@@ -27,18 +26,37 @@ function checkDiff(task, worktreePath) {
 
   const touched = rawDiff ? rawDiff.split(/\r?\n/).filter(Boolean) : [];
 
-  // Normalize paths for comparison (both forward-slash)
   const normalize = (p) => p.replace(/\\/g, '/');
   const touchedNorm = new Set(touched.map(normalize));
 
   const violations = mustNotTouch.filter((f) => touchedNorm.has(normalize(f)));
   const missed = mustTouch.filter((f) => !touchedNorm.has(normalize(f)));
 
+  let linesChanged = 0;
+  try {
+    const statDiff = execSync('git diff --stat', {
+      cwd: worktreePath,
+      encoding: 'utf-8',
+      timeout: 10_000,
+    }).trim();
+    const lastLine = statDiff.split(/\r?\n/).pop() || '';
+    const insMatch = lastLine.match(/(\d+) insertion/);
+    const delMatch = lastLine.match(/(\d+) deletion/);
+    if (insMatch || delMatch) {
+      const insertions = insMatch ? parseInt(insMatch[1], 10) : 0;
+      const deletions = delMatch ? parseInt(delMatch[1], 10) : 0;
+      linesChanged = insertions + deletions;
+    }
+  } catch {
+    // No diff or stat not available
+  }
+
   return {
     passed: violations.length === 0 && missed.length === 0,
     touched,
     violations,
     missed,
+    linesChanged,
   };
 }
 

@@ -1,0 +1,36 @@
+{
+  "id": "cross-cutting-add-code-owner",
+  "category": "cross-cutting-feature",
+  "horizon": "long",
+  "repo": "PiMemoryExtension",
+  "setup": {
+    "checkout": "cf6b83bb2046a2d1cc32f9a0e1b8e7202d74cef3",
+    "seed_memory": "memory-seeds/owner-feature-context.json"
+  },
+  "prompt": "Add a 'code_owner' concept to the memory layer. This is a cross-cutting feature that touches multiple layers of the stack.\n\nRequirements:\n1. Add a nullable `code_owner` text column to the `observations` table in schema.sql (add the migration as an ALTER in the upgrade path, bump the schema version)\n2. Update `data-access/observations.js` — the `insertObservation` function should accept and store `code_owner`\n3. Update `src/memory-domain/observations.js` — the `save()` function should accept `code_owner` in options and pass it through\n4. Update `src/memory-domain/search.js` — `rankObservations` should give a small boost (1.1x multiplier) when the observation's code_owner matches a query\n5. Update `extensions/memory-layer/hooks/context-injection.ts` — when injecting context, include the code_owner in the rendered output for observations that have one\n6. Update the `memory-save` tool registration in `extensions/memory-layer/tools/memory-tools.ts` to accept an optional `codeOwner` parameter\n\nAfter making changes, run: npm test -- test/memory-domain.test.js test/services-observations.test.js --reporter=verbose\n\nMake sure existing tests still pass. Only add tests if the existing test coverage breaks.",
+  "success": {
+    "tests": ["npm test -- test/memory-domain.test.js test/services-observations.test.js --reporter=verbose 2>&1"],
+    "must_touch": ["schema.sql", "data-access/observations.js", "src/memory-domain/observations.js"],
+    "must_not_touch": ["test/memory-domain.test.js"],
+    "expected_facts": [
+      {
+        "id": "code-owner-column",
+        "description": "A code_owner column was added to the observations table",
+        "aliases": ["code_owner", "owner column", "ALTER TABLE", "new column"]
+      },
+      {
+        "id": "data-access-update",
+        "description": "The data access layer was updated to support code_owner",
+        "aliases": ["insertObservation", "data-access", "code_owner"]
+      }
+    ],
+    "constraints": [
+      {
+        "id": "no-external-deps",
+        "type": "must_not_contain",
+        "pattern": "require\\(['\"](?:@google|@elastic|redis|meilisearch|typesense|algolia)",
+        "message": "Must not add external search/database dependencies"
+      }
+    ]
+  }
+}

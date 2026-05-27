@@ -1,0 +1,14 @@
+[
+  {
+    "type": "architecture",
+    "title": "Hook registration architecture in memory-layer",
+    "content": "What: All hooks in extensions/memory-layer/hooks/ export a registration function that takes (pi, deps). The pi object provides .on(event, handler) for subscribing to Pi events. Each hook module calls pi.on() directly with inline handlers. Why: This is the standard pattern for extending Pi's behavior. Where: extensions/memory-layer/hooks/*.ts, registered in extensions/memory-layer/index.ts. Learned: The registration pattern is: export function registerXxx(pi, deps) { pi.on('event_name', handler) }. The index.ts file calls all register functions with the shared deps object. Events used: before_agent_start, after_agent_response, tool_execution_start, tool_execution_end, session_start, session_end.",
+    "project": "PiMemoryExtension"
+  },
+  {
+    "type": "architecture",
+    "title": "Extension composition and registration",
+    "content": "What: The extension root file extensions/memory-layer/index.ts composes and registers all hooks. It wires context injection, passive capture, session lifecycle, tool guardrails, and trust sync. Why: Each concern is isolated while sharing a common state object and mem() client. Where: extensions/memory-layer/index.ts. Learned: The register() function is the entry point called by Pi's extension API. All deps are assembled here: state, mem(), getKnownRepos, projectDetector.",
+    "project": "PiMemoryExtension"
+  }
+]

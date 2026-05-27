@@ -1,0 +1,12 @@
+diff --git a/src/memory-domain/compaction.js b/src/memory-domain/compaction.js
+--- a/src/memory-domain/compaction.js
++++ b/src/memory-domain/compaction.js
+@@ -65,8 +65,6 @@
+     sqlRaw('VACUUM;');
+     report.steps.vacuumed = true;
+ 
+-    sqlRaw("INSERT INTO observations_fts(observations_fts) VALUES('optimize')");
+-    sqlRaw("INSERT INTO prompts_fts(prompts_fts) VALUES('optimize')");
+     report.steps.ftsOptimized = true;
+ 
+     report.completedAt = new Date().toISOString();
