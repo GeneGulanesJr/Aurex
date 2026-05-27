@@ -5,7 +5,7 @@ import { loadConfig } from "./config.js";
 import { createLaPisClient } from "./clients/lapis-client.js";
 import { createPinyxClient } from "./clients/pinyx-client.js";
 import { createEventBus, registerWebSocketRoutes } from "./ws/events.js";
-import { createMissionRunner } from "./orchestrator/mission-runner.js";
+import { createMissionRunnerPool } from "./orchestrator/mission-runner-pool.js";
 import { missionRoutes } from "./routes/missions.js";
 import { checkpointRoutes } from "./routes/checkpoints.js";
 import { registerGlobalAuth } from "./routes/auth.js";
@@ -33,20 +33,21 @@ async function main() {
     process.exit(1);
   }
 
-  const runner = createMissionRunner({
+  const pool = createMissionRunnerPool({
     lapis,
     pinyx,
     eventBus,
     agentDir: process.env.PI_AGENT_DIR || `${process.env.HOME}/.pi/agent`,
     repoRoot: config.repoRoot,
     gitMainBranch: config.gitMainBranch,
+    maxConcurrent: config.maxConcurrentMissions,
   });
 
   try {
     const paused = await lapis.listMissions({ status: "paused" });
     for (const mission of paused) {
       console.log(`[startup] Resuming paused mission: ${mission.id}`);
-      runner.start(mission.id);
+      pool.submit(mission.id);
     }
   } catch (err) {
     console.warn("[startup] Could not check for paused missions:", err instanceof Error ? err.message : err);
@@ -71,7 +72,7 @@ async function main() {
   // REST routes
   await app.register(missionRoutes, {
     lapis,
-    runner,
+    pool,
     missionConfig: {
       modelHints: config.modelHints,
       workerTimeouts: config.workerTimeouts,

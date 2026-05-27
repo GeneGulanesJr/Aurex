@@ -2,7 +2,7 @@
 import type { FastifyInstance } from "fastify";
 import type { MissionConfig } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
-import type { MissionRunner } from "../orchestrator/mission-runner.js";
+import type { MissionRunnerPool } from "../orchestrator/mission-runner-pool.js";
 
 const defaultMissionConfig: MissionConfig = {
   modelHints: {
@@ -20,9 +20,9 @@ const defaultMissionConfig: MissionConfig = {
 
 export async function missionRoutes(
   app: FastifyInstance,
-  { lapis, runner, missionConfig = defaultMissionConfig }: {
+  { lapis, pool, missionConfig = defaultMissionConfig }: {
     lapis: LaPisClient;
-    runner: MissionRunner;
+    pool: MissionRunnerPool;
     missionConfig?: MissionConfig;
   },
 ) {
@@ -32,12 +32,14 @@ export async function missionRoutes(
       return reply.status(400).send({ error: "description is required" });
     }
     const mission = await lapis.createMission(description, missionConfig);
-    runner.start(mission.id);
+    pool.submit(mission.id);
     return reply.status(201).send({ missionId: mission.id, status: mission.status });
   });
 
   app.get("/api/missions/current", async (_request, reply) => {
-    const missionId = runner.getActiveMissionId();
+    const active = pool.getActiveMissions();
+    const running = active.find((m) => m.state !== "queued" && m.state !== "completed" && m.state !== "failed");
+    const missionId = running?.missionId ?? active[0]?.missionId;
     if (!missionId) {
       return reply.status(404).send({ error: "No active mission" });
     }
@@ -48,6 +50,20 @@ export async function missionRoutes(
     } catch {
       return reply.status(404).send({ error: "Mission not found" });
     }
+  });
+
+  app.get("/api/missions/active", async () => {
+    return { missions: pool.getActiveMissions() };
+  });
+
+  app.post("/api/missions/:id/abort", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const status = pool.getStatus(id);
+    if (!status) {
+      return reply.status(404).send({ error: "Mission not found in pool" });
+    }
+    pool.abort(id);
+    return { aborted: true };
   });
 
   app.get("/api/missions/:id", async (request, reply) => {

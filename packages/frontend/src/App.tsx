@@ -1,22 +1,25 @@
 import { useCallback, useRef } from "react";
 import { useWebSocket } from "./hooks/useWebSocket";
+import { useMissions } from "./hooks/useMissions";
 import { useMission } from "./hooks/useMission";
+import { MissionSidebar } from "./active/MissionSidebar";
 import { StatusBoard } from "./passive/StatusBoard";
 import { EscalationOverlay } from "./active/EscalationOverlay";
 import { submitCheckpoint } from "./api";
 import type { WsClientEvent, CheckpointDecision } from "@aurex/shared";
 
 export function App() {
-  const { state, dispatch, handleWsEvent } = useMission();
+  const { state: missionsState, selectMission, removeMission, handleWsEvent: missionsWsHandler } = useMissions();
+  const { state, dispatch, handleWsEvent: missionWsHandler } = useMission(missionsState.selectedMissionId);
   const eventsRef = useRef<WsClientEvent[]>([]);
 
-  // Track events for the feed
-  const trackedHandle = useCallback((event: WsClientEvent) => {
+  const combinedHandler = useCallback((event: WsClientEvent) => {
+    missionsWsHandler(event);
+    missionWsHandler(event);
     eventsRef.current = [...eventsRef.current.slice(-49), event];
-    handleWsEvent(event);
-  }, [handleWsEvent]);
+  }, [missionsWsHandler, missionWsHandler]);
 
-  const { connected } = useWebSocket(trackedHandle);
+  const { connected } = useWebSocket(combinedHandler);
 
   const handleDecision = useCallback(async (decision: CheckpointDecision, guidance?: string, reason?: string) => {
     if (!state.mission) return;
@@ -37,16 +40,24 @@ export function App() {
           {state.mission ? state.mission.description : "No active mission"}
         </span>
       </header>
-      <main className="flex-1">
-        <StatusBoard
-          mission={state.mission}
-          milestones={state.milestones}
-          workers={state.activeWorkers}
-          cost={state.cost}
-          events={eventsRef.current}
-          blurred={!!state.escalation}
+      <div className="flex flex-1 overflow-hidden">
+        <MissionSidebar
+          missions={missionsState.missions}
+          selectedMissionId={missionsState.selectedMissionId}
+          onSelect={selectMission}
+          onRemove={removeMission}
         />
-      </main>
+        <main className="flex-1 overflow-y-auto">
+          <StatusBoard
+            mission={state.mission}
+            milestones={state.milestones}
+            workers={state.activeWorkers}
+            cost={state.cost}
+            events={eventsRef.current}
+            blurred={!!state.escalation}
+          />
+        </main>
+      </div>
       {state.escalation?.type === "escalation" && (
         <EscalationOverlay
           event={state.escalation}
