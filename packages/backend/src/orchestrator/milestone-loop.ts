@@ -147,6 +147,68 @@ export function createMilestoneLoop(
           );
         }
 
+        // --- VALIDATOR PHASE ---
+        // After all workers complete, spawn a validator pair
+        if (failedCount === 0 && completedCount > 0) {
+          await lapis.updateMilestoneStatus(milestone.id, "validating");
+          callbacks.onMilestoneProgress(milestone.id, "validating", completedCount, units.length);
+
+          const validatorSkill = `${loopConfig.repoRoot}/packages/backend/src/skills/validator.md`;
+          const validatorCwd = loopConfig.repoRoot; // validators don't need worktrees — read-only
+          const contractId = contract?.id ?? "";
+
+          const validatorTypes: Array<"validator_scrutiny" | "validator_user_testing"> = ["validator_scrutiny", "validator_user_testing"];
+          const validatorHandles = await Promise.all(
+            validatorTypes.map(async (vType) => {
+              const vAgentId = `validator-${vType}-${milestone.id}`;
+              callbacks.onAgentStatus(vAgentId, vType, "spawned", milestone.id);
+
+              const vContext = {
+                missionDescription: mission.description,
+                milestoneTitle: milestone.title,
+                milestoneDescription: milestone.description,
+                unitDescription: `Validate milestone: ${milestone.title}`,
+                unitDeclaredPaths: [],
+                unitDeclaredModules: [],
+                contractCriteria: contract?.content?.criteria ?? [],
+                testCommands: contract?.content?.testCommands ?? [],
+              };
+
+              const handle = await spawner.spawn({
+                agentType: vType,
+                unitId: milestone.id, // milestone-level, not unit-level
+                missionId: mission.id,
+                milestoneId: milestone.id,
+                cwd: validatorCwd,
+                skillFilePath: validatorSkill,
+                contextContent: buildWorkerContext(vContext), // reuse context builder for contract info
+                taskPrompt: `Validate milestone "${milestone.title}" against contract. You are a ${vType === "validator_scrutiny" ? "Scrutiny" : "User-Testing"} validator. Follow your skill instructions.`,
+                timeout: config.workerTimeouts.build, // use build timeout for validators
+                validatorContext: {
+                  milestoneId: milestone.id,
+                  contractId,
+                  validatorType: vType,
+                  sessionId: "", // will be set by spawner after session creation
+                },
+              });
+
+              callbacks.onAgentStatus(vAgentId, vType, "working", milestone.id);
+              return { vType, vAgentId, handle };
+            }),
+          );
+
+          // Wait for all validators to complete
+          for (const { vType, vAgentId, handle } of validatorHandles) {
+            const vResult = await handle.completed;
+            if (vResult.status === "completed") {
+              callbacks.onAgentStatus(vAgentId, vType, "completed", milestone.id);
+            } else {
+              callbacks.onAgentStatus(vAgentId, vType, vResult.status === "timed_out" ? "timed_out" : "failed", milestone.id);
+            }
+            handle.dispose();
+          }
+        }
+
         // Negotiate verdicts
         const retryCounter = await lapis.incrementRetry(milestone.id);
         const decision = await negotiator.negotiate(

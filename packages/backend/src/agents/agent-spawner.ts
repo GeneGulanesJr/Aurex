@@ -7,6 +7,7 @@ import {
 import type { AgentType, WorkerStatus } from "@aurex/shared";
 import { AGENT_TOOLS } from "./factory.js";
 import { createWorkerTools } from "./worker-tools.js";
+import { createValidatorTools, type ValidatorToolContext } from "./validator-tools.js";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import path from "node:path";
 
@@ -26,6 +27,7 @@ export interface SpawnOptions {
   contextContent: string;
   taskPrompt: string;
   timeout?: number;
+  validatorContext?: ValidatorToolContext;
 }
 
 export interface SpawnHandle {
@@ -51,7 +53,24 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
     async spawn(opts: SpawnOptions): Promise<SpawnHandle> {
       const timeout = opts.timeout ?? defaultTimeout;
       const tools = AGENT_TOOLS[opts.agentType];
-      const workerTools = createWorkerTools(lapis, opts.unitId);
+
+      // Select custom tools based on agent type
+      let customTools: any[];
+      if (opts.agentType === "worker") {
+        customTools = createWorkerTools(lapis, opts.unitId);
+      } else if (opts.agentType === "validator_scrutiny" || opts.agentType === "validator_user_testing") {
+        const vCtx = opts.validatorContext ?? {
+          milestoneId: opts.milestoneId,
+          contractId: "",
+          validatorType: opts.agentType as "validator_scrutiny" | "validator_user_testing",
+          sessionId: "", // will be set after session creation
+        };
+        customTools = createValidatorTools(lapis, vCtx);
+        // Store reference so we can set sessionId after session is created
+        (opts as any)._validatorCtx = vCtx;
+      } else {
+        customTools = [];
+      }
 
       // Build ResourceLoader with injected context and skill
       const skillBaseDir = path.dirname(opts.skillFilePath);
@@ -89,10 +108,15 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
         cwd: opts.cwd,
         agentDir,
         tools,
-        customTools: workerTools,
+        customTools: customTools,
         resourceLoader: loader,
         sessionManager: SessionManager.inMemory(opts.cwd),
       });
+
+      // Set sessionId on validator context (captured by reference in tools)
+      if ((opts as any)._validatorCtx) {
+        (opts as any)._validatorCtx.sessionId = session.sessionId;
+      }
 
       // Register in LaPis
       await lapis.registerAgentSession(
