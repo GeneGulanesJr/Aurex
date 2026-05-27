@@ -12,9 +12,11 @@
   },
   "dependencies": {
     "@aurex/shared": "workspace:*",
+    "@earendil-works/pi-coding-agent": "^0.75.5",
     "@fastify/cors": "^11.0.0",
     "@fastify/rate-limit": "^10.0.0",
     "@fastify/websocket": "^11.0.0",
+    "@sinclair/typebox": "^0.34.49",
     "better-sqlite3": "^11.9.0",
     "fastify": "^5.3.0",
     "uuid": "^11.0.0"
