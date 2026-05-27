@@ -4,7 +4,6 @@ import type { LaPisClient } from "../clients/lapis-client.js";
 import type { PinyxClient } from "../clients/pinyx-client.js";
 import { createNegotiator } from "./negotiator.js";
 import { createWorktreeManager } from "./worktree.js";
-import { checkPreSpawnOverlap } from "./overlap.js";
 import { createAgentSpawner } from "../agents/agent-spawner.js";
 import { buildValidatorContext, buildWorkerContext, type ValidatorUnitContext } from "../agents/context-builder.js";
 import { createIntegrationLifecycle } from "./integration-lifecycle.js";
@@ -65,108 +64,99 @@ export function createMilestoneLoop(
         const integrationUnits: WorkingUnit[] = [];
         const validatorUnits: ValidatorUnitContext[] = [];
 
-        for (const unit of units) {
-          if (unit.status === "completed") {
-            completedCount++;
-            integrationUnits.push(unit);
-            validatorUnits.push({
-              id: unit.id,
-              description: unit.description,
-              declaredPaths: unit.declaredPaths,
-              declaredModules: unit.declaredModules,
-              taskBranch: unit.taskBranch,
-              worktreePath: unit.worktreePath,
+        // --- WORKER PHASE ---
+        // Separate completed vs pending units
+        const pendingUnits = units.filter((u: WorkingUnit) => u.status !== "completed");
+        const completedUnits = units.filter((u: WorkingUnit) => u.status === "completed");
+        completedCount = completedUnits.length;
+        integrationUnits.push(...completedUnits);
+        validatorUnits.push(...completedUnits.map((u: WorkingUnit) => ({
+          id: u.id, description: u.description, declaredPaths: u.declaredPaths, declaredModules: u.declaredModules, taskBranch: u.taskBranch, worktreePath: u.worktreePath,
+        })));
+
+        // Group pending units into non-overlapping batches for concurrent spawning
+        const batches: WorkingUnit[][] = [];
+        const remaining = [...pendingUnits];
+        while (remaining.length > 0) {
+          const batch: WorkingUnit[] = [remaining.shift()!];
+          const batchScope = { paths: new Set(batch[0].declaredPaths), modules: new Set(batch[0].declaredModules) };
+          for (let i = remaining.length - 1; i >= 0; i--) {
+            const candidate = remaining[i];
+            const hasOverlap = candidate.declaredPaths.some((p: string) => batchScope.paths.has(p))
+              || candidate.declaredModules.some((m: string) => batchScope.modules.has(m));
+            if (!hasOverlap) {
+              batch.push(candidate);
+              candidate.declaredPaths.forEach((p: string) => batchScope.paths.add(p));
+              candidate.declaredModules.forEach((m: string) => batchScope.modules.add(m));
+              remaining.splice(i, 1);
+            }
+          }
+          batches.push(batch);
+        }
+
+        // Process each batch (units within a batch run concurrently)
+        for (const batch of batches) {
+          const handles = await Promise.all(batch.map(async (unit) => {
+            const agentId = `worker-${unit.id}`;
+            const { worktreePath, taskBranch } = await worktreeManager.createWorktree(
+              agentId, unit.id, loopConfig.gitMainBranch,
+            );
+            const contextContent = buildWorkerContext({
+              missionDescription: mission.description,
+              milestoneTitle: milestone.title,
+              milestoneDescription: milestone.description,
+              unitDescription: unit.description,
+              unitDeclaredPaths: unit.declaredPaths,
+              unitDeclaredModules: unit.declaredModules,
+              contractCriteria: contract?.content?.criteria ?? [],
+              testCommands: contract?.content?.testCommands ?? [],
             });
-            continue;
-          }
 
-          // Pre-spawn overlap check
-          const activeUnits = units.filter(
-            (u: WorkingUnit) => u.status === "working" || u.status === "spawned",
-          );
-          const overlap = checkPreSpawnOverlap(
-            { declaredPaths: unit.declaredPaths, declaredModules: unit.declaredModules },
-            activeUnits,
-          );
-          if (overlap.overlap) {
-            // Skip for now — will be picked up in next iteration
-            continue;
-          }
+            callbacks.onAgentStatus(agentId, "worker", "spawned", milestone.id);
 
-          // Create worktree for isolation
-          const agentId = `worker-${unit.id}`;
-          const { worktreePath, taskBranch } = await worktreeManager.createWorktree(
-            agentId,
-            unit.id,
-            loopConfig.gitMainBranch,
-          );
-
-          // Build context
-          const contextContent = buildWorkerContext({
-            missionDescription: mission.description,
-            milestoneTitle: milestone.title,
-            milestoneDescription: milestone.description,
-            unitDescription: unit.description,
-            unitDeclaredPaths: unit.declaredPaths,
-            unitDeclaredModules: unit.declaredModules,
-            contractCriteria: contract?.content?.criteria ?? [],
-            testCommands: contract?.content?.testCommands ?? [],
-          });
-
-          // Determine timeout based on complexity (default: simple)
-          const timeout = config.workerTimeouts.simple;
-
-          // Spawn worker
-          callbacks.onAgentStatus(agentId, "worker", "spawned", milestone.id);
-
-          const handle = await spawner.spawn({
-            agentType: "worker",
-            unitId: unit.id,
-            missionId: mission.id,
-            milestoneId: milestone.id,
-            cwd: worktreePath,
-            skillFilePath: `${loopConfig.repoRoot}/packages/backend/src/skills/worker.md`,
-            contextContent,
-            taskPrompt: `Implement: ${unit.description}\n\nFollow your skill instructions carefully. Use write_handoff when done.`,
-            timeout,
-          });
-
-          callbacks.onAgentStatus(agentId, "worker", "working", milestone.id);
-
-          // Wait for completion
-          const result = await handle.completed;
-
-          if (result.status === "completed") {
-            await lapis.updateWorkingUnitStatus(unit.id, "completed");
-            callbacks.onAgentStatus(agentId, "worker", "completed", milestone.id);
-            completedCount++;
-            integrationUnits.push({ ...unit, taskBranch, worktreePath });
-            validatorUnits.push({
-              id: unit.id,
-              description: unit.description,
-              declaredPaths: unit.declaredPaths,
-              declaredModules: unit.declaredModules,
-              taskBranch,
-              worktreePath,
+            const handle = await spawner.spawn({
+              agentType: "worker",
+              unitId: unit.id,
+              missionId: mission.id,
+              milestoneId: milestone.id,
+              cwd: worktreePath,
+              skillFilePath: `${loopConfig.repoRoot}/packages/backend/src/skills/worker.md`,
+              contextContent,
+              taskPrompt: `Implement: ${unit.description}\n\nFollow your skill instructions carefully. Use write_handoff when done.`,
+              timeout: config.workerTimeouts.simple,
             });
-          } else if (result.status === "timed_out") {
-            await lapis.updateWorkingUnitStatus(unit.id, "timed_out");
-            callbacks.onAgentStatus(agentId, "worker", "timed_out", milestone.id);
-            failedCount++;
-          } else {
-            await lapis.updateWorkingUnitStatus(unit.id, "failed");
-            callbacks.onAgentStatus(agentId, "worker", "failed", milestone.id);
-            failedCount++;
-          }
 
-          handle.dispose();
+            callbacks.onAgentStatus(agentId, "worker", "working", milestone.id);
+            return { unit, agentId, worktreePath, taskBranch, handle };
+          }));
 
-          callbacks.onMilestoneProgress(
-            milestone.id,
-            "in_progress",
-            completedCount,
-            units.length,
-          );
+          // Await all handles in this batch concurrently
+          const results = await Promise.all(handles.map(async ({ unit, agentId, worktreePath, taskBranch, handle }) => {
+            const result = await handle.completed;
+            if (result.status === "completed") {
+              await lapis.updateWorkingUnitStatus(unit.id, "completed");
+              callbacks.onAgentStatus(agentId, "worker", "completed", milestone.id);
+              completedCount++;
+              integrationUnits.push({ ...unit, taskBranch, worktreePath });
+              validatorUnits.push({
+                id: unit.id, description: unit.description,
+                declaredPaths: unit.declaredPaths, declaredModules: unit.declaredModules,
+                taskBranch, worktreePath,
+              });
+            } else if (result.status === "timed_out") {
+              await lapis.updateWorkingUnitStatus(unit.id, "timed_out");
+              callbacks.onAgentStatus(agentId, "worker", "timed_out", milestone.id);
+              failedCount++;
+            } else {
+              await lapis.updateWorkingUnitStatus(unit.id, "failed");
+              callbacks.onAgentStatus(agentId, "worker", "failed", milestone.id);
+              failedCount++;
+            }
+            handle.dispose();
+            return result;
+          }));
+
+          callbacks.onMilestoneProgress(milestone.id, "in_progress", completedCount, units.length);
         }
 
         if (failedCount > 0) {
