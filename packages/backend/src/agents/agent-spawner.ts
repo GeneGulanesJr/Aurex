@@ -30,7 +30,6 @@ export interface SpawnOptions {
   contextContent: string;
   taskPrompt: string;
   timeout?: number;
-  validatorContext?: ValidatorToolContext;
 }
 
 export interface SpawnHandle {

@@ -77,11 +77,7 @@ describe("AgentSpawner — validator types", () => {
       contextContent: "# Validate milestone",
       taskPrompt: "Validate milestone ms-1 against contract c-1",
       timeout: 60_000,
-      validatorContext: {
-        milestoneId: "ms-1",
-        contractId: "c-1",
-        validatorType: "validator_scrutiny",
-      },
+      contractId: "c-1",
     });
 
     const result = await handle.completed;
@@ -113,11 +109,7 @@ describe("AgentSpawner — validator types", () => {
       contextContent: "# User test milestone",
       taskPrompt: "Test user flows",
       timeout: 120_000,
-      validatorContext: {
-        milestoneId: "ms-1",
-        contractId: "c-1",
-        validatorType: "validator_user_testing",
-      },
+      contractId: "c-1",
     });
 
     const result = await handle.completed;
