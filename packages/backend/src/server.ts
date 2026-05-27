@@ -8,6 +8,7 @@ import { createEventBus, registerWebSocketRoutes } from "./ws/events.js";
 import { createMissionRunner } from "./orchestrator/mission-runner.js";
 import { missionRoutes } from "./routes/missions.js";
 import { checkpointRoutes } from "./routes/checkpoints.js";
+import { registerGlobalAuth } from "./routes/auth.js";
 
 async function main() {
   const config = loadConfig();
@@ -53,7 +54,11 @@ async function main() {
 
   const app = Fastify({ logger: true });
   await app.register(websocket);
-  registerWebSocketRoutes(app, eventBus);
+
+  // Auth (no-op if API_KEY not set)
+  registerGlobalAuth(app, config.apiKey);
+
+  registerWebSocketRoutes(app, eventBus, config.apiKey);
 
   // Health endpoint
   app.get("/health", async () => {

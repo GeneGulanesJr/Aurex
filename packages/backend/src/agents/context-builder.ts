@@ -35,6 +35,45 @@ export interface ValidatorContextInput {
   units: ValidatorUnitContext[];
 }
 
+export interface ResearchContextInput {
+  missionDescription: string;
+  milestoneTitle: string;
+  milestoneDescription: string;
+  unitDescriptions: string[];
+  declaredPaths: string[];
+  declaredModules: string[];
+}
+
+export function buildResearchContext(input: ResearchContextInput): string {
+  const sections: string[] = [];
+
+  sections.push(`# Mission Context\n\n${input.missionDescription}`);
+  sections.push(`## Milestone: ${input.milestoneTitle}\n\n${input.milestoneDescription}`);
+
+  if (input.unitDescriptions.length > 0) {
+    sections.push(
+      `## Working Units\n\nResearch domain knowledge relevant to these tasks:\n${input.unitDescriptions.map((d) => `- ${d}`).join("\n")}`,
+    );
+  }
+
+  const scopeParts: string[] = [];
+  if (input.declaredPaths.length > 0) {
+    scopeParts.push(`- Paths: ${input.declaredPaths.join(", ")}`);
+  }
+  if (input.declaredModules.length > 0) {
+    scopeParts.push(`- Modules: ${input.declaredModules.join(", ")}`);
+  }
+  if (scopeParts.length > 0) {
+    sections.push(`## Scope\n\n${scopeParts.join("\n")}`);
+  }
+
+  sections.push(
+    `## FINDINGS\n\nUse the \`write_finding\` tool to submit findings. Each finding must have a domain (JSON array of module tags), a clear title, substantive content, and a relevance level (high/medium/low). Use \`search_memory\` to look up existing project context.`,
+  );
+
+  return sections.join("\n\n");
+}
+
 export function buildWorkerContext(input: WorkerContextInput): string {
   const sections: string[] = [];
 

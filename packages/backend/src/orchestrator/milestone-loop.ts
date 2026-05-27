@@ -5,7 +5,7 @@ import type { PinyxClient } from "../clients/pinyx-client.js";
 import { createNegotiator } from "./negotiator.js";
 import { createWorktreeManager } from "./worktree.js";
 import { createAgentSpawner } from "../agents/agent-spawner.js";
-import { buildValidatorContext, buildWorkerContext, type ValidatorUnitContext } from "../agents/context-builder.js";
+import { buildValidatorContext, buildWorkerContext, buildResearchContext, type ValidatorUnitContext } from "../agents/context-builder.js";
 import { createIntegrationLifecycle } from "./integration-lifecycle.js";
 
 export type MilestoneLoopResult =
@@ -178,6 +178,41 @@ export function createMilestoneLoop(
             const summary = `Mission cost cap exceeded: $${cumulativeCost.toFixed(2)} >= $${config.costCap.toFixed(2)}`;
             return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
           }
+
+          // --- RESEARCH PHASE ---
+          const allDeclaredPaths = units.flatMap((u: WorkingUnit) => u.declaredPaths);
+          const allDeclaredModules = [...new Set(units.flatMap((u: WorkingUnit) => u.declaredModules))];
+          const researchAgentId = `research-${milestone.id}`;
+          const researchContext = buildResearchContext({
+            missionDescription: mission.description,
+            milestoneTitle: milestone.title,
+            milestoneDescription: milestone.description,
+            unitDescriptions: units.map((u: WorkingUnit) => u.description),
+            declaredPaths: allDeclaredPaths,
+            declaredModules: allDeclaredModules,
+          });
+
+          callbacks.onAgentStatus(researchAgentId, "research", "spawned", milestone.id);
+          const researchHandle = await spawner.spawn({
+            agentType: "research",
+            missionId: mission.id,
+            milestoneId: milestone.id,
+            cwd: loopConfig.repoRoot,
+            skillFilePath: `${loopConfig.repoRoot}/packages/backend/src/skills/research.md`,
+            contextContent: researchContext,
+            taskPrompt: `Research domain knowledge for milestone "${milestone.title}". Investigate the codebase areas relevant to the declared paths and modules. Submit findings using write_finding.`,
+            timeout: config.workerTimeouts.build,
+          });
+
+          callbacks.onAgentStatus(researchAgentId, "research", "researching", milestone.id);
+          const researchResult = await researchHandle.completed;
+          callbacks.onAgentStatus(
+            researchAgentId,
+            "research",
+            researchResult.status === "completed" ? "completed" : researchResult.status,
+            milestone.id,
+          );
+          researchHandle.dispose();
 
           // --- VALIDATOR PHASE ---
           const handoffs = await lapis.getHandoffsForMilestone(milestone.id);
