@@ -121,7 +121,7 @@ describe("milestone loop — concurrent worker spawning", () => {
     expect(workerRegistrations.length).toBeGreaterThanOrEqual(2);
 
     // Both should complete (2 workers + 1 validator_scrutiny = at least 3 registrations)
-    expect(result.status).toBe("completed");
+    expect(result.status).toBe("checkpoint_needed");
   });
 
   it("spawns truly concurrent — both workers show 'spawned' before either 'completed'", async () => {
@@ -188,7 +188,7 @@ describe("milestone loop — concurrent worker spawning", () => {
     const result = await loop.run(makeMission(), [makeMilestone()]);
 
     // Both workers should still complete (just not concurrently — but in test they're instant)
-    expect(result.status).toBe("completed");
+    expect(result.status).toBe("checkpoint_needed");
     const workerRegistrations = (lapis.registerAgentSession as any).mock.calls
       .filter((c: any[]) => c[0] === "worker");
     expect(workerRegistrations.length).toBeGreaterThanOrEqual(2);

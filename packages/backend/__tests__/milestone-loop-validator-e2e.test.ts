@@ -171,13 +171,9 @@ describe("milestone loop validator E2E", () => {
 
     const result = await loop.run(mission, [milestone]);
 
-    if (result.status !== "completed") {
-      throw new Error(JSON.stringify({
-        result,
-        handoffs: handoffs.length,
-        verdicts,
-        agentStatuses: callbacks.onAgentStatus.mock.calls,
-      }, null, 2));
+    expect(result.status).toBe("checkpoint_needed");
+    if (result.status === "checkpoint_needed") {
+      expect(result.trigger).toBe("milestone_complete");
     }
     expect(handoffs).toHaveLength(1);
     expect(verdicts).toHaveLength(1);
@@ -187,7 +183,8 @@ describe("milestone loop validator E2E", () => {
       failedUnitIds: [],
     });
     expect(lapis.updateMilestoneStatus).toHaveBeenCalledWith("ms-e2e", "validating");
-    expect(lapis.updateMilestoneStatus).toHaveBeenCalledWith("ms-e2e", "completed");
+    // Milestone is NOT auto-completed — checkpoint needed for human approval
+    expect(lapis.updateMilestoneStatus).not.toHaveBeenCalledWith("ms-e2e", "completed");
     expect(callbacks.onEscalation).toHaveBeenCalledWith(
       "mission-e2e",
       { kind: "milestone_complete", milestoneId: "ms-e2e", releaseBranch: "release/mission-e2e/1-ms-e2e" },
