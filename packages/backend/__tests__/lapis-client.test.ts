@@ -89,15 +89,28 @@ describe("LaPisClient (HTTP)", () => {
     );
   });
 
+  it("getHandoffsForMilestone fetches handoff records for a milestone", async () => {
+    mockFetch.mockReturnValue(mockResponse([]));
+    await client.getHandoffsForMilestone("ms-1");
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:9100/milestones/ms-1/handoffs",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
   it("throws on non-2xx response", async () => {
     mockFetch.mockReturnValue(mockResponse({ error: "not found" }, 404));
     await expect(client.getMission("nonexistent")).rejects.toThrow();
   });
 
-  it("runCompression logs skip message", async () => {
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  it("runCompression calls the compress endpoint", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true, status: 200, text: () => Promise.resolve("{}"), json: () => Promise.resolve({}),
+    });
     await client.runCompression("m-1", "post_milestone");
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("[compression] Skipped"));
-    logSpy.mockRestore();
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining("/missions/m-1/compress"),
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 });

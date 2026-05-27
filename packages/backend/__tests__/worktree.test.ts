@@ -42,6 +42,14 @@ describe("WorktreeManager", () => {
     expect(calls.some((c) => c.includes("merge task/worker-a/auth-001"))).toBe(true);
   });
 
+  it("creates a branch from a base branch", async () => {
+    const manager = createWorktreeManager("/repo/root");
+    await manager.createBranch("release/milestone-1", "develop");
+
+    const calls = mockExecAsync.mock.calls.map((c) => c[0] as string);
+    expect(calls.some((c) => c.includes("branch release/milestone-1 develop"))).toBe(true);
+  });
+
   it("prunes a worktree", async () => {
     const manager = createWorktreeManager("/repo/root");
     await manager.pruneWorktree("/repo/root/.git-worktrees/worker-a-auth-001");

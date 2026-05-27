@@ -20,7 +20,12 @@ export function createNegotiator(lapis: LaPisClient) {
       const verdicts: ValidationVerdict[] = await lapis.getVerdicts(milestoneId);
 
       if (verdicts.length === 0) {
-        return { decision: "escalate", reason: "No validation verdicts were written for this milestone" };
+        return { decision: "escalate", reason: "No validator verdicts were recorded" };
+      }
+
+      const scrutinyVerdict = verdicts.find((v) => v.validatorType === "validator_scrutiny");
+      if (!scrutinyVerdict) {
+        return { decision: "escalate", reason: "Missing scrutiny validator verdict" };
       }
 
       // Check if all verdicts pass

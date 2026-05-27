@@ -14,8 +14,13 @@ vi.mock("@earendil-works/pi-coding-agent", () => {
   return {
     createAgentSession: vi.fn().mockResolvedValue({
       session: {
-        prompt: vi.fn().mockResolvedValue(undefined),
-        subscribe: vi.fn().mockReturnValue(() => {}),
+        prompt: vi.fn().mockImplementation(async function (this: any) {
+          this.subscriber?.({ type: "agent_end" });
+        }),
+        subscribe: vi.fn().mockImplementation(function (this: any, fn: any) {
+          this.subscriber = fn;
+          return () => {};
+        }),
         abort: vi.fn(),
         dispose: vi.fn(),
         sessionId: "mock-session",
@@ -62,10 +67,14 @@ describe("milestone loop", () => {
       incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-2", retries: 0, rescopes: 0 }),
       getVerdicts: vi.fn().mockResolvedValue([
         { verdict: "pass", validatorType: "validator_scrutiny" },
-        { verdict: "pass", validatorType: "validator_user_testing" },
       ]),
       getWorkingUnitsForMilestone: vi.fn().mockResolvedValue([]),
-      getContractHistory: vi.fn().mockResolvedValue([]),
+      getContractHistory: vi.fn().mockResolvedValue([
+        { id: "c-2", content: { criteria: [], testCommands: [], acceptanceBehavior: "" } },
+      ]),
+      getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
+      registerAgentSession: vi.fn(),
+      runCompression: vi.fn().mockResolvedValue(undefined),
     } as unknown as LaPisClient;
 
     const callbacks = {
@@ -100,7 +109,12 @@ describe("milestone loop", () => {
         { verdict: "fail", validatorType: "validator_scrutiny", classification: "blocking" },
       ]),
       getWorkingUnitsForMilestone: vi.fn().mockResolvedValue([]),
-      getContractHistory: vi.fn().mockResolvedValue([]),
+      getContractHistory: vi.fn().mockResolvedValue([
+        { id: "c-1", content: { criteria: [], testCommands: [], acceptanceBehavior: "" } },
+      ]),
+      getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
+      registerAgentSession: vi.fn(),
+      runCompression: vi.fn().mockResolvedValue(undefined),
     } as unknown as LaPisClient;
 
     const callbacks = {

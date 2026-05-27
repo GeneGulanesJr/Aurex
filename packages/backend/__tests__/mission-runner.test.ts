@@ -10,8 +10,14 @@ vi.mock("@earendil-works/pi-coding-agent", () => {
   return {
     createAgentSession: vi.fn().mockResolvedValue({
       session: {
-        prompt: vi.fn().mockResolvedValue(undefined),
-        subscribe: vi.fn().mockReturnValue(() => {}),
+        prompt: vi.fn().mockImplementation(function (this: any) {
+          this.subscriber?.({ type: "agent_end" });
+          return Promise.resolve();
+        }),
+        subscribe: vi.fn().mockImplementation(function (this: any, fn: any) {
+          this.subscriber = fn;
+          return () => {};
+        }),
         abort: vi.fn(),
         dispose: vi.fn(),
         sessionId: "mock",
@@ -66,10 +72,12 @@ function createMockLapis(): LaPisClient {
     updateMilestoneStatus: vi.fn().mockResolvedValue(undefined),
     updateWorkingUnitStatus: vi.fn().mockResolvedValue(undefined),
     getWorkingUnitsForMilestone: vi.fn().mockResolvedValue([]),
-    getContractHistory: vi.fn().mockResolvedValue([]),
+    getContractHistory: vi.fn().mockResolvedValue([
+      { id: "c-1", content: { criteria: [], testCommands: [], acceptanceBehavior: "" } },
+    ]),
+    getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
     getVerdicts: vi.fn().mockResolvedValue([
       { verdict: "pass", validatorType: "validator_scrutiny" },
-      { verdict: "pass", validatorType: "validator_user_testing" },
     ]),
     incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
     registerAgentSession: vi.fn().mockResolvedValue(undefined),
@@ -81,6 +89,7 @@ function createMockLapis(): LaPisClient {
     resolveCheckpoint: vi.fn().mockResolvedValue({ id: "cp-1", status: "resolved", decision: "approve" }),
     getPendingCheckpoints: vi.fn().mockResolvedValue([]),
     listMissions: vi.fn().mockResolvedValue([]),
+    runCompression: vi.fn().mockResolvedValue(undefined),
   } as unknown as LaPisClient;
 }
 

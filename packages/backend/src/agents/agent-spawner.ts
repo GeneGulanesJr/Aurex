@@ -7,7 +7,8 @@ import {
 import type { AgentType, WorkerStatus } from "@aurex/shared";
 import { AGENT_TOOLS } from "./factory.js";
 import { createWorkerTools } from "./worker-tools.js";
-import { createValidatorTools, type ValidatorToolContext } from "./validator-tools.js";
+import { createValidatorTools } from "./validator-tools.js";
+import { createResearchTools } from "./research-tools.js";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import path from "node:path";
 
@@ -15,13 +16,15 @@ export interface AgentSpawnerConfig {
   lapis: LaPisClient;
   agentDir: string;
   defaultTimeout: number;
+  onCost?: (missionId: string, totalCost: number, totalTokens: number, delta: number) => void;
 }
 
 export interface SpawnOptions {
   agentType: AgentType;
-  unitId: string;
+  unitId?: string;
   missionId: string;
   milestoneId: string;
+  contractId?: string;
   cwd: string;
   skillFilePath: string;
   contextContent: string;
@@ -53,24 +56,10 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
     async spawn(opts: SpawnOptions): Promise<SpawnHandle> {
       const timeout = opts.timeout ?? defaultTimeout;
       const tools = AGENT_TOOLS[opts.agentType];
-
-      // Select custom tools based on agent type
-      let customTools: any[];
-      if (opts.agentType === "worker") {
-        customTools = createWorkerTools(lapis, opts.unitId);
-      } else if (opts.agentType === "validator_scrutiny" || opts.agentType === "validator_user_testing") {
-        const vCtx = opts.validatorContext ?? {
-          milestoneId: opts.milestoneId,
-          contractId: "",
-          validatorType: opts.agentType as "validator_scrutiny" | "validator_user_testing",
-          sessionId: "", // will be set after session creation
-        };
-        customTools = createValidatorTools(lapis, vCtx);
-        // Store reference so we can set sessionId after session is created
-        (opts as any)._validatorCtx = vCtx;
-      } else {
-        customTools = [];
-      }
+      let sessionId = "";
+      const customTools = createCustomTools(lapis, opts, () => sessionId);
+      let cumulativeCost = 0;
+      let cumulativeTokens = 0;
 
       // Build ResourceLoader with injected context and skill
       const skillBaseDir = path.dirname(opts.skillFilePath);
@@ -108,10 +97,11 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
         cwd: opts.cwd,
         agentDir,
         tools,
-        customTools: customTools,
+        customTools,
         resourceLoader: loader,
         sessionManager: SessionManager.inMemory(opts.cwd),
       });
+      sessionId = session.sessionId;
 
       // Set sessionId on validator context (captured by reference in tools)
       if ((opts as any)._validatorCtx) {
@@ -128,7 +118,9 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
       );
 
       // Update unit status
-      await lapis.updateWorkingUnitStatus(opts.unitId, "spawned" as WorkerStatus);
+      if (opts.agentType === "worker" && opts.unitId) {
+        await lapis.updateWorkingUnitStatus(opts.unitId, "spawned" as WorkerStatus);
+      }
 
       // Set up completion tracking
       let resolveCompleted!: (result: SpawnResult) => void;
@@ -154,6 +146,26 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
               sessionId: session.sessionId,
               error: event.assistantMessageEvent.message ?? "unknown error",
             });
+          }
+
+          // Parse usage data from Pi SDK events
+          const usage = event.assistantMessageEvent?.usage;
+          if (usage && typeof usage.cost === "number") {
+            const delta = usage.cost;
+            cumulativeCost += delta;
+            cumulativeTokens += usage.totalTokens ?? 0;
+
+            lapis.logCost({
+              missionId: opts.missionId,
+              agentSessionId: session.sessionId,
+              model: opts.agentType,
+              promptTokens: usage.promptTokens ?? 0,
+              completionTokens: usage.completionTokens ?? 0,
+              cost: delta,
+              timestamp: new Date().toISOString(),
+            }).catch(() => {});
+
+            config.onCost?.(opts.missionId, cumulativeCost, cumulativeTokens, delta);
           }
         }
       });
@@ -205,4 +217,38 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
       // Future: track all active handles and abort them
     },
   };
+}
+
+function createCustomTools(
+  lapis: LaPisClient,
+  opts: SpawnOptions,
+  getSessionId: () => string,
+) {
+  if (opts.agentType === "worker") {
+    if (!opts.unitId) {
+      throw new Error("worker spawn requires unitId");
+    }
+    return createWorkerTools(lapis, opts.unitId);
+  }
+
+  if (opts.agentType === "validator_scrutiny" || opts.agentType === "validator_user_testing") {
+    if (!opts.contractId) {
+      throw new Error(`${opts.agentType} spawn requires contractId`);
+    }
+    return createValidatorTools(lapis, {
+      milestoneId: opts.milestoneId,
+      contractId: opts.contractId,
+      validatorType: opts.agentType,
+      getSessionId,
+    });
+  }
+
+  if (opts.agentType === "research") {
+    return createResearchTools(lapis, {
+      missionId: opts.missionId,
+      authorId: getSessionId(),
+    });
+  }
+
+  return [];
 }

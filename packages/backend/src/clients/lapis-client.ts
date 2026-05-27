@@ -2,7 +2,7 @@
 import type {
   Mission, MissionConfig, Milestone, MilestoneSpec,
   WorkingUnit, WorkingUnitSpec, WorkerStatus,
-  Handoff, HandoffResult, Broadcast, BroadcastLifecycle,
+  Handoff, HandoffRecord, HandoffResult, Broadcast, BroadcastLifecycle,
   ResearchFinding, ResearchLifecycle, StandingContext,
   AgentSessionRecord, CostSummary,
   RetryCounter, RescopeEvent, MemoryResult,
@@ -31,6 +31,7 @@ export interface LaPisClient {
 
   // Handoffs
   writeHandoff(unitId: string, handoff: Handoff): Promise<HandoffResult>;
+  getHandoffsForMilestone(milestoneId: string): Promise<HandoffRecord[]>;
 
   // Validation contracts (append-only)
   createContract(milestoneId: string, contract: { content: { criteria: string[]; testCommands: string[]; acceptanceBehavior: string } }): Promise<{ id: string; milestoneId: string; version: number; content: unknown; supersedes: string | null; supersededBy: string | null; rescopeEventId: string | null; createdAt: string }>;
@@ -145,6 +146,9 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
     writeHandoff(unitId, handoff) {
       return post(`/units/${unitId}/handoff`, handoff);
     },
+    getHandoffsForMilestone(milestoneId) {
+      return get(`/milestones/${milestoneId}/handoffs`);
+    },
 
     // Validation contracts
     createContract(milestoneId, contract) {
@@ -225,8 +229,7 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
 
     // State compression (stubbed — logs skip, never silent)
     runCompression(missionId, trigger) {
-      console.log(`[compression] Skipped — not implemented (trigger: ${trigger}, missionId: ${missionId})`);
-      return Promise.resolve();
+      return post(`/missions/${missionId}/compress`, { trigger });
     },
 
     // Checkpoints

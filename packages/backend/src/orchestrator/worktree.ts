@@ -6,6 +6,7 @@ const execAsync = promisify(exec);
 
 export interface WorktreeManager {
   createWorktree(agentId: string, taskId: string, agentBranch: string): Promise<{ worktreePath: string; taskBranch: string }>;
+  createBranch(branchName: string, baseBranch: string): Promise<void>;
   mergeToTarget(sourceBranch: string, targetBranch: string): Promise<void>;
   pruneWorktree(worktreePath: string): Promise<void>;
 }
@@ -30,6 +31,10 @@ export function createWorktreeManager(repoRoot: string): WorktreeManager {
       await git(`worktree add ${worktreePath} ${taskBranch}`);
 
       return { worktreePath, taskBranch };
+    },
+
+    async createBranch(branchName, baseBranch) {
+      await git(`branch ${branchName} ${baseBranch}`);
     },
 
     async mergeToTarget(sourceBranch, targetBranch) {

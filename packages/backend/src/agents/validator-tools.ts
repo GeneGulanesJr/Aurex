@@ -1,59 +1,63 @@
-// packages/backend/src/agents/validator-tools.ts
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import type { AgentType, ValidationVerdict } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 
 export interface ValidatorToolContext {
   milestoneId: string;
   contractId: string;
-  validatorType: "validator_scrutiny" | "validator_user_testing";
-  sessionId: string;
+  validatorType: Extract<AgentType, "validator_scrutiny" | "validator_user_testing">;
+  getSessionId: () => string;
 }
 
-export function createValidatorTools(lapis: LaPisClient, ctx: ValidatorToolContext) {
+export function createValidatorTools(lapis: LaPisClient, context: ValidatorToolContext) {
   const writeVerdict = defineTool({
     name: "write_verdict",
     label: "Write Verdict",
     description:
-      "Submit your validation verdict. You must evaluate the implementation against the validation contract and report pass or fail with detailed findings.",
+      "Submit the required validation verdict for this milestone. Use exactly once when validation is complete.",
     parameters: Type.Object({
       verdict: Type.Union([Type.Literal("pass"), Type.Literal("fail")], {
-        description: "Your verdict: pass or fail",
+        description: "Whether the milestone passed validation",
       }),
       findings: Type.String({
-        description: "Detailed explanation of your evaluation. For failures, explain what is wrong and why.",
+        description: "Detailed validation findings. For pass, summarize what was checked.",
       }),
-      failedUnitIds: Type.String({
-        description: 'JSON array of working unit IDs that failed. Use "[]" if all passed.',
+      failedUnitIds: Type.Array(Type.String(), {
+        description: "Working unit IDs that failed validation. Empty when passing.",
       }),
     }),
     execute: async (_toolCallId: string, params: Record<string, unknown>) => {
-      let failedUnitIds: string[];
-      try {
-        failedUnitIds = JSON.parse(params.failedUnitIds as string);
-        if (!Array.isArray(failedUnitIds)) failedUnitIds = [];
-      } catch {
-        failedUnitIds = [];
+      const sessionId = context.getSessionId();
+      if (!sessionId) {
+        return {
+          content: [{ type: "text" as const, text: "Verdict rejected: validator session is not registered yet." }],
+          details: {},
+        };
       }
 
-      await lapis.writeVerdict(ctx.sessionId, {
-        milestoneId: ctx.milestoneId,
-        contractId: ctx.contractId,
-        validatorType: ctx.validatorType,
+      const verdict: Omit<ValidationVerdict, "id" | "sessionId"> = {
+        milestoneId: context.milestoneId,
+        contractId: context.contractId,
+        validatorType: context.validatorType,
         verdict: params.verdict as "pass" | "fail",
         findings: params.findings as string,
-        failedUnitIds,
+        failedUnitIds: Array.isArray(params.failedUnitIds)
+          ? (params.failedUnitIds as string[])
+          : [],
         timestamp: new Date().toISOString(),
-      });
+      };
+
+      const written = await lapis.writeVerdict(sessionId, verdict);
 
       return {
         content: [
           {
             type: "text" as const,
-            text: `Verdict (${params.verdict}) accepted and recorded.`,
+            text: `Verdict accepted: ${written.verdict}. Your validation result has been recorded.`,
           },
         ],
-        details: {},
+        details: { verdictId: written.id } as Record<string, unknown>,
       };
     },
   });
