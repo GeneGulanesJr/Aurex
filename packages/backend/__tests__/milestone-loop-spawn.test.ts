@@ -38,9 +38,7 @@ const { mockExecAsync } = vi.hoisted(() => ({
   mockExecAsync: vi.fn().mockResolvedValue({ stdout: "", stderr: "" }),
 }));
 
-vi.mock("node:child_process", () => ({
-  exec: vi.fn(),
-}));
+vi.mock("node:child_process", () => ({ exec: vi.fn(), execFile: vi.fn() }));;
 vi.mock("node:util", () => ({
   promisify: () => mockExecAsync,
 }));
