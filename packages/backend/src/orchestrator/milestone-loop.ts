@@ -124,6 +124,7 @@ export function createMilestoneLoop(
               const { worktreePath, taskBranch } = await worktreeManager.createWorktree(
                 agentId, unit.id, loopConfig.gitMainBranch,
               );
+              await worktreeManager.installBranchGuard(worktreePath, taskBranch);
               const contextContent = buildWorkerContext({
                 missionDescription: mission.description,
                 milestoneTitle: milestone.title,
