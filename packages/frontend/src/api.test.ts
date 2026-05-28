@@ -17,7 +17,7 @@ describe("frontend api", () => {
     mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => payload });
 
     await expect(getCurrentMission()).resolves.toEqual(payload);
-    expect(mockFetch).toHaveBeenCalledWith("/api/missions/current");
+    expect(mockFetch).toHaveBeenCalledWith("/api/missions/current", expect.objectContaining({ headers: expect.any(Object) }));
   });
 
   it("returns null when there is no active mission", async () => {

@@ -19,7 +19,10 @@ export function App() {
     eventsRef.current = [...eventsRef.current.slice(-49), event];
   }, [missionsWsHandler, missionWsHandler]);
 
-  const { connected } = useWebSocket(combinedHandler);
+  const { connected } = useWebSocket(combinedHandler, {
+    missionId: missionsState.selectedMissionId,
+    apiKey: import.meta.env.VITE_AUREX_API_KEY || undefined,
+  });
 
   const handleDecision = useCallback(async (decision: CheckpointDecision, guidance?: string, reason?: string) => {
     if (!state.mission) return;
