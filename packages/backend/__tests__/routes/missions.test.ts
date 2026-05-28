@@ -106,4 +106,77 @@ describe("GET /api/missions/current", () => {
 
     expect(response.statusCode).toBe(404);
   });
+
+  it("hydrates current mission with milestones and active workers", async () => {
+    const mission = { id: "m1", description: "Ship feature", status: "running", configJson: {} } as any;
+    const milestones = [
+      { id: "ms1", missionId: "m1", title: "Build", description: "Build", orderIndex: 0, status: "in_progress", validationContractId: "c1" },
+    ];
+    const units = [
+      { id: "u1", milestoneId: "ms1", description: "Active", status: "running", declaredPaths: [], declaredModules: [] },
+      { id: "u2", milestoneId: "ms1", description: "Done", status: "completed", declaredPaths: [], declaredModules: [] },
+    ];
+
+    const app = Fastify();
+    const mockLapis = {
+      getMission: vi.fn().mockResolvedValue(mission),
+      getMilestonesForMission: vi.fn().mockResolvedValue(milestones),
+      getWorkingUnitsForMilestone: vi.fn().mockResolvedValue(units),
+      getMissionCost: vi.fn().mockResolvedValue({ totalCost: 1.23, totalTokens: 500, entries: 1 }),
+    } as unknown as LaPisClient;
+    const pool = createMockPool([{ missionId: "m1", state: "executing" }]);
+
+    app.register(missionRoutes, { lapis: mockLapis, pool });
+
+    const response = await app.inject({ method: "GET", url: "/api/missions/current" });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.milestones).toHaveLength(1);
+    expect(body.activeWorkers.map((u: any) => u.id)).toEqual(["u1"]);
+  });
+});
+
+describe("GET /api/missions/:id", () => {
+  it("hydrates mission details with milestones and active workers", async () => {
+    const mission = { id: "m1", description: "Ship feature", status: "running", configJson: {} } as any;
+    const milestones = [
+      { id: "ms1", missionId: "m1", title: "Build", description: "Build", orderIndex: 0, status: "in_progress", validationContractId: "c1" },
+    ];
+    const units = [
+      { id: "u1", milestoneId: "ms1", description: "Active", status: "running", declaredPaths: [], declaredModules: [] },
+      { id: "u2", milestoneId: "ms1", description: "Done", status: "completed", declaredPaths: [], declaredModules: [] },
+    ];
+
+    const app = Fastify();
+    const mockLapis = {
+      getMission: vi.fn().mockResolvedValue(mission),
+      getMilestonesForMission: vi.fn().mockResolvedValue(milestones),
+      getWorkingUnitsForMilestone: vi.fn().mockResolvedValue(units),
+      getMissionCost: vi.fn().mockResolvedValue({ totalCost: 1.23, totalTokens: 500, entries: 1 }),
+    } as unknown as LaPisClient;
+    app.register(missionRoutes, { lapis: mockLapis, pool: createMockPool() });
+
+    const response = await app.inject({ method: "GET", url: "/api/missions/m1" });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.milestones).toHaveLength(1);
+    expect(body.activeWorkers.map((u: any) => u.id)).toEqual(["u1"]);
+    expect(body.mission.id).toBe("m1");
+  });
+
+  it("returns 404 for unknown mission", async () => {
+    const app = Fastify();
+    const mockLapis = {
+      getMission: vi.fn().mockRejectedValue(new Error("not found")),
+      getMilestonesForMission: vi.fn().mockRejectedValue(new Error("not found")),
+      getMissionCost: vi.fn().mockRejectedValue(new Error("not found")),
+    } as unknown as LaPisClient;
+    app.register(missionRoutes, { lapis: mockLapis, pool: createMockPool() });
+
+    const response = await app.inject({ method: "GET", url: "/api/missions/unknown" });
+
+    expect(response.statusCode).toBe(404);
+  });
 });

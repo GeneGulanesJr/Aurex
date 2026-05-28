@@ -77,6 +77,9 @@ export interface LaPisClient {
   resolveCheckpoint(id: string, decision: CheckpointDecision, guidance?: string, reason?: string): Promise<CheckpointRecord>;
   getPendingCheckpoints(missionId: string): Promise<CheckpointRecord[]>;
 
+  // Milestones for mission (hydration)
+  getMilestonesForMission(missionId: string): Promise<Milestone[]>;
+
   // Mission listing
   listMissions(opts?: { status?: string }): Promise<Mission[]>;
 
@@ -244,6 +247,11 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
     },
     getPendingCheckpoints(missionId) {
       return get(`/missions/${missionId}/checkpoints?status=pending`);
+    },
+
+    // Milestones for mission (hydration)
+    getMilestonesForMission(missionId) {
+      return get(`/missions/${missionId}/milestones`);
     },
 
     // Mission listing

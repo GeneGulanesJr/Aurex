@@ -26,6 +26,20 @@ export async function missionRoutes(
     missionConfig?: MissionConfig;
   },
 ) {
+  async function hydrateMissionPayload(missionId: string) {
+    const [mission, milestones, cost] = await Promise.all([
+      lapis.getMission(missionId),
+      lapis.getMilestonesForMission(missionId),
+      lapis.getMissionCost(missionId),
+    ]);
+    const unitsByMilestone = await Promise.all(
+      milestones.map((milestone) => lapis.getWorkingUnitsForMilestone(milestone.id)),
+    );
+    const activeWorkers = unitsByMilestone
+      .flat()
+      .filter((unit) => !["completed", "failed", "timed_out"].includes(unit.status));
+    return { mission, milestones, activeWorkers, cost };
+  }
   app.post("/api/missions", async (request, reply) => {
     const { description } = request.body as { description: string };
     if (!description) {
@@ -44,9 +58,7 @@ export async function missionRoutes(
       return reply.status(404).send({ error: "No active mission" });
     }
     try {
-      const mission = await lapis.getMission(missionId);
-      const cost = await lapis.getMissionCost(missionId);
-      return { mission, milestones: [], activeWorkers: [], cost };
+      return await hydrateMissionPayload(missionId);
     } catch {
       return reply.status(404).send({ error: "Mission not found" });
     }
@@ -69,9 +81,7 @@ export async function missionRoutes(
   app.get("/api/missions/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     try {
-      const mission = await lapis.getMission(id);
-      const cost = await lapis.getMissionCost(id);
-      return { mission, milestones: [], activeWorkers: [], cost };
+      return await hydrateMissionPayload(id);
     } catch {
       return reply.status(404).send({ error: "Mission not found" });
     }
