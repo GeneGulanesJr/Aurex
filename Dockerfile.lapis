@@ -15,4 +15,4 @@ EXPOSE 9100
 HEALTHCHECK --interval=5s --timeout=3s --start-period=15s --retries=10 \
   CMD node -e "fetch('http://localhost:9100/health').then(r=>r.json()).then(j=>{if(j.status!=='ok')process.exit(1)})" || exit 1
 
-CMD ["node", "cli.js", "serve", "--port", "9100"]
+CMD ["node", "cli.js", "serve", "--host", "0.0.0.0", "--port", "9100"]

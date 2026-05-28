@@ -5,6 +5,8 @@
     "build": "pnpm -r run build",
     "clean": "pnpm -r run clean",
     "typecheck": "pnpm --filter @aurex/shared exec tsc -b --force && pnpm -r run typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:e2e": "bash scripts/e2e-docker.sh"
   },
   "engines": {

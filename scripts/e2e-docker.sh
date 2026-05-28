@@ -155,12 +155,12 @@ else
 fi
 
 # 10. WebSocket upgrade test
-WS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+WS_STATUS=$(curl -s --max-time 5 -o /dev/null -w "%{http_code}" \
   -H "Connection: Upgrade" \
   -H "Upgrade: websocket" \
   -H "Sec-WebSocket-Version: 13" \
   -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
-  "http://localhost:8080/ws")
+  "http://localhost:8080/ws" || true)
 if [ "$WS_STATUS" = "101" ]; then
   log_pass "WebSocket upgrade via frontend proxy returns 101"
 else
