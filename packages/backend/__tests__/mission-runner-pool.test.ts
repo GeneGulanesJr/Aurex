@@ -81,6 +81,7 @@ function createMockLapis(): LaPisClient {
     getVerdicts: vi.fn().mockResolvedValue([
       { verdict: "pass", validatorType: "validator_scrutiny" },
     ]),
+    getSessionsForMilestone: vi.fn().mockResolvedValue([]),
     incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
     registerAgentSession: vi.fn().mockResolvedValue(undefined),
     logCost: vi.fn().mockResolvedValue(undefined),

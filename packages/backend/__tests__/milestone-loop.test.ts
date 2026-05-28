@@ -69,6 +69,8 @@ describe("milestone loop", () => {
       getVerdicts: vi.fn().mockResolvedValue([
         { verdict: "pass", validatorType: "validator_scrutiny" },
       ]),
+      getSessionsForMilestone: vi.fn().mockResolvedValue([]),
+      updateWorkingUnitStatus: vi.fn(),
       getWorkingUnitsForMilestone: vi.fn().mockResolvedValue([]),
       getContractHistory: vi.fn().mockResolvedValue([
         { id: "c-2", content: { criteria: [], testCommands: [], acceptanceBehavior: "" } },
@@ -112,6 +114,8 @@ describe("milestone loop", () => {
       getVerdicts: vi.fn().mockResolvedValue([
         { verdict: "fail", validatorType: "validator_scrutiny", classification: "blocking" },
       ]),
+      getSessionsForMilestone: vi.fn().mockResolvedValue([]),
+      updateWorkingUnitStatus: vi.fn(),
       getWorkingUnitsForMilestone: vi.fn().mockResolvedValue([]),
       getContractHistory: vi.fn().mockResolvedValue([
         { id: "c-1", content: { criteria: [], testCommands: [], acceptanceBehavior: "" } },
@@ -163,6 +167,7 @@ describe("milestone loop", () => {
       updateMilestoneStatus: vi.fn(),
       incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
       getVerdicts: vi.fn().mockResolvedValue([]),
+      getSessionsForMilestone: vi.fn().mockResolvedValue([]),
       getWorkingUnitsForMilestone: vi.fn().mockResolvedValue([]),
       getContractHistory: vi.fn().mockResolvedValue([
         { id: "c-1", content: { criteria: [], testCommands: [], acceptanceBehavior: "" } },
