@@ -5,6 +5,7 @@ export interface IntegrationLifecycleResult {
   integrationBranch: string;
   releaseBranch: string;
   mergedBranches: string[];
+  [k: string]: unknown;
 }
 
 export interface IntegrationLifecycleInput {

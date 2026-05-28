@@ -15,7 +15,8 @@
     "@earendil-works/pi-coding-agent": "^0.75.5",
     "@fastify/websocket": "^11.0.0",
     "@sinclair/typebox": "^0.34.49",
-    "fastify": "^5.3.0"
+    "fastify": "^5.3.0",
+    "minimatch": "^10.2.5"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

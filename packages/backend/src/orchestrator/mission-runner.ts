@@ -1,4 +1,5 @@
 import type { CheckpointDecision, CheckpointTrigger, Milestone } from "@aurex/shared";
+import type { EscalationTrigger, EscalationContext, AgentType, AgentStatus, MilestoneStatus } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { PinyxClient } from "../clients/pinyx-client.js";
 import type { EventBus } from "../ws/events.js";
@@ -61,17 +62,16 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         pinyx,
         {
           onEscalation: (mId, trigger, context) => {
-            eventBus.emit({ type: "escalation", missionId: mId, trigger, context } as any);
+            eventBus.emit({ type: "escalation", missionId: mId, trigger: trigger as EscalationTrigger, context: context as EscalationContext });
           },
           onAgentStatus: (agentId, agentType, agentStatus, milestoneId) => {
-            eventBus.emit({ type: "agent_status", agentId, agentType, status: agentStatus, milestoneId } as any);
+            eventBus.emit({ type: "agent_status", agentId, agentType: agentType as AgentType, status: agentStatus as AgentStatus, milestoneId });
           },
           onMilestoneProgress: (milestoneId, milestoneStatus, completedUnits, totalUnits) => {
-            eventBus.emit({ type: "milestone_progress", milestoneId, status: milestoneStatus, completedUnits, totalUnits } as any);
+            eventBus.emit({ type: "milestone_progress", milestoneId, status: milestoneStatus as MilestoneStatus, completedUnits, totalUnits });
           },
           onCostUpdate: (mId, totalCost, totalTokens, delta) => {
-            eventBus.emit({ type: "cost_update", missionId: mId, totalCost, totalTokens, delta } as any);
-            // Trigger compression when cost exceeds 80% of budget
+            eventBus.emit({ type: "cost_update", missionId: mId, totalCost, totalTokens, delta });
             if (mission.configJson.costCap > 0 && totalCost >= mission.configJson.costCap * 0.8) {
               lapis.runCompression(mId, "budget_threshold" as any).catch(() => {});
             }
@@ -116,9 +116,9 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         eventBus.emit({
           type: "escalation",
           missionId,
-          trigger: { kind: loopResult.trigger, milestoneId: loopResult.milestoneId },
-          context: { summary: loopResult.summary, checkpointId },
-        } as any);
+          trigger: { kind: loopResult.trigger, milestoneId: loopResult.milestoneId } as EscalationTrigger,
+          context: { summary: loopResult.summary } as EscalationContext,
+        });
 
         const resolved = await checkpointManager.waitForResolution(checkpointId);
         const decision = resolved.decision as CheckpointDecision | undefined;
