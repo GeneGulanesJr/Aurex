@@ -91,6 +91,23 @@ async function main() {
     app.log.error(err);
     process.exit(1);
   }
+
+  let shuttingDown = false;
+  async function gracefulShutdown(signal: string) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`[shutdown] ${signal} received, draining agents...`);
+    await Promise.race([
+      pool.drain(),
+      new Promise<void>((resolve) => setTimeout(resolve, 30_000)),
+    ]);
+    console.log("[shutdown] Agents drained, closing server");
+    await app.close();
+    process.exit(0);
+  }
+
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 }
 
 main().catch(console.error);

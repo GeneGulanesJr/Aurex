@@ -1,4 +1,3 @@
-// packages/backend/src/agents/agent-spawner.ts
 import {
   createAgentSession,
   DefaultResourceLoader,
@@ -10,12 +9,15 @@ import { createWorkerTools } from "./worker-tools.js";
 import { createValidatorTools } from "./validator-tools.js";
 import { createResearchTools } from "./research-tools.js";
 import type { LaPisClient } from "../clients/lapis-client.js";
+import type { AgentLogger } from "./agent-logger.js";
 import path from "node:path";
 
 export interface AgentSpawnerConfig {
   lapis: LaPisClient;
   agentDir: string;
   defaultTimeout: number;
+  logger?: AgentLogger;
+  maxConcurrent?: number;
   onCost?: (missionId: string, totalCost: number, totalTokens: number, delta: number) => void;
 }
 
@@ -34,11 +36,8 @@ export interface SpawnOptions {
 
 export interface SpawnHandle {
   sessionId: string;
-  /** Resolves when the agent finishes (success, failure, or timeout) */
   completed: Promise<SpawnResult>;
-  /** Abort the agent immediately */
   abort(): void;
-  /** Dispose of the session resources */
   dispose(): void;
 }
 
@@ -49,10 +48,18 @@ export interface SpawnResult {
 }
 
 export function createAgentSpawner(config: AgentSpawnerConfig) {
-  const { lapis, agentDir, defaultTimeout } = config;
+  const { lapis, agentDir, defaultTimeout, logger, maxConcurrent } = config;
+  const activeHandles = new Map<string, SpawnHandle>();
 
   return {
     async spawn(opts: SpawnOptions): Promise<SpawnHandle> {
+      if (maxConcurrent && activeHandles.size >= maxConcurrent) {
+        throw new Error(
+          `AgentSpawner concurrency limit reached (${maxConcurrent}). ` +
+          `Active sessions: ${[...activeHandles.keys()].join(", ")}`,
+        );
+      }
+
       const timeout = opts.timeout ?? defaultTimeout;
       const tools = AGENT_TOOLS[opts.agentType];
       let sessionId = "";
@@ -60,7 +67,6 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
       let cumulativeCost = 0;
       let cumulativeTokens = 0;
 
-      // Build ResourceLoader with injected context and skill
       const skillBaseDir = path.dirname(opts.skillFilePath);
       const loader = new DefaultResourceLoader({
         cwd: opts.cwd,
@@ -91,7 +97,6 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
       });
       await loader.reload();
 
-      // Create Pi SDK session
       const { session } = await createAgentSession({
         cwd: opts.cwd,
         agentDir,
@@ -102,12 +107,10 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
       });
       sessionId = session.sessionId;
 
-      // Set sessionId on validator context (captured by reference in tools)
       if ((opts as any)._validatorCtx) {
         (opts as any)._validatorCtx.sessionId = session.sessionId;
       }
 
-      // Register in LaPis
       await lapis.registerAgentSession(
         opts.agentType,
         session.sessionId,
@@ -116,30 +119,53 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
         opts.unitId,
       );
 
-      // Update unit status
       if (opts.agentType === "worker" && opts.unitId) {
         await lapis.updateWorkingUnitStatus(opts.unitId, "spawned" as WorkerStatus);
       }
 
-      // Set up completion tracking
+      logger?.log({
+        sessionId: session.sessionId,
+        agentType: opts.agentType,
+        missionId: opts.missionId,
+        milestoneId: opts.milestoneId,
+        unitId: opts.unitId,
+        event: "spawned",
+      });
+
       let resolveCompleted!: (result: SpawnResult) => void;
       const completed = new Promise<SpawnResult>((resolve) => {
         resolveCompleted = resolve;
       });
 
-      // Subscribe to events for lifecycle tracking
       let settled = false;
       const unsubscribe = session.subscribe((event: any) => {
         if (settled) return;
 
         if (event.type === "agent_end") {
           settled = true;
+          logger?.log({
+            sessionId: session.sessionId,
+            agentType: opts.agentType,
+            missionId: opts.missionId,
+            milestoneId: opts.milestoneId,
+            unitId: opts.unitId,
+            event: "completed",
+          });
           resolveCompleted({ status: "completed", sessionId: session.sessionId });
         }
 
         if (event.type === "message_update") {
           if (event.assistantMessageEvent?.type === "error") {
             settled = true;
+            logger?.log({
+              sessionId: session.sessionId,
+              agentType: opts.agentType,
+              missionId: opts.missionId,
+              milestoneId: opts.milestoneId,
+              unitId: opts.unitId,
+              event: "failed",
+              data: { error: event.assistantMessageEvent.message },
+            });
             resolveCompleted({
               status: "failed",
               sessionId: session.sessionId,
@@ -147,12 +173,34 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
             });
           }
 
-          // Parse usage data from Pi SDK events
+          const toolName = event.assistantMessageEvent?.toolCall?.name;
+          if (toolName) {
+            logger?.log({
+              sessionId: session.sessionId,
+              agentType: opts.agentType,
+              missionId: opts.missionId,
+              milestoneId: opts.milestoneId,
+              unitId: opts.unitId,
+              event: "tool_call",
+              data: { tool: toolName },
+            });
+          }
+
           const usage = event.assistantMessageEvent?.usage;
           if (usage && typeof usage.cost === "number") {
             const delta = usage.cost;
             cumulativeCost += delta;
             cumulativeTokens += usage.totalTokens ?? 0;
+
+            logger?.log({
+              sessionId: session.sessionId,
+              agentType: opts.agentType,
+              missionId: opts.missionId,
+              milestoneId: opts.milestoneId,
+              unitId: opts.unitId,
+              event: "cost_update",
+              data: { cost: delta, cumulativeCost, cumulativeTokens },
+            });
 
             lapis.logCost({
               missionId: opts.missionId,
@@ -169,19 +217,43 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
         }
       });
 
-      // Start timeout race
       const timeoutId = setTimeout(() => {
         if (!settled) {
           settled = true;
           session.abort();
+          logger?.log({
+            sessionId: session.sessionId,
+            agentType: opts.agentType,
+            missionId: opts.missionId,
+            milestoneId: opts.milestoneId,
+            unitId: opts.unitId,
+            event: "timed_out",
+          });
           resolveCompleted({ status: "timed_out", sessionId: session.sessionId });
         }
       }, timeout);
 
-      // Send the task prompt — completion tracked via events
+      logger?.log({
+        sessionId: session.sessionId,
+        agentType: opts.agentType,
+        missionId: opts.missionId,
+        milestoneId: opts.milestoneId,
+        unitId: opts.unitId,
+        event: "prompt_sent",
+      });
+
       session.prompt(opts.taskPrompt).catch((err: Error) => {
         if (!settled) {
           settled = true;
+          logger?.log({
+            sessionId: session.sessionId,
+            agentType: opts.agentType,
+            missionId: opts.missionId,
+            milestoneId: opts.milestoneId,
+            unitId: opts.unitId,
+            event: "failed",
+            data: { error: err.message },
+          });
           resolveCompleted({
             status: "failed",
             sessionId: session.sessionId,
@@ -190,30 +262,55 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
         }
       });
 
-      // Cleanup on completion
-      completed.finally(() => {
-        clearTimeout(timeoutId);
-        unsubscribe();
-      });
-
-      return {
+      const handle: SpawnHandle = {
         sessionId: session.sessionId,
         completed,
         abort() {
           if (!settled) {
             settled = true;
             session.abort();
+            logger?.log({
+              sessionId: session.sessionId,
+              agentType: opts.agentType,
+              missionId: opts.missionId,
+              milestoneId: opts.milestoneId,
+              unitId: opts.unitId,
+              event: "aborted",
+            });
             resolveCompleted({ status: "failed", sessionId: session.sessionId, error: "aborted" });
           }
         },
         dispose() {
+          activeHandles.delete(session.sessionId);
           session.dispose();
         },
       };
+
+      activeHandles.set(session.sessionId, handle);
+
+      completed.finally(() => {
+        clearTimeout(timeoutId);
+        unsubscribe();
+        activeHandles.delete(session.sessionId);
+      });
+
+      return handle;
     },
 
     shutdown() {
-      // Future: track all active handles and abort them
+      for (const [, handle] of activeHandles) {
+        handle.abort();
+        handle.dispose();
+      }
+      activeHandles.clear();
+    },
+
+    getActiveCount(): number {
+      return activeHandles.size;
+    },
+
+    getActiveSessions(): string[] {
+      return [...activeHandles.keys()];
     },
   };
 }
