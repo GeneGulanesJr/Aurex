@@ -1,6 +1,7 @@
 // packages/backend/src/orchestrator/planner.ts
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { PinyxClient } from "../clients/pinyx-client.js";
+import { validateContractAppend } from "../enforcement/contract-immutability.js";
 
 interface PlannedUnit {
   description: string;
@@ -76,6 +77,16 @@ export function createPlanner(
             acceptanceBehavior: ms.criteria.join("; "),
           },
         });
+
+        // Enforce contract immutability — validate append
+        const existingContracts = await lapis.getContractHistory(milestone.id);
+        const appendCheck = validateContractAppend(existingContracts as any[], {
+          milestoneId: milestone.id,
+          content: { criteria: ms.criteria, testCommands: ms.testCommands, acceptanceBehavior: ms.criteria.join("; ") },
+        });
+        if (!appendCheck.valid) {
+          console.warn(`[enforcement] Contract append blocked for milestone ${milestone.id}: ${appendCheck.reason}`);
+        }
 
         result.push({ id: milestone.id, title: ms.title, units });
       }
