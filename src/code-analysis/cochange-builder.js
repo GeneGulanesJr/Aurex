@@ -3,7 +3,6 @@
  * Full reindex only (expensive), cached in file_cochange table.
  */
 const { execFileSync } = require('child_process');
-const path = require('path');
 
 /**
  * Parse git log output grouped by COMMIT: markers.
@@ -29,7 +28,7 @@ function parseGitLogForCochange(logOutput) {
 }
 
 function processCommitFiles(files, pairs) {
-  if (files.length < 2) return;
+  if (files.length < 2) { return; }
   const sorted = [...files].sort();
   for (let i = 0; i < sorted.length; i++) {
     for (let j = i + 1; j < sorted.length; j++) {
@@ -57,7 +56,7 @@ function storeCochangePairs(db, repoId, pairs, pathToId, windowDays) {
     const [pathA, pathB] = key.split('::');
     const idA = pathToId.get(pathA);
     const idB = pathToId.get(pathB);
-    if (!idA || !idB) continue;
+    if (!idA || !idB) { continue; }
 
     const strength = Math.round((count / maxCount) * 100) / 100;
 

@@ -10,7 +10,7 @@ const { _requireNativeDb } = require('./shared-deps');
  */
 function buildExtendsEdges(db, repoId) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) { return guard; }
 
   db.prepare("DELETE FROM code_relations WHERE repo_id = ? AND kind = 'extends'").run(repoId);
 
@@ -26,7 +26,7 @@ function buildExtendsEdges(db, repoId) {
   let count = 0;
   for (const cls of classes) {
     const baseName = extractExtendsName(cls.signature, cls.language);
-    if (!baseName) continue;
+    if (!baseName) { continue; }
 
     const target = db.prepare(
       "SELECT id, file_id FROM code_symbols WHERE repo_id = ? AND name = ? AND kind IN ('class', 'interface')"
@@ -47,7 +47,7 @@ function buildExtendsEdges(db, repoId) {
  */
 function buildImplementsEdges(db, repoId) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) { return guard; }
 
   db.prepare("DELETE FROM code_relations WHERE repo_id = ? AND kind = 'implements'").run(repoId);
 
@@ -64,7 +64,7 @@ function buildImplementsEdges(db, repoId) {
   let count = 0;
   for (const cls of classes) {
     const ifaceNames = extractImplementsNames(cls.signature);
-    if (!ifaceNames.length) continue;
+    if (!ifaceNames.length) { continue; }
 
     for (const ifaceName of ifaceNames) {
       const target = db.prepare(
@@ -87,7 +87,7 @@ function buildImplementsEdges(db, repoId) {
  */
 function buildReexportEdges(db, repoId) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) { return guard; }
 
   db.prepare("DELETE FROM code_relations WHERE repo_id = ? AND kind = 'reexport'").run(repoId);
 
@@ -103,13 +103,11 @@ function buildReexportEdges(db, repoId) {
 
   let count = 0;
 
-  // Direct edges
   for (const row of reexports) {
     insertStmt.run(repoId, row.source_file_id, row.target_file_id, 1.0);
     count++;
   }
 
-  // Transitive walk (max depth 3)
   const fileById = new Map();
   for (const row of reexports) {
     const targets = fileById.get(row.source_file_id) || [];
@@ -123,15 +121,15 @@ function buildReexportEdges(db, repoId) {
 
     while (queue.length > 0) {
       const { fileId, depth } = queue.shift();
-      if (depth >= 3) continue;
+      if (depth >= 3) { continue; }
 
       const targets = fileById.get(fileId) || [];
       for (const targetId of targets) {
-        if (visited.has(targetId)) continue;
+        if (visited.has(targetId)) { continue; }
         visited.add(targetId);
 
-        const transitiveWeight = Math.pow(0.7, depth + 1);
-        if (transitiveWeight < 0.1) continue;
+        const transitiveWeight = 0.7 ** (depth + 1);
+        if (transitiveWeight < 0.1) { continue; }
 
         const existing = db.prepare(
           `SELECT id FROM code_relations WHERE repo_id = ? AND source_file_id = ? AND target_file_id = ? AND kind = 'reexport' AND weight = 1.0`
@@ -156,7 +154,7 @@ function buildReexportEdges(db, repoId) {
  */
 function buildReferenceEdges(db, repoId) {
   const guard = _requireNativeDb(db);
-  if (guard) return guard;
+  if (guard) { return guard; }
 
   db.prepare("DELETE FROM code_relations WHERE repo_id = ? AND kind = 'references'").run(repoId);
 
@@ -182,7 +180,7 @@ function buildReferenceEdges(db, repoId) {
 
   for (const row of resolved) {
     const key = `${row.source_file_id}:${row.resolved_symbol_id}`;
-    if (seen.has(key)) continue;
+    if (seen.has(key)) { continue; }
     seen.add(key);
 
     insertStmt.run(repoId, row.resolved_symbol_id, row.source_file_id, row.target_file_id);
@@ -196,7 +194,7 @@ function buildReferenceEdges(db, repoId) {
  * Extract the base class name from a class signature, language-aware.
  */
 function extractExtendsName(signature, language) {
-  if (!signature) return null;
+  if (!signature) { return null; }
 
   if (language === 'javascript' || language === 'typescript') {
     const m = signature.match(/extends\s+(\w+)/);
@@ -215,9 +213,9 @@ function extractExtendsName(signature, language) {
  * Extract interface names from `implements X, Y` in a TS class signature.
  */
 function extractImplementsNames(signature) {
-  if (!signature) return [];
+  if (!signature) { return []; }
   const m = signature.match(/implements\s+([\w,\s]+?)(?:\s*\{|$)/);
-  if (!m) return [];
+  if (!m) { return []; }
   return m[1].split(',').map((s) => s.trim()).filter(Boolean);
 }
 

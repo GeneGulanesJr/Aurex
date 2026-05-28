@@ -280,12 +280,12 @@ describe('HTTP server framework', () => {
     const res = await new Promise((resolve, reject) => {
       const url = new URL('/missions', baseUrl);
       const opts = { method: 'POST', hostname: url.hostname, port: url.port, path: url.pathname, headers: { 'Content-Type': 'application/json' } };
-      const req = http.request(opts, (res) => {
+      const req = http.request(opts, (msg) => {
         let data = '';
-        res.on('data', (chunk) => (data += chunk));
-        res.on('end', () => {
-          try { resolve({ status: res.statusCode, body: JSON.parse(data) }); }
-          catch { resolve({ status: res.statusCode, body: data }); }
+        msg.on('data', (chunk) => (data += chunk));
+        msg.on('end', () => {
+          try { resolve({ status: msg.statusCode, body: JSON.parse(data) }); }
+          catch { resolve({ status: msg.statusCode, body: data }); }
         });
       });
       req.on('error', reject);
