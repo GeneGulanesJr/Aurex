@@ -24,6 +24,7 @@ export interface MilestoneLoopConfig {
   agentDir: string;
   repoRoot: string;
   gitMainBranch: string;
+  onCompression?: (missionId: string, trigger: CompressionTrigger) => Promise<void>;
 }
 
 export function createMilestoneLoop(
@@ -360,7 +361,11 @@ export function createMilestoneLoop(
 
           // Post-milestone compression — summarize completed milestone state
           const compressionTrigger: CompressionTrigger = "post_milestone";
-          await lapis.runCompression(mission.id, compressionTrigger);
+          if (loopConfig.onCompression) {
+            await loopConfig.onCompression(mission.id, compressionTrigger);
+          } else {
+            await lapis.runCompression(mission.id, compressionTrigger);
+          }
 
           return {
             status: "checkpoint_needed",

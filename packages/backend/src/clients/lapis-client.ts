@@ -230,7 +230,7 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
       return post(`/milestones/${milestoneId}/rescope`, event);
     },
 
-    // State compression (stubbed — logs skip, never silent)
+    // State compression delegated to LaPis.
     runCompression(missionId, trigger) {
       return post(`/missions/${missionId}/compress`, { trigger });
     },

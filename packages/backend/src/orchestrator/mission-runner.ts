@@ -6,6 +6,7 @@ import type { EventBus } from "../ws/events.js";
 import { createCheckpointManager } from "./checkpoint-manager.js";
 import { createMilestoneLoop } from "./milestone-loop.js";
 import { createPlanner } from "./planner.js";
+import { createCompressionService } from "./compression.js";
 
 export interface RunnerStatus {
   state: "idle" | "planning" | "executing" | "waiting_checkpoint" | "completed" | "failed";
@@ -32,6 +33,7 @@ export interface MissionRunnerConfig {
 export function createMissionRunner(config: MissionRunnerConfig): MissionRunner {
   const { lapis, pinyx, eventBus, agentDir, repoRoot, gitMainBranch } = config;
   const checkpointManager = createCheckpointManager(lapis);
+  const compression = createCompressionService(lapis, eventBus);
 
   let status: RunnerStatus = { state: "idle", missionId: null };
   let abortController: AbortController | null = null;
@@ -74,11 +76,11 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
           onCostUpdate: (mId, totalCost, totalTokens, delta) => {
             eventBus.emit({ type: "cost_update", missionId: mId, totalCost, totalTokens, delta });
             if (mission.configJson.costCap > 0 && totalCost >= mission.configJson.costCap * 0.8) {
-              lapis.runCompression(mId, "budget_threshold" as any).catch(() => {});
+              compression.run(mId, "budget_threshold" as any).catch(() => {});
             }
           },
         },
-        { agentDir, repoRoot, gitMainBranch },
+        { agentDir, repoRoot, gitMainBranch, onCompression: (mId, trigger) => compression.run(mId, trigger) },
       );
 
       const plannedMilestones: Milestone[] = planResult.milestones.map((milestone, index) => ({
