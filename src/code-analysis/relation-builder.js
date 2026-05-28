@@ -26,15 +26,15 @@ function buildExtendsEdges(db, repoId) {
   let count = 0;
   for (const cls of classes) {
     const baseName = extractExtendsName(cls.signature, cls.language);
-    if (!baseName) { continue; }
+    if (baseName) {
+      const target = db.prepare(
+        "SELECT id, file_id FROM code_symbols WHERE repo_id = ? AND name = ? AND kind IN ('class', 'interface')"
+      ).get(repoId, baseName);
 
-    const target = db.prepare(
-      "SELECT id, file_id FROM code_symbols WHERE repo_id = ? AND name = ? AND kind IN ('class', 'interface')"
-    ).get(repoId, baseName);
-
-    if (target) {
-      insertStmt.run(repoId, cls.id, target.id, cls.file_id, target.file_id);
-      count++;
+      if (target) {
+        insertStmt.run(repoId, cls.id, target.id, cls.file_id, target.file_id);
+        count++;
+      }
     }
   }
 
@@ -64,16 +64,16 @@ function buildImplementsEdges(db, repoId) {
   let count = 0;
   for (const cls of classes) {
     const ifaceNames = extractImplementsNames(cls.signature);
-    if (!ifaceNames.length) { continue; }
+    if (ifaceNames.length > 0) {
+      for (const ifaceName of ifaceNames) {
+        const target = db.prepare(
+          "SELECT id, file_id FROM code_symbols WHERE repo_id = ? AND name = ? AND kind = 'interface'"
+        ).get(repoId, ifaceName.trim());
 
-    for (const ifaceName of ifaceNames) {
-      const target = db.prepare(
-        "SELECT id, file_id FROM code_symbols WHERE repo_id = ? AND name = ? AND kind = 'interface'"
-      ).get(repoId, ifaceName.trim());
-
-      if (target) {
-        insertStmt.run(repoId, cls.id, target.id, cls.file_id, target.file_id);
-        count++;
+        if (target) {
+          insertStmt.run(repoId, cls.id, target.id, cls.file_id, target.file_id);
+          count++;
+        }
       }
     }
   }
@@ -121,26 +121,27 @@ function buildReexportEdges(db, repoId) {
 
     while (queue.length > 0) {
       const { fileId, depth } = queue.shift();
-      if (depth >= 3) { continue; }
+      if (depth < 3) {
+        const targets = fileById.get(fileId) || [];
+        for (const targetId of targets) {
+          if (!visited.has(targetId)) {
+            visited.add(targetId);
 
-      const targets = fileById.get(fileId) || [];
-      for (const targetId of targets) {
-        if (visited.has(targetId)) { continue; }
-        visited.add(targetId);
+            const transitiveWeight = 0.7 ** (depth + 1);
+            if (transitiveWeight >= 0.1) {
+              const existing = db.prepare(
+                `SELECT id FROM code_relations WHERE repo_id = ? AND source_file_id = ? AND target_file_id = ? AND kind = 'reexport' AND weight = 1.0`
+              ).get(repoId, sourceId, targetId);
 
-        const transitiveWeight = 0.7 ** (depth + 1);
-        if (transitiveWeight < 0.1) { continue; }
+              if (!existing) {
+                insertStmt.run(repoId, sourceId, targetId, transitiveWeight);
+                count++;
+              }
 
-        const existing = db.prepare(
-          `SELECT id FROM code_relations WHERE repo_id = ? AND source_file_id = ? AND target_file_id = ? AND kind = 'reexport' AND weight = 1.0`
-        ).get(repoId, sourceId, targetId);
-
-        if (!existing) {
-          insertStmt.run(repoId, sourceId, targetId, transitiveWeight);
-          count++;
+              queue.push({ fileId: targetId, depth: depth + 1 });
+            }
+          }
         }
-
-        queue.push({ fileId: targetId, depth: depth + 1 });
       }
     }
   }
@@ -180,11 +181,11 @@ function buildReferenceEdges(db, repoId) {
 
   for (const row of resolved) {
     const key = `${row.source_file_id}:${row.resolved_symbol_id}`;
-    if (seen.has(key)) { continue; }
-    seen.add(key);
-
-    insertStmt.run(repoId, row.resolved_symbol_id, row.source_file_id, row.target_file_id);
-    count++;
+    if (!seen.has(key)) {
+      seen.add(key);
+      insertStmt.run(repoId, row.resolved_symbol_id, row.source_file_id, row.target_file_id);
+      count++;
+    }
   }
 
   return { success: true, count };

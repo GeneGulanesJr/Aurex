@@ -28,12 +28,13 @@ function parseGitLogForCochange(logOutput) {
 }
 
 function processCommitFiles(files, pairs) {
-  if (files.length < 2) { return; }
-  const sorted = [...files].sort();
-  for (let i = 0; i < sorted.length; i++) {
-    for (let j = i + 1; j < sorted.length; j++) {
-      const key = `${sorted[i]}::${sorted[j]}`;
-      pairs[key] = (pairs[key] || 0) + 1;
+  if (files.length >= 2) {
+    const sorted = [...files].sort();
+    for (let i = 0; i < sorted.length; i++) {
+      for (let j = i + 1; j < sorted.length; j++) {
+        const key = `${sorted[i]}::${sorted[j]}`;
+        pairs[key] = (pairs[key] || 0) + 1;
+      }
     }
   }
 }
@@ -56,12 +57,12 @@ function storeCochangePairs(db, repoId, pairs, pathToId, windowDays) {
     const [pathA, pathB] = key.split('::');
     const idA = pathToId.get(pathA);
     const idB = pathToId.get(pathB);
-    if (!idA || !idB) { continue; }
+    if (idA && idB) {
+      const strength = Math.round((count / maxCount) * 100) / 100;
 
-    const strength = Math.round((count / maxCount) * 100) / 100;
-
-    insertStmt.run(repoId, idA, idB, count, strength, windowDays);
-    insertStmt.run(repoId, idB, idA, count, strength, windowDays);
+      insertStmt.run(repoId, idA, idB, count, strength, windowDays);
+      insertStmt.run(repoId, idB, idA, count, strength, windowDays);
+    }
   }
 }
 

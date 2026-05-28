@@ -86,156 +86,156 @@ function getAffectedGraph(db, repoId, opts = {}) {
   while (queue.length > 0) {
     const current = queue.shift();
 
-    if (current.depth >= maxDepth) { continue; }
+    if (current.depth < maxDepth) {
+      const fileId = current.type === 'file' ? current.id : current.fileId;
 
-    const fileId = current.type === 'file' ? current.id : current.fileId;
+      // 1. code_calls: who calls this symbol?
+      if (current.type === 'symbol') {
+        try {
+          const callers = db.prepare(
+            `SELECT cc.caller_symbol_id, cc.confidence, cs.name, cs.file_path, cs.file_id
+             FROM code_calls cc JOIN code_symbols cs ON cs.id = cc.caller_symbol_id
+             WHERE cc.callee_symbol_id = ? AND cc.confidence >= ?`
+          ).all(current.id, 0.3);
 
-    // 1. code_calls: who calls this symbol?
-    if (current.type === 'symbol') {
-      try {
-        const callers = db.prepare(
-          `SELECT cc.caller_symbol_id, cc.confidence, cs.name, cs.file_path, cs.file_id
-           FROM code_calls cc JOIN code_symbols cs ON cs.id = cc.caller_symbol_id
-           WHERE cc.callee_symbol_id = ? AND cc.confidence >= ?`
-        ).all(current.id, 0.3);
+          for (const c of callers) {
+            const score = c.confidence * EDGE_DECAY.call * DISTANCE_DECAY ** (current.depth + 1);
+            const key = `sym:${c.caller_symbol_id}`;
+            const existing = visited.get(key);
+            const shouldVisit = score >= minReachability && (!existing || existing.reachability < score);
 
-        for (const c of callers) {
-          const score = c.confidence * EDGE_DECAY.call * DISTANCE_DECAY ** (current.depth + 1);
-          if (score < minReachability) { continue; }
+            if (shouldVisit) {
+              visited.set(key, { reachability: score, depth: current.depth + 1, signals: ['call'] });
+              queue.push({ type: 'symbol', id: c.caller_symbol_id, fileId: c.file_id, reachability: score, depth: current.depth + 1 });
 
-          const key = `sym:${c.caller_symbol_id}`;
-          const existing = visited.get(key);
-          if (existing && existing.reachability >= score) { continue; }
-
-          visited.set(key, { reachability: score, depth: current.depth + 1, signals: ['call'] });
-          queue.push({ type: 'symbol', id: c.caller_symbol_id, fileId: c.file_id, reachability: score, depth: current.depth + 1 });
-
-          affectedSymbols.set(c.caller_symbol_id, {
-            name: c.name,
-            file: c.file_path,
-            reachability: Math.round(score * 100) / 100,
-            via: 'call',
-          });
-
-          if (c.file_id) {
-            updateFileEntry(affectedFiles, c.file_id, c.file_path, score, 'call', current.depth + 1);
-          }
-        }
-      } catch {}
-    }
-
-    // 2. code_imports: who imports this file?
-    if (fileId) {
-      try {
-        const importers = db.prepare(
-          `SELECT ci.source_file_id, cf.path
-           FROM code_imports ci JOIN code_files cf ON cf.id = ci.source_file_id
-           WHERE ci.target_file_id = ?`
-        ).all(fileId);
-
-        for (const imp of importers) {
-          const score = EDGE_DECAY.import * DISTANCE_DECAY ** (current.depth + 1);
-          if (score < minReachability) { continue; }
-
-          const key = `file:${imp.source_file_id}`;
-          const existing = visited.get(key);
-          if (existing && existing.reachability >= score) { continue; }
-
-          visited.set(key, { reachability: score, depth: current.depth + 1, signals: ['import'] });
-          queue.push({ type: 'file', id: imp.source_file_id, reachability: score, depth: current.depth + 1 });
-
-          updateFileEntry(affectedFiles, imp.source_file_id, imp.path, score, 'import', current.depth + 1);
-        }
-      } catch {}
-    }
-
-    // 3. code_relations: what targets this symbol/file?
-    {
-      const rels = [];
-      try {
-        if (current.type === 'symbol') {
-          rels.push(...db.prepare(
-            `SELECT cr.source_symbol_id, cr.source_file_id, cr.kind, cr.weight,
-                    cs.name, cs.file_path, cs.file_id AS sym_file_id
-             FROM code_relations cr
-             LEFT JOIN code_symbols cs ON cs.id = cr.source_symbol_id
-             WHERE cr.target_symbol_id = ? AND cr.repo_id = ?`
-          ).all(current.id, repoId));
-        }
-        if (fileId) {
-          rels.push(...db.prepare(
-            `SELECT cr.source_symbol_id, cr.source_file_id, cr.kind, cr.weight,
-                    cs.name, cs.file_path, cs.file_id AS sym_file_id
-             FROM code_relations cr
-             LEFT JOIN code_symbols cs ON cs.id = cr.source_symbol_id
-             WHERE cr.target_file_id = ? AND cr.repo_id = ?`
-          ).all(fileId, repoId));
-        }
-      } catch {}
-
-      for (const r of rels) {
-        const decay = EDGE_DECAY[r.kind] || 0.5;
-        const score = (r.weight || 1.0) * decay * DISTANCE_DECAY ** (current.depth + 1);
-        if (score < minReachability) { continue; }
-
-        if (r.source_symbol_id) {
-          const key = `sym:${r.source_symbol_id}`;
-          const existing = visited.get(key);
-          if (!existing || existing.reachability < score) {
-            visited.set(key, { reachability: score, depth: current.depth + 1, signals: [r.kind] });
-            queue.push({ type: 'symbol', id: r.source_symbol_id, fileId: r.sym_file_id, reachability: score, depth: current.depth + 1 });
-
-            if (r.name) {
-              affectedSymbols.set(r.source_symbol_id, {
-                name: r.name,
-                file: r.file_path,
+              affectedSymbols.set(c.caller_symbol_id, {
+                name: c.name,
+                file: c.file_path,
                 reachability: Math.round(score * 100) / 100,
-                via: r.kind,
+                via: 'call',
               });
+
+              if (c.file_id) {
+                updateFileEntry(affectedFiles, c.file_id, c.file_path, score, 'call', current.depth + 1);
+              }
             }
           }
-        }
-        if (r.source_file_id) {
-          const key = `file:${r.source_file_id}`;
-          const existing = visited.get(key);
-          if (!existing || existing.reachability < score) {
-            visited.set(key, { reachability: score, depth: current.depth + 1, signals: [r.kind] });
-            queue.push({ type: 'file', id: r.source_file_id, reachability: score, depth: current.depth + 1 });
+        } catch {}
+      }
 
-            const filePath = stmtFilePath.get(r.source_file_id);
-            if (filePath) {
-              updateFileEntry(affectedFiles, r.source_file_id, filePath.path, score, r.kind, current.depth + 1);
+      // 2. code_imports: who imports this file?
+      if (fileId) {
+        try {
+          const importers = db.prepare(
+            `SELECT ci.source_file_id, cf.path
+             FROM code_imports ci JOIN code_files cf ON cf.id = ci.source_file_id
+             WHERE ci.target_file_id = ?`
+          ).all(fileId);
+
+          for (const imp of importers) {
+            const score = EDGE_DECAY.import * DISTANCE_DECAY ** (current.depth + 1);
+            const key = `file:${imp.source_file_id}`;
+            const existing = visited.get(key);
+            const shouldVisit = score >= minReachability && (!existing || existing.reachability < score);
+
+            if (shouldVisit) {
+              visited.set(key, { reachability: score, depth: current.depth + 1, signals: ['import'] });
+              queue.push({ type: 'file', id: imp.source_file_id, reachability: score, depth: current.depth + 1 });
+
+              updateFileEntry(affectedFiles, imp.source_file_id, imp.path, score, 'import', current.depth + 1);
+            }
+          }
+        } catch {}
+      }
+
+      // 3. code_relations: what targets this symbol/file?
+      {
+        const rels = [];
+        try {
+          if (current.type === 'symbol') {
+            rels.push(...db.prepare(
+              `SELECT cr.source_symbol_id, cr.source_file_id, cr.kind, cr.weight,
+                      cs.name, cs.file_path, cs.file_id AS sym_file_id
+               FROM code_relations cr
+               LEFT JOIN code_symbols cs ON cs.id = cr.source_symbol_id
+               WHERE cr.target_symbol_id = ? AND cr.repo_id = ?`
+            ).all(current.id, repoId));
+          }
+          if (fileId) {
+            rels.push(...db.prepare(
+              `SELECT cr.source_symbol_id, cr.source_file_id, cr.kind, cr.weight,
+                      cs.name, cs.file_path, cs.file_id AS sym_file_id
+               FROM code_relations cr
+               LEFT JOIN code_symbols cs ON cs.id = cr.source_symbol_id
+               WHERE cr.target_file_id = ? AND cr.repo_id = ?`
+            ).all(fileId, repoId));
+          }
+        } catch {}
+
+        for (const r of rels) {
+          const decay = EDGE_DECAY[r.kind] || 0.5;
+          const score = (r.weight || 1.0) * decay * DISTANCE_DECAY ** (current.depth + 1);
+          if (score >= minReachability) {
+            if (r.source_symbol_id) {
+              const key = `sym:${r.source_symbol_id}`;
+              const existing = visited.get(key);
+              if (!existing || existing.reachability < score) {
+                visited.set(key, { reachability: score, depth: current.depth + 1, signals: [r.kind] });
+                queue.push({ type: 'symbol', id: r.source_symbol_id, fileId: r.sym_file_id, reachability: score, depth: current.depth + 1 });
+
+                if (r.name) {
+                  affectedSymbols.set(r.source_symbol_id, {
+                    name: r.name,
+                    file: r.file_path,
+                    reachability: Math.round(score * 100) / 100,
+                    via: r.kind,
+                  });
+                }
+              }
+            }
+            if (r.source_file_id) {
+              const key = `file:${r.source_file_id}`;
+              const existing = visited.get(key);
+              if (!existing || existing.reachability < score) {
+                visited.set(key, { reachability: score, depth: current.depth + 1, signals: [r.kind] });
+                queue.push({ type: 'file', id: r.source_file_id, reachability: score, depth: current.depth + 1 });
+
+                const filePath = stmtFilePath.get(r.source_file_id);
+                if (filePath) {
+                  updateFileEntry(affectedFiles, r.source_file_id, filePath.path, score, r.kind, current.depth + 1);
+                }
+              }
             }
           }
         }
       }
-    }
 
-    // 4. file_cochange: what files co-change with this file?
-    if (fileId) {
-      try {
-        const cochanges = db.prepare(
-          `SELECT file_a_id, file_b_id, strength FROM file_cochange WHERE repo_id = ? AND (file_a_id = ? OR file_b_id = ?)`
-        ).all(repoId, fileId, fileId);
+      // 4. file_cochange: what files co-change with this file?
+      if (fileId) {
+        try {
+          const cochanges = db.prepare(
+            `SELECT file_a_id, file_b_id, strength FROM file_cochange WHERE repo_id = ? AND (file_a_id = ? OR file_b_id = ?)`
+          ).all(repoId, fileId, fileId);
 
-        for (const cc of cochanges) {
-          const otherId = cc.file_a_id === fileId ? cc.file_b_id : cc.file_a_id;
-          const score = (cc.strength || 0.3) * EDGE_DECAY.cochange * DISTANCE_DECAY ** (current.depth + 1);
-          if (score < minReachability) { continue; }
+          for (const cc of cochanges) {
+            const otherId = cc.file_a_id === fileId ? cc.file_b_id : cc.file_a_id;
+            const score = (cc.strength || 0.3) * EDGE_DECAY.cochange * DISTANCE_DECAY ** (current.depth + 1);
+            const key = `file:${otherId}`;
+            const existing = visited.get(key);
+            const shouldVisit = score >= minReachability && (!existing || existing.reachability < score);
 
-          const key = `file:${otherId}`;
-          const existing = visited.get(key);
-          if (existing && existing.reachability >= score) { continue; }
+            if (shouldVisit) {
+              visited.set(key, { reachability: score, depth: current.depth + 1, signals: ['cochange'] });
+              queue.push({ type: 'file', id: otherId, reachability: score, depth: current.depth + 1 });
 
-          visited.set(key, { reachability: score, depth: current.depth + 1, signals: ['cochange'] });
-          queue.push({ type: 'file', id: otherId, reachability: score, depth: current.depth + 1 });
-
-          const filePath = stmtFilePath.get(otherId);
-          if (filePath) {
-            updateFileEntry(affectedFiles, otherId, filePath.path, score, 'cochange', current.depth + 1);
+              const filePath = stmtFilePath.get(otherId);
+              if (filePath) {
+                updateFileEntry(affectedFiles, otherId, filePath.path, score, 'cochange', current.depth + 1);
+              }
+            }
           }
-        }
-      } catch {}
+        } catch {}
+      }
     }
   }
 

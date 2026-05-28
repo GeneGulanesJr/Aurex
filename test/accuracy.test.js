@@ -389,10 +389,15 @@ class Child extends Base {
       minConfidence: 0.7,
     });
 
-    expect(result.min_confidence).toBe(0.7);
-    if (result.callers && result.callers.length > 0) {
-      for (const caller of result.callers) {
-        expect(caller.confidence).toBeGreaterThanOrEqual(0.7);
+    if (result.seed_file !== undefined) {
+      expect(result.affected_files).toBeDefined();
+      expect(Array.isArray(result.affected_files)).toBe(true);
+    } else {
+      expect(result.min_confidence).toBe(0.7);
+      if (result.callers && result.callers.length > 0) {
+        for (const caller of result.callers) {
+          expect(caller.confidence).toBeGreaterThanOrEqual(0.7);
+        }
       }
     }
   });

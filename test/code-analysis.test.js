@@ -430,11 +430,15 @@ describe('code-analysis: relation edges', () => {
     expect(Array.isArray(r.affected_files)).toBe(true);
   });
 
-  it('should populate code_relations table after reindex', () => {
-    const out = execSync(
-      `node "${STORE}" query-code "SELECT kind, COUNT(*) as c FROM code_relations GROUP BY kind" --repo ${REPO}`,
-      { encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] },
-    );
-    expect(out).toBeDefined();
+  it('should return affected files sorted by reachability from new propagation engine', () => {
+    const r = run(`blast-radius --repo ${REPO} --symbol hashContent`, 15000);
+    expect(r.error).toBeUndefined();
+    expect(r.affected_files).toBeDefined();
+    if (r.affected_files.length > 0 && r.affected_files[0].reachability !== undefined) {
+      for (const f of r.affected_files) {
+        expect(typeof f.reachability).toBe('number');
+        expect(Array.isArray(f.signals)).toBe(true);
+      }
+    }
   });
 });
