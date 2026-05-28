@@ -1,0 +1,118 @@
+# Implementation Tracker
+
+> Single source of truth for unimplemented features, code quality issues, and deferred items. Updated as work progresses. Check items off when completed.
+
+**Last audited:** 2026-05-28
+**Spec compliance:** ~95% (193 tests, 41 files)
+
+---
+
+## P0 — Critical Functional Gaps
+
+- [ ] **Wire anime.js animations to React components**
+  - 4 animation modules exist but none are imported by any component
+  - Files: `packages/frontend/src/animations/agent-animations.ts`, `state-transitions.ts`, `counters.ts`, `stagger.ts`
+  - Affects: `AgentNode`, `CostCounter`, `MilestoneBar`, `StatusFeed`, `EscalationOverlay`, `StatusBoard`
+  - Spec reference: Section 5e (anime.js v4 for all animations)
+
+- [ ] **Validator agent spawning subsystem**
+  - Spec: paired agents that evaluate worker output against validation contracts
+  - Currently marked "separate subsystem" with no implementation
+  - Blocks: `milestone_complete` checkpoint trigger
+
+- [ ] **Research agent spawning subsystem**
+  - Spec: read-only agents for codebase exploration and context gathering
+  - Currently marked "separate subsystem" with no implementation
+
+- [ ] **`milestone_complete` checkpoint trigger**
+  - Requires validators to pass + release branch to be cut before checkpoint fires
+  - Current behavior: runner treats pass verdict as continuing to next milestone without human approval
+  - Blocked by: validator agent spawning
+
+---
+
+## P1 — Integration Gaps
+
+- [ ] **Cost tracking integration**
+  - Runner emits `cost_update` events but doesn't parse Pi SDK usage events into `lapis.logCost()` calls
+  - Cost display works structurally but actual token/cost data isn't auto-logged
+  - Ref: worker-spawning plan self-review ("Gap: Cost logging per PiNyx call")
+
+- [ ] **State compression subsystem**
+  - `state_compression_artifacts` table reserved but structure not defined
+  - LaPis client `runCompression` is stubbed (logs skip, never silent)
+  - Deferred per spec section 12
+
+- [ ] **Rescope replan logic**
+  - `// TODO: replan this milestone` in mission runner (`packages/backend/src/orchestrator/mission-runner.ts`)
+  - Replan logic requires planner to re-run a single milestone
+  - Current behavior: rescope decision marks mission as failed
+
+- [ ] **WebSocket client-to-server message handling**
+  - `subscribe_mission` and `checkpoint_decision` defined in types but not handled by backend WS handler
+  - File: `packages/backend/src/ws/events.ts`
+
+---
+
+## P2 — Planned But Not Started
+
+- [ ] **E2E integration tests against real services** (ref: `.kilo/plans/1779921253474-.md`)
+  - 10 new test files + 3 helpers
+  - Spin up real LaPis HTTP server, PiNyx stub, and real git operations
+  - No code written yet
+
+- [ ] **Agent spawner observability & robustness** (ref: `.kilo/plans/1779939601853-.md`)
+  - In-memory ring buffer for structured agent lifecycle events
+  - `shutdown()` is a stub — active handles aren't tracked
+  - No concurrent spawn limit
+  - No SIGTERM graceful shutdown handler
+  - Estimated: ~300 lines new code
+
+---
+
+## P3 — Code Quality
+
+- [ ] **Fix shell injection in `worktree.ts`**
+  - Unsanitized branch names interpolated into git shell commands
+  - File: `packages/backend/src/orchestrator/worktree.ts`
+
+- [ ] **Remove unused dependencies**
+  - `better-sqlite3`, `uuid`, `@fastify/cors`, `@fastify/rate-limit` in `packages/backend/package.json` but never imported
+
+- [ ] **Remove dead code**
+  - Migration SQL files (leftover from pre-restructuring)
+  - `packages/shared/src/api.ts` (unused)
+  - `packages/frontend/src/websocket.ts` (superseded by `hooks/useWebSocket.ts`)
+
+- [ ] **Remove unused config**
+  - `wsPort` loaded in config but never used (WS shares port with REST)
+
+---
+
+## P4 — Spec Deviations
+
+- [ ] **Review extra `WorkerStatus` value** — `"planned"` not in spec
+- [ ] **Review extra `CheckpointTrigger` value** — `"cost_cap_exceeded"` not in spec
+- [ ] **Review extra `WsClientEvent` types** — `mission_queued` / `mission_completed` not in spec
+- [ ] **Review LaPis `runCompression`** — actually calls API instead of being stubbed as spec required
+
+---
+
+## P5 — Performance (Low Severity)
+
+- [ ] **EventBus `emit()` O(n) shift** — uses `Array.shift()` on 10,000-entry ring buffer
+- [ ] **EventBus `getEventsSince()` linear scan** — should use binary search
+- [ ] **WebSocket replay no batching** — sends up to 10,000 messages in tight loop
+- [ ] **Overlap detection quadratic** — `minimatch()` in nested loops
+- [ ] **WorkingUnit struct bloat** — 10 fields, only 4 hot in overlap/batch loops
+
+---
+
+## Explicitly Out of Scope (Per Spec)
+
+These are documented as not planned per the design specs:
+- No code diff viewing in frontend
+- No streaming logs panel
+- No agent configuration UI
+- No direct LaPis/PiNyx access from frontend
+- No Docker socket mount (future if needed)
