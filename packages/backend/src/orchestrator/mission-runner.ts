@@ -95,7 +95,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
       let currentMilestones = plannedMilestones;
       let costCapApproved = false;
       let refreshedMission = await lapis.getMission(missionId);
-      let loopResult = await loop.run(refreshedMission, currentMilestones);
+      let loopResult = await loop.run(refreshedMission, currentMilestones, abortController?.signal);
 
       while (loopResult.status === "checkpoint_needed") {
         if (abortController?.signal.aborted) {
@@ -153,7 +153,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         const nextMission = costCapApproved
           ? { ...baseMission, configJson: { ...baseMission.configJson, costCap: 0 } }
           : baseMission;
-        loopResult = await loop.run(nextMission, currentMilestones);
+        loopResult = await loop.run(nextMission, currentMilestones, abortController?.signal);
       }
 
       if (loopResult.status === "failed") {

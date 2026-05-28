@@ -46,12 +46,25 @@ export function createMilestoneLoop(
   });
 
   return {
-    async run(mission: Mission, milestones: Milestone[]): Promise<MilestoneLoopResult> {
+    async run(mission: Mission, milestones: Milestone[], signal?: AbortSignal): Promise<MilestoneLoopResult> {
       const config = mission.configJson;
       const negotiator = createNegotiator(lapis);
 
+      // Set up abort listener to cancel active agent handles
+      const activeHandles = new Set<{ abort: () => void }>();
+      const abortListener = () => {
+        for (const handle of activeHandles) handle.abort();
+      };
+      signal?.addEventListener("abort", abortListener, { once: true });
+
+      try {
+      function throwIfAborted() {
+        if (signal?.aborted) throw new Error("Mission aborted");
+      }
+
       for (const milestone of milestones) {
         if (milestone.status === "completed") continue;
+        throwIfAborted();
 
         // Update milestone status
         await lapis.updateMilestoneStatus(milestone.id, "in_progress");
@@ -133,6 +146,7 @@ export function createMilestoneLoop(
                 taskPrompt: `Implement: ${unit.description}\n\nFollow your skill instructions carefully. Use write_handoff when done.`,
                 timeout: config.workerTimeouts.simple,
               });
+              activeHandles.add(handle);
 
               callbacks.onAgentStatus(agentId, "worker", "working", milestone.id);
               return { unit, agentId, worktreePath, taskBranch, handle };
@@ -140,6 +154,7 @@ export function createMilestoneLoop(
 
             await Promise.all(handles.map(async ({ unit, agentId, worktreePath, taskBranch, handle }) => {
               const result = await handle.completed;
+              activeHandles.delete(handle);
               if (result.status === "completed") {
                 await lapis.updateWorkingUnitStatus(unit.id, "completed");
                 callbacks.onAgentStatus(agentId, "worker", "completed", milestone.id);
@@ -203,9 +218,11 @@ export function createMilestoneLoop(
             taskPrompt: `Research domain knowledge for milestone "${milestone.title}". Investigate the codebase areas relevant to the declared paths and modules. Submit findings using write_finding.`,
             timeout: config.workerTimeouts.build,
           });
+          activeHandles.add(researchHandle);
 
           callbacks.onAgentStatus(researchAgentId, "research", "researching", milestone.id);
           const researchResult = await researchHandle.completed;
+          activeHandles.delete(researchHandle);
           callbacks.onAgentStatus(
             researchAgentId,
             "research",
@@ -253,9 +270,11 @@ export function createMilestoneLoop(
               taskPrompt: `Validate milestone "${milestone.title}" as ${validatorType}. Use write_verdict when done.`,
               timeout: config.workerTimeouts.testHeavy,
             });
+            activeHandles.add(handle);
 
             callbacks.onAgentStatus(agentId, validatorType, "reviewing", milestone.id);
             const result = await handle.completed;
+            activeHandles.delete(handle);
             callbacks.onAgentStatus(agentId, validatorType, result.status === "completed" ? "completed" : result.status, milestone.id);
             handle.dispose();
           }
@@ -354,6 +373,10 @@ export function createMilestoneLoop(
 
       await lapis.updateMissionStatus(mission.id, "completed");
       return { status: "completed" };
+      } finally {
+        signal?.removeEventListener("abort", abortListener);
+        activeHandles.clear();
+      }
     },
   };
 }
