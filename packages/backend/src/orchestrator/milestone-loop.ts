@@ -1,5 +1,5 @@
 // packages/backend/src/orchestrator/milestone-loop.ts
-import type { CheckpointTrigger, CompressionTrigger, Mission, Milestone, WorkingUnit } from "@aurex/shared";
+import type { CheckpointTrigger, CompressionTrigger, Mission, Milestone, WorkingUnit, EscalationTrigger, EscalationContext, AgentType, AgentStatus, MilestoneStatus } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { PinyxClient } from "../clients/pinyx-client.js";
 import { createNegotiator } from "./negotiator.js";
@@ -14,9 +14,9 @@ export type MilestoneLoopResult =
   | { status: "failed"; reason: string };
 
 export interface MilestoneLoopCallbacks {
-  onEscalation: (missionId: string, trigger: unknown, context: unknown) => void;
-  onAgentStatus: (agentId: string, agentType: unknown, status: unknown, milestoneId: string) => void;
-  onMilestoneProgress: (milestoneId: string, status: unknown, completedUnits: number, totalUnits: number) => void;
+  onEscalation: (missionId: string, trigger: EscalationTrigger, context: EscalationContext) => void;
+  onAgentStatus: (agentId: string, agentType: AgentType, status: AgentStatus, milestoneId: string) => void;
+  onMilestoneProgress: (milestoneId: string, status: MilestoneStatus | string, completedUnits: number, totalUnits: number) => void;
   onCostUpdate: (missionId: string, totalCost: number, totalTokens: number, delta: number) => void;
 }
 

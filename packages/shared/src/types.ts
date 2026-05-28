@@ -218,9 +218,8 @@ export interface AttemptSummary {
 }
 
 export interface EscalationContext {
-  trigger: "milestone_complete" | "rescope_limit" | "unclassifiable_error";
-  milestoneId: string;
-  summary: string;
+  summary?: string;
+  [k: string]: unknown;
 }
 
 export interface AgentSpec {

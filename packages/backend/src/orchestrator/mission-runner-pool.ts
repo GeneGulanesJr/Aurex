@@ -44,12 +44,14 @@ export function createMissionRunnerPool(poolConfig: MissionRunnerPoolConfig): Mi
 
   function onMissionDone(missionId: string) {
     const entry = running.get(missionId);
+    let finalState: PoolMissionStatus["state"] = "failed";
     if (entry) {
-      const finalState = entry.runner.getStatus().state;
-      entry.state = finalState as PoolMissionStatus["state"];
+      const runnerState = entry.runner.getStatus().state;
+      entry.state = runnerState as PoolMissionStatus["state"];
+      finalState = entry.state;
     }
     running.delete(missionId);
-    eventBus.emit({ type: "mission_completed", missionId, finalState: "completed" } as any);
+    eventBus.emit({ type: "mission_completed", missionId, finalState });
     drainWaiters(missionId);
     startNext();
   }
@@ -71,7 +73,7 @@ export function createMissionRunnerPool(poolConfig: MissionRunnerPoolConfig): Mi
 
     running.set(missionId, { runner, state: "planning", completionPromise });
 
-    eventBus.emit({ type: "mission_started", missionId } as any);
+    eventBus.emit({ type: "mission_started", missionId });
     runner.start(missionId);
 
     void completionPromise.then(() => {
@@ -93,7 +95,7 @@ export function createMissionRunnerPool(poolConfig: MissionRunnerPoolConfig): Mi
         startRunner(missionId);
       } else {
         queue.push(missionId);
-        eventBus.emit({ type: "mission_queued", missionId, queuePosition: queue.length } as any);
+        eventBus.emit({ type: "mission_queued", missionId, queuePosition: queue.length });
       }
     },
 

@@ -22,16 +22,6 @@ export function createSpin(element: HTMLElement) {
   });
 }
 
-export function createScanning(element: HTMLElement) {
-  return animate(element, {
-    backgroundPosition: ["0% 50%", "100% 50%"],
-    duration: 2000,
-    loop: true,
-    ease: "inOutSine",
-    direction: "alternate",
-  });
-}
-
 export function createIdle(element: HTMLElement) {
   element.style.opacity = "0.5";
 }

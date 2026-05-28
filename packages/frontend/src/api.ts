@@ -1,11 +1,7 @@
-import type { CheckpointDecision, CostSummary, Milestone, Mission, WorkingUnit } from "@aurex/shared";
+import type { CheckpointDecision, CostSummary, Milestone, Mission, WorkingUnit, MissionStatus } from "@aurex/shared";
+import type { CreateMissionResponse, GetMissionResponse, CheckpointResponse, HealthResponse } from "@aurex/shared";
 
-export interface CurrentMissionPayload {
-  mission: Mission;
-  milestones: Milestone[];
-  activeWorkers: WorkingUnit[];
-  cost: CostSummary;
-}
+export type CurrentMissionPayload = GetMissionResponse;
 
 export interface ActiveMission {
   missionId: string;
@@ -13,13 +9,13 @@ export interface ActiveMission {
   queuePosition?: number;
 }
 
-export async function createMission(description: string) {
+export async function createMission(description: string): Promise<CreateMissionResponse> {
   const res = await fetch("/api/missions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ description }),
   });
-  return res.json() as Promise<{ missionId: string; status: string }>;
+  return res.json() as Promise<CreateMissionResponse>;
 }
 
 export async function getCurrentMission(): Promise<CurrentMissionPayload | null> {
@@ -52,16 +48,16 @@ export async function submitCheckpoint(
   decision: CheckpointDecision,
   guidance?: string,
   reason?: string,
-) {
+): Promise<CheckpointResponse> {
   const res = await fetch(`/api/missions/${missionId}/checkpoints`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ checkpointId, decision, guidance, reason }),
   });
-  return res.json() as Promise<{ accepted: boolean; duplicate?: boolean }>;
+  return res.json() as Promise<CheckpointResponse>;
 }
 
-export async function getHealth() {
+export async function getHealth(): Promise<HealthResponse> {
   const res = await fetch("/health");
-  return res.json() as Promise<{ status: string; lapis: boolean; pinyx: boolean }>;
+  return res.json() as Promise<HealthResponse>;
 }
