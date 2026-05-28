@@ -20,17 +20,31 @@ const MAX_EVENT_HISTORY = 10_000;
 
 export function createEventBus(): EventBus {
   const subscribers = new Set<EventHandler>();
-  const history: SequencedEvent[] = [];
+  const ring = new Array<SequencedEvent>(MAX_EVENT_HISTORY);
+  let writeIdx = 0;
+  let size = 0;
   let seqCounter = 0;
+
+  function ringReadIdx(logicalIdx: number): number {
+    if (size < MAX_EVENT_HISTORY) return logicalIdx;
+    return (writeIdx + logicalIdx) % MAX_EVENT_HISTORY;
+  }
+
+  function ringSlice(startLogical: number, endLogical: number): SequencedEvent[] {
+    const result: SequencedEvent[] = [];
+    for (let i = startLogical; i < endLogical; i++) {
+      result.push(ring[ringReadIdx(i)]);
+    }
+    return result;
+  }
 
   return {
     emit(event) {
       seqCounter++;
       const sequenced: SequencedEvent = { seq: seqCounter, event };
-      history.push(sequenced);
-      if (history.length > MAX_EVENT_HISTORY) {
-        history.splice(0, history.length - MAX_EVENT_HISTORY);
-      }
+      ring[writeIdx] = sequenced;
+      writeIdx = (writeIdx + 1) % MAX_EVENT_HISTORY;
+      if (size < MAX_EVENT_HISTORY) size++;
       for (const handler of subscribers) {
         handler(event);
       }
@@ -42,10 +56,13 @@ export function createEventBus(): EventBus {
       };
     },
     getEventsSince(sinceSeq) {
-      if (sinceSeq <= 0) return history;
-      const startIdx = history.findIndex((e) => e.seq > sinceSeq);
-      if (startIdx === -1) return [];
-      return history.slice(startIdx);
+      if (size === 0) return [];
+      if (sinceSeq <= 0) return ringSlice(0, size);
+      const oldestSeq = seqCounter - size + 1;
+      const targetLogical = sinceSeq - oldestSeq + 1;
+      if (targetLogical >= size) return [];
+      const start = Math.max(0, targetLogical);
+      return ringSlice(start, size);
     },
     getCurrentSeq() {
       return seqCounter;
@@ -88,14 +105,22 @@ export function registerWebSocketRoutes(app: FastifyInstance, eventBus: EventBus
 
         if (msg.type === "replay" && typeof msg.lastSeq === "number") {
           const missed = eventBus.getEventsSince(msg.lastSeq);
-          for (const { seq, event } of missed) {
-            if (socket.readyState === socket.OPEN) {
-              socket.send(JSON.stringify({ seq, event, replayed: true }));
+          const BATCH_SIZE = 100;
+          let offset = 0;
+          function sendBatch() {
+            const end = Math.min(offset + BATCH_SIZE, missed.length);
+            for (let i = offset; i < end; i++) {
+              if (socket.readyState !== socket.OPEN) return;
+              socket.send(JSON.stringify({ seq: missed[i].seq, event: missed[i].event, replayed: true }));
+            }
+            offset = end;
+            if (offset < missed.length) {
+              setImmediate(sendBatch);
+            } else if (socket.readyState === socket.OPEN) {
+              socket.send(JSON.stringify({ type: "replay_done", count: missed.length }));
             }
           }
-          if (socket.readyState === socket.OPEN) {
-            socket.send(JSON.stringify({ type: "replay_done", count: missed.length }));
-          }
+          sendBatch();
         }
       } catch {
         // Ignore malformed messages
