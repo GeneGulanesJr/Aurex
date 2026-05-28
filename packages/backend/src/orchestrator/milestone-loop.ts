@@ -7,6 +7,7 @@ import { createWorktreeManager } from "./worktree.js";
 import { createAgentSpawner } from "../agents/agent-spawner.js";
 import { buildValidatorContext, buildWorkerContext, buildResearchContext, type ValidatorUnitContext } from "../agents/context-builder.js";
 import { createIntegrationLifecycle } from "./integration-lifecycle.js";
+import { validateHandoff } from "../enforcement/handoff-validator.js";
 
 export type MilestoneLoopResult =
   | { status: "completed" }
@@ -238,6 +239,30 @@ export function createMilestoneLoop(
           const handoffsByUnitId = new Map(handoffs.map((handoff: any) => [handoff.unitId, handoff]));
           for (const unit of validatorUnits) {
             unit.handoff = handoffsByUnitId.get(unit.id);
+          }
+
+          // Validate handoffs — fail units with invalid handoffs
+          const invalidHandoffUnitIds: string[] = [];
+          for (const unit of validatorUnits) {
+            if (unit.handoff) {
+              const validation = validateHandoff(unit.handoff as any);
+              if (!validation.valid) {
+                console.warn(`[enforcement] Invalid handoff for unit ${unit.id}:`, validation.errors);
+                await lapis.updateWorkingUnitStatus(unit.id, "failed").catch(() => {});
+                invalidHandoffUnitIds.push(unit.id);
+              }
+            }
+          }
+          if (invalidHandoffUnitIds.length > 0) {
+            failedCount += invalidHandoffUnitIds.length;
+            const invalidSet = new Set(invalidHandoffUnitIds);
+            // Remove invalid units from subsequent phases
+            for (let i = validatorUnits.length - 1; i >= 0; i--) {
+              if (invalidSet.has(validatorUnits[i].id)) validatorUnits.splice(i, 1);
+            }
+            for (let i = integrationUnits.length - 1; i >= 0; i--) {
+              if (invalidSet.has((integrationUnits[i] as WorkingUnit).id)) integrationUnits.splice(i, 1);
+            }
           }
 
           const contractContent = (contract as any)?.content ?? {};
