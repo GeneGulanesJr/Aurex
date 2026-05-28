@@ -14,6 +14,7 @@ export interface MissionRunnerPool {
   getStatus(missionId: string): PoolMissionStatus | null;
   getActiveMissions(): PoolMissionStatus[];
   waitForCompletion(missionId: string): Promise<void>;
+  drain(): Promise<void>;
 }
 
 export interface MissionRunnerPoolConfig extends MissionRunnerConfig {
@@ -147,6 +148,15 @@ export function createMissionRunnerPool(poolConfig: MissionRunnerPoolConfig): Mi
         waiters.push(resolve);
         completionWaiters.set(missionId, waiters);
       });
+    },
+
+    async drain() {
+      queue.length = 0;
+      for (const [, entry] of running) {
+        entry.runner.abort();
+      }
+      const promises = [...running.values()].map((e) => e.completionPromise);
+      await Promise.allSettled(promises);
     },
   };
 }
