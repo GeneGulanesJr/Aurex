@@ -61,8 +61,9 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         lapis,
         pinyx,
         {
-          onEscalation: (mId, trigger, context) => {
-            eventBus.emit({ type: "escalation", missionId: mId, trigger: trigger as EscalationTrigger, context: context as EscalationContext });
+          onEscalation: (_mId, _trigger, _context) => {
+            // Loop no longer emits escalation events directly.
+            // The runner creates checkpoints and emits authoritative escalation events.
           },
           onAgentStatus: (agentId, agentType, agentStatus, milestoneId) => {
             eventBus.emit({ type: "agent_status", agentId, agentType: agentType as AgentType, status: agentStatus as AgentStatus, milestoneId });
@@ -116,6 +117,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         eventBus.emit({
           type: "escalation",
           missionId,
+          checkpointId,
           trigger: { kind: loopResult.trigger, milestoneId: loopResult.milestoneId } as EscalationTrigger,
           context: { summary: loopResult.summary } as EscalationContext,
         });

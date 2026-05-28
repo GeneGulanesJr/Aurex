@@ -23,10 +23,11 @@ export function App() {
 
   const handleDecision = useCallback(async (decision: CheckpointDecision, guidance?: string, reason?: string) => {
     if (!state.mission) return;
-    const checkpointId = crypto.randomUUID();
-    await submitCheckpoint(state.mission.id, checkpointId, decision, guidance, reason);
+    const escalation = state.escalation;
+    if (escalation?.type !== "escalation" || !escalation.checkpointId) return;
+    await submitCheckpoint(state.mission.id, escalation.checkpointId, decision, guidance, reason);
     dispatch({ type: "CLEAR_ESCALATION" });
-  }, [state.mission, dispatch]);
+  }, [state.mission, state.escalation, dispatch]);
 
   if (!connected) {
     return <div className="flex items-center justify-center h-screen text-gray-400">Connecting...</div>;

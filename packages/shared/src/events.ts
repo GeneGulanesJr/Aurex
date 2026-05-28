@@ -6,7 +6,7 @@ export type WsClientEvent =
   | { type: "agent_status"; agentId: string; agentType: AgentType; status: AgentStatus; milestoneId: string }
   | { type: "milestone_progress"; milestoneId: string; status: MilestoneStatus; completedUnits: number; totalUnits: number }
   | { type: "cost_update"; missionId: string; totalCost: number; totalTokens: number; delta: number }
-  | { type: "escalation"; missionId: string; trigger: EscalationTrigger; context: EscalationContext }
+  | { type: "escalation"; missionId: string; checkpointId: string; trigger: EscalationTrigger; context: EscalationContext }
   | { type: "mission_queued"; missionId: string; queuePosition: number }
   | { type: "mission_started"; missionId: string }
   | { type: "mission_completed"; missionId: string; finalState: string };
