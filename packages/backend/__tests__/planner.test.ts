@@ -9,6 +9,7 @@ describe("planner", () => {
       createMilestone: vi.fn().mockResolvedValue({ id: "ms-1", title: "Auth module" }),
       createWorkingUnit: vi.fn().mockResolvedValue({ id: "unit-1", description: "Login endpoint" }),
       createContract: vi.fn().mockResolvedValue({ id: "c-1" }),
+      getContractHistory: vi.fn().mockResolvedValue([]),
     } as unknown as LaPisClient;
 
     const mockPinyx = {
@@ -43,6 +44,7 @@ describe("planner", () => {
       createMilestone: vi.fn().mockResolvedValue({ id: "ms-1", title: "Smoke" }),
       createWorkingUnit: vi.fn(),
       createContract: vi.fn().mockResolvedValue({ id: "c-1" }),
+      getContractHistory: vi.fn().mockResolvedValue([]),
     } as unknown as LaPisClient;
 
     const mockPinyx = {

@@ -57,6 +57,9 @@ function createMockLapis(units: WorkingUnit[] = []): LaPisClient {
       { verdict: "pass", validatorType: "validator_scrutiny" },
       { verdict: "pass", validatorType: "validator_user_testing" },
     ]),
+    getSessionsForMilestone: vi.fn().mockResolvedValue([
+      { sessionId: "s1", agentType: "validator_scrutiny", missionId: "m-1", milestoneId: "ms-1", terminatedAt: null },
+    ]),
     getWorkingUnitsForMilestone: vi.fn().mockResolvedValue(units),
     getContractHistory: vi.fn().mockResolvedValue([{
       content: { criteria: ["works"], testCommands: ["npm test"], acceptanceBehavior: "works" },

@@ -86,6 +86,15 @@ describe("milestone loop validator E2E", () => {
         return written;
       }),
       getVerdicts: vi.fn().mockImplementation(async () => verdicts),
+      getSessionsForMilestone: vi.fn().mockImplementation(async () => (
+        verdicts.map((v: any) => ({
+          sessionId: v.sessionId,
+          agentType: v.validatorType ?? "validator_scrutiny",
+          missionId: "m-e2e",
+          milestoneId: "ms-e2e",
+          terminatedAt: null,
+        }))
+      )),
       incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-e2e", retries: 0, rescopes: 0 }),
       registerAgentSession: vi.fn().mockResolvedValue(undefined),
       searchMemory: vi.fn().mockResolvedValue([]),
@@ -234,6 +243,15 @@ describe("milestone loop validator E2E", () => {
         return written;
       }),
       getVerdicts: vi.fn().mockImplementation(async () => verdicts),
+      getSessionsForMilestone: vi.fn().mockImplementation(async () => (
+        verdicts.map((v: any) => ({
+          sessionId: v.sessionId,
+          agentType: v.validatorType ?? "validator_scrutiny",
+          missionId: "m-e2e",
+          milestoneId: "ms-e2e",
+          terminatedAt: null,
+        }))
+      )),
       incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-e2e", retries: 0, rescopes: 0 }),
       registerAgentSession: vi.fn().mockResolvedValue(undefined),
       searchMemory: vi.fn().mockResolvedValue([]),
@@ -259,7 +277,7 @@ describe("milestone loop validator E2E", () => {
               if (handoffTool) {
                 await writeFile(path.join(repoRoot, "docs", "validator-e2e.md"), "main-conflict\n");
                 await git(repoRoot, "add", "docs/validator-e2e.md");
-                await git(repoRoot, "commit", "-m", "docs: conflicting main update");
+                await git(repoRoot, "commit", "--no-verify", "-m", "docs: conflicting main update");
 
                 await writeFile(path.join(opts.cwd, "docs", "validator-e2e.md"), "worker-conflict\n");
                 await git(opts.cwd, "add", "docs/validator-e2e.md");

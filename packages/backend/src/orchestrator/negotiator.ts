@@ -1,6 +1,7 @@
 // packages/backend/src/orchestrator/negotiator.ts
 import type { LaPisClient } from "../clients/lapis-client.js";
-import type { ValidationVerdict, NegotiatorVerdict } from "@aurex/shared";
+import type { ValidationVerdict, NegotiatorVerdict, AgentType } from "@aurex/shared";
+import { verifyCreatorSession } from "../enforcement/creator-verifier.js";
 
 interface NegotiateResult {
   decision: NegotiatorVerdict;
@@ -19,23 +20,36 @@ export function createNegotiator(lapis: LaPisClient) {
     ): Promise<NegotiateResult> {
       const verdicts: ValidationVerdict[] = await lapis.getVerdicts(milestoneId);
 
-      if (verdicts.length === 0) {
+      // Verify creator sessions — skip verdicts without sessionId, discard invalid sessions
+      const sessions = await lapis.getSessionsForMilestone(milestoneId);
+      const validVerdicts = verdicts.filter((v) => {
+        if (!v.sessionId) return true; // Legacy verdicts without session tracking
+        const expectedType = (v.validatorType ?? "validator_scrutiny") as AgentType;
+        const result = verifyCreatorSession(v.sessionId, expectedType, sessions as any[]);
+        if (!result.valid) {
+          console.warn(`[enforcement] Discarding verdict from session ${v.sessionId}: ${result.reason}`);
+          return false;
+        }
+        return true;
+      });
+
+      if (validVerdicts.length === 0) {
         return { decision: "escalate", reason: "No validator verdicts were recorded" };
       }
 
-      const scrutinyVerdict = verdicts.find((v) => v.validatorType === "validator_scrutiny");
+      const scrutinyVerdict = validVerdicts.find((v) => v.validatorType === "validator_scrutiny");
       if (!scrutinyVerdict) {
         return { decision: "escalate", reason: "Missing scrutiny validator verdict" };
       }
 
       // Check if all verdicts pass
-      const allPass = verdicts.every((v) => v.verdict === "pass");
+      const allPass = validVerdicts.every((v) => v.verdict === "pass");
       if (allPass) {
         return { decision: "pass", reason: "All validators passed" };
       }
 
       // User testing failure always blocks (override authority)
-      const userTestFailure = verdicts.find(
+      const userTestFailure = validVerdicts.find(
         (v) => v.validatorType === "validator_user_testing" && v.verdict === "fail",
       );
       if (userTestFailure) {
@@ -56,7 +70,7 @@ export function createNegotiator(lapis: LaPisClient) {
       }
 
       // Scrutiny-only failure — classify
-      const scrutinyFailure = verdicts.find(
+      const scrutinyFailure = validVerdicts.find(
         (v) => v.validatorType === "validator_scrutiny" && v.verdict === "fail",
       );
       if (scrutinyFailure) {
