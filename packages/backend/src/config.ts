@@ -36,7 +36,6 @@ export interface AppConfig {
 
   // Server
   port: number;
-  wsPort: number;
 
   // Authentication
   apiKey: string | null;
@@ -99,7 +98,6 @@ export function loadConfig(): AppConfig {
     gitMainBranch: env("GIT_MAIN_BRANCH", "main"),
 
     port: envInt("PORT", 3000),
-    wsPort: envInt("WS_PORT", 3001),
     apiKey: process.env.API_KEY || null,
     maxConcurrentMissions: envInt("MAX_CONCURRENT_MISSIONS", 3),
   };

@@ -1,10 +1,10 @@
 // packages/backend/src/orchestrator/worktree.ts
-import { exec } from "node:child_process";
+import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export interface WorktreeManager {
   createWorktree(agentId: string, taskId: string, agentBranch: string): Promise<{ worktreePath: string; taskBranch: string }>;
@@ -14,11 +14,18 @@ export interface WorktreeManager {
   installBranchGuard(worktreePath: string, allowedBranch: string): Promise<void>;
 }
 
+function sanitizeGitArg(arg: string): void {
+  if (arg.includes("\x00") || /[\n\r;'`$\\!"#&|<>(){}]/.test(arg)) {
+    throw new Error(`Invalid git argument: ${arg}`);
+  }
+}
+
 export function createWorktreeManager(repoRoot: string): WorktreeManager {
   const worktreeBase = `${repoRoot}/.git-worktrees`;
 
-  async function git(cmd: string): Promise<string> {
-    const { stdout } = await execAsync(`git -C ${repoRoot} ${cmd}`);
+  async function git(...args: string[]): Promise<string> {
+    for (const arg of args) sanitizeGitArg(arg);
+    const { stdout } = await execFileAsync("git", ["-C", repoRoot, ...args]);
     return stdout.trim();
   }
 
@@ -27,33 +34,27 @@ export function createWorktreeManager(repoRoot: string): WorktreeManager {
       const taskBranch = `task/${agentId}/${taskId}`;
       const worktreePath = `${worktreeBase}/${agentId}-${taskId}`;
 
-      // Create task branch from agent branch
-      await git(`branch ${taskBranch} ${agentBranch}`);
-
-      // Create worktree with task branch checked out
-      await git(`worktree add ${worktreePath} ${taskBranch}`);
+      await git("branch", taskBranch, agentBranch);
+      await git("worktree", "add", worktreePath, taskBranch);
 
       return { worktreePath, taskBranch };
     },
 
     async createBranch(branchName, baseBranch) {
-      await git(`branch ${branchName} ${baseBranch}`);
+      await git("branch", branchName, baseBranch);
     },
 
     async mergeToTarget(sourceBranch, targetBranch) {
-      await git(`checkout ${targetBranch}`);
-      await git(`merge ${sourceBranch} --no-ff`);
+      await git("checkout", targetBranch);
+      await git("merge", sourceBranch, "--no-ff");
     },
 
     async pruneWorktree(worktreePath) {
-      await git(`worktree remove ${worktreePath} --force`);
-      await git(`worktree prune`);
+      await git("worktree", "remove", worktreePath, "--force");
+      await git("worktree", "prune");
     },
 
     async installBranchGuard(_worktreePath, _allowedBranch) {
-      // Git worktrees share the main repo's .git/hooks directory
-      // Install a pre-commit hook that only allows commits on task/* branches
-      // (not on main, develop, release/*, etc.)
       const hooksDir = path.join(repoRoot, ".git", "hooks");
       const hookPath = path.join(hooksDir, "pre-commit");
       const hookContent = [
@@ -76,7 +77,6 @@ export function createWorktreeManager(repoRoot: string): WorktreeManager {
         await mkdir(hooksDir, { recursive: true });
         await writeFile(hookPath, hookContent, { mode: 0o755 });
       } catch {
-        // Hooks directory may not exist in test environments — guard is best-effort
       }
     },
   };
