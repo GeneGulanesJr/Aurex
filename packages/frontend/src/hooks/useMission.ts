@@ -55,7 +55,7 @@ export function missionReducer(state: MissionState, action: Action): MissionStat
       }
       const activeWorkers = [
         ...state.activeWorkers,
-        { id: action.agentId, milestoneId: action.milestoneId, description: `${action.agentType} agent`, status: action.status as WorkingUnit["status"], declaredPaths: [], declaredModules: [] } satisfies WorkingUnit,
+        { id: action.agentId, milestoneId: action.milestoneId, description: `${action.agentType} agent`, status: action.status as WorkingUnit["status"], declaredPaths: [] as string[], declaredModules: [] as string[], taskBranch: "", worktreePath: "", sessionId: "" },
       ];
       return { ...state, activeWorkers };
     }

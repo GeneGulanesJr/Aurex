@@ -29,7 +29,7 @@ describe("WorktreeManager", () => {
     expect(result.taskBranch).toBe("task/worker-a/auth-001");
     expect(result.worktreePath).toBe("/repo/root/.git-worktrees/worker-a-auth-001");
 
-    const calls = mockExecAsync.mock.calls.map((c) => c[0] as string);
+    const calls = mockExecAsync.mock.calls.map((c) => `${c[0]} ${(c[1] as string[]).join(" ")}`);
     expect(calls.some((c) => c.includes("branch task/worker-a/auth-001"))).toBe(true);
     expect(calls.some((c) => c.includes("worktree add"))).toBe(true);
   });
@@ -38,7 +38,7 @@ describe("WorktreeManager", () => {
     const manager = createWorktreeManager("/repo/root");
     await manager.mergeToTarget("task/worker-a/auth-001", "develop");
 
-    const calls = mockExecAsync.mock.calls.map((c) => c[0] as string);
+    const calls = mockExecAsync.mock.calls.map((c) => `${c[0]} ${(c[1] as string[]).join(" ")}`);
     expect(calls.some((c) => c.includes("checkout develop"))).toBe(true);
     expect(calls.some((c) => c.includes("merge task/worker-a/auth-001"))).toBe(true);
   });
@@ -47,7 +47,7 @@ describe("WorktreeManager", () => {
     const manager = createWorktreeManager("/repo/root");
     await manager.createBranch("release/milestone-1", "develop");
 
-    const calls = mockExecAsync.mock.calls.map((c) => c[0] as string);
+    const calls = mockExecAsync.mock.calls.map((c) => `${c[0]} ${(c[1] as string[]).join(" ")}`);
     expect(calls.some((c) => c.includes("branch release/milestone-1 develop"))).toBe(true);
   });
 
@@ -55,7 +55,7 @@ describe("WorktreeManager", () => {
     const manager = createWorktreeManager("/repo/root");
     await manager.pruneWorktree("/repo/root/.git-worktrees/worker-a-auth-001");
 
-    const calls = mockExecAsync.mock.calls.map((c) => c[0] as string);
+    const calls = mockExecAsync.mock.calls.map((c) => `${c[0]} ${(c[1] as string[]).join(" ")}`);
     expect(calls.some((c) => c.includes("worktree remove"))).toBe(true);
     expect(calls.some((c) => c.includes("worktree prune"))).toBe(true);
   });
