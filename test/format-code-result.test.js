@@ -66,6 +66,39 @@ describe('tools/format-code-result', () => {
       expect(result).toContain('Callers:');
       expect(result).toContain('File importers:');
     });
+
+    it('should format richer blast radius with reachability scores', () => {
+      const result = formatCodeResult('blast-radius', {
+        symbol: 'myFunc',
+        seed_file: 'src/main.ts',
+        affected_files: [
+          { path: 'src/a.ts', reachability: 0.85, signals: ['call', 'import'] },
+          { path: 'src/b.ts', reachability: 0.42, signals: ['cochange'] },
+        ],
+        affected_symbols: [
+          { name: 'caller1', file: 'src/a.ts', reachability: 0.7, via: 'call' },
+        ],
+      });
+      expect(result).toContain('Blast radius of myFunc');
+      expect(result).toContain('Affected files: 2');
+      expect(result).toContain('[0.85] src/a.ts');
+      expect(result).toContain('[0.42] src/b.ts');
+      expect(result).toContain('via call, import');
+      expect(result).toContain('Affected symbols:');
+      expect(result).toContain('[0.70] caller1');
+    });
+
+    it('should format new engine output with empty affected files', () => {
+      const result = formatCodeResult('blast-radius', {
+        symbol: 'myFunc',
+        seed_file: 'src/main.ts',
+        affected_files: [],
+        affected_symbols: [],
+      });
+      expect(result).toContain('Blast radius of myFunc');
+      expect(result).toContain('Affected files: 0');
+      expect(result).toContain('by reachability');
+    });
   });
 
   describe('dead-code', () => {

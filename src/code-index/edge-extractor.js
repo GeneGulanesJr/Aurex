@@ -24,6 +24,22 @@ function buildComplexityMetricsForFiles(db, repoId, changedFileIds, deletedFileI
   return codeAnalysis.buildComplexityForFiles(db, repoId, changedFileIds, deletedFileIds);
 }
 
+function buildRelationEdges(db, repoId) {
+  const results = [];
+  results.push(codeAnalysis.buildExtendsEdges(db, repoId));
+  results.push(codeAnalysis.buildImplementsEdges(db, repoId));
+  results.push(codeAnalysis.buildReexportEdges(db, repoId));
+  results.push(codeAnalysis.buildReferenceEdges(db, repoId));
+  return {
+    success: results.every((r) => r.success !== false),
+    count: results.reduce((sum, r) => sum + (r.count || 0), 0),
+  };
+}
+
+function buildCochangeEdges(db, repoId, opts) {
+  return codeAnalysis.buildCochangeEdges(db, repoId, opts);
+}
+
 module.exports = {
   buildImportEdges,
   buildImportEdgesForFiles,
@@ -31,4 +47,6 @@ module.exports = {
   buildCallEdgesForFiles,
   buildComplexityMetrics,
   buildComplexityMetricsForFiles,
+  buildRelationEdges,
+  buildCochangeEdges,
 };

@@ -33,6 +33,28 @@ function formatCodeResult(mode: string, result: any): string {
     }
     case 'blast-radius': {
       const aFiles = result.affected_files || [];
+      const isNewFormat = result.seed_file !== undefined || (aFiles.length > 0 && aFiles[0].reachability !== undefined);
+      if (isNewFormat) {
+        const aSyms = result.affected_symbols || [];
+        const lines: string[] = [
+          `**Blast radius of ${result.symbol ?? result.seed_file ?? '?'}** (${result.seed_file ?? '?'})`,
+          `Affected files: ${aFiles.length} (by reachability)`,
+        ];
+        for (const f of aFiles.slice(0, 15)) {
+          const score = (f.reachability ?? 0).toFixed(2);
+          const signals = (f.signals || []).join(', ');
+          lines.push(`  [${score}] ${f.path ?? '?'} — via ${signals}`);
+        }
+        if (aSyms.length > 0) {
+          lines.push('');
+          lines.push('Affected symbols:');
+          for (const s of aSyms.slice(0, 10)) {
+            const score = (s.reachability ?? 0).toFixed(2);
+            lines.push(`  [${score}] ${s.name ?? '?'} (${s.file ?? '?'})`);
+          }
+        }
+        return lines.join('\n');
+      }
       const callers = result.callers || [];
       const importers = result.file_importers || [];
       return [

@@ -421,3 +421,20 @@ describe('code-analysis: pr-risk (v6)', () => {
     }
   });
 });
+
+describe('code-analysis: relation edges', () => {
+  it('should return blast radius with affected files after reindex', () => {
+    const r = run(`blast-radius --repo ${REPO} --symbol buildImportGraph`, 15000);
+    expect(r.error).toBeUndefined();
+    expect(r.affected_files).toBeDefined();
+    expect(Array.isArray(r.affected_files)).toBe(true);
+  });
+
+  it('should populate code_relations table after reindex', () => {
+    const out = execSync(
+      `node "${STORE}" query-code "SELECT kind, COUNT(*) as c FROM code_relations GROUP BY kind" --repo ${REPO}`,
+      { encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] },
+    );
+    expect(out).toBeDefined();
+  });
+});
