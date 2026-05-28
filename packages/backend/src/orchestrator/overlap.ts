@@ -1,6 +1,41 @@
 // packages/backend/src/orchestrator/overlap.ts
 import type { WorkingUnit } from "@aurex/shared";
 import { minimatch } from "minimatch";
+const GLOB_RE = /[*?[{]/;
+
+function hasGlobChar(s: string): boolean {
+  return GLOB_RE.test(s);
+}
+
+function hasAnyGlobs(paths: string[]): boolean {
+  for (let i = 0; i < paths.length; i++) {
+    if (GLOB_RE.test(paths[i])) return true;
+  }
+  return false;
+}
+
+function exactPathOverlap(a: string[], b: string[]): boolean {
+  const set = new Set(a);
+  for (let i = 0; i < b.length; i++) {
+    if (set.has(b[i])) return true;
+  }
+  return false;
+}
+
+function globPathOverlap(newPaths: string[], existingPaths: string[]): boolean {
+  return newPaths.some((newPath) =>
+    existingPaths.some((existingPath) =>
+      minimatch(newPath, existingPath) || minimatch(existingPath, newPath),
+    ),
+  );
+}
+
+function checkPathOverlap(newPaths: string[], existingPaths: string[]): boolean {
+  if (!hasAnyGlobs(newPaths) && !hasAnyGlobs(existingPaths)) {
+    return exactPathOverlap(newPaths, existingPaths);
+  }
+  return globPathOverlap(newPaths, existingPaths);
+}
 
 interface ScopeDeclaration {
   declaredPaths: string[];
@@ -22,26 +57,20 @@ export function checkPreSpawnOverlap(
 ): OverlapResult {
   const newPaths = newScope.declaredPaths;
   const newModules = newScope.declaredModules;
+  const newModulesSet = new Set(newModules);
 
   const overlapping: string[] = [];
 
   for (const unit of existingUnits) {
     if (unit.status !== "working" && unit.status !== "spawned") continue;
 
-    // Check module overlap
-    const moduleOverlap = newModules.some((m) => unit.declaredModules.includes(m));
+    const moduleOverlap = unit.declaredModules.some((m) => newModulesSet.has(m));
     if (moduleOverlap) {
       overlapping.push(unit.id);
       continue;
     }
 
-    // Check path overlap using glob matching
-    const pathOverlap = newPaths.some((newPath) =>
-      unit.declaredPaths.some((existingPath) =>
-        minimatch(newPath, existingPath) || minimatch(existingPath, newPath),
-      ),
-    );
-    if (pathOverlap) {
+    if (checkPathOverlap(newPaths, unit.declaredPaths)) {
       overlapping.push(unit.id);
     }
   }
@@ -71,13 +100,21 @@ export function detectOverlap(
   existingUnits: WorkingUnit[],
 ): OverlapResult {
   const overlapping: string[] = [];
+  const filePathsAreConcrete = !hasAnyGlobs(filePaths);
+  const filePathsSet = filePathsAreConcrete ? new Set(filePaths) : null;
 
   for (const unit of existingUnits) {
     if (unit.status !== "working" && unit.status !== "spawned") continue;
 
-    const hasOverlap = filePaths.some((file) =>
-      unit.declaredPaths.some((pattern) => minimatch(file, pattern)),
-    );
+    const unitPathsAreConcrete = !hasAnyGlobs(unit.declaredPaths);
+    let hasOverlap: boolean;
+    if (filePathsAreConcrete && unitPathsAreConcrete && filePathsSet) {
+      hasOverlap = unit.declaredPaths.some((p) => filePathsSet.has(p));
+    } else {
+      hasOverlap = filePaths.some((file) =>
+        unit.declaredPaths.some((pattern) => minimatch(file, pattern)),
+      );
+    }
 
     if (hasOverlap) {
       overlapping.push(unit.id);
