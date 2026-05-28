@@ -1,7 +1,9 @@
+import { useEffect, useRef } from "react";
 import { AgentGrid } from "./AgentGrid";
 import { MilestoneBar } from "./MilestoneBar";
 import { CostCounter } from "./CostCounter";
 import { StatusFeed } from "./StatusFeed";
+import { dimPassive, restorePassive } from "../animations/state-transitions";
 import type { Mission, Milestone, WorkingUnit, CostSummary, WsClientEvent } from "@aurex/shared";
 
 interface StatusBoardProps {
@@ -14,6 +16,18 @@ interface StatusBoardProps {
 }
 
 export function StatusBoard({ mission, milestones, workers, cost, events, blurred }: StatusBoardProps) {
+  const boardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = boardRef.current;
+    if (!el) return;
+    if (blurred) {
+      dimPassive(el);
+    } else {
+      restorePassive(el);
+    }
+  }, [blurred]);
+
   if (!mission) {
     return <div className="text-gray-500 text-center py-20">No active mission</div>;
   }
@@ -21,7 +35,7 @@ export function StatusBoard({ mission, milestones, workers, cost, events, blurre
   const currentMilestone = milestones.find((m) => m.status === "in_progress") || milestones[0];
 
   return (
-    <div className={`transition-all duration-500 ${blurred ? "blur-sm opacity-50" : ""}`}>
+    <div ref={boardRef}>
       <div className="grid grid-cols-3 gap-6 p-6">
         <div className="col-span-2">
           <AgentGrid workers={workers} />

@@ -1,6 +1,6 @@
 // packages/backend/src/ws/events.ts
 import type { FastifyInstance } from "fastify";
-import type { WsClientEvent } from "@aurex/shared";
+import type { WsClientEvent, WsClientMessage } from "@aurex/shared";
 
 export type EventHandler = (event: WsClientEvent) => void;
 
@@ -14,6 +14,11 @@ export interface EventBus {
   subscribe(handler: EventHandler): () => void;
   getEventsSince(seq: number): SequencedEvent[];
   getCurrentSeq(): number;
+}
+
+export interface WsRouteDeps {
+  onSubscribeMission?: (socket: any, missionId: string) => void;
+  onCheckpointDecision?: (msg: WsClientMessage) => void;
 }
 
 const MAX_EVENT_HISTORY = 10_000;
@@ -57,12 +62,11 @@ export function createEventBus(): EventBus {
     },
     getEventsSince(sinceSeq) {
       if (size === 0) return [];
-      if (sinceSeq <= 0) return ringSlice(0, size);
       const oldestSeq = seqCounter - size + 1;
+      if (sinceSeq < oldestSeq) return ringSlice(0, size);
       const targetLogical = sinceSeq - oldestSeq + 1;
       if (targetLogical >= size) return [];
-      const start = Math.max(0, targetLogical);
-      return ringSlice(start, size);
+      return ringSlice(targetLogical, size);
     },
     getCurrentSeq() {
       return seqCounter;
@@ -70,9 +74,15 @@ export function createEventBus(): EventBus {
   };
 }
 
-export function registerWebSocketRoutes(app: FastifyInstance, eventBus: EventBus, apiKey: string | null = null): void {
+export function registerWebSocketRoutes(
+  app: FastifyInstance,
+  eventBus: EventBus,
+  apiKey: string | null = null,
+  deps?: WsRouteDeps,
+): void {
   app.get("/ws", { websocket: true }, (socket) => {
     let authenticated = !apiKey;
+    const subscribedMissions = new Set<string>();
     const pendingAuthTimeout = apiKey
       ? setTimeout(() => {
           if (!authenticated && socket.readyState === socket.OPEN) {
@@ -121,6 +131,21 @@ export function registerWebSocketRoutes(app: FastifyInstance, eventBus: EventBus
             }
           }
           sendBatch();
+          return;
+        }
+
+        if (msg.event === "subscribe_mission" && typeof msg.missionId === "string") {
+          subscribedMissions.add(msg.missionId);
+          deps?.onSubscribeMission?.(socket, msg.missionId);
+          if (socket.readyState === socket.OPEN) {
+            socket.send(JSON.stringify({ type: "subscribed", missionId: msg.missionId }));
+          }
+          return;
+        }
+
+        if (msg.event === "checkpoint_decision") {
+          deps?.onCheckpointDecision?.(msg as WsClientMessage);
+          return;
         }
       } catch {
         // Ignore malformed messages
@@ -137,6 +162,10 @@ export function registerWebSocketRoutes(app: FastifyInstance, eventBus: EventBus
 
       unsubscribe = eventBus.subscribe((event) => {
         if (socket.readyState === socket.OPEN) {
+          const anyEvent = event as any;
+          if (subscribedMissions.size > 0 && anyEvent.missionId && !subscribedMissions.has(anyEvent.missionId)) {
+            return;
+          }
           const seq = eventBus.getCurrentSeq();
           socket.send(JSON.stringify({ seq, event }));
         }

@@ -23,11 +23,16 @@ function exactPathOverlap(a: string[], b: string[]): boolean {
 }
 
 function globPathOverlap(newPaths: string[], existingPaths: string[]): boolean {
-  return newPaths.some((newPath) =>
-    existingPaths.some((existingPath) =>
-      minimatch(newPath, existingPath) || minimatch(existingPath, newPath),
-    ),
-  );
+  for (let i = 0; i < newPaths.length; i++) {
+    const newPath = newPaths[i];
+    for (let j = 0; j < existingPaths.length; j++) {
+      const existingPath = existingPaths[j];
+      if (minimatch(newPath, existingPath) || minimatch(existingPath, newPath)) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function checkPathOverlap(newPaths: string[], existingPaths: string[]): boolean {
