@@ -8,6 +8,7 @@ import { createAgentSpawner } from "../agents/agent-spawner.js";
 import { buildValidatorContext, buildWorkerContext, buildResearchContext, type ValidatorUnitContext } from "../agents/context-builder.js";
 import { createIntegrationLifecycle } from "./integration-lifecycle.js";
 import { validateHandoff } from "../enforcement/handoff-validator.js";
+import { checkPreSpawnOverlap } from "./overlap.js";
 
 export type MilestoneLoopResult =
   | { status: "completed" }
@@ -98,20 +99,23 @@ export function createMilestoneLoop(
             id: u.id, description: u.description, declaredPaths: u.declaredPaths, declaredModules: u.declaredModules, taskBranch: u.taskBranch, worktreePath: u.worktreePath,
           })));
 
-          // Group pending units into non-overlapping batches
+          // Group pending units into non-overlapping batches using glob-aware overlap detection
           const batches: WorkingUnit[][] = [];
           const remaining = [...pendingUnits];
           while (remaining.length > 0) {
             const batch: WorkingUnit[] = [remaining.shift()!];
-            const batchScope = { paths: new Set(batch[0].declaredPaths), modules: new Set(batch[0].declaredModules) };
+            let batchPaths = [...batch[0].declaredPaths];
+            let batchModules = [...batch[0].declaredModules];
             for (let i = remaining.length - 1; i >= 0; i--) {
               const candidate = remaining[i];
-              const hasOverlap = candidate.declaredPaths.some((p: string) => batchScope.paths.has(p))
-                || candidate.declaredModules.some((m: string) => batchScope.modules.has(m));
-              if (!hasOverlap) {
+              const overlap = checkPreSpawnOverlap(
+                { declaredPaths: candidate.declaredPaths, declaredModules: candidate.declaredModules },
+                batch.map((u) => ({ ...u, status: "spawned" as const })),
+              );
+              if (!overlap.overlap) {
                 batch.push(candidate);
-                candidate.declaredPaths.forEach((p: string) => batchScope.paths.add(p));
-                candidate.declaredModules.forEach((m: string) => batchScope.modules.add(m));
+                batchPaths = [...batchPaths, ...candidate.declaredPaths];
+                batchModules = [...batchModules, ...candidate.declaredModules];
                 remaining.splice(i, 1);
               }
             }
