@@ -1,0 +1,7 @@
+FROM node:22-slim
+
+WORKDIR /app
+COPY scripts/pinyx-stub.mjs .
+
+EXPOSE 7331
+CMD ["node", "pinyx-stub.mjs"]

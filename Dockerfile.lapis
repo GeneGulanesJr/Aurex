@@ -1,0 +1,18 @@
+FROM node:22-slim
+
+RUN apt-get update && apt-get install -y git python3 make g++ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+RUN git clone --depth 1 https://github.com/GeneGulanesJr/LaPis.git .
+
+RUN npm install
+
+RUN mkdir -p /root/.pi/memory
+
+EXPOSE 9100
+
+HEALTHCHECK --interval=5s --timeout=3s --start-period=15s --retries=10 \
+  CMD node -e "fetch('http://localhost:9100/health').then(r=>r.json()).then(j=>{if(j.status!=='ok')process.exit(1)})" || exit 1
+
+CMD ["node", "cli.js", "serve", "--port", "9100"]
