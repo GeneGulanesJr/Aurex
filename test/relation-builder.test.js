@@ -10,7 +10,7 @@ let db;
 let repoId;
 
 function setupTestDb(symbols) {
-  if (fs.existsSync(TMP_DB)) fs.unlinkSync(TMP_DB);
+  if (fs.existsSync(TMP_DB)) { fs.unlinkSync(TMP_DB); }
   db = new Database(TMP_DB);
 
   db.exec(`CREATE TABLE code_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, path TEXT)`);
@@ -57,8 +57,8 @@ function setupTestDb(symbols) {
 }
 
 afterEach(() => {
-  if (db) db.close();
-  if (fs.existsSync(TMP_DB)) fs.unlinkSync(TMP_DB);
+  if (db) { db.close(); }
+  if (fs.existsSync(TMP_DB)) { fs.unlinkSync(TMP_DB); }
 });
 
 describe('buildExtendsEdges', () => {
@@ -147,7 +147,7 @@ describe('buildImplementsEdges', () => {
 
 describe('buildReexportEdges', () => {
   function setupReexportDb() {
-    if (fs.existsSync(TMP_DB)) fs.unlinkSync(TMP_DB);
+    if (fs.existsSync(TMP_DB)) { fs.unlinkSync(TMP_DB); }
     db = new Database(TMP_DB);
     db.exec(`CREATE TABLE code_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, path TEXT)`);
     db.exec(`CREATE TABLE code_files (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER, path TEXT, language TEXT, content TEXT, content_hash TEXT)`);
@@ -190,7 +190,7 @@ describe('buildReexportEdges', () => {
 
 describe('buildReferenceEdges', () => {
   function setupReferenceDb() {
-    if (fs.existsSync(TMP_DB)) fs.unlinkSync(TMP_DB);
+    if (fs.existsSync(TMP_DB)) { fs.unlinkSync(TMP_DB); }
     db = new Database(TMP_DB);
     db.exec(`CREATE TABLE code_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, path TEXT)`);
     db.exec(`CREATE TABLE code_files (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER, path TEXT, language TEXT, content TEXT, content_hash TEXT)`);

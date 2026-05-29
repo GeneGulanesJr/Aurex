@@ -16,7 +16,7 @@ function createHttpServer(deps) {
     let body = null;
     if (req.method === 'POST' || req.method === 'PATCH') {
       body = await parseBody(req, res);
-      if (body === undefined) return; // parseBody already sent error
+      if (body === undefined) { return; }
     }
 
     try {

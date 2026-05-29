@@ -504,15 +504,15 @@ function median(values) {
 }
 
 function fmtMs(ms) {
-  if (!ms) return 'n/a';
+  if (!ms) { return 'n/a'; }
   const s = Math.round(ms / 1000);
-  if (s < 60) return `${s}s`;
+  if (s < 60) { return `${s}s`; }
   const m = Math.floor(s / 60);
   return `${m}m ${s % 60}s`;
 }
 
 function fmtNum(n) {
-  if (n === undefined || n === null) return 'n/a';
+  if (n === undefined || n === null) { return 'n/a'; }
   return n.toLocaleString();
 }
 

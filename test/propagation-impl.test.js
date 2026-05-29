@@ -9,7 +9,7 @@ let db;
 let repoId;
 
 function setupPropagationDb() {
-  if (fs.existsSync(TMP_DB)) fs.unlinkSync(TMP_DB);
+  if (fs.existsSync(TMP_DB)) { fs.unlinkSync(TMP_DB); }
   db = new Database(TMP_DB);
 
   db.exec(`CREATE TABLE code_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, path TEXT)`);
@@ -49,8 +49,8 @@ function setupPropagationDb() {
 }
 
 afterEach(() => {
-  if (db) db.close();
-  if (fs.existsSync(TMP_DB)) fs.unlinkSync(TMP_DB);
+  if (db) { db.close(); }
+  if (fs.existsSync(TMP_DB)) { fs.unlinkSync(TMP_DB); }
 });
 
 describe('getAffectedGraph', () => {
