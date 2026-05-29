@@ -100,13 +100,25 @@ describe('bench pi paired parser', () => {
           elapsed_ms: 10,
           usage: { active_tokens: 100, cache_read_tokens: 20 },
           grade: { matched: 1, total: 1 },
-          behavior: { tool_calls: 2, failed_tool_calls: 1, memory_tool_calls: 0, code_tool_calls: 1, assistant_turns: 2 },
+          behavior: {
+            tool_calls: 2,
+            failed_tool_calls: 1,
+            memory_tool_calls: 0,
+            code_tool_calls: 1,
+            assistant_turns: 2,
+          },
         },
         memory_on: {
           elapsed_ms: 5,
           usage: { active_tokens: 50, cache_read_tokens: 30 },
           grade: { matched: 1, total: 1 },
-          behavior: { tool_calls: 1, failed_tool_calls: 0, memory_tool_calls: 1, code_tool_calls: 1, assistant_turns: 1 },
+          behavior: {
+            tool_calls: 1,
+            failed_tool_calls: 0,
+            memory_tool_calls: 1,
+            code_tool_calls: 1,
+            assistant_turns: 1,
+          },
         },
       },
     ]);

@@ -5,7 +5,9 @@ const { extractImportBindings, extractImportsFromSource, resolveImportTarget } =
 
 function buildImportGraphForFiles(db, repoId, changedFileIds, deletedFileIds = []) {
   const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
+  if (guard) {
+    return guard;
+  }
   if (!changedFileIds.length && !deletedFileIds.length) {
     return { success: true, edges: 0, incremental: true };
   }
@@ -16,7 +18,9 @@ function buildImportGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [
     const importers = db
       .prepare(`SELECT DISTINCT source_file_id FROM code_imports WHERE repo_id = ? AND target_file_id IN (${ph})`)
       .all(repoId, ...allAffected);
-    for (const row of importers) {allAffected.add(row.source_file_id);}
+    for (const row of importers) {
+      allAffected.add(row.source_file_id);
+    }
   }
 
   const delPh = [...allAffected].map(() => '?').join(',');
@@ -47,10 +51,14 @@ function buildImportGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [
   runInTx(() => {
     for (const fileId of allAffected) {
       // oxlint-disable-next-line no-continue
-      if (deletedSet.has(fileId)) {continue;}
+      if (deletedSet.has(fileId)) {
+        continue;
+      }
       const row = fileStmt.get(fileId);
       // oxlint-disable-next-line no-continue
-      if (!row || !row.content) {continue;}
+      if (!row || !row.content) {
+        continue;
+      }
       const imports = extractImportsFromSource(row.content);
       for (const imp of imports) {
         const targetFileId = resolveImportTarget(db, repoId, row.path, imp.target_module);
@@ -65,7 +73,9 @@ function buildImportGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [
 
 function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [], opts = {}) {
   const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
+  if (guard) {
+    return guard;
+  }
   if (!changedFileIds.length && !deletedFileIds.length) {
     return { success: true, calls: 0, incremental: true };
   }
@@ -100,9 +110,7 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
     ).run(repoId, ...staleCallers);
   }
 
-  const rebuildFileIds = new Set(
-    [...changedFileIds, ...staleCallers].filter((id) => !deletedSet.has(id)),
-  );
+  const rebuildFileIds = new Set([...changedFileIds, ...staleCallers].filter((id) => !deletedSet.has(id)));
 
   if (rebuildFileIds.size === 0) {
     return { success: true, calls: 0, incremental: true };
@@ -177,7 +185,9 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
 
   const fileRows = db.prepare('SELECT id, path, size_bytes FROM code_files WHERE repo_id = ?').all(repoId);
   const fileById = new Map();
-  for (const f of fileRows) {fileById.set(f.id, f);}
+  for (const f of fileRows) {
+    fileById.set(f.id, f);
+  }
   const contentStmt = db.prepare('SELECT content FROM code_files WHERE id = ?');
 
   const insertStmt = db.prepare(
@@ -189,15 +199,23 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
 
   function getFileSymbol(fileId, name, kind) {
     const byName = symbolsByFileAndName.get(fileId);
-    if (!byName) {return null;}
+    if (!byName) {
+      return null;
+    }
     const matches = byName.get(name);
-    if (!matches) {return null;}
-    if (kind) {return matches.find((s) => s.kind === kind) || null;}
+    if (!matches) {
+      return null;
+    }
+    if (kind) {
+      return matches.find((s) => s.kind === kind) || null;
+    }
     return matches[0] || null;
   }
 
   function getFileImports(fileId) {
-    if (fileImportsCache[fileId]) {return fileImportsCache[fileId];}
+    if (fileImportsCache[fileId]) {
+      return fileImportsCache[fileId];
+    }
     const imports = db
       .prepare(
         'SELECT target_file_id, target_module FROM code_imports WHERE source_file_id = ? AND target_file_id IS NOT NULL',
@@ -208,11 +226,15 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
   }
 
   function getFileBindings(fileId, fileContent) {
-    if (fileBindingsCache[fileId]) {return fileBindingsCache[fileId];}
+    if (fileBindingsCache[fileId]) {
+      return fileBindingsCache[fileId];
+    }
     const bindings = extractImportBindings(fileContent || '');
     const imports = getFileImports(fileId);
     const importMap = new Map();
-    for (const imp of imports) {importMap.set(imp.target_module, imp.target_file_id);}
+    for (const imp of imports) {
+      importMap.set(imp.target_module, imp.target_file_id);
+    }
     const resolved = bindings.map((b) => ({ ...b, target_file_id: importMap.get(b.modulePath) || null }));
     fileBindingsCache[fileId] = resolved;
     return resolved;
@@ -235,10 +257,18 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
       if (bindingMatch.target_file_id) {
         if (originalName === '*' || originalName === 'default') {
           const matchSym = getFileSymbol(bindingMatch.target_file_id, calleeName);
-          if (matchSym) {_rr.calleeSymbolId = matchSym.id; _rr.confidence = 1.0; return;}
+          if (matchSym) {
+            _rr.calleeSymbolId = matchSym.id;
+            _rr.confidence = 1.0;
+            return;
+          }
         } else {
           const matchSym = getFileSymbol(bindingMatch.target_file_id, originalName);
-          if (matchSym) {_rr.calleeSymbolId = matchSym.id; _rr.confidence = 1.0; return;}
+          if (matchSym) {
+            _rr.calleeSymbolId = matchSym.id;
+            _rr.confidence = 1.0;
+            return;
+          }
         }
       }
     }
@@ -246,11 +276,18 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
     if (receiver === 'this' && callerSym.parent_name) {
       const qualifiedName = `${callerSym.parent_name}.${calleeName}`;
       const qualifiedMatches = symbolsByQualified.get(qualifiedName);
-      if (qualifiedMatches && qualifiedMatches.length === 1)
-        {_rr.calleeSymbolId = qualifiedMatches[0].id; _rr.confidence = 0.95; return;}
+      if (qualifiedMatches && qualifiedMatches.length === 1) {
+        _rr.calleeSymbolId = qualifiedMatches[0].id;
+        _rr.confidence = 0.95;
+        return;
+      }
       if (qualifiedMatches && qualifiedMatches.length > 1) {
         const sameFile = qualifiedMatches.find((m) => m.file_id === callerSym.file_id);
-        if (sameFile) {_rr.calleeSymbolId = sameFile.id; _rr.confidence = 0.9; return;}
+        if (sameFile) {
+          _rr.calleeSymbolId = sameFile.id;
+          _rr.confidence = 0.9;
+          return;
+        }
       }
     }
 
@@ -259,8 +296,11 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
       if (parentName) {
         const superQualified = `${parentName}.${calleeName}`;
         const superMatches = symbolsByQualified.get(superQualified);
-        if (superMatches && superMatches.length === 1)
-          {_rr.calleeSymbolId = superMatches[0].id; _rr.confidence = 0.9; return;}
+        if (superMatches && superMatches.length === 1) {
+          _rr.calleeSymbolId = superMatches[0].id;
+          _rr.confidence = 0.9;
+          return;
+        }
       }
     }
 
@@ -269,20 +309,31 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
       if (binding && binding.target_file_id) {
         if (binding.originalName === '*') {
           const matchSym = getFileSymbol(binding.target_file_id, calleeName, 'function');
-          if (matchSym) {_rr.calleeSymbolId = matchSym.id; _rr.confidence = 0.95; return;}
+          if (matchSym) {
+            _rr.calleeSymbolId = matchSym.id;
+            _rr.confidence = 0.95;
+            return;
+          }
         }
         const resolvedName = binding.originalName === 'default' ? receiver : binding.originalName;
         const classSym = getFileSymbol(binding.target_file_id, resolvedName, 'class');
         if (classSym) {
           const parentMethods = methodsByParentAndName.get(resolvedName);
           const methodSym = parentMethods ? parentMethods.get(calleeName)?.[0] || null : null;
-          if (methodSym) {_rr.calleeSymbolId = methodSym.id; _rr.confidence = 0.9; return;}
+          if (methodSym) {
+            _rr.calleeSymbolId = methodSym.id;
+            _rr.confidence = 0.9;
+            return;
+          }
         }
       }
       const qualifiedName = `${receiver}.${calleeName}`;
       const qualifiedMatches = symbolsByQualified.get(qualifiedName);
-      if (qualifiedMatches && qualifiedMatches.length === 1)
-        {_rr.calleeSymbolId = qualifiedMatches[0].id; _rr.confidence = 0.85; return;}
+      if (qualifiedMatches && qualifiedMatches.length === 1) {
+        _rr.calleeSymbolId = qualifiedMatches[0].id;
+        _rr.confidence = 0.85;
+        return;
+      }
     }
 
     const fileImports = getFileImports(callerSym.file_id);
@@ -313,9 +364,13 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
   }
 
   function processRegexFallback(sym, fileContent) {
-    if (sym.end_byte <= sym.start_byte) {return;}
+    if (sym.end_byte <= sym.start_byte) {
+      return;
+    }
     const body = Buffer.from(fileContent, 'utf-8').toString('utf-8', sym.start_byte, sym.end_byte);
-    if (!body || body.length < 2) {return;}
+    if (!body || body.length < 2) {
+      return;
+    }
     const seen = new Set();
     const callPatterns = [
       /\b([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g,
@@ -328,9 +383,13 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
       while ((match = pattern.exec(body)) !== null) {
         const calleeName = match[1];
         // oxlint-disable-next-line no-continue
-        if (_SKIP_CALLEE_NAMES.has(calleeName)) {continue;}
+        if (_SKIP_CALLEE_NAMES.has(calleeName)) {
+          continue;
+        }
         // oxlint-disable-next-line no-continue
-        if (seen.has(calleeName)) {continue;}
+        if (seen.has(calleeName)) {
+          continue;
+        }
         seen.add(calleeName);
         resolveCallee(calleeName, sym, null, fileContent);
         const lineNum = sym.start_line + body.substring(0, match.index).split('\n').length - 1;
@@ -395,7 +454,9 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
       if (fileCallees.length > 0) {
         const calleeByLine = new Map();
         for (const c of fileCallees) {
-          if (!calleeByLine.has(c.line)) {calleeByLine.set(c.line, []);}
+          if (!calleeByLine.has(c.line)) {
+            calleeByLine.set(c.line, []);
+          }
           calleeByLine.get(c.line).push(c);
         }
         // PERF(issue #134): Pre-allocated dedup Set — cleared per symbol instead of
@@ -406,13 +467,19 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
           for (let line = sym.start_line; line <= sym.end_line; line++) {
             const lineCallees = calleeByLine.get(line);
             // oxlint-disable-next-line no-continue
-            if (!lineCallees) {continue;}
+            if (!lineCallees) {
+              continue;
+            }
             for (const c of lineCallees) {
               // oxlint-disable-next-line no-continue
-              if (_SKIP_CALLEE_NAMES.has(c.callee)) {continue;}
+              if (_SKIP_CALLEE_NAMES.has(c.callee)) {
+                continue;
+              }
               const key = `${c.callee}:${c.line}`;
               // oxlint-disable-next-line no-continue
-              if (_seen.has(key)) {continue;}
+              if (_seen.has(key)) {
+                continue;
+              }
               _seen.add(key);
               resolveCallee(c.callee, sym, c.receiver || null, fileContent);
               insertStmt.run(repoId, sym.id, c.callee, _rr.calleeSymbolId, _rr.confidence, c.line);
@@ -438,7 +505,9 @@ function buildCallGraphForFiles(db, repoId, changedFileIds, deletedFileIds = [],
 
 function buildComplexityForFiles(db, repoId, changedFileIds, deletedFileIds = []) {
   const guard = _requireNativeDb(db);
-  if (guard) {return guard;}
+  if (guard) {
+    return guard;
+  }
   if (!changedFileIds.length && !deletedFileIds.length) {
     return { success: true, symbols: 0, incremental: true };
   }
@@ -469,10 +538,14 @@ function buildComplexityForFiles(db, repoId, changedFileIds, deletedFileIds = []
   let count = 0;
   for (const sym of symbols) {
     // oxlint-disable-next-line no-continue
-    if (!sym.file_content || sym.end_byte <= sym.start_byte) {continue;}
+    if (!sym.file_content || sym.end_byte <= sym.start_byte) {
+      continue;
+    }
     const body = Buffer.from(sym.file_content, 'utf-8').toString('utf-8', sym.start_byte, sym.end_byte);
     // oxlint-disable-next-line no-continue
-    if (!body) {continue;}
+    if (!body) {
+      continue;
+    }
 
     let cyclomatic = 1;
     const decisionPatterns = [
@@ -490,11 +563,15 @@ function buildComplexityForFiles(db, repoId, changedFileIds, deletedFileIds = []
     for (const pattern of decisionPatterns) {
       pattern.lastIndex = 0;
       const m = body.match(pattern);
-      if (m) {cyclomatic += m.length;}
+      if (m) {
+        cyclomatic += m.length;
+      }
     }
     const ternaryRe = /\?(?:\s*[^.:])/g;
     let __ternaryMatch;
-    while ((_ternaryMatch = ternaryRe.exec(body)) !== null) {cyclomatic++;}
+    while ((_ternaryMatch = ternaryRe.exec(body)) !== null) {
+      cyclomatic++;
+    }
 
     // PERF(issue #133): CharCode fast-path — reduces branch evaluations from 6+ per byte to
     // 1 for the common case (plain code, not in string/template). Uses integer charCodeAt
@@ -535,11 +612,15 @@ function buildComplexityForFiles(db, repoId, changedFileIds, deletedFileIds = []
         }
         if (code === 123) {
           currentDepth++;
-          if (currentDepth > maxDepth) {maxDepth = currentDepth;}
+          if (currentDepth > maxDepth) {
+            maxDepth = currentDepth;
+          }
           // oxlint-disable-next-line no-continue
           continue;
         }
-        if (currentDepth > 0) {currentDepth--;}
+        if (currentDepth > 0) {
+          currentDepth--;
+        }
         // oxlint-disable-next-line no-continue
         continue;
       }
@@ -551,9 +632,13 @@ function buildComplexityForFiles(db, repoId, changedFileIds, deletedFileIds = []
       }
       if (code === 123) {
         currentDepth++;
-        if (currentDepth > maxDepth) {maxDepth = currentDepth;}
+        if (currentDepth > maxDepth) {
+          maxDepth = currentDepth;
+        }
       } else if (code === 125) {
-        if (currentDepth > 0) {currentDepth--;}
+        if (currentDepth > 0) {
+          currentDepth--;
+        }
       }
     }
 

@@ -16,16 +16,10 @@ function buildLeanContext({ observations, personal, isStale, projectName, stats,
 
   // Header
   if (!cwdRepo) {
-    lines.push(
-      `🧠 **${projectName}** — new project · ${stats.total_memories} memories across all projects`,
-    );
+    lines.push(`🧠 **${projectName}** — new project · ${stats.total_memories} memories across all projects`);
   } else {
-    const indexPart = cwdRepo
-      ? `${cwdRepo.file_count} files indexed${isStale ? ' (stale)' : ''}`
-      : 'not indexed';
-    lines.push(
-      `🧠 **${projectName}** — ${stats.total_memories} memories · ${indexPart} · ${projectSummary}`,
-    );
+    const indexPart = cwdRepo ? `${cwdRepo.file_count} files indexed${isStale ? ' (stale)' : ''}` : 'not indexed';
+    lines.push(`🧠 **${projectName}** — ${stats.total_memories} memories · ${indexPart} · ${projectSummary}`);
   }
 
   // Observation: max 1, trust >= 0.8, title only
@@ -57,7 +51,9 @@ describe('lean context injection', () => {
     const text = result.join('\n');
 
     expect(result.length).toBe(2);
-    expect(text).toContain('🧠 **PiMemoryExtension** — 408 memories · 292 files indexed (stale) · 💎 LaPis persistent memory');
+    expect(text).toContain(
+      '🧠 **PiMemoryExtension** — 408 memories · 292 files indexed (stale) · 💎 LaPis persistent memory',
+    );
     expect(text).toContain('reindex: `memory-code reindex-repo --repo PiMemoryExtension`');
     expect(text).not.toContain('###');
     expect(text).not.toContain('Personal');
@@ -139,7 +135,7 @@ describe('lean context injection', () => {
     expect(below.length).toBe(2);
 
     const atThreshold = buildLeanContext({
-      observations: [{ type: 'decision', title: 'At threshold', trust_score: 0.80 }],
+      observations: [{ type: 'decision', title: 'At threshold', trust_score: 0.8 }],
       isStale: false,
       projectName: 'PiMemoryExtension',
       stats: { total_memories: 408 },
@@ -154,7 +150,7 @@ describe('lean context injection', () => {
     const result = buildLeanContext({
       observations: [
         { type: 'decision', title: 'First decision', trust_score: 0.95 },
-        { type: 'bugfix', title: 'Second bugfix', trust_score: 0.90 },
+        { type: 'bugfix', title: 'Second bugfix', trust_score: 0.9 },
       ],
       isStale: false,
       projectName: 'PiMemoryExtension',

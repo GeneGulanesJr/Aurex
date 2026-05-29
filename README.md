@@ -74,13 +74,13 @@ Latest local run: May 24, 2026, with fresh reindexes for both repos. `call-hiera
 
 #### Total Savings
 
-|                | LaPis / PiMemoryExtension |       PCBuilder        |
-| :------------- | :-----------------------: | :--------------------: |
-| Repo size      |  292 files / 6,913 symbols | 171 files / 207,599 symbols |
-| Raw JSON       |         692.6 KB          |        36.7 MB         |
-| Compact format |         417.5 KB          |        18.5 MB         |
-| Bytes saved    |         275.1 KB          |        18.1 MB         |
-| Tokens saved   |       ~80,500 tokens      |    ~5,436,007 tokens   |
+|                | LaPis / PiMemoryExtension |          PCBuilder          |
+| :------------- | :-----------------------: | :-------------------------: |
+| Repo size      | 292 files / 6,913 symbols | 171 files / 207,599 symbols |
+| Raw JSON       |         692.6 KB          |           36.7 MB           |
+| Compact format |         417.5 KB          |           18.5 MB           |
+| Bytes saved    |         275.1 KB          |           18.1 MB           |
+| Tokens saved   |      ~80,500 tokens       |      ~5,436,007 tokens      |
 
 See [`bench/README.md`](bench/README.md) for benchmark usage and interpretation notes.
 
@@ -96,32 +96,32 @@ npm run bench:pi-paired
 
 Latest run: `bench/results/pi-paired-2026-05-24T14-47-20-651Z/report.json`
 
-| Metric        | Memory On | Without Memory | Savings   |
-| ------------- | --------- | -------------- | --------- |
-| Facts correct | 18/18     | 18/18          | no loss   |
-| Active tokens | 3,192     | 42,954         | -92.6%    |
-| Wall time     | ~86s      | ~233s          | -63.1%    |
-| Tool calls    | 6         | 49             | -87.8%    |
-| Failed tools  | 0         | 4              | -100%     |
+| Metric        | Memory On | Without Memory | Savings |
+| ------------- | --------- | -------------- | ------- |
+| Facts correct | 18/18     | 18/18          | no loss |
+| Active tokens | 3,192     | 42,954         | -92.6%  |
+| Wall time     | ~86s      | ~233s          | -63.1%  |
+| Tool calls    | 6         | 49             | -87.8%  |
+| Failed tools  | 0         | 4              | -100%   |
 
 #### Per-category Breakdown
 
-| Category         | Facts (on)       | Tokens (on)        | Savings |
-| ---------------- | ---------------- | ------------------ | ------- |
-| prior-decision   | 3/3              | 128                | 99.0%   |
-| bug-history      | 3/3              | 603                | 94.2%   |
-| staleness        | 3/3              | 426                | 94.2%   |
-| navigation       | 3/3              | 72                 | 99.0%   |
-| negative-control | 6/6              | 1,963              | 65.7%   |
+| Category         | Facts (on) | Tokens (on) | Savings |
+| ---------------- | ---------- | ----------- | ------- |
+| prior-decision   | 3/3        | 128         | 99.0%   |
+| bug-history      | 3/3        | 603         | 94.2%   |
+| staleness        | 3/3        | 426         | 94.2%   |
+| navigation       | 3/3        | 72          | 99.0%   |
+| negative-control | 6/6        | 1,963       | 65.7%   |
 
 #### What Each Category Tests
 
-| Category         | What it tests |
-| ---------------- | ------------- |
-| prior-decision   | Recalls an architectural decision and its rationale, then names the current module involved. |
-| bug-history      | Recalls why a fix exists, including the historical failure mode that is not obvious from the final code alone. |
-| staleness        | Checks whether LaPis warns that an indexed code view may be stale and should be verified or reindexed before trust. |
-| navigation       | Uses memory to jump to the likely hook/module and confirm where extension wiring lives. |
+| Category         | What it tests                                                                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| prior-decision   | Recalls an architectural decision and its rationale, then names the current module involved.                                               |
+| bug-history      | Recalls why a fix exists, including the historical failure mode that is not obvious from the final code alone.                             |
+| staleness        | Checks whether LaPis warns that an indexed code view may be stale and should be verified or reindexed before trust.                        |
+| navigation       | Uses memory to jump to the likely hook/module and confirm where extension wiring lives.                                                    |
 | negative-control | Asks current-source questions that should not need memory facts; memory-on should route cheaply to code lookup instead of adding overhead. |
 
 Memory-on achieved perfect accuracy with 92.6% fewer active tokens overall. Memory-dependent tasks saved 94.2-99.0% active tokens in this run.

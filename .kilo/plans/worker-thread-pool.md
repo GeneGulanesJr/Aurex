@@ -132,7 +132,7 @@ class ParsePool {
   }
 
   async terminate() {
-    await Promise.all(this.workers.map(w => w.terminate()));
+    await Promise.all(this.workers.map((w) => w.terminate()));
     this.workers = [];
   }
 }
@@ -153,7 +153,7 @@ for (const record of reads) {
 
 // After (parallel via workers):
 if (pool && reads.length > 0) {
-  const workerInputs = reads.map(r => ({ filePath: r.filePath, content: r.content }));
+  const workerInputs = reads.map((r) => ({ filePath: r.filePath, content: r.content }));
   const workerResults = await pool.parseAll(workerInputs);
   // Write results to DB
   const batchSymbols = [];
@@ -175,7 +175,7 @@ Add fallback: if worker pool fails to init (WASM issues, etc.), fall back to seq
 
 ```javascript
 const WORKER_POOL = {
-  MIN_FILES_FOR_PARALLEL: 50,  // Don't bother with workers for small repos
+  MIN_FILES_FOR_PARALLEL: 50, // Don't bother with workers for small repos
   MAX_WORKERS: 4,
   WORKER_BATCH_SIZE: 20,
 };
@@ -203,11 +203,11 @@ const WORKER_POOL = {
 ## Performance Expectations
 
 | Files | Sequential | 4 Workers | Speedup |
-|-------|-----------|-----------|---------|
-| 50    | ~5s       | ~5s*      | ~1x     |
-| 200   | ~20s      | ~7s       | ~3x     |
-| 500   | ~50s      | ~15s      | ~3.3x   |
-| 2000  | ~200s     | ~55s      | ~3.6x   |
+| ----- | ---------- | --------- | ------- |
+| 50    | ~5s        | ~5s\*     | ~1x     |
+| 200   | ~20s       | ~7s       | ~3x     |
+| 500   | ~50s       | ~15s      | ~3.3x   |
+| 2000  | ~200s      | ~55s      | ~3.6x   |
 
 \* Worker startup overhead (~200ms × 4 workers in parallel) not worth it for small repos.
 

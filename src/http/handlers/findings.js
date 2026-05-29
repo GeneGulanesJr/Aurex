@@ -4,8 +4,26 @@ function writeFinding(repo) {
   return async (req, res, ctx) => {
     const { agentId, ...finding } = ctx.body;
     const id = `f-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const rows = repo.createFinding({ id, missionId: finding.missionId, authorId: agentId, domain: finding.domain, title: finding.title, content: finding.content, relevance: finding.relevance, status: 'unverified' });
-    jsonCreated(res, rows[0] || { id, missionId: finding.missionId, authorId: agentId, status: 'unverified', createdAt: new Date().toISOString() });
+    const rows = repo.createFinding({
+      id,
+      missionId: finding.missionId,
+      authorId: agentId,
+      domain: finding.domain,
+      title: finding.title,
+      content: finding.content,
+      relevance: finding.relevance,
+      status: 'unverified',
+    });
+    jsonCreated(
+      res,
+      rows[0] || {
+        id,
+        missionId: finding.missionId,
+        authorId: agentId,
+        status: 'unverified',
+        createdAt: new Date().toISOString(),
+      },
+    );
   };
 }
 

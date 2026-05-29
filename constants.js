@@ -122,7 +122,8 @@ const CONTEXT = {
   PROMPT_INJECT_LIMIT: 1,
   PERSONAL_INJECT_LIMIT: 0,
   MIN_OBSERVATION_TRUST: 0.8,
-  STALE_GUIDANCE: '📝 **Stale code index:** indexed code may not match current source files. Run `memory-code reindex-repo --repo {repo}` to update. Verify current source before relying on code-index results.',
+  STALE_GUIDANCE:
+    '📝 **Stale code index:** indexed code may not match current source files. Run `memory-code reindex-repo --repo {repo}` to update. Verify current source before relying on code-index results.',
 };
 
 const PAGERANK = {

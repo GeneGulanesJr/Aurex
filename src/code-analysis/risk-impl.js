@@ -2,8 +2,12 @@ const { execSync } = require('child_process');
 // PR risk profiling and untested symbol detection.
 
 const {
-  path, _requireNativeDb, PR_RISK,
-  UNTETECTED_CONFIDENCE, COMPLEXITY /* oxlint-disable-line no-unused-vars */, HOTSPOT_THRESHOLDS /* oxlint-disable-line no-unused-vars */,
+  path,
+  _requireNativeDb,
+  PR_RISK,
+  UNTETECTED_CONFIDENCE,
+  COMPLEXITY /* oxlint-disable-line no-unused-vars */,
+  HOTSPOT_THRESHOLDS /* oxlint-disable-line no-unused-vars */,
 } = require('./shared-deps');
 
 function getUntestedSymbols(db, repoId, opts = {}) {
@@ -161,7 +165,7 @@ function getPrRiskProfile(db, repoId, opts = {}) {
 
   let changedFiles = [];
   try {
-        const diffOutput = execSync(`git -C "${repo.path}" diff --name-only ${base}...${branch}`, {
+    const diffOutput = execSync(`git -C "${repo.path}" diff --name-only ${base}...${branch}`, {
       encoding: 'utf-8',
       timeout: 10000,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -276,7 +280,7 @@ function getPrRiskProfile(db, repoId, opts = {}) {
   // Signal 5: Change volume (10%)
   let changeVolumeScore = 0;
   try {
-        const diffStat = execSync(`git -C "${repo.path}" diff --stat ${base}...${branch}`, {
+    const diffStat = execSync(`git -C "${repo.path}" diff --stat ${base}...${branch}`, {
       encoding: 'utf-8',
       timeout: 10000,
       stdio: ['pipe', 'pipe', 'pipe'],

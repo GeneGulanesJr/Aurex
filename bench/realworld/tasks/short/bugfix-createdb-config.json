@@ -16,7 +16,15 @@
       {
         "id": "config-mutation-bug",
         "description": "createDb was mutating or not isolating config between instances",
-        "aliases": ["mutating", "overwriting", "not isolating", "config isolation", "shared config", "getConfig._cached", "save and restore"]
+        "aliases": [
+          "mutating",
+          "overwriting",
+          "not isolating",
+          "config isolation",
+          "shared config",
+          "getConfig._cached",
+          "save and restore"
+        ]
       }
     ]
   }

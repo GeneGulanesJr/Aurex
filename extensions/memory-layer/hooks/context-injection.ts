@@ -11,6 +11,7 @@ interface ContextDeps {
   mem: typeof mem;
   getKnownRepos: typeof getKnownRepos;
   isRepoStale: typeof isRepoStale;
+  getSettings?: () => { contextLimit?: number };
 }
 
 export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
@@ -35,7 +36,12 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
       return;
     }
 
-    const contextLimit = promptQuery ? CONTEXT.PROMPT_RELEVANT_LIMIT : CONTEXT.PROJECT_SUMMARY_LIMIT;
+    const defaultContextLimit = promptQuery ? CONTEXT.PROMPT_RELEVANT_LIMIT : CONTEXT.PROJECT_SUMMARY_LIMIT;
+    const configuredContextLimit = Number(deps.getSettings?.()?.contextLimit);
+    const contextLimit =
+      Number.isFinite(configuredContextLimit) && configuredContextLimit > 0
+        ? Math.floor(configuredContextLimit)
+        : defaultContextLimit;
     const contextResult = await deps.mem('context', {
       project: deps.state.currentProject,
       limit: String(contextLimit),
@@ -57,8 +63,7 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
       return {
         message: {
           customType: 'memory-context',
-          content:
-            '⚠️ Memory context failed to load. Use `memory-search` and `memory-save` manually.',
+          content: '⚠️ Memory context failed to load. Use `memory-search` and `memory-save` manually.',
           display: true,
         },
       };
@@ -107,9 +112,7 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
         `🧠 **${deps.state.currentProject}** — new project · ${effectiveStats?.total_memories || 0} memories across all projects`,
       );
     } else {
-      const indexPart = cwdRepo
-        ? `${cwdRepo.file_count} files indexed${isStale ? ' (stale)' : ''}`
-        : 'not indexed';
+      const indexPart = cwdRepo ? `${cwdRepo.file_count} files indexed${isStale ? ' (stale)' : ''}` : 'not indexed';
       lines.push(
         `🧠 **${deps.state.currentProject}** — ${effectiveStats?.total_memories || 0} memories · ${indexPart} · ${projectSummary}`,
       );
@@ -128,9 +131,7 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
     if (isStale && cwdRepo) {
       footerParts.push(`reindex: \`memory-code reindex-repo --repo ${cwdRepo.name}\``);
     } else if (!cwdRepo) {
-      footerParts.push(
-        `index: \`memory-code index-repo --path ${ctx.cwd} --name ${deps.state.currentProject}\``,
-      );
+      footerParts.push(`index: \`memory-code index-repo --path ${ctx.cwd} --name ${deps.state.currentProject}\``);
     }
     lines.push(footerParts.join(' · '));
 

@@ -21,4 +21,10 @@ async function codeRepoHealthInternal(deps, repo) {
   return getCodeRepoHealth(deps, repo);
 }
 
-module.exports = { parseCodeFile, ensureParserAvailable, indexRepoInternal, reindexRepoInternal, codeRepoHealthInternal };
+module.exports = {
+  parseCodeFile,
+  ensureParserAvailable,
+  indexRepoInternal,
+  reindexRepoInternal,
+  codeRepoHealthInternal,
+};

@@ -69,10 +69,7 @@ export default function memoryLayer(pi: ExtensionAPI) {
   if (registrationFailures.length > 0) {
     try {
       pi.on('session_start', async (_event, ctx) => {
-        ctx.ui.notify(
-          `⚠️ Memory layer partially loaded: ${registrationFailures.join(', ')}`,
-          'warn',
-        );
+        ctx.ui.notify(`⚠️ Memory layer partially loaded: ${registrationFailures.join(', ')}`, 'warn');
       });
     } catch {}
   }

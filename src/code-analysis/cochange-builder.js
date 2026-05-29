@@ -48,7 +48,7 @@ function storeCochangePairs(db, repoId, pairs, pathToId, windowDays) {
      VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(repo_id, file_a_id, file_b_id) DO UPDATE SET
        co_commit_count = excluded.co_commit_count,
-       strength = excluded.strength`
+       strength = excluded.strength`,
   );
 
   const maxCount = Math.max(...Object.values(pairs), 1);
@@ -80,13 +80,11 @@ function buildCochangeEdges(db, repoId, opts = {}) {
 
   let logOutput;
   try {
-    const since = new Date(Date.now() - windowDays * 86400000)
-      .toISOString().split('T')[0];
-    logOutput = execFileSync(
-      'git',
-      ['-C', repo.path, 'log', `--since=${since}`, '--format=COMMIT:%H', '--name-only'],
-      { encoding: 'utf8', timeout: 30000 }
-    );
+    const since = new Date(Date.now() - windowDays * 86400000).toISOString().split('T')[0];
+    logOutput = execFileSync('git', ['-C', repo.path, 'log', `--since=${since}`, '--format=COMMIT:%H', '--name-only'], {
+      encoding: 'utf8',
+      timeout: 30000,
+    });
   } catch (e) {
     return { success: false, count: 0, reason: `git error: ${e.message}` };
   }

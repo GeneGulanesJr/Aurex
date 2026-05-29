@@ -28,9 +28,7 @@ function rankObservations(rows, query = '') {
     .filter((w) => w.length > 1);
 
   // Detect navigation-style queries (where, module, hook, etc.)
-  const isNavigationQuery = RANKING.NAVIGATION_QUERY_SIGNALS.some(
-    (signal) => query.toLowerCase().includes(signal),
-  );
+  const isNavigationQuery = RANKING.NAVIGATION_QUERY_SIGNALS.some((signal) => query.toLowerCase().includes(signal));
   const pathPattern = RANKING.NAVIGATION_BOOST.path_pattern;
 
   return rows
@@ -75,27 +73,124 @@ function rankObservations(rows, query = '') {
 function _extractFtsTerms(query) {
   // FTS5 stopwords — common words that don't help search
   const STOP_WORDS = new Set([
-    'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
-    'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
-    'should', 'may', 'might', 'shall', 'can', 'need', 'dare', 'ought',
-    'used', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from',
-    'as', 'into', 'through', 'during', 'before', 'after', 'above', 'below',
-    'between', 'out', 'off', 'over', 'under', 'again', 'further', 'then',
-    'once', 'and', 'but', 'or', 'nor', 'not', 'so', 'yet', 'both',
-    'either', 'neither', 'each', 'every', 'all', 'any', 'few', 'more',
-    'most', 'other', 'some', 'such', 'no', 'only', 'own', 'same', 'than',
-    'too', 'very', 'just', 'because', 'if', 'when', 'where', 'how', 'what',
-    'which', 'who', 'whom', 'this', 'that', 'these', 'those', 'it', 'its',
-    'name', 'also', 'known', 'keep', 'answer', 'concise', 'mention', 'explain',
-    'file', 'lives', 'implemented',
+    'a',
+    'an',
+    'the',
+    'is',
+    'are',
+    'was',
+    'were',
+    'be',
+    'been',
+    'being',
+    'have',
+    'has',
+    'had',
+    'do',
+    'does',
+    'did',
+    'will',
+    'would',
+    'could',
+    'should',
+    'may',
+    'might',
+    'shall',
+    'can',
+    'need',
+    'dare',
+    'ought',
+    'used',
+    'to',
+    'of',
+    'in',
+    'for',
+    'on',
+    'with',
+    'at',
+    'by',
+    'from',
+    'as',
+    'into',
+    'through',
+    'during',
+    'before',
+    'after',
+    'above',
+    'below',
+    'between',
+    'out',
+    'off',
+    'over',
+    'under',
+    'again',
+    'further',
+    'then',
+    'once',
+    'and',
+    'but',
+    'or',
+    'nor',
+    'not',
+    'so',
+    'yet',
+    'both',
+    'either',
+    'neither',
+    'each',
+    'every',
+    'all',
+    'any',
+    'few',
+    'more',
+    'most',
+    'other',
+    'some',
+    'such',
+    'no',
+    'only',
+    'own',
+    'same',
+    'than',
+    'too',
+    'very',
+    'just',
+    'because',
+    'if',
+    'when',
+    'where',
+    'how',
+    'what',
+    'which',
+    'who',
+    'whom',
+    'this',
+    'that',
+    'these',
+    'those',
+    'it',
+    'its',
+    'name',
+    'also',
+    'known',
+    'keep',
+    'answer',
+    'concise',
+    'mention',
+    'explain',
+    'file',
+    'lives',
+    'implemented',
   ]);
-  const unique = [...new Set(
-    query
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .split(/\s+/)
-      .filter((w) => w.length > 2 && !STOP_WORDS.has(w)),
-  )];
+  const unique = [
+    ...new Set(
+      query
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter((w) => w.length > 2 && !STOP_WORDS.has(w)),
+    ),
+  ];
   // Use up to 5 most meaningful terms to avoid FTS5 implicit AND over-constraining
   return unique.slice(0, 5).join(' ');
 }

@@ -2,12 +2,7 @@
 // Import extraction, import graph building, and related queries:
 // Blast radius, dependency cycles, hotspots, winnow.
 
-const {
-  path,
-  _requireNativeDb,
-  RESULT_LIMITS,
-  HOTSPOT_THRESHOLDS,
-} = require('./shared-deps');
+const { path, _requireNativeDb, RESULT_LIMITS, HOTSPOT_THRESHOLDS } = require('./shared-deps');
 
 // We need buildPageRank from coupling-impl for winnow
 // Circular dep resolved via lazy require below
@@ -259,19 +254,20 @@ function buildImportGraph(db, repoId) {
 
   let totalEdges = 0;
 
-  const runInTx = typeof db.transaction === 'function'
-    ? (fn) => db.transaction(fn)()
-    : (fn) => {
-      db.exec('BEGIN');
-      try {
-        const r = fn();
-        db.exec('COMMIT');
-        return r;
-      } catch (e) {
-        db.exec('ROLLBACK');
-        throw e;
-      }
-    };
+  const runInTx =
+    typeof db.transaction === 'function'
+      ? (fn) => db.transaction(fn)()
+      : (fn) => {
+          db.exec('BEGIN');
+          try {
+            const r = fn();
+            db.exec('COMMIT');
+            return r;
+          } catch (e) {
+            db.exec('ROLLBACK');
+            throw e;
+          }
+        };
 
   runInTx(() => {
     for (const file of files) {

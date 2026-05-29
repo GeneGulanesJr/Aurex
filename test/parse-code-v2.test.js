@@ -9,7 +9,9 @@ function writeTmp(filePath, content) {
 
 function cleanup(...files) {
   for (const f of files) {
-    try { fs.unlinkSync(f); } catch {}
+    try {
+      fs.unlinkSync(f);
+    } catch {}
   }
 }
 
@@ -25,42 +27,51 @@ describe('parse-code v2 fixes', () => {
   describe('fix 1: JS/TS depth gating removed', () => {
     it('extracts nested arrow functions inside functions', () => {
       const f = path.join('/tmp', 'v2-nested-arrow.js');
-      const syms = writeTmp(f, `
+      const syms = writeTmp(
+        f,
+        `
 function outer() {
   const inner = (x) => x + 1;
   return inner(5);
-}`);
+}`,
+      );
       cleanup(f);
-      const outer = syms.find(s => s.name === 'outer');
+      const outer = syms.find((s) => s.name === 'outer');
       expect(outer).toBeDefined();
       expect(outer.kind).toBe('function');
-      const inner = syms.find(s => s.name === 'inner');
+      const inner = syms.find((s) => s.name === 'inner');
       expect(inner).toBeDefined();
       expect(inner.kind).toBe('function');
     });
 
     it('extracts nested function expressions in callbacks', () => {
       const f = path.join('/tmp', 'v2-nested-expr.js');
-      const syms = writeTmp(f, `
+      const syms = writeTmp(
+        f,
+        `
 const items = [1, 2, 3];
 const filtered = items.filter((x) => x > 1);
-`);
+`,
+      );
       cleanup(f);
-      const filtered = syms.find(s => s.name === 'filtered');
+      const filtered = syms.find((s) => s.name === 'filtered');
       expect(filtered).toBeDefined();
       expect(filtered.kind).toBe('constant');
     });
 
     it('extracts variable declarators at nested depth', () => {
       const f = path.join('/tmp', 'v2-nested-var.js');
-      const syms = writeTmp(f, `
+      const syms = writeTmp(
+        f,
+        `
 function main() {
   const API_URL = 'http://example.com';
   let counter = 0;
 }
-`);
+`,
+      );
       cleanup(f);
-      const apiUrl = syms.find(s => s.name === 'API_URL');
+      const apiUrl = syms.find((s) => s.name === 'API_URL');
       expect(apiUrl).toBeDefined();
       expect(apiUrl.kind).toBe('constant');
     });
@@ -69,7 +80,9 @@ function main() {
   describe('fix 2: Rust depth gating removed', () => {
     it('extracts nested functions inside impl blocks', () => {
       const f = path.join('/tmp', 'v2-rust-impl.rs');
-      const syms = writeTmp(f, `
+      const syms = writeTmp(
+        f,
+        `
 struct Foo;
 
 impl Foo {
@@ -80,48 +93,57 @@ impl Foo {
         x + 1
     }
 }
-`);
+`,
+      );
       cleanup(f);
-      const foo = syms.find(s => s.name === 'Foo' && s.kind === 'class');
+      const foo = syms.find((s) => s.name === 'Foo' && s.kind === 'class');
       expect(foo).toBeDefined();
-      const bar = syms.find(s => s.name === 'bar');
+      const bar = syms.find((s) => s.name === 'bar');
       expect(bar).toBeDefined();
       expect(bar.kind).toBe('function');
-      const baz = syms.find(s => s.name === 'baz');
+      const baz = syms.find((s) => s.name === 'baz');
       expect(baz).toBeDefined();
     });
 
     it('extracts Rust mod items', () => {
       const f = path.join('/tmp', 'v2-rust-mod.rs');
-      const syms = writeTmp(f, `
+      const syms = writeTmp(
+        f,
+        `
 mod models;
 mod handlers {
     pub fn index() {}
 }
-`);
+`,
+      );
       cleanup(f);
-      const models = syms.find(s => s.name === 'models' && s.kind === 'module');
+      const models = syms.find((s) => s.name === 'models' && s.kind === 'module');
       expect(models).toBeDefined();
-      const handlers = syms.find(s => s.name === 'handlers' && s.kind === 'module');
+      const handlers = syms.find((s) => s.name === 'handlers' && s.kind === 'module');
       expect(handlers).toBeDefined();
     });
 
     it('extracts Rust use declarations', () => {
       const f = path.join('/tmp', 'v2-rust-use.rs');
-      const syms = writeTmp(f, `
+      const syms = writeTmp(
+        f,
+        `
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 fn main() {}
-`);
+`,
+      );
       cleanup(f);
-      const useSym = syms.find(s => s.kind === 'import');
+      const useSym = syms.find((s) => s.kind === 'import');
       expect(useSym).toBeDefined();
       expect(useSym.name).toContain('std');
     });
 
     it('extracts Rust macro definitions', () => {
       const f = path.join('/tmp', 'v2-rust-macro.rs');
-      const syms = writeTmp(f, `
+      const syms = writeTmp(
+        f,
+        `
 macro_rules! vec {
     ( $( $x:expr ),* ) => {
         {
@@ -133,9 +155,10 @@ macro_rules! vec {
         }
     };
 }
-`);
+`,
+      );
       cleanup(f);
-      const vec = syms.find(s => s.name === 'vec');
+      const vec = syms.find((s) => s.name === 'vec');
       expect(vec).toBeDefined();
       expect(vec.kind).toBe('function');
     });
@@ -146,11 +169,11 @@ macro_rules! vec {
       const py = path.join('/tmp', 'v2-py-callees.py');
       const content = 'result = process(data)\nobj.transform(x)\nprint("hello")\n';
       const cal = calleesFor(py, content);
-      const names = cal.map(c => c.callee);
+      const names = cal.map((c) => c.callee);
       expect(names).toContain('process');
       expect(names).toContain('transform');
       expect(names).toContain('print');
-      const transform = cal.find(c => c.callee === 'transform');
+      const transform = cal.find((c) => c.callee === 'transform');
       expect(transform.is_method).toBe(true);
       expect(transform.receiver).toBe('obj');
     });
@@ -159,10 +182,10 @@ macro_rules! vec {
       const go = path.join('/tmp', 'v2-go-callees.go');
       const content = 'package main\n\nfunc main() {\n\tfmt.Println("hi")\n\tos.Exit(1)\n}\n';
       const cal = calleesFor(go, content);
-      const names = cal.map(c => c.callee);
+      const names = cal.map((c) => c.callee);
       expect(names).toContain('Println');
       expect(names).toContain('Exit');
-      const println = cal.find(c => c.callee === 'Println');
+      const println = cal.find((c) => c.callee === 'Println');
       expect(println.is_method).toBe(true);
     });
 
@@ -170,9 +193,9 @@ macro_rules! vec {
       const rs = path.join('/tmp', 'v2-rust-callees.rs');
       const content = 'fn main() {\n    let v = Vec::new();\n    v.push(1);\n    println!("hi");\n}\n';
       const cal = calleesFor(rs, content);
-      const names = cal.map(c => c.callee);
+      const names = cal.map((c) => c.callee);
       expect(names).toContain('push');
-      const push = cal.find(c => c.callee === 'push');
+      const push = cal.find((c) => c.callee === 'push');
       expect(push.is_method).toBe(true);
     });
   });
@@ -180,7 +203,9 @@ macro_rules! vec {
   describe('fix 4: Docstring extraction for Python/Go/Rust', () => {
     it('extracts Python docstrings from triple-quoted strings', () => {
       const f = path.join('/tmp', 'v2-py-doc.py');
-      const syms = writeTmp(f, `
+      const syms = writeTmp(
+        f,
+        `
 def greet(name):
     """Say hello to someone."""
     return f"Hello {name}"
@@ -190,44 +215,51 @@ class Animal:
     def speak(self):
         """Make a sound."""
         return "roar"
-`);
+`,
+      );
       cleanup(f);
-      const greet = syms.find(s => s.name === 'greet');
+      const greet = syms.find((s) => s.name === 'greet');
       expect(greet).toBeDefined();
       expect(greet.docstring).toContain('Say hello');
-      const animal = syms.find(s => s.name === 'Animal');
+      const animal = syms.find((s) => s.name === 'Animal');
       expect(animal).toBeDefined();
       expect(animal.docstring).toContain('Base animal');
-      const speak = syms.find(s => s.name === 'speak');
+      const speak = syms.find((s) => s.name === 'speak');
       expect(speak).toBeDefined();
       expect(speak.docstring).toContain('Make a sound');
     });
 
     it('extracts Go doc comments', () => {
       const f = path.join('/tmp', 'v2-go-doc.go');
-      const syms = writeTmp(f, `package main
+      const syms = writeTmp(
+        f,
+        `package main
 
 // Greet says hello to the given name.
 func Greet(name string) string {
 	return "Hello " + name
 }
-`);
+`,
+      );
       cleanup(f);
-      const greet = syms.find(s => s.name === 'Greet');
+      const greet = syms.find((s) => s.name === 'Greet');
       expect(greet).toBeDefined();
       expect(greet.docstring).toContain('says hello');
     });
 
     it('extracts Rust /// doc comments', () => {
       const f = path.join('/tmp', 'v2-rust-doc.rs');
-      const syms = writeTmp(f, `/// Adds two numbers together.
+      const syms = writeTmp(
+        f,
+        `/// Adds two numbers together.
 /// Returns the sum.
 fn add(a: i32, b: i32) -> i32 {
     a + b
 }
-`);
+`,
+      );
       cleanup(f);
-      const add = syms.find(s => s.name === 'add');
+      const add = syms.find((s) => s.name === 'add');
       expect(add).toBeDefined();
       expect(add.docstring).toContain('Adds two numbers');
       expect(add.docstring).toContain('Returns the sum');
@@ -237,17 +269,20 @@ fn add(a: i32, b: i32) -> i32 {
   describe('enrichment: Python module-level variables', () => {
     it('extracts module-level assignments', () => {
       const f = path.join('/tmp', 'v2-py-vars.py');
-      const syms = writeTmp(f, `CONFIG = {"debug": True}
+      const syms = writeTmp(
+        f,
+        `CONFIG = {"debug": True}
 MAX_RETRIES = 3
 UserId = int
-`);
+`,
+      );
       cleanup(f);
-      const config = syms.find(s => s.name === 'CONFIG');
+      const config = syms.find((s) => s.name === 'CONFIG');
       expect(config).toBeDefined();
       expect(config.kind).toBe('constant');
-      const retries = syms.find(s => s.name === 'MAX_RETRIES');
+      const retries = syms.find((s) => s.name === 'MAX_RETRIES');
       expect(retries).toBeDefined();
-      const uid = syms.find(s => s.name === 'UserId');
+      const uid = syms.find((s) => s.name === 'UserId');
       expect(uid).toBeDefined();
     });
   });
@@ -255,33 +290,39 @@ UserId = int
   describe('enrichment: Go var/const and imports', () => {
     it('extracts Go var and const declarations', () => {
       const f = path.join('/tmp', 'v2-go-vars.go');
-      const syms = writeTmp(f, `package main
+      const syms = writeTmp(
+        f,
+        `package main
 
 const MaxSize = 100
 var DefaultName = "world"
-`);
+`,
+      );
       cleanup(f);
-      const maxSize = syms.find(s => s.name === 'MaxSize');
+      const maxSize = syms.find((s) => s.name === 'MaxSize');
       expect(maxSize).toBeDefined();
       expect(maxSize.kind).toBe('constant');
-      const name = syms.find(s => s.name === 'DefaultName');
+      const name = syms.find((s) => s.name === 'DefaultName');
       expect(name).toBeDefined();
     });
 
     it('extracts Go import declarations', () => {
       const f = path.join('/tmp', 'v2-go-import.go');
-      const syms = writeTmp(f, `package main
+      const syms = writeTmp(
+        f,
+        `package main
 
 import "fmt"
 import (
     "os"
     "strings"
 )
-`);
+`,
+      );
       cleanup(f);
-      const imports = syms.filter(s => s.kind === 'import');
+      const imports = syms.filter((s) => s.kind === 'import');
       expect(imports.length).toBeGreaterThanOrEqual(3);
-      const names = imports.map(s => s.name);
+      const names = imports.map((s) => s.name);
       expect(names).toContain('fmt');
       expect(names).toContain('os');
       expect(names).toContain('strings');
@@ -291,17 +332,20 @@ import (
   describe('enrichment: Rust enum variants and macro', () => {
     it('extracts Rust enum variants', () => {
       const f = path.join('/tmp', 'v2-rust-enum.rs');
-      const syms = writeTmp(f, `enum Color {
+      const syms = writeTmp(
+        f,
+        `enum Color {
     Red,
     Green,
     Blue,
 }
-`);
+`,
+      );
       cleanup(f);
-      const color = syms.find(s => s.name === 'Color');
+      const color = syms.find((s) => s.name === 'Color');
       expect(color).toBeDefined();
       expect(color.kind).toBe('enum');
-      const red = syms.find(s => s.name === 'Red');
+      const red = syms.find((s) => s.name === 'Red');
       if (red) {
         expect(red.parent_name).toBe('Color');
       }
@@ -311,13 +355,16 @@ import (
   describe('enrichment: Python import tracking', () => {
     it('extracts Python import statements', () => {
       const f = path.join('/tmp', 'v2-py-imports.py');
-      const syms = writeTmp(f, `import os
+      const syms = writeTmp(
+        f,
+        `import os
 import sys
 from collections import defaultdict
 from typing import List, Dict
-`);
+`,
+      );
       cleanup(f);
-      const imports = syms.filter(s => s.kind === 'import');
+      const imports = syms.filter((s) => s.kind === 'import');
       expect(imports.length).toBeGreaterThanOrEqual(2);
     });
   });
@@ -328,7 +375,7 @@ from typing import List, Dict
       fs.writeFileSync(f, 'def hello; end');
       try {
         const syms = codeParser.parseFile(f);
-        const diag = syms.find(s => s.kind === 'diagnostic');
+        const diag = syms.find((s) => s.kind === 'diagnostic');
         expect(diag).toBeDefined();
         expect(diag.signature).toContain('not supported');
       } finally {
@@ -340,7 +387,7 @@ from typing import List, Dict
       const origParsers = codeParser.info();
       if (!origParsers.ready) {
         const syms = codeParser.parseFile('/tmp/test-fail.js');
-        const diag = syms.find(s => s.kind === 'diagnostic');
+        const diag = syms.find((s) => s.kind === 'diagnostic');
         expect(diag).toBeDefined();
         expect(diag.signature).toContain('not initialized');
       }

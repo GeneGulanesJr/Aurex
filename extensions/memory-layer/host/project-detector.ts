@@ -35,7 +35,9 @@ export function isRepoStale(repo: RepoInfo): boolean {
     const maxCheck = 50;
 
     function checkDir(dir) {
-      if (checked >= maxCheck) {return true;} // Assume stale if too many files
+      if (checked >= maxCheck) {
+        return true;
+      } // Assume stale if too many files
       let entries;
       try {
         entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -43,17 +45,25 @@ export function isRepoStale(repo: RepoInfo): boolean {
         return false;
       }
       for (const entry of entries) {
-        if (checked >= maxCheck) {return true;}
+        if (checked >= maxCheck) {
+          return true;
+        }
         // oxlint-disable-next-line no-continue
-        if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === '.git') {continue;}
+        if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === '.git') {
+          continue;
+        }
         const fullPath = pathMod.join(dir, entry.name);
         if (entry.isDirectory()) {
-          if (checkDir(fullPath)) {return true;}
+          if (checkDir(fullPath)) {
+            return true;
+          }
         } else if (extensions.has(pathMod.extname(entry.name).toLowerCase())) {
           checked++;
           try {
             const stat = fs.statSync(fullPath);
-            if (Math.max(stat.mtimeMs, stat.ctimeMs) > indexedTime) {return true;}
+            if (Math.max(stat.mtimeMs, stat.ctimeMs) > indexedTime) {
+              return true;
+            }
           } catch {}
         }
       }

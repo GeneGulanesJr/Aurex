@@ -48,5 +48,4 @@ function getPendingCheckpoints(repo) {
   };
 }
 
-
 module.exports = { createCheckpoint, getCheckpoint, resolveCheckpoint, getPendingCheckpoints };

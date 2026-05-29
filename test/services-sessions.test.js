@@ -4,7 +4,10 @@ describe('services/sessions', () => {
   describe('sessionStart', () => {
     it('should return error when project is missing', () => {
       const jsonErrNoExit = vi.fn((msg) => ({ error: msg }));
-      const result = sessionStart({ sqlJson: vi.fn(), sqlRun: vi.fn(), jsonErrNoExit, withTransaction: (fn) => fn() }, {});
+      const result = sessionStart(
+        { sqlJson: vi.fn(), sqlRun: vi.fn(), jsonErrNoExit, withTransaction: (fn) => fn() },
+        {},
+      );
       expect(result.error).toContain('project');
     });
 
@@ -33,7 +36,17 @@ describe('services/sessions', () => {
       const commands = { search: vi.fn(), save: vi.fn() };
 
       const result = sessionStart(
-        { sqlJson, sqlRun, jsonErrNoExit, autoRecoverInternal, runCompact, _readTierConfig, TOOL_TIERS, commands, withTransaction: (fn) => fn() },
+        {
+          sqlJson,
+          sqlRun,
+          jsonErrNoExit,
+          autoRecoverInternal,
+          runCompact,
+          _readTierConfig,
+          TOOL_TIERS,
+          commands,
+          withTransaction: (fn) => fn(),
+        },
         { project: 'my-project' },
       );
       expect(result.sessionId).toBe(42);
@@ -66,7 +79,17 @@ describe('services/sessions', () => {
       const commands = { search: vi.fn() };
 
       const result = sessionStart(
-        { sqlJson, sqlRun, jsonErrNoExit, autoRecoverInternal, runCompact, _readTierConfig, TOOL_TIERS, commands, withTransaction: (fn) => fn() },
+        {
+          sqlJson,
+          sqlRun,
+          jsonErrNoExit,
+          autoRecoverInternal,
+          runCompact,
+          _readTierConfig,
+          TOOL_TIERS,
+          commands,
+          withTransaction: (fn) => fn(),
+        },
         { project: 'my-project' },
       );
       expect(result.hasIncompletePreviousSession).toBe(true);
@@ -135,10 +158,7 @@ describe('services/sessions', () => {
       const sqlRun = vi.fn();
       const jsonErrNoExit = vi.fn((msg) => ({ error: msg }));
       const trustRecovery = vi.fn(() => ({ ok: true }));
-      const result = sessionEnd(
-        { sqlJson, sqlRun, jsonErrNoExit, trustRecovery },
-        { id: '10', memories: '5' },
-      );
+      const result = sessionEnd({ sqlJson, sqlRun, jsonErrNoExit, trustRecovery }, { id: '10', memories: '5' });
       expect(result.ok).toBe(true);
       expect(result.compacted).toBeUndefined();
     });

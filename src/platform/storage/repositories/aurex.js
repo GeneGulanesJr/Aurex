@@ -4,10 +4,12 @@ function createAurexRepository(deps) {
   const repository = {
     // --- Missions ---
     createMission({ id, description, status, configJson }) {
-      sqlRun(
-        'INSERT INTO missions (id, description, status, config_json) VALUES (?, ?, ?, ?)',
-        [id, description, status || 'planning', typeof configJson === 'string' ? configJson : JSON.stringify(configJson || {})],
-      );
+      sqlRun('INSERT INTO missions (id, description, status, config_json) VALUES (?, ?, ?, ?)', [
+        id,
+        description,
+        status || 'planning',
+        typeof configJson === 'string' ? configJson : JSON.stringify(configJson || {}),
+      ]);
       return sqlJson('SELECT * FROM missions WHERE id = ?', [id]);
     },
     getMission(id) {
@@ -33,10 +35,30 @@ function createAurexRepository(deps) {
     },
 
     // --- Working Units ---
-    createWorkingUnit({ id, milestoneId, description, declaredPaths, declaredModules, status, taskBranch, worktreePath, sessionId }) {
+    createWorkingUnit({
+      id,
+      milestoneId,
+      description,
+      declaredPaths,
+      declaredModules,
+      status,
+      taskBranch,
+      worktreePath,
+      sessionId,
+    }) {
       sqlRun(
         'INSERT INTO working_units (id, milestone_id, description, declared_paths, declared_modules, status, task_branch, worktree_path, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [id, milestoneId, description || '', JSON.stringify(declaredPaths || []), JSON.stringify(declaredModules || []), status || 'spawned', taskBranch || '', worktreePath || '', sessionId || null],
+        [
+          id,
+          milestoneId,
+          description || '',
+          JSON.stringify(declaredPaths || []),
+          JSON.stringify(declaredModules || []),
+          status || 'spawned',
+          taskBranch || '',
+          worktreePath || '',
+          sessionId || null,
+        ],
       );
       return sqlJson('SELECT * FROM working_units WHERE id = ?', [id]);
     },
@@ -54,7 +76,13 @@ function createAurexRepository(deps) {
     createContract({ id, milestoneId, version, content, supersedes }) {
       sqlRun(
         'INSERT INTO validation_contracts (id, milestone_id, version, content, supersedes) VALUES (?, ?, ?, ?, ?)',
-        [id, milestoneId, version || 1, typeof content === 'string' ? content : JSON.stringify(content || {}), supersedes || null],
+        [
+          id,
+          milestoneId,
+          version || 1,
+          typeof content === 'string' ? content : JSON.stringify(content || {}),
+          supersedes || null,
+        ],
       );
       return sqlJson('SELECT * FROM validation_contracts WHERE id = ?', [id]);
     },
@@ -70,7 +98,14 @@ function createAurexRepository(deps) {
       if (rescopeEvent) {
         sqlRun(
           'INSERT INTO rescope_events (id, milestone_id, contract_id, reason, previous_scope, new_scope) VALUES (?, ?, ?, ?, ?, ?)',
-          [rescopeEvent.id || `re-${Date.now()}`, mid, oldId, rescopeEvent.reason || '', rescopeEvent.previousScope || '', rescopeEvent.newScope || ''],
+          [
+            rescopeEvent.id || `re-${Date.now()}`,
+            mid,
+            oldId,
+            rescopeEvent.reason || '',
+            rescopeEvent.previousScope || '',
+            rescopeEvent.newScope || '',
+          ],
         );
       }
       return sqlJson('SELECT * FROM validation_contracts WHERE id = ?', [newId]);
@@ -83,7 +118,16 @@ function createAurexRepository(deps) {
     createVerdict({ id, milestoneId, contractId, validatorType, sessionId, verdict, findings, failedUnitIds }) {
       sqlRun(
         'INSERT INTO validation_verdicts (id, milestone_id, contract_id, validator_type, session_id, verdict, findings, failed_unit_ids) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [id, milestoneId, contractId, validatorType, sessionId, verdict, findings || '', JSON.stringify(failedUnitIds || [])],
+        [
+          id,
+          milestoneId,
+          contractId,
+          validatorType,
+          sessionId,
+          verdict,
+          findings || '',
+          JSON.stringify(failedUnitIds || []),
+        ],
       );
       return sqlJson('SELECT * FROM validation_verdicts WHERE id = ?', [id]);
     },
@@ -98,7 +142,18 @@ function createAurexRepository(deps) {
     createBroadcast({ id, missionId, authorId, authorType, category, title, content, status, ttl, expiresAt }) {
       sqlRun(
         'INSERT INTO broadcasts (id, mission_id, author_id, author_type, category, title, content, status, ttl, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [id, missionId, authorId, authorType, category || 'info', title || '', content || '', status || 'active', ttl ?? null, expiresAt || null],
+        [
+          id,
+          missionId,
+          authorId,
+          authorType,
+          category || 'info',
+          title || '',
+          content || '',
+          status || 'active',
+          ttl ?? null,
+          expiresAt || null,
+        ],
       );
       return sqlJson('SELECT * FROM broadcasts WHERE id = ?', [id]);
     },
@@ -109,7 +164,10 @@ function createAurexRepository(deps) {
     getBroadcasts(missionId, statusFilter) {
       if (statusFilter && statusFilter.length > 0) {
         const placeholders = statusFilter.map(() => '?').join(',');
-        return sqlJson(`SELECT * FROM broadcasts WHERE mission_id = ? AND status IN (${placeholders})`, [missionId, ...statusFilter]);
+        return sqlJson(`SELECT * FROM broadcasts WHERE mission_id = ? AND status IN (${placeholders})`, [
+          missionId,
+          ...statusFilter,
+        ]);
       }
       return sqlJson('SELECT * FROM broadcasts WHERE mission_id = ?', [missionId]);
     },
@@ -118,7 +176,18 @@ function createAurexRepository(deps) {
     createFinding({ id, missionId, authorId, domain, title, content, relevance, status, ttl, expiresAt }) {
       sqlRun(
         'INSERT INTO research_findings (id, mission_id, author_id, domain, title, content, relevance, status, ttl, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [id, missionId, authorId, JSON.stringify(domain || []), title || '', content || '', relevance || 'medium', status || 'unverified', ttl ?? null, expiresAt || null],
+        [
+          id,
+          missionId,
+          authorId,
+          JSON.stringify(domain || []),
+          title || '',
+          content || '',
+          relevance || 'medium',
+          status || 'unverified',
+          ttl ?? null,
+          expiresAt || null,
+        ],
       );
       return sqlJson('SELECT * FROM research_findings WHERE id = ?', [id]);
     },
@@ -148,12 +217,26 @@ function createAurexRepository(deps) {
     logCost({ id, missionId, agentSessionId, model, promptTokens, completionTokens, cost, timestamp }) {
       sqlRun(
         'INSERT INTO cost_entries (id, mission_id, agent_session_id, model, prompt_tokens, completion_tokens, cost, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [id, missionId, agentSessionId, model, promptTokens || 0, completionTokens || 0, cost || 0, timestamp || new Date().toISOString()],
+        [
+          id,
+          missionId,
+          agentSessionId,
+          model,
+          promptTokens || 0,
+          completionTokens || 0,
+          cost || 0,
+          timestamp || new Date().toISOString(),
+        ],
       );
     },
     getMissionCost(missionId) {
-      const rows = sqlJson('SELECT SUM(cost) as totalCost, SUM(prompt_tokens + completion_tokens) as totalTokens, COUNT(*) as entries FROM cost_entries WHERE mission_id = ?', [missionId]);
-      if (rows.length === 0) { return { totalCost: 0, totalTokens: 0, entries: 0 }; }
+      const rows = sqlJson(
+        'SELECT SUM(cost) as totalCost, SUM(prompt_tokens + completion_tokens) as totalTokens, COUNT(*) as entries FROM cost_entries WHERE mission_id = ?',
+        [missionId],
+      );
+      if (rows.length === 0) {
+        return { totalCost: 0, totalTokens: 0, entries: 0 };
+      }
       return {
         totalCost: rows[0].totalCost || 0,
         totalTokens: rows[0].totalTokens || 0,
@@ -171,16 +254,26 @@ function createAurexRepository(deps) {
       sqlRun('UPDATE milestones SET rescopes = rescopes + 1 WHERE id = ?', [milestoneId]);
       sqlRun(
         'INSERT INTO rescope_events (id, milestone_id, contract_id, reason, previous_scope, new_scope) VALUES (?, ?, ?, ?, ?, ?)',
-        [`re-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, milestoneId, event.contractId || '', event.reason || '', event.previousScope || '', event.newScope || ''],
+        [
+          `re-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          milestoneId,
+          event.contractId || '',
+          event.reason || '',
+          event.previousScope || '',
+          event.newScope || '',
+        ],
       );
     },
 
     // --- Checkpoints ---
     createCheckpoint({ id, missionId, trigger, milestoneId, summary }) {
-      sqlRun(
-        'INSERT INTO checkpoints (id, mission_id, trigger, milestone_id, summary) VALUES (?, ?, ?, ?, ?)',
-        [id, missionId, trigger, milestoneId, summary],
-      );
+      sqlRun('INSERT INTO checkpoints (id, mission_id, trigger, milestone_id, summary) VALUES (?, ?, ?, ?, ?)', [
+        id,
+        missionId,
+        trigger,
+        milestoneId,
+        summary,
+      ]);
       return sqlJson('SELECT * FROM checkpoints WHERE id = ?', [id]);
     },
     getCheckpoint(id) {

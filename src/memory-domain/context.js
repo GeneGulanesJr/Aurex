@@ -25,7 +25,9 @@ const TOPIC_QUERY_STOP_WORDS = new Set([
 ]);
 
 function topicQueryNeedles(query) {
-  const normalized = String(query || '').toLowerCase().trim();
+  const normalized = String(query || '')
+    .toLowerCase()
+    .trim();
   if (!normalized) {
     return [];
   }
@@ -41,11 +43,7 @@ function topicQueryNeedles(query) {
 }
 
 function buildTopicQueryMatch(needles) {
-  const fields = [
-    "lower(coalesce(o.topic_key, ''))",
-    "lower(coalesce(o.title, ''))",
-    "lower(coalesce(o.content, ''))",
-  ];
+  const fields = ["lower(coalesce(o.topic_key, ''))", "lower(coalesce(o.title, ''))", "lower(coalesce(o.content, ''))"];
   const whereParts = [];
   const whereParams = [];
   const scoreParts = [];

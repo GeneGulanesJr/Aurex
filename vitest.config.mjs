@@ -3,7 +3,13 @@ export default {
     extensions: ['.ts', '.js', '.mjs', '.cjs', '.json'],
   },
   test: {
-    exclude: ['**/node_modules/**', '**/.git/**', '**/.worktrees/**'],
+    exclude: [
+      '**/node_modules/**',
+      '**/.git/**',
+      '**/.worktrees/**',
+      '**/bench/results/**',
+      '**/bench/realworld/results/**',
+    ],
     globals: true,
     testTimeout: 30000,
     hookTimeout: 30000,

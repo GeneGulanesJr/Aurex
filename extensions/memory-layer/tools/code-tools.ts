@@ -111,9 +111,7 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
         }
 
         const codeRepos =
-          mode === 'index-repo' || mode === 'reindex-repo' || mode === 'health'
-            ? []
-            : await deps.getKnownRepos();
+          mode === 'index-repo' || mode === 'reindex-repo' || mode === 'health' ? [] : await deps.getKnownRepos();
         const inferredRepo = inferCurrentRepo(params, codeRepos, process.cwd());
         if (inferredRepo) {
           params = { ...params, repo: inferredRepo };

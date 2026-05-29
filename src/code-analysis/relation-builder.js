@@ -10,26 +10,32 @@ const { _requireNativeDb } = require('./shared-deps');
  */
 function buildExtendsEdges(db, repoId) {
   const guard = _requireNativeDb(db);
-  if (guard) { return guard; }
+  if (guard) {
+    return guard;
+  }
 
   db.prepare("DELETE FROM code_relations WHERE repo_id = ? AND kind = 'extends'").run(repoId);
 
-  const classes = db.prepare(
-    "SELECT id, name, signature, file_id, file_path, language FROM code_symbols WHERE repo_id = ? AND kind = 'class'"
-  ).all(repoId);
+  const classes = db
+    .prepare(
+      "SELECT id, name, signature, file_id, file_path, language FROM code_symbols WHERE repo_id = ? AND kind = 'class'",
+    )
+    .all(repoId);
 
   const insertStmt = db.prepare(
     `INSERT OR IGNORE INTO code_relations (repo_id, source_symbol_id, target_symbol_id, source_file_id, target_file_id, kind, weight)
-     VALUES (?, ?, ?, ?, ?, 'extends', 1.0)`
+     VALUES (?, ?, ?, ?, ?, 'extends', 1.0)`,
   );
 
   let count = 0;
   for (const cls of classes) {
     const baseName = extractExtendsName(cls.signature, cls.language);
     if (baseName) {
-      const target = db.prepare(
-        "SELECT id, file_id FROM code_symbols WHERE repo_id = ? AND name = ? AND kind IN ('class', 'interface')"
-      ).get(repoId, baseName);
+      const target = db
+        .prepare(
+          "SELECT id, file_id FROM code_symbols WHERE repo_id = ? AND name = ? AND kind IN ('class', 'interface')",
+        )
+        .get(repoId, baseName);
 
       if (target) {
         insertStmt.run(repoId, cls.id, target.id, cls.file_id, target.file_id);
@@ -47,18 +53,22 @@ function buildExtendsEdges(db, repoId) {
  */
 function buildImplementsEdges(db, repoId) {
   const guard = _requireNativeDb(db);
-  if (guard) { return guard; }
+  if (guard) {
+    return guard;
+  }
 
   db.prepare("DELETE FROM code_relations WHERE repo_id = ? AND kind = 'implements'").run(repoId);
 
-  const classes = db.prepare(
-    `SELECT id, name, signature, file_id, file_path, language FROM code_symbols
-     WHERE repo_id = ? AND kind = 'class' AND language IN ('javascript', 'typescript')`
-  ).all(repoId);
+  const classes = db
+    .prepare(
+      `SELECT id, name, signature, file_id, file_path, language FROM code_symbols
+     WHERE repo_id = ? AND kind = 'class' AND language IN ('javascript', 'typescript')`,
+    )
+    .all(repoId);
 
   const insertStmt = db.prepare(
     `INSERT OR IGNORE INTO code_relations (repo_id, source_symbol_id, target_symbol_id, source_file_id, target_file_id, kind, weight)
-     VALUES (?, ?, ?, ?, ?, 'implements', 1.0)`
+     VALUES (?, ?, ?, ?, ?, 'implements', 1.0)`,
   );
 
   let count = 0;
@@ -66,9 +76,9 @@ function buildImplementsEdges(db, repoId) {
     const ifaceNames = extractImplementsNames(cls.signature);
     if (ifaceNames.length > 0) {
       for (const ifaceName of ifaceNames) {
-        const target = db.prepare(
-          "SELECT id, file_id FROM code_symbols WHERE repo_id = ? AND name = ? AND kind = 'interface'"
-        ).get(repoId, ifaceName.trim());
+        const target = db
+          .prepare("SELECT id, file_id FROM code_symbols WHERE repo_id = ? AND name = ? AND kind = 'interface'")
+          .get(repoId, ifaceName.trim());
 
         if (target) {
           insertStmt.run(repoId, cls.id, target.id, cls.file_id, target.file_id);
@@ -87,18 +97,22 @@ function buildImplementsEdges(db, repoId) {
  */
 function buildReexportEdges(db, repoId) {
   const guard = _requireNativeDb(db);
-  if (guard) { return guard; }
+  if (guard) {
+    return guard;
+  }
 
   db.prepare("DELETE FROM code_relations WHERE repo_id = ? AND kind = 'reexport'").run(repoId);
 
-  const reexports = db.prepare(
-    `SELECT source_file_id, target_file_id FROM code_imports
-     WHERE repo_id = ? AND import_type = 're-export' AND target_file_id IS NOT NULL`
-  ).all(repoId);
+  const reexports = db
+    .prepare(
+      `SELECT source_file_id, target_file_id FROM code_imports
+     WHERE repo_id = ? AND import_type = 're-export' AND target_file_id IS NOT NULL`,
+    )
+    .all(repoId);
 
   const insertStmt = db.prepare(
     `INSERT OR IGNORE INTO code_relations (repo_id, source_file_id, target_file_id, kind, weight)
-     VALUES (?, ?, ?, 'reexport', ?)`
+     VALUES (?, ?, ?, 'reexport', ?)`,
   );
 
   let count = 0;
@@ -129,9 +143,11 @@ function buildReexportEdges(db, repoId) {
 
             const transitiveWeight = 0.7 ** (depth + 1);
             if (transitiveWeight >= 0.1) {
-              const existing = db.prepare(
-                `SELECT id FROM code_relations WHERE repo_id = ? AND source_file_id = ? AND target_file_id = ? AND kind = 'reexport' AND weight = 1.0`
-              ).get(repoId, sourceId, targetId);
+              const existing = db
+                .prepare(
+                  `SELECT id FROM code_relations WHERE repo_id = ? AND source_file_id = ? AND target_file_id = ? AND kind = 'reexport' AND weight = 1.0`,
+                )
+                .get(repoId, sourceId, targetId);
 
               if (!existing) {
                 insertStmt.run(repoId, sourceId, targetId, transitiveWeight);
@@ -155,11 +171,14 @@ function buildReexportEdges(db, repoId) {
  */
 function buildReferenceEdges(db, repoId) {
   const guard = _requireNativeDb(db);
-  if (guard) { return guard; }
+  if (guard) {
+    return guard;
+  }
 
   db.prepare("DELETE FROM code_relations WHERE repo_id = ? AND kind = 'references'").run(repoId);
 
-  const resolved = db.prepare(`
+  const resolved = db
+    .prepare(`
     SELECT sr.binding_id, sr.resolved_symbol_id, sr.resolved_file_id,
            fsb.file_id AS source_file_id, fsb.name AS binding_name,
            cs.name AS target_name, cs.kind AS target_kind, cs.file_id AS target_file_id
@@ -169,11 +188,12 @@ function buildReferenceEdges(db, repoId) {
     WHERE fsb.repo_id = ? AND sr.status = 'resolved'
       AND cs.kind NOT IN ('function', 'method')
       AND sr.resolved_symbol_id IS NOT NULL
-  `).all(repoId);
+  `)
+    .all(repoId);
 
   const insertStmt = db.prepare(
     `INSERT OR IGNORE INTO code_relations (repo_id, source_symbol_id, target_symbol_id, source_file_id, target_file_id, kind, weight)
-     VALUES (?, NULL, ?, ?, ?, 'references', 0.8)`
+     VALUES (?, NULL, ?, ?, ?, 'references', 0.8)`,
   );
 
   let count = 0;
@@ -195,7 +215,9 @@ function buildReferenceEdges(db, repoId) {
  * Extract the base class name from a class signature, language-aware.
  */
 function extractExtendsName(signature, language) {
-  if (!signature) { return null; }
+  if (!signature) {
+    return null;
+  }
 
   if (language === 'javascript' || language === 'typescript') {
     const m = signature.match(/extends\s+(\w+)/);
@@ -214,10 +236,17 @@ function extractExtendsName(signature, language) {
  * Extract interface names from `implements X, Y` in a TS class signature.
  */
 function extractImplementsNames(signature) {
-  if (!signature) { return []; }
+  if (!signature) {
+    return [];
+  }
   const m = signature.match(/implements\s+([\w,\s]+?)(?:\s*\{|$)/);
-  if (!m) { return []; }
-  return m[1].split(',').map((s) => s.trim()).filter(Boolean);
+  if (!m) {
+    return [];
+  }
+  return m[1]
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 module.exports = {

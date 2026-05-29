@@ -409,7 +409,11 @@ function buildJsTsScopeBindings(tree, source, _filePath) {
         // This is handled by the multi-pass resolver
       }
       // Export default function foo() — extract foo as declaration
-      if (child.type === 'function_declaration' || child.type === 'class_declaration' || child.type === 'arrow_function') {
+      if (
+        child.type === 'function_declaration' ||
+        child.type === 'class_declaration' ||
+        child.type === 'arrow_function'
+      ) {
         walk(child, 0, lineNum, endLine);
         return;
       }
@@ -462,13 +466,7 @@ function buildJsTsScopeBindings(tree, source, _filePath) {
     } else if (nameNode.type === 'object_pattern') {
       // Const { foo, bar } = require('./baz') or const { foo, bar } = obj
       const destructureInfo = value ? extractRequireInfo(value) : null;
-      extractDestructuredBindings(
-        nameNode,
-        scopeDepth,
-        lineNum,
-        endLine,
-        destructureInfo,
-      );
+      extractDestructuredBindings(nameNode, scopeDepth, lineNum, endLine, destructureInfo);
     } else if (nameNode.type === 'array_pattern') {
       // Const [a, b] = ...
       extractArrayDestructure(nameNode, scopeDepth, lineNum, endLine, requireInfo);
@@ -634,10 +632,7 @@ function buildJsTsScopeBindings(tree, source, _filePath) {
   function findStringNode(node) {
     let child = node.firstChild;
     while (child) {
-      if (
-        child.type === 'string' ||
-        child.type === 'string_literal'
-      ) {
+      if (child.type === 'string' || child.type === 'string_literal') {
         // Strip quotes
         const text = child.text;
         return text.slice(1, -1);

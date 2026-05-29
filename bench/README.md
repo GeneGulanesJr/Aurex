@@ -77,6 +77,7 @@ Use this benchmark as an internal regression and directional signal, not a compr
 `bench/realworld/bench-pi-realworld.js` runs Pi against real code-editing tasks and measures whether memory-on improves completion rate, reduces wrong turns, and preserves project decisions better than memory-off.
 
 The benchmark has two tiers:
+
 - **Long-horizon tasks** (in `tasks/`) — multi-file, multi-step tasks requiring 10-40+ tool calls. These test deep agentic reasoning, architectural awareness, and memory-guided decision-making.
 - **Short regression tasks** (in `tasks/short/`) — single-focus tasks for basic regression coverage.
 
@@ -87,6 +88,7 @@ npm run bench:pi-realworld
 ```
 
 By default, the harness:
+
 1. Creates a fresh git worktree for each run
 2. Applies bug-injection patches to introduce failures
 3. Runs Pi with the task prompt (memory-off first, then memory-on)
@@ -128,30 +130,31 @@ Results are written under `bench/realworld/results/` with JSONL transcripts and 
 
 ### Long-horizon tasks (5 tasks)
 
-| Task | Category | Description |
-|---|---|---|
-| `cross-cutting-add-code-owner` | cross-cutting-feature | Add a code_owner concept across schema, data access, domain, and extension layers (8+ files) |
-| `debugging-odyssey-compact-crash` | debugging-odyssey | Trace a data loss bug spanning compaction, FTS indexing, and search (3+ modules) |
-| `api-migration-hooks-to-events` | api-migration | Migrate hook registration from callbacks to event-emitter pattern (10+ files, pure refactor) |
-| `architectural-guardian-no-external-search` | architectural-guardian | Add semantic search enhancement that must respect the no-external-services constraint |
-| `multi-session-continuity-trust-policy` | multi-session-continuity | Fix trust-sync regression and apply a remembered trust policy from a prior session |
+| Task                                        | Category                 | Description                                                                                  |
+| ------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------- |
+| `cross-cutting-add-code-owner`              | cross-cutting-feature    | Add a code_owner concept across schema, data access, domain, and extension layers (8+ files) |
+| `debugging-odyssey-compact-crash`           | debugging-odyssey        | Trace a data loss bug spanning compaction, FTS indexing, and search (3+ modules)             |
+| `api-migration-hooks-to-events`             | api-migration            | Migrate hook registration from callbacks to event-emitter pattern (10+ files, pure refactor) |
+| `architectural-guardian-no-external-search` | architectural-guardian   | Add semantic search enhancement that must respect the no-external-services constraint        |
+| `multi-session-continuity-trust-policy`     | multi-session-continuity | Fix trust-sync regression and apply a remembered trust policy from a prior session           |
 
 ### Short regression tasks (8 tasks, in `tasks/short/`)
 
-| Task | Category | Description |
-|---|---|---|
-| `bugfix-createdb-config` | bugfix | Fix config isolation in createDb |
-| `bugfix-search-ranking` | bugfix | Fix composite ranking score |
-| `feature-context-hook` | feature | Add contextLimit flag to context-injection |
-| `feature-session-summary` | feature | Add onCompact hook for session summaries |
-| `refactor-fts5-rank` | refactor | Extract scoring weights into configurable object |
-| `staleness-code-index` | staleness | Detect and fix stale code index references |
-| `review-pr-trust-sync` | review | Evaluate trust-sync change correctness |
-| `negative-control-readme` | negative-control | README lookup (no memory needed) |
+| Task                      | Category         | Description                                      |
+| ------------------------- | ---------------- | ------------------------------------------------ |
+| `bugfix-createdb-config`  | bugfix           | Fix config isolation in createDb                 |
+| `bugfix-search-ranking`   | bugfix           | Fix composite ranking score                      |
+| `feature-context-hook`    | feature          | Add contextLimit flag to context-injection       |
+| `feature-session-summary` | feature          | Add onCompact hook for session summaries         |
+| `refactor-fts5-rank`      | refactor         | Extract scoring weights into configurable object |
+| `staleness-code-index`    | staleness        | Detect and fix stale code index references       |
+| `review-pr-trust-sync`    | review           | Evaluate trust-sync change correctness           |
+| `negative-control-readme` | negative-control | README lookup (no memory needed)                 |
 
 ### Task definition format
 
 Each task has:
+
 - `horizon`: `"long"` or absent (short)
 - `setup.checkout` — a known-good commit SHA
 - `setup.apply_patch` — optional patch to inject a bug
@@ -163,12 +166,12 @@ Each task has:
 
 ### Grading axes
 
-| Axis | Grader | What it measures |
-|---|---|---|
-| Tests | `run-tests.js` | Do the specified test commands pass? |
-| Diff | `check-diff.js` | Correct files touched, lines changed count |
-| Answer | `check-answer.js` | Response contains expected facts |
-| Trajectory | `check-trajectory.js` | Tool call efficiency, read/edit ratio, error rate |
+| Axis        | Grader                 | What it measures                                           |
+| ----------- | ---------------------- | ---------------------------------------------------------- |
+| Tests       | `run-tests.js`         | Do the specified test commands pass?                       |
+| Diff        | `check-diff.js`        | Correct files touched, lines changed count                 |
+| Answer      | `check-answer.js`      | Response contains expected facts                           |
+| Trajectory  | `check-trajectory.js`  | Tool call efficiency, read/edit ratio, error rate          |
 | Constraints | `check-constraints.js` | Diff respects semantic constraints (no forbidden patterns) |
 
 ### Report

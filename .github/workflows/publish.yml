@@ -23,7 +23,7 @@ jobs:
     environment: publish
     permissions:
       contents: read
-      id-token: write          # OIDC for npm Trusted Publishing
+      id-token: write # OIDC for npm Trusted Publishing
     steps:
       - uses: actions/checkout@v4
 

@@ -95,19 +95,23 @@ describe('memory tool renderer safety', () => {
   });
 
   it('blocks accidental memory-get content from another project unless explicitly allowed', async () => {
-    const tool = captureNamedTool(registerMemoryTools, {
-      state: { currentProject: 'PiMemoryExtension' },
-      mem: vi.fn().mockResolvedValue({
-        id: 2,
-        title: 'Other project memory',
-        type: 'decision',
-        scope: 'project',
-        project: 'Aelvyril',
-        content: 'large unrelated content',
-      }),
-      memCmd: vi.fn(),
-      trustIcon: vi.fn(),
-    }, 'memory-get');
+    const tool = captureNamedTool(
+      registerMemoryTools,
+      {
+        state: { currentProject: 'PiMemoryExtension' },
+        mem: vi.fn().mockResolvedValue({
+          id: 2,
+          title: 'Other project memory',
+          type: 'decision',
+          scope: 'project',
+          project: 'Aelvyril',
+          content: 'large unrelated content',
+        }),
+        memCmd: vi.fn(),
+        trustIcon: vi.fn(),
+      },
+      'memory-get',
+    );
 
     const blocked = await tool.execute('id', { id: 2 }, undefined, vi.fn(), {});
     const allowed = await tool.execute('id', { id: 2, allow_cross_project: true }, undefined, vi.fn(), {});
@@ -353,13 +357,7 @@ describe('memory tool renderer safety', () => {
       invalidateRepoCache: vi.fn(),
     });
 
-    const result = await tool.execute(
-      'id',
-      { mode: 'search', query: 'context command' },
-      undefined,
-      vi.fn(),
-      {},
-    );
+    const result = await tool.execute('id', { mode: 'search', query: 'context command' }, undefined, vi.fn(), {});
     const text = result.content.find((item) => item.type === 'text').text;
 
     expectRenderable(result);
@@ -384,13 +382,7 @@ describe('memory tool renderer safety', () => {
       invalidateRepoCache: vi.fn(),
     });
 
-    const result = await tool.execute(
-      'id',
-      { mode: 'search', query: 'rankObservations' },
-      undefined,
-      vi.fn(),
-      {},
-    );
+    const result = await tool.execute('id', { mode: 'search', query: 'rankObservations' }, undefined, vi.fn(), {});
 
     expectRenderable(result);
     expect(mem).toHaveBeenCalledWith('search-code', {

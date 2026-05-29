@@ -4,8 +4,28 @@ function writeBroadcast(repo) {
   return async (req, res, ctx) => {
     const { agentId, ...broadcast } = ctx.body;
     const id = `b-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const rows = repo.createBroadcast({ id, missionId: broadcast.missionId, authorId: agentId, authorType: broadcast.authorType, category: broadcast.category, title: broadcast.title, content: broadcast.content, status: 'active', ttl: broadcast.ttl, expiresAt: broadcast.expiresAt });
-    jsonCreated(res, rows[0] || { id, missionId: broadcast.missionId, authorId: agentId, status: 'active', createdAt: new Date().toISOString() });
+    const rows = repo.createBroadcast({
+      id,
+      missionId: broadcast.missionId,
+      authorId: agentId,
+      authorType: broadcast.authorType,
+      category: broadcast.category,
+      title: broadcast.title,
+      content: broadcast.content,
+      status: 'active',
+      ttl: broadcast.ttl,
+      expiresAt: broadcast.expiresAt,
+    });
+    jsonCreated(
+      res,
+      rows[0] || {
+        id,
+        missionId: broadcast.missionId,
+        authorId: agentId,
+        status: 'active',
+        createdAt: new Date().toISOString(),
+      },
+    );
   };
 }
 

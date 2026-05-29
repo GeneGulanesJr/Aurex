@@ -5,14 +5,19 @@ function createMission(repo) {
     const { description, config } = ctx.body;
     const id = `m-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const rows = repo.createMission({ id, description, status: 'planning', configJson: config });
-    jsonCreated(res, rows[0] || { id, description, status: 'planning', configJson: config, createdAt: new Date().toISOString() });
+    jsonCreated(
+      res,
+      rows[0] || { id, description, status: 'planning', configJson: config, createdAt: new Date().toISOString() },
+    );
   };
 }
 
 function getMission(repo) {
   return async (req, res, ctx) => {
     const rows = repo.getMission(ctx.params.id);
-    if (rows.length === 0) { return jsonError(res, 404, 'not_found', 'Mission not found'); }
+    if (rows.length === 0) {
+      return jsonError(res, 404, 'not_found', 'Mission not found');
+    }
     const row = rows[0];
     jsonOk(res, { ...row, configJson: safeParse(row.config_json) });
   };
@@ -35,7 +40,11 @@ function listMissions(repo) {
 }
 
 function safeParse(str) {
-  try { return JSON.parse(str); } catch { return str; }
+  try {
+    return JSON.parse(str);
+  } catch {
+    return str;
+  }
 }
 
 module.exports = { createMission, getMission, updateMissionStatus, listMissions };

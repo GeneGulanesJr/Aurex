@@ -306,10 +306,14 @@ function createCodeIndexRepository(deps) {
       const newFileCount = sqlJson('SELECT count(*) AS c FROM code_files WHERE repo_id = ?', [repoId])[0].c;
       const newSymbolCount = sqlJson('SELECT count(*) AS c FROM code_symbols WHERE repo_id = ?', [repoId])[0].c;
       if (prev && prev.symbol_count > 0 && newSymbolCount === 0) {
-        console.warn(`[repos] WARNING: updateRepoStats for repo ${repoId}: symbol_count dropped from ${prev.symbol_count} to 0. This likely means parsePhase failed after clearRepoIndex.`);
+        console.warn(
+          `[repos] WARNING: updateRepoStats for repo ${repoId}: symbol_count dropped from ${prev.symbol_count} to 0. This likely means parsePhase failed after clearRepoIndex.`,
+        );
       }
       if (prev && prev.file_count > 0 && newFileCount === 0) {
-        console.warn(`[repos] WARNING: updateRepoStats for repo ${repoId}: file_count dropped from ${prev.file_count} to 0. Index may be empty.`);
+        console.warn(
+          `[repos] WARNING: updateRepoStats for repo ${repoId}: file_count dropped from ${prev.file_count} to 0. Index may be empty.`,
+        );
       }
       sqlRun(
         "UPDATE code_repos SET file_count = (SELECT count(*) FROM code_files WHERE repo_id = ?), symbol_count = (SELECT count(*) FROM code_symbols WHERE repo_id = ?), head_commit = COALESCE(?, head_commit), current_branch = COALESCE(?, current_branch), base_head = COALESCE(?, base_head), updated_at = datetime('now') WHERE id = ?",

@@ -13,7 +13,9 @@ function findLapisRoot(): string {
       }
     } catch {}
     const parent = path.dirname(dir);
-    if (parent === dir) {break;}
+    if (parent === dir) {
+      break;
+    }
     dir = parent;
   }
   return path.resolve(__dirname, '..', '..', '..');

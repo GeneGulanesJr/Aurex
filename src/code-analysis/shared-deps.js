@@ -15,10 +15,7 @@ const {
   PR_RISK,
   CALL_GRAPH,
 } = require('../../constants');
-const {
-  requireNativeDb: _requireNativeDb,
-  SKIP_CALLEE_NAMES: _SKIP_CALLEE_NAMES,
-} = require('../../utils');
+const { requireNativeDb: _requireNativeDb, SKIP_CALLEE_NAMES: _SKIP_CALLEE_NAMES } = require('../../utils');
 
 module.exports = {
   path,

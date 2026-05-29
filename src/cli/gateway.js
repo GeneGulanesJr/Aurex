@@ -80,8 +80,35 @@ async function dispatch(cmd, args) {
         }
 
         const TOOL_TIERS = {
-          core: new Set(['search', 'save', 'context', 'search-code', 'get-code-source', 'importance', 'outline', 'winnow', 'dream']),
-          standard: new Set(['search', 'save', 'context', 'search-code', 'get-code-source', 'importance', 'outline', 'winnow', 'dream', 'complexity', 'dead-code', 'hotspots', 'blast-radius', 'call-hierarchy', 'cycles', 'coupling']),
+          core: new Set([
+            'search',
+            'save',
+            'context',
+            'search-code',
+            'get-code-source',
+            'importance',
+            'outline',
+            'winnow',
+            'dream',
+          ]),
+          standard: new Set([
+            'search',
+            'save',
+            'context',
+            'search-code',
+            'get-code-source',
+            'importance',
+            'outline',
+            'winnow',
+            'dream',
+            'complexity',
+            'dead-code',
+            'hotspots',
+            'blast-radius',
+            'call-hierarchy',
+            'cycles',
+            'coupling',
+          ]),
           full: null,
         };
 

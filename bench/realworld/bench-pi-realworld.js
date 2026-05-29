@@ -182,12 +182,7 @@ function seedMemory(memorySeedPath, memoryOnHome) {
   const msPath = path.join(lapisRoot, 'memory-store.js');
 
   for (const seed of seeds) {
-    const args = [
-      'save',
-      '--type', seed.type || 'architecture',
-      '--title', seed.title,
-      '--content', seed.content,
-    ];
+    const args = ['save', '--type', seed.type || 'architecture', '--title', seed.title, '--content', seed.content];
     if (seed.project) {
       args.push('--project', seed.project);
     }
@@ -196,14 +191,11 @@ function seedMemory(memorySeedPath, memoryOnHome) {
     }
 
     const homeEnv = memoryOnHome ? `HOME=${shellQuote(memoryOnHome)} ` : '';
-    execSync(
-      `${homeEnv}node "${msPath}" ${args.map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(' ')}`,
-      {
-        cwd: lapisRoot,
-        encoding: 'utf-8',
-        timeout: 10_000,
-      },
-    );
+    execSync(`${homeEnv}node "${msPath}" ${args.map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(' ')}`, {
+      cwd: lapisRoot,
+      encoding: 'utf-8',
+      timeout: 10_000,
+    });
   }
 }
 
@@ -350,10 +342,7 @@ function gradeRun(task, worktreePath, parsedOutput) {
     trajectory: trajectoryResult,
     constraints: constraintResult,
     overall:
-      testResult.passed === testResult.total &&
-      testResult.total > 0 &&
-      diffResult.passed &&
-      constraintResult.passed,
+      testResult.passed === testResult.total && testResult.total > 0 && diffResult.passed && constraintResult.passed,
   };
 }
 
@@ -504,15 +493,21 @@ function median(values) {
 }
 
 function fmtMs(ms) {
-  if (!ms) { return 'n/a'; }
+  if (!ms) {
+    return 'n/a';
+  }
   const s = Math.round(ms / 1000);
-  if (s < 60) { return `${s}s`; }
+  if (s < 60) {
+    return `${s}s`;
+  }
   const m = Math.floor(s / 60);
   return `${m}m ${s % 60}s`;
 }
 
 function fmtNum(n) {
-  if (n === undefined || n === null) { return 'n/a'; }
+  if (n === undefined || n === null) {
+    return 'n/a';
+  }
   return n.toLocaleString();
 }
 
@@ -532,13 +527,9 @@ function printReport(results) {
     const toolCalls = sideResults.map((r) => r.behavior?.tool_calls || 0);
     const wrongFile = sideResults.filter((r) => !r.grade.diff.passed).length;
     const constraintViolations = sideResults.filter((r) => !r.grade.constraints.passed).length;
-    const trajectoryScores = sideResults
-      .map((r) => r.grade.trajectory?.score || 0)
-      .filter((s) => s > 0);
+    const trajectoryScores = sideResults.map((r) => r.grade.trajectory?.score || 0).filter((s) => s > 0);
     const linesChanged = sideResults.map((r) => r.grade.diff?.linesChanged || 0);
-    const readEditRatios = sideResults
-      .map((r) => r.grade.trajectory?.readEditRatio || 0)
-      .filter((r) => r > 0);
+    const readEditRatios = sideResults.map((r) => r.grade.trajectory?.readEditRatio || 0).filter((r) => r > 0);
 
     bySide[side] = {
       solved: `${solved}/${sideResults.length}`,
@@ -558,15 +549,7 @@ function printReport(results) {
   const col1 = 24;
   const colN = 12;
   benchLog('');
-  benchLog(
-    '╔' +
-      '═'.repeat(col1 + 2) +
-      '╤' +
-      '═'.repeat(colN + 2) +
-      '╤' +
-      '═'.repeat(colN + 2) +
-      '╗',
-  );
+  benchLog('╔' + '═'.repeat(col1 + 2) + '╤' + '═'.repeat(colN + 2) + '╤' + '═'.repeat(colN + 2) + '╗');
   benchLog(
     '║' +
       'Metric'.padEnd(col1 + 2) +
@@ -578,39 +561,15 @@ function printReport(results) {
       ' ' +
       '║',
   );
-  benchLog(
-    '╟' +
-      '─'.repeat(col1 + 2) +
-      '┼' +
-      '─'.repeat(colN + 2) +
-      '┼' +
-      '─'.repeat(colN + 2) +
-      '╢',
-  );
+  benchLog('╟' + '─'.repeat(col1 + 2) + '┼' + '─'.repeat(colN + 2) + '┼' + '─'.repeat(colN + 2) + '╢');
 
   const rows = [
     ['Tasks solved', bySide['memory-off'].solved, bySide['memory-on'].solved],
     ['Tests passed', bySide['memory-off'].testPassed, bySide['memory-on'].testPassed],
-    [
-      'Median active tokens',
-      fmtNum(bySide['memory-off'].medianTokens),
-      fmtNum(bySide['memory-on'].medianTokens),
-    ],
-    [
-      'Median wall time',
-      fmtMs(bySide['memory-off'].medianWallTime),
-      fmtMs(bySide['memory-on'].medianWallTime),
-    ],
-    [
-      'Median tool calls',
-      fmtNum(bySide['memory-off'].medianToolCalls),
-      fmtNum(bySide['memory-on'].medianToolCalls),
-    ],
-    [
-      'Wrong-file edits',
-      String(bySide['memory-off'].wrongFileEdits),
-      String(bySide['memory-on'].wrongFileEdits),
-    ],
+    ['Median active tokens', fmtNum(bySide['memory-off'].medianTokens), fmtNum(bySide['memory-on'].medianTokens)],
+    ['Median wall time', fmtMs(bySide['memory-off'].medianWallTime), fmtMs(bySide['memory-on'].medianWallTime)],
+    ['Median tool calls', fmtNum(bySide['memory-off'].medianToolCalls), fmtNum(bySide['memory-on'].medianToolCalls)],
+    ['Wrong-file edits', String(bySide['memory-off'].wrongFileEdits), String(bySide['memory-on'].wrongFileEdits)],
     [
       'Constraint violations',
       String(bySide['memory-off'].constraintViolations),
@@ -648,15 +607,7 @@ function printReport(results) {
     );
   }
 
-  benchLog(
-    '╚' +
-      '═'.repeat(col1 + 2) +
-      '╧' +
-      '═'.repeat(colN + 2) +
-      '╧' +
-      '═'.repeat(colN + 2) +
-      '╝',
-  );
+  benchLog('╚' + '═'.repeat(col1 + 2) + '╧' + '═'.repeat(colN + 2) + '╧' + '═'.repeat(colN + 2) + '╝');
   benchLog('');
 
   // Per-task detail
@@ -747,9 +698,7 @@ async function main() {
   const longCount = tasks.filter((t) => t.horizon === 'long').length;
   const shortCount = tasks.length - longCount;
   benchLog(`[bench] Realworld Pi Memory Benchmark`);
-  benchLog(
-    `[bench] Tasks: ${tasks.length} (${longCount} long, ${shortCount} short), Runs per side: ${args.runs}`,
-  );
+  benchLog(`[bench] Tasks: ${tasks.length} (${longCount} long, ${shortCount} short), Runs per side: ${args.runs}`);
   benchLog(`[bench] Output: ${outDir}`);
   benchLog(`[bench] memory-off HOME: ${noMemoryHome}`);
   if (args.accumulate) {
@@ -818,4 +767,14 @@ if (require.main === module) {
   });
 }
 
-module.exports = { createWorktree, removeWorktree, applyPatch, seedMemory, gradeRun, printReport, loadTasks, prepareNoMemoryHome, prepareMemoryOnHome };
+module.exports = {
+  createWorktree,
+  removeWorktree,
+  applyPatch,
+  seedMemory,
+  gradeRun,
+  printReport,
+  loadTasks,
+  prepareNoMemoryHome,
+  prepareMemoryOnHome,
+};

@@ -25,7 +25,9 @@ const DEFAULT_MAX_DEPTH = 5;
  */
 function getAffectedGraph(db, repoId, opts = {}) {
   const guard = _requireNativeDb(db);
-  if (guard) { return guard; }
+  if (guard) {
+    return guard;
+  }
 
   const { symbol, file, minReachability = DEFAULT_MIN_REACHABILITY, maxDepth = DEFAULT_MAX_DEPTH } = opts;
 
@@ -39,9 +41,9 @@ function getAffectedGraph(db, repoId, opts = {}) {
   const seedSymbolIds = [];
 
   if (symbol) {
-    const symRows = db.prepare(
-      'SELECT id, name, file_id, file_path FROM code_symbols WHERE repo_id = ? AND name = ?'
-    ).all(repoId, symbol);
+    const symRows = db
+      .prepare('SELECT id, name, file_id, file_path FROM code_symbols WHERE repo_id = ? AND name = ?')
+      .all(repoId, symbol);
 
     if (symRows.length === 0) {
       return { error: `Symbol "${symbol}" not found` };
@@ -92,11 +94,13 @@ function getAffectedGraph(db, repoId, opts = {}) {
       // 1. code_calls: who calls this symbol?
       if (current.type === 'symbol') {
         try {
-          const callers = db.prepare(
-            `SELECT cc.caller_symbol_id, cc.confidence, cs.name, cs.file_path, cs.file_id
+          const callers = db
+            .prepare(
+              `SELECT cc.caller_symbol_id, cc.confidence, cs.name, cs.file_path, cs.file_id
              FROM code_calls cc JOIN code_symbols cs ON cs.id = cc.caller_symbol_id
-             WHERE cc.callee_symbol_id = ? AND cc.confidence >= ?`
-          ).all(current.id, 0.3);
+             WHERE cc.callee_symbol_id = ? AND cc.confidence >= ?`,
+            )
+            .all(current.id, 0.3);
 
           for (const c of callers) {
             const score = c.confidence * EDGE_DECAY.call * DISTANCE_DECAY ** (current.depth + 1);
@@ -106,7 +110,13 @@ function getAffectedGraph(db, repoId, opts = {}) {
 
             if (shouldVisit) {
               visited.set(key, { reachability: score, depth: current.depth + 1, signals: ['call'] });
-              queue.push({ type: 'symbol', id: c.caller_symbol_id, fileId: c.file_id, reachability: score, depth: current.depth + 1 });
+              queue.push({
+                type: 'symbol',
+                id: c.caller_symbol_id,
+                fileId: c.file_id,
+                reachability: score,
+                depth: current.depth + 1,
+              });
 
               affectedSymbols.set(c.caller_symbol_id, {
                 name: c.name,
@@ -126,11 +136,13 @@ function getAffectedGraph(db, repoId, opts = {}) {
       // 2. code_imports: who imports this file?
       if (fileId) {
         try {
-          const importers = db.prepare(
-            `SELECT ci.source_file_id, cf.path
+          const importers = db
+            .prepare(
+              `SELECT ci.source_file_id, cf.path
              FROM code_imports ci JOIN code_files cf ON cf.id = ci.source_file_id
-             WHERE ci.target_file_id = ?`
-          ).all(fileId);
+             WHERE ci.target_file_id = ?`,
+            )
+            .all(fileId);
 
           for (const imp of importers) {
             const score = EDGE_DECAY.import * DISTANCE_DECAY ** (current.depth + 1);
@@ -153,22 +165,30 @@ function getAffectedGraph(db, repoId, opts = {}) {
         const rels = [];
         try {
           if (current.type === 'symbol') {
-            rels.push(...db.prepare(
-              `SELECT cr.source_symbol_id, cr.source_file_id, cr.kind, cr.weight,
+            rels.push(
+              ...db
+                .prepare(
+                  `SELECT cr.source_symbol_id, cr.source_file_id, cr.kind, cr.weight,
                       cs.name, cs.file_path, cs.file_id AS sym_file_id
                FROM code_relations cr
                LEFT JOIN code_symbols cs ON cs.id = cr.source_symbol_id
-               WHERE cr.target_symbol_id = ? AND cr.repo_id = ?`
-            ).all(current.id, repoId));
+               WHERE cr.target_symbol_id = ? AND cr.repo_id = ?`,
+                )
+                .all(current.id, repoId),
+            );
           }
           if (fileId) {
-            rels.push(...db.prepare(
-              `SELECT cr.source_symbol_id, cr.source_file_id, cr.kind, cr.weight,
+            rels.push(
+              ...db
+                .prepare(
+                  `SELECT cr.source_symbol_id, cr.source_file_id, cr.kind, cr.weight,
                       cs.name, cs.file_path, cs.file_id AS sym_file_id
                FROM code_relations cr
                LEFT JOIN code_symbols cs ON cs.id = cr.source_symbol_id
-               WHERE cr.target_file_id = ? AND cr.repo_id = ?`
-            ).all(fileId, repoId));
+               WHERE cr.target_file_id = ? AND cr.repo_id = ?`,
+                )
+                .all(fileId, repoId),
+            );
           }
         } catch {}
 
@@ -181,7 +201,13 @@ function getAffectedGraph(db, repoId, opts = {}) {
               const existing = visited.get(key);
               if (!existing || existing.reachability < score) {
                 visited.set(key, { reachability: score, depth: current.depth + 1, signals: [r.kind] });
-                queue.push({ type: 'symbol', id: r.source_symbol_id, fileId: r.sym_file_id, reachability: score, depth: current.depth + 1 });
+                queue.push({
+                  type: 'symbol',
+                  id: r.source_symbol_id,
+                  fileId: r.sym_file_id,
+                  reachability: score,
+                  depth: current.depth + 1,
+                });
 
                 if (r.name) {
                   affectedSymbols.set(r.source_symbol_id, {
@@ -213,9 +239,11 @@ function getAffectedGraph(db, repoId, opts = {}) {
       // 4. file_cochange: what files co-change with this file?
       if (fileId) {
         try {
-          const cochanges = db.prepare(
-            `SELECT file_a_id, file_b_id, strength FROM file_cochange WHERE repo_id = ? AND (file_a_id = ? OR file_b_id = ?)`
-          ).all(repoId, fileId, fileId);
+          const cochanges = db
+            .prepare(
+              `SELECT file_a_id, file_b_id, strength FROM file_cochange WHERE repo_id = ? AND (file_a_id = ? OR file_b_id = ?)`,
+            )
+            .all(repoId, fileId, fileId);
 
           for (const cc of cochanges) {
             const otherId = cc.file_a_id === fileId ? cc.file_b_id : cc.file_a_id;

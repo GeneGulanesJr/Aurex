@@ -19,7 +19,9 @@ function sessionStart(deps, args) {
 
   const txFn = deps.withTransaction || withTransaction;
   const { sessionId, sessionCount, consolidateDue, archiveCandidates, incompleteSession } = txFn(() => {
-    const sessionRows = deps.sqlJson('INSERT INTO session_log (project) VALUES (?) RETURNING id, started_at', [project]);
+    const sessionRows = deps.sqlJson('INSERT INTO session_log (project) VALUES (?) RETURNING id, started_at', [
+      project,
+    ]);
     const sid = sessionRows[0].id;
 
     const countRows = deps.sqlJson('SELECT COUNT(*) as cnt FROM session_log WHERE project = ?', [project]);
@@ -47,7 +49,13 @@ function sessionStart(deps, args) {
       [project, sid],
     );
 
-    return { sessionId: sid, sessionCount: sCnt, consolidateDue: cDue, archiveCandidates: aCandidates, incompleteSession: incomplete };
+    return {
+      sessionId: sid,
+      sessionCount: sCnt,
+      consolidateDue: cDue,
+      archiveCandidates: aCandidates,
+      incompleteSession: incomplete,
+    };
   });
 
   let recoveredSession = null;

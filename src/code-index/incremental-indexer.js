@@ -347,30 +347,32 @@ function rebuildDerivedIndexes(db, repoId, args, totalFiles, fileCount, symbolCo
   } catch {}
 
   let relationEdges = 0;
-  emitProgress(
-    args,
-    'analysis',
-    { step: 'build-relations', message: 'Step 5/5: building relation edges...' },
-    stats,
-  );
+  emitProgress(args, 'analysis', { step: 'build-relations', message: 'Step 5/5: building relation edges...' }, stats);
   try {
     const re = buildRelationEdges(db, repoId);
-    if (re.success) { relationEdges = re.count; }
+    if (re.success) {
+      relationEdges = re.count;
+    }
   } catch {}
 
   let cochangeEdges = 0;
-  emitProgress(
-    args,
-    'analysis',
-    { step: 'build-cochange', message: 'Step 5/5: building co-change edges...' },
-    stats,
-  );
+  emitProgress(args, 'analysis', { step: 'build-cochange', message: 'Step 5/5: building co-change edges...' }, stats);
   try {
     const cc2 = buildCochangeEdges(db, repoId);
-    if (cc2.success) { cochangeEdges = cc2.count; }
+    if (cc2.success) {
+      cochangeEdges = cc2.count;
+    }
   } catch {}
 
-  return { importEdges, callEdges, complexityCount, scopeResolved, relationEdges, cochangeEdges, derived_scope: 'repo' };
+  return {
+    importEdges,
+    callEdges,
+    complexityCount,
+    scopeResolved,
+    relationEdges,
+    cochangeEdges,
+    derived_scope: 'repo',
+  };
 }
 
 function rebuildDerivedIncremental(db, repoId, args, stats, changedFileIds, deletedFileIds) {
@@ -391,7 +393,9 @@ function rebuildDerivedIncremental(db, repoId, args, stats, changedFileIds, dele
 
   try {
     const ig = buildImportEdgesForFiles(db, repoId, changedFileIds, deletedFileIds);
-    if (ig.success) {importEdges = ig.edges;}
+    if (ig.success) {
+      importEdges = ig.edges;
+    }
   } catch {}
 
   // ── Scope resolution (v10) ────────────────────────────────
@@ -433,7 +437,9 @@ function rebuildDerivedIncremental(db, repoId, args, stats, changedFileIds, dele
         );
       },
     });
-    if (cg.success) {callEdges = cg.calls;}
+    if (cg.success) {
+      callEdges = cg.calls;
+    }
   } catch {}
 
   emitProgress(
@@ -447,13 +453,17 @@ function rebuildDerivedIncremental(db, repoId, args, stats, changedFileIds, dele
   );
   try {
     const cc = buildComplexityMetricsForFiles(db, repoId, changedFileIds, deletedFileIds);
-    if (cc.success) {complexityCount = cc.symbols;}
+    if (cc.success) {
+      complexityCount = cc.symbols;
+    }
   } catch {}
 
   let relationEdges = 0;
   try {
     const re = buildRelationEdges(db, repoId);
-    if (re.success) { relationEdges = re.count; }
+    if (re.success) {
+      relationEdges = re.count;
+    }
   } catch {}
 
   return {
@@ -659,7 +669,11 @@ async function parsePhase(files, deps, repoId, args) {
       if (!useWorkers || parsedRecords.length === 0) {
         let parsedInBatch = 0;
         for (const record of validReads) {
-          const { hot: hotSymbols, cold: coldSymbols, tree } = extractSymbolsSplit(record.filePath, registry, record.content);
+          const {
+            hot: hotSymbols,
+            cold: coldSymbols,
+            tree,
+          } = extractSymbolsSplit(record.filePath, registry, record.content);
           const symbols = hotSymbols;
           validateSymbols(record, symbols);
           recordDiagnostic(
@@ -887,7 +901,9 @@ async function indexRepository(deps, repoPath, repoName) {
       repoRoot: absPath,
     });
   } catch (parseError) {
-    console.error(`[indexer] indexRepository: parsePhase threw after clearRepoIndex - repo may be empty: ${parseError.message}`);
+    console.error(
+      `[indexer] indexRepository: parsePhase threw after clearRepoIndex - repo may be empty: ${parseError.message}`,
+    );
     emitProgress(args, 'error', {
       step: 'parse-failed',
       message: `Fatal: parse phase failed after clearing index: ${parseError.message}. Run reindex again to restore.`,
@@ -975,7 +991,9 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
   const gitChangedFiles = gitDelta
     ? gitDelta.changed.filter(
         (filePath) =>
-          fs.existsSync(filePath) && registry.canParseFile(filePath) && !SKIP_FILE_RE.test(filePath.replace(/\\/g, '/')),
+          fs.existsSync(filePath) &&
+          registry.canParseFile(filePath) &&
+          !SKIP_FILE_RE.test(filePath.replace(/\\/g, '/')),
       )
     : null;
   const gitDeletedFiles = gitDelta ? gitDelta.deleted : [];
@@ -1064,10 +1082,15 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
   }
 
   if (changedRecords.length > 0) {
-    emitProgress(args, 'parsing', {
-      step: 'extract-symbols',
-      message: `Step 3/5: extracting symbols from ${changedRecords.length} changed files...`,
-    }, { files_total: totalFiles, files_done: unchanged, symbols: symbolCount });
+    emitProgress(
+      args,
+      'parsing',
+      {
+        step: 'extract-symbols',
+        message: `Step 3/5: extracting symbols from ${changedRecords.length} changed files...`,
+      },
+      { files_total: totalFiles, files_done: unchanged, symbols: symbolCount },
+    );
 
     const allSymbols = [];
     const scopeWork = [];
@@ -1203,22 +1226,46 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
 
   if (changedRecords.length === 0 && unchanged === totalFiles && staleFiles.length === 0) {
     const totalMs = Date.now() - t0;
-    const existingSymbolCount = (() => { try { const r = db.prepare('SELECT symbol_count FROM code_repos WHERE id = ?').get(existing.id); return r ? r.symbol_count : 0; } catch { return 0; } })();
-    emitProgress(args, 'done', {
-      message: `No files changed: ${unchanged} unchanged (${(totalMs / 1000).toFixed(1)}s)`,
-    }, { files_total: totalFiles, files_done: totalFiles, symbols: existingSymbolCount });
+    const existingSymbolCount = (() => {
+      try {
+        const r = db.prepare('SELECT symbol_count FROM code_repos WHERE id = ?').get(existing.id);
+        return r ? r.symbol_count : 0;
+      } catch {
+        return 0;
+      }
+    })();
+    emitProgress(
+      args,
+      'done',
+      {
+        message: `No files changed: ${unchanged} unchanged (${(totalMs / 1000).toFixed(1)}s)`,
+      },
+      { files_total: totalFiles, files_done: totalFiles, symbols: existingSymbolCount },
+    );
     return {
-      success: true, repo, mode, name: repo,
-      file_count: totalFiles, symbol_count: existingSymbolCount, files_checked: totalFiles,
-      files_hashed: hashed, files_reindexed: 0, files_unchanged: unchanged,
-      files_removed: 0, files_skipped: skipped.length, symbols_extracted: 0,
+      success: true,
+      repo,
+      mode,
+      name: repo,
+      file_count: totalFiles,
+      symbol_count: existingSymbolCount,
+      files_checked: totalFiles,
+      files_hashed: hashed,
+      files_reindexed: 0,
+      files_unchanged: unchanged,
+      files_removed: 0,
+      files_skipped: skipped.length,
+      symbols_extracted: 0,
       strategy: gitDelta ? 'git-diff' : 'scan-hash',
       derived_scope: 'none',
       git_base: gitDelta ? existing.head_commit : null,
       git_head: gitDelta ? gitDelta.currentHead : null,
       git_renames: gitDelta ? gitDelta.renamed : [],
-      import_edges: 0, call_edges: 0, complexity_symbols: 0,
-      skipped, skip_report: skipReport,
+      import_edges: 0,
+      call_edges: 0,
+      complexity_symbols: 0,
+      skipped,
+      skip_report: skipReport,
       timing_ms: { total: totalMs },
     };
   }
@@ -1263,7 +1310,14 @@ async function reindexRepository(deps, repo, mode = 'incremental') {
     mode,
     name: repo,
     file_count: reindexed + unchanged,
-    symbol_count: (() => { try { const r = db.prepare('SELECT symbol_count FROM code_repos WHERE id = ?').get(existing.id); return r ? r.symbol_count : symbolCount; } catch { return symbolCount; } })(),
+    symbol_count: (() => {
+      try {
+        const r = db.prepare('SELECT symbol_count FROM code_repos WHERE id = ?').get(existing.id);
+        return r ? r.symbol_count : symbolCount;
+      } catch {
+        return symbolCount;
+      }
+    })(),
     files_checked: totalFiles,
     files_hashed: hashed,
     files_reindexed: reindexed,

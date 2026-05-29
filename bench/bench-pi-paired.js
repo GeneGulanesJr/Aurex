@@ -345,12 +345,7 @@ function parsePiOutput(raw) {
     tool_counts: Object.fromEntries(toolCounts.entries()),
     behavior,
   };
-  if (
-    answerParts.length === 0 &&
-    assistantByResponse.size === 0 &&
-    seenUsage.size === 0 &&
-    raw.trim().length > 0
-  ) {
+  if (answerParts.length === 0 && assistantByResponse.size === 0 && seenUsage.size === 0 && raw.trim().length > 0) {
     result.parse_warning = 'No valid Pi events found in output';
   }
   return result;
@@ -384,7 +379,9 @@ async function runSide(side, commandTemplate, task, repo, outDir, cwd, timeoutMs
   const run = await runCommand(command, cwd, timeoutMs, outFile);
   benchLog(`[bench] ${task.id}: finished ${side} in ${run.elapsed_ms}ms`);
   if (run.status !== 0 && run.status != null) {
-    if (!run.error) { run.error = `Command exited with status ${run.status}`; }
+    if (!run.error) {
+      run.error = `Command exited with status ${run.status}`;
+    }
     benchLog(`[bench] WARNING: ${task.id} ${side}: command exited with status ${run.status}`);
   }
 
@@ -498,7 +495,11 @@ async function main() {
   }
 
   const allFailed = results.every(
-    (r) => r.memory_off.status !== 0 && r.memory_off.status != null && r.memory_on.status !== 0 && r.memory_on.status != null,
+    (r) =>
+      r.memory_off.status !== 0 &&
+      r.memory_off.status != null &&
+      r.memory_on.status !== 0 &&
+      r.memory_on.status != null,
   );
   if (allFailed) {
     benchLog('\n[bench] ERROR: All tasks failed. Are Pi commands available?');

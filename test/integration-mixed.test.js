@@ -28,14 +28,19 @@ describe('Mixed file type parsing integration', () => {
     const parser = await getParser();
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lapis-test-'));
 
-    fs.writeFileSync(path.join(tmpDir, 'app.js'), `
+    fs.writeFileSync(
+      path.join(tmpDir, 'app.js'),
+      `
 export function init() {
   const mod = import('./utils.js');
   return mod;
 }
-`);
+`,
+    );
 
-    fs.writeFileSync(path.join(tmpDir, 'style.css'), `
+    fs.writeFileSync(
+      path.join(tmpDir, 'style.css'),
+      `
 :root {
   --primary: #333;
 }
@@ -45,9 +50,12 @@ export function init() {
 @media (min-width: 768px) {
   .container { max-width: 720px; }
 }
-`);
+`,
+    );
 
-    fs.writeFileSync(path.join(tmpDir, 'theme.scss'), `
+    fs.writeFileSync(
+      path.join(tmpDir, 'theme.scss'),
+      `
 $primary: #333;
 @mixin flex-center {
   display: flex;
@@ -56,9 +64,12 @@ $primary: #333;
   @include flex-center;
   @extend .base-btn;
 }
-`);
+`,
+    );
 
-    fs.writeFileSync(path.join(tmpDir, 'index.html'), `
+    fs.writeFileSync(
+      path.join(tmpDir, 'index.html'),
+      `
 <div id="app" class="container">
   <MyComponent>
     <app-header></app-header>
@@ -67,7 +78,8 @@ $primary: #333;
 <script>
   console.log('hello');
 </script>
-`);
+`,
+    );
 
     const jsResult = parser.parseContent('app.js', fs.readFileSync(path.join(tmpDir, 'app.js'), 'utf8'));
     const cssResult = parser.parseContent('style.css', fs.readFileSync(path.join(tmpDir, 'style.css'), 'utf8'));

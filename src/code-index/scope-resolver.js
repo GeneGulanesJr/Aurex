@@ -67,9 +67,11 @@ function resolveScopeBindings(db, repoId, opts = {}) {
   }
 
   // Count final unresolved
-  const unresolvedRow = db.prepare(
-    `SELECT COUNT(*) as cnt FROM scope_resolution WHERE status = 'unresolved' AND binding_id IN (SELECT id FROM file_scope_bindings WHERE repo_id = ?)`,
-  ).get(repoId);
+  const unresolvedRow = db
+    .prepare(
+      `SELECT COUNT(*) as cnt FROM scope_resolution WHERE status = 'unresolved' AND binding_id IN (SELECT id FROM file_scope_bindings WHERE repo_id = ?)`,
+    )
+    .get(repoId);
   totalUnresolved = unresolvedRow ? unresolvedRow.cnt : 0;
 
   return {
@@ -92,12 +94,14 @@ function runDirectResolution(db, repoId) {
   let unresolved = 0;
 
   // Get all bindings that don't have a scope_resolution row yet
-  const bindings = db.prepare(`
+  const bindings = db
+    .prepare(`
     SELECT fsb.id, fsb.file_id, fsb.name, fsb.kind, fsb.origin, fsb.source_file_id,
            fsb.source_name, fsb.source_module, fsb.line_start, fsb.line_end, fsb.scope_depth
     FROM file_scope_bindings fsb
     WHERE fsb.repo_id = ? AND fsb.id NOT IN (SELECT binding_id FROM scope_resolution)
-  `).all(repoId);
+  `)
+    .all(repoId);
 
   const insertResolution = db.prepare(
     `INSERT INTO scope_resolution (binding_id, resolved_symbol_id, resolved_file_id, status, resolved_at_pass, confidence) VALUES (?, ?, ?, ?, ?, ?)`,
@@ -116,9 +120,20 @@ function runDirectResolution(db, repoId) {
     return filePathCache.get(fileId);
   };
 
-  const runInTx = typeof db.transaction === 'function'
-    ? (fn) => db.transaction(fn)()
-    : (fn) => { db.exec('BEGIN'); try { const r = fn(); db.exec('COMMIT'); return r; } catch (e) { db.exec('ROLLBACK'); throw e; } };
+  const runInTx =
+    typeof db.transaction === 'function'
+      ? (fn) => db.transaction(fn)()
+      : (fn) => {
+          db.exec('BEGIN');
+          try {
+            const r = fn();
+            db.exec('COMMIT');
+            return r;
+          } catch (e) {
+            db.exec('ROLLBACK');
+            throw e;
+          }
+        };
 
   runInTx(() => {
     for (const binding of bindings) {
@@ -143,9 +158,11 @@ function runDirectResolution(db, repoId) {
         // If no source_file_id yet, try to resolve from import edges
         if (!targetFileId) {
           // Try via code_imports
-          const impRow = db.prepare(
-            `SELECT target_file_id FROM code_imports WHERE source_file_id = ? AND target_file_id IS NOT NULL LIMIT 1`,
-          ).get(binding.file_id);
+          const impRow = db
+            .prepare(
+              `SELECT target_file_id FROM code_imports WHERE source_file_id = ? AND target_file_id IS NOT NULL LIMIT 1`,
+            )
+            .get(binding.file_id);
           if (impRow) {
             targetFileId = impRow.target_file_id;
           }
@@ -154,9 +171,9 @@ function runDirectResolution(db, repoId) {
         if (targetFileId) {
           // Try to find the symbol in the target file
           const sourceName = binding.source_name || binding.name;
-          const symbolRow = db.prepare(
-            `SELECT id FROM code_symbols WHERE file_id = ? AND name = ? LIMIT 1`,
-          ).get(targetFileId, sourceName);
+          const symbolRow = db
+            .prepare(`SELECT id FROM code_symbols WHERE file_id = ? AND name = ? LIMIT 1`)
+            .get(targetFileId, sourceName);
 
           if (symbolRow) {
             insertResolution.run(binding.id, symbolRow.id, targetFileId, 'resolved_internal', 2, 1.0);
@@ -176,12 +193,14 @@ function runDirectResolution(db, repoId) {
 
       if (binding.origin === 'local') {
         // Find matching code_symbols row in the same file
-        const symbolRow = db.prepare(`
+        const symbolRow = db
+          .prepare(`
           SELECT id FROM code_symbols
           WHERE file_id = ? AND name = ? AND start_line <= ? AND end_line >= ?
           ORDER BY (end_line - start_line) ASC
           LIMIT 1
-        `).get(binding.file_id, binding.name, binding.line_end, binding.line_start);
+        `)
+          .get(binding.file_id, binding.name, binding.line_end, binding.line_start);
 
         if (symbolRow) {
           insertResolution.run(binding.id, symbolRow.id, null, 'resolved_internal', 2, 1.0);
@@ -230,29 +249,44 @@ function runReexportResolution(db, repoId, passNum) {
   let resolved = 0;
   const warnings = [];
 
-  const runInTx = typeof db.transaction === 'function'
-    ? (fn) => db.transaction(fn)()
-    : (fn) => { db.exec('BEGIN'); try { const r = fn(); db.exec('COMMIT'); return r; } catch (e) { db.exec('ROLLBACK'); throw e; } };
+  const runInTx =
+    typeof db.transaction === 'function'
+      ? (fn) => db.transaction(fn)()
+      : (fn) => {
+          db.exec('BEGIN');
+          try {
+            const r = fn();
+            db.exec('COMMIT');
+            return r;
+          } catch (e) {
+            db.exec('ROLLBACK');
+            throw e;
+          }
+        };
 
   runInTx(() => {
     // ── Re-export chains ─────────────────────────────────
-    const reexportBindings = db.prepare(`
+    const reexportBindings = db
+      .prepare(`
       SELECT fsb.id, fsb.file_id, fsb.name, fsb.kind, fsb.source_file_id, fsb.source_name
       FROM file_scope_bindings fsb
       JOIN scope_resolution sr ON sr.binding_id = fsb.id
       WHERE fsb.repo_id = ? AND fsb.kind = 're_export' AND sr.status = 'unresolved'
         AND fsb.source_file_id IS NOT NULL
-    `).all(repoId);
+    `)
+      .all(repoId);
 
     for (const binding of reexportBindings) {
       // Follow the chain: find the original binding in the source file
-      const sourceBinding = db.prepare(`
+      const sourceBinding = db
+        .prepare(`
         SELECT fsb.id, sr.resolved_symbol_id, sr.status
         FROM file_scope_bindings fsb
         JOIN scope_resolution sr ON sr.binding_id = fsb.id
         WHERE fsb.file_id = ? AND fsb.name = ? AND sr.status = 'resolved_internal'
         LIMIT 1
-      `).get(binding.source_file_id, binding.source_name || binding.name);
+      `)
+        .get(binding.source_file_id, binding.source_name || binding.name);
 
       if (sourceBinding && sourceBinding.resolved_symbol_id) {
         db.prepare(
@@ -263,13 +297,15 @@ function runReexportResolution(db, repoId, passNum) {
     }
 
     // ── Wildcard imports (Python) ────────────────────────
-    const wildcardBindings = db.prepare(`
+    const wildcardBindings = db
+      .prepare(`
       SELECT fsb.id, fsb.file_id, fsb.name, fsb.source_file_id, fsb.source_module
       FROM file_scope_bindings fsb
       JOIN scope_resolution sr ON sr.binding_id = fsb.id
       WHERE fsb.repo_id = ? AND fsb.kind = 'wildcard_import'
         AND sr.status = 'unresolved' AND fsb.source_file_id IS NOT NULL
-    `).all(repoId);
+    `)
+      .all(repoId);
 
     const insertBinding = db.prepare(
       `INSERT INTO file_scope_bindings (repo_id, file_id, name, kind, origin, source_file_id, source_name, line_start, line_end, scope_depth, first_seen_pass)
@@ -281,9 +317,11 @@ function runReexportResolution(db, repoId, passNum) {
 
     for (const binding of wildcardBindings) {
       // Enumerate exported symbols from the source file
-      const exportedSymbols = db.prepare(
-        `SELECT id, name, start_line, end_line FROM code_symbols WHERE file_id = ? AND name IS NOT NULL LIMIT ?`,
-      ).all(binding.source_file_id, WILDCARD_EXPANSION_CAP + 1);
+      const exportedSymbols = db
+        .prepare(
+          `SELECT id, name, start_line, end_line FROM code_symbols WHERE file_id = ? AND name IS NOT NULL LIMIT ?`,
+        )
+        .all(binding.source_file_id, WILDCARD_EXPANSION_CAP + 1);
 
       if (exportedSymbols.length > WILDCARD_EXPANSION_CAP) {
         warnings.push(`Wildcard import from ${binding.source_module} exceeded ${WILDCARD_EXPANSION_CAP} symbol cap`);
@@ -317,21 +355,27 @@ function runReexportResolution(db, repoId, passNum) {
     }
 
     // ── Namespace imports (JS) ───────────────────────────
-    const namespaceBindings = db.prepare(`
+    const namespaceBindings = db
+      .prepare(`
       SELECT fsb.id, fsb.file_id, fsb.name, fsb.source_file_id, fsb.source_module
       FROM file_scope_bindings fsb
       JOIN scope_resolution sr ON sr.binding_id = fsb.id
       WHERE fsb.repo_id = ? AND fsb.kind = 'namespace_import'
         AND sr.status = 'unresolved' AND fsb.source_file_id IS NOT NULL
-    `).all(repoId);
+    `)
+      .all(repoId);
 
     for (const binding of namespaceBindings) {
-      const exportedSymbols = db.prepare(
-        `SELECT id, name, start_line, end_line FROM code_symbols WHERE file_id = ? AND name IS NOT NULL LIMIT ?`,
-      ).all(binding.source_file_id, WILDCARD_EXPANSION_CAP + 1);
+      const exportedSymbols = db
+        .prepare(
+          `SELECT id, name, start_line, end_line FROM code_symbols WHERE file_id = ? AND name IS NOT NULL LIMIT ?`,
+        )
+        .all(binding.source_file_id, WILDCARD_EXPANSION_CAP + 1);
 
       if (exportedSymbols.length > WILDCARD_EXPANSION_CAP) {
-        warnings.push(`Namespace import ${binding.name} from ${binding.source_module} exceeded ${WILDCARD_EXPANSION_CAP} symbol cap`);
+        warnings.push(
+          `Namespace import ${binding.name} from ${binding.source_module} exceeded ${WILDCARD_EXPANSION_CAP} symbol cap`,
+        );
       }
 
       for (const sym of exportedSymbols.slice(0, WILDCARD_EXPANSION_CAP)) {
@@ -378,9 +422,20 @@ function getBindingLineRange(db, bindingId) {
  */
 function resolveScopeBindingsForFiles(db, repoId, changedFileIds, deletedFileIds) {
   // For incremental: clean and re-resolve for changed files + their direct importers
-  const runInTx = typeof db.transaction === 'function'
-    ? (fn) => db.transaction(fn)()
-    : (fn) => { db.exec('BEGIN'); try { const r = fn(); db.exec('COMMIT'); return r; } catch (e) { db.exec('ROLLBACK'); throw e; } };
+  const runInTx =
+    typeof db.transaction === 'function'
+      ? (fn) => db.transaction(fn)()
+      : (fn) => {
+          db.exec('BEGIN');
+          try {
+            const r = fn();
+            db.exec('COMMIT');
+            return r;
+          } catch (e) {
+            db.exec('ROLLBACK');
+            throw e;
+          }
+        };
 
   runInTx(() => {
     // Delete scope_resolution for changed and deleted files
@@ -393,9 +448,9 @@ function resolveScopeBindingsForFiles(db, repoId, changedFileIds, deletedFileIds
     // Also clean for direct importers of changed files
     const importerFileIds = new Set();
     for (const fileId of changedFileIds) {
-      const importers = db.prepare(
-        `SELECT DISTINCT source_file_id FROM code_imports WHERE target_file_id = ?`,
-      ).all(fileId);
+      const importers = db
+        .prepare(`SELECT DISTINCT source_file_id FROM code_imports WHERE target_file_id = ?`)
+        .all(fileId);
       for (const imp of importers) {
         importerFileIds.add(imp.source_file_id);
       }
@@ -411,12 +466,14 @@ function resolveScopeBindingsForFiles(db, repoId, changedFileIds, deletedFileIds
     const allFileIds = [...new Set([...changedFileIds, ...importerFileIds])];
     for (const fileId of allFileIds) {
       // Only resolve bindings for this specific file
-      const bindings = db.prepare(`
+      const bindings = db
+        .prepare(`
         SELECT fsb.id, fsb.file_id, fsb.name, fsb.kind, fsb.origin, fsb.source_file_id,
                fsb.source_name, fsb.line_start, fsb.line_end, fsb.scope_depth
         FROM file_scope_bindings fsb
         WHERE fsb.repo_id = ? AND fsb.file_id = ? AND fsb.id NOT IN (SELECT binding_id FROM scope_resolution)
-      `).all(repoId, fileId);
+      `)
+        .all(repoId, fileId);
 
       for (const binding of bindings) {
         resolveBindingDirect(db, binding, 2);
@@ -443,18 +500,20 @@ function resolveBindingDirect(db, binding, passNum) {
   } else if (binding.origin === 'external_file') {
     let targetFileId = binding.source_file_id;
     if (!targetFileId) {
-      const impRow = db.prepare(
-        `SELECT target_file_id FROM code_imports WHERE source_file_id = ? AND target_file_id IS NOT NULL LIMIT 1`,
-      ).get(binding.file_id);
+      const impRow = db
+        .prepare(
+          `SELECT target_file_id FROM code_imports WHERE source_file_id = ? AND target_file_id IS NOT NULL LIMIT 1`,
+        )
+        .get(binding.file_id);
       if (impRow) {
         targetFileId = impRow.target_file_id;
       }
     }
     if (targetFileId) {
       const sourceName = binding.source_name || binding.name;
-      const symbolRow = db.prepare(
-        `SELECT id FROM code_symbols WHERE file_id = ? AND name = ? LIMIT 1`,
-      ).get(targetFileId, sourceName);
+      const symbolRow = db
+        .prepare(`SELECT id FROM code_symbols WHERE file_id = ? AND name = ? LIMIT 1`)
+        .get(targetFileId, sourceName);
       if (symbolRow) {
         insertResolution.run(binding.id, symbolRow.id, targetFileId, 'resolved_internal', passNum, 1.0);
       } else {
@@ -464,12 +523,14 @@ function resolveBindingDirect(db, binding, passNum) {
       insertResolution.run(binding.id, null, null, 'unresolved', passNum, 0.3);
     }
   } else if (binding.origin === 'local') {
-    const symbolRow = db.prepare(`
+    const symbolRow = db
+      .prepare(`
       SELECT id FROM code_symbols
       WHERE file_id = ? AND name = ? AND start_line <= ? AND end_line >= ?
       ORDER BY (end_line - start_line) ASC
       LIMIT 1
-    `).get(binding.file_id, binding.name, binding.line_end, binding.line_start);
+    `)
+      .get(binding.file_id, binding.name, binding.line_end, binding.line_start);
     if (symbolRow) {
       insertResolution.run(binding.id, symbolRow.id, null, 'resolved_internal', passNum, 1.0);
     } else {

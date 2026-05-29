@@ -144,7 +144,8 @@ function buildRustScopeBindings(tree, _source, _filePath) {
       }
     } else if (node.type === 'scoped_identifier' || node.type === 'identifier') {
       const fullPath = node.text;
-      const isInternal = fullPath.startsWith('crate::') || fullPath.startsWith('self::') || fullPath.startsWith('super::');
+      const isInternal =
+        fullPath.startsWith('crate::') || fullPath.startsWith('self::') || fullPath.startsWith('super::');
       const parts = fullPath.split('::');
       const lastName = parts[parts.length - 1];
 

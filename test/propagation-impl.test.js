@@ -9,11 +9,15 @@ let db;
 let repoId;
 
 function setupPropagationDb() {
-  if (fs.existsSync(TMP_DB)) { fs.unlinkSync(TMP_DB); }
+  if (fs.existsSync(TMP_DB)) {
+    fs.unlinkSync(TMP_DB);
+  }
   db = new Database(TMP_DB);
 
   db.exec(`CREATE TABLE code_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, path TEXT)`);
-  db.exec(`CREATE TABLE code_files (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER, path TEXT, language TEXT, content TEXT, content_hash TEXT)`);
+  db.exec(
+    `CREATE TABLE code_files (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER, path TEXT, language TEXT, content TEXT, content_hash TEXT)`,
+  );
   db.exec(`CREATE TABLE code_symbols (
     id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER, file_id INTEGER, name TEXT, kind TEXT,
     signature TEXT, file_path TEXT, start_line INTEGER, end_line INTEGER, start_byte INTEGER,
@@ -49,8 +53,12 @@ function setupPropagationDb() {
 }
 
 afterEach(() => {
-  if (db) { db.close(); }
-  if (fs.existsSync(TMP_DB)) { fs.unlinkSync(TMP_DB); }
+  if (db) {
+    db.close();
+  }
+  if (fs.existsSync(TMP_DB)) {
+    fs.unlinkSync(TMP_DB);
+  }
 });
 
 describe('getAffectedGraph', () => {
@@ -58,15 +66,47 @@ describe('getAffectedGraph', () => {
     const { db: testDb, repoId: rid } = setupPropagationDb();
     const { getAffectedGraph } = require('../src/code-analysis/propagation-impl');
 
-    const insertFile = testDb.prepare('INSERT INTO code_files (repo_id, path, language, content, content_hash) VALUES (?, ?, ?, ?, ?)');
-    const insertSymbol = testDb.prepare(`INSERT INTO code_symbols (repo_id, file_id, name, kind, signature, file_path, start_line, end_line, start_byte, end_byte, language, qualified_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-    const insertCall = testDb.prepare('INSERT INTO code_calls (repo_id, caller_symbol_id, callee_name, callee_symbol_id, confidence) VALUES (?, ?, ?, ?, ?)');
+    const insertFile = testDb.prepare(
+      'INSERT INTO code_files (repo_id, path, language, content, content_hash) VALUES (?, ?, ?, ?, ?)',
+    );
+    const insertSymbol = testDb.prepare(
+      `INSERT INTO code_symbols (repo_id, file_id, name, kind, signature, file_path, start_line, end_line, start_byte, end_byte, language, qualified_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const insertCall = testDb.prepare(
+      'INSERT INTO code_calls (repo_id, caller_symbol_id, callee_name, callee_symbol_id, confidence) VALUES (?, ?, ?, ?, ?)',
+    );
 
     const fLib = insertFile.run(rid, 'lib.js', 'javascript', '', '');
     const fConsumer = insertFile.run(rid, 'consumer.js', 'javascript', '', '');
 
-    const callee = insertSymbol.run(rid, Number(fLib.lastInsertRowid), 'helper', 'function', 'function helper()', 'lib.js', 1, 5, 0, 50, 'javascript', 'helper');
-    const caller = insertSymbol.run(rid, Number(fConsumer.lastInsertRowid), 'main', 'function', 'function main()', 'consumer.js', 1, 5, 0, 50, 'javascript', 'main');
+    const callee = insertSymbol.run(
+      rid,
+      Number(fLib.lastInsertRowid),
+      'helper',
+      'function',
+      'function helper()',
+      'lib.js',
+      1,
+      5,
+      0,
+      50,
+      'javascript',
+      'helper',
+    );
+    const caller = insertSymbol.run(
+      rid,
+      Number(fConsumer.lastInsertRowid),
+      'main',
+      'function',
+      'function main()',
+      'consumer.js',
+      1,
+      5,
+      0,
+      50,
+      'javascript',
+      'main',
+    );
 
     insertCall.run(rid, Number(caller.lastInsertRowid), 'helper', Number(callee.lastInsertRowid), 1.0);
 
@@ -80,8 +120,12 @@ describe('getAffectedGraph', () => {
     const { db: testDb, repoId: rid } = setupPropagationDb();
     const { getAffectedGraph } = require('../src/code-analysis/propagation-impl');
 
-    const insertFile = testDb.prepare('INSERT INTO code_files (repo_id, path, language, content, content_hash) VALUES (?, ?, ?, ?, ?)');
-    const insertImport = testDb.prepare('INSERT INTO code_imports (repo_id, source_file_id, target_module, target_file_id) VALUES (?, ?, ?, ?)');
+    const insertFile = testDb.prepare(
+      'INSERT INTO code_files (repo_id, path, language, content, content_hash) VALUES (?, ?, ?, ?, ?)',
+    );
+    const insertImport = testDb.prepare(
+      'INSERT INTO code_imports (repo_id, source_file_id, target_module, target_file_id) VALUES (?, ?, ?, ?)',
+    );
 
     const fLib = insertFile.run(rid, 'lib.js', 'javascript', '', '');
     const fConsumer = insertFile.run(rid, 'consumer.js', 'javascript', '', '');
@@ -95,17 +139,57 @@ describe('getAffectedGraph', () => {
     const { db: testDb, repoId: rid } = setupPropagationDb();
     const { getAffectedGraph } = require('../src/code-analysis/propagation-impl');
 
-    const insertFile = testDb.prepare('INSERT INTO code_files (repo_id, path, language, content, content_hash) VALUES (?, ?, ?, ?, ?)');
-    const insertSymbol = testDb.prepare(`INSERT INTO code_symbols (repo_id, file_id, name, kind, signature, file_path, start_line, end_line, start_byte, end_byte, language, qualified_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-    const insertRelation = testDb.prepare('INSERT INTO code_relations (repo_id, source_symbol_id, target_symbol_id, source_file_id, target_file_id, kind, weight) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    const insertFile = testDb.prepare(
+      'INSERT INTO code_files (repo_id, path, language, content, content_hash) VALUES (?, ?, ?, ?, ?)',
+    );
+    const insertSymbol = testDb.prepare(
+      `INSERT INTO code_symbols (repo_id, file_id, name, kind, signature, file_path, start_line, end_line, start_byte, end_byte, language, qualified_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const insertRelation = testDb.prepare(
+      'INSERT INTO code_relations (repo_id, source_symbol_id, target_symbol_id, source_file_id, target_file_id, kind, weight) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    );
 
     const fBase = insertFile.run(rid, 'base.js', 'javascript', '', '');
     const fChild = insertFile.run(rid, 'child.js', 'javascript', '', '');
 
-    const baseSym = insertSymbol.run(rid, Number(fBase.lastInsertRowid), 'Base', 'class', 'class Base', 'base.js', 1, 5, 0, 50, 'javascript', 'Base');
-    const childSym = insertSymbol.run(rid, Number(fChild.lastInsertRowid), 'Child', 'class', 'class Child extends Base', 'child.js', 1, 5, 0, 50, 'javascript', 'Child');
+    const baseSym = insertSymbol.run(
+      rid,
+      Number(fBase.lastInsertRowid),
+      'Base',
+      'class',
+      'class Base',
+      'base.js',
+      1,
+      5,
+      0,
+      50,
+      'javascript',
+      'Base',
+    );
+    const childSym = insertSymbol.run(
+      rid,
+      Number(fChild.lastInsertRowid),
+      'Child',
+      'class',
+      'class Child extends Base',
+      'child.js',
+      1,
+      5,
+      0,
+      50,
+      'javascript',
+      'Child',
+    );
 
-    insertRelation.run(rid, Number(childSym.lastInsertRowid), Number(baseSym.lastInsertRowid), Number(fChild.lastInsertRowid), Number(fBase.lastInsertRowid), 'extends', 1.0);
+    insertRelation.run(
+      rid,
+      Number(childSym.lastInsertRowid),
+      Number(baseSym.lastInsertRowid),
+      Number(fChild.lastInsertRowid),
+      Number(fBase.lastInsertRowid),
+      'extends',
+      1.0,
+    );
 
     const result = getAffectedGraph(testDb, rid, { symbol: 'Base' });
     expect(result.affected_files.some((f) => f.path === 'child.js')).toBe(true);
@@ -116,18 +200,76 @@ describe('getAffectedGraph', () => {
     const { db: testDb, repoId: rid } = setupPropagationDb();
     const { getAffectedGraph } = require('../src/code-analysis/propagation-impl');
 
-    const insertFile = testDb.prepare('INSERT INTO code_files (repo_id, path, language, content, content_hash) VALUES (?, ?, ?, ?, ?)');
-    const insertSymbol = testDb.prepare(`INSERT INTO code_symbols (repo_id, file_id, name, kind, signature, file_path, start_line, end_line, start_byte, end_byte, language, qualified_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-    const insertCall = testDb.prepare('INSERT INTO code_calls (repo_id, caller_symbol_id, callee_name, callee_symbol_id, confidence) VALUES (?, ?, ?, ?, ?)');
+    const insertFile = testDb.prepare(
+      'INSERT INTO code_files (repo_id, path, language, content, content_hash) VALUES (?, ?, ?, ?, ?)',
+    );
+    const insertSymbol = testDb.prepare(
+      `INSERT INTO code_symbols (repo_id, file_id, name, kind, signature, file_path, start_line, end_line, start_byte, end_byte, language, qualified_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const insertCall = testDb.prepare(
+      'INSERT INTO code_calls (repo_id, caller_symbol_id, callee_name, callee_symbol_id, confidence) VALUES (?, ?, ?, ?, ?)',
+    );
 
     const f1 = insertFile.run(rid, 'a.js', 'javascript', '', '');
     const f2 = insertFile.run(rid, 'b.js', 'javascript', '', '');
     const f3 = insertFile.run(rid, 'c.js', 'javascript', '', '');
 
-    const symD = insertSymbol.run(rid, Number(f1.lastInsertRowid), 'd', 'function', 'function d()', 'a.js', 1, 5, 0, 50, 'javascript', 'd');
-    const symC = insertSymbol.run(rid, Number(f1.lastInsertRowid), 'c', 'function', 'function c()', 'a.js', 1, 5, 0, 50, 'javascript', 'c');
-    const symB = insertSymbol.run(rid, Number(f2.lastInsertRowid), 'b', 'function', 'function b()', 'b.js', 1, 5, 0, 50, 'javascript', 'b');
-    const symA = insertSymbol.run(rid, Number(f3.lastInsertRowid), 'a', 'function', 'function a()', 'c.js', 1, 5, 0, 50, 'javascript', 'a');
+    const symD = insertSymbol.run(
+      rid,
+      Number(f1.lastInsertRowid),
+      'd',
+      'function',
+      'function d()',
+      'a.js',
+      1,
+      5,
+      0,
+      50,
+      'javascript',
+      'd',
+    );
+    const symC = insertSymbol.run(
+      rid,
+      Number(f1.lastInsertRowid),
+      'c',
+      'function',
+      'function c()',
+      'a.js',
+      1,
+      5,
+      0,
+      50,
+      'javascript',
+      'c',
+    );
+    const symB = insertSymbol.run(
+      rid,
+      Number(f2.lastInsertRowid),
+      'b',
+      'function',
+      'function b()',
+      'b.js',
+      1,
+      5,
+      0,
+      50,
+      'javascript',
+      'b',
+    );
+    const symA = insertSymbol.run(
+      rid,
+      Number(f3.lastInsertRowid),
+      'a',
+      'function',
+      'function a()',
+      'c.js',
+      1,
+      5,
+      0,
+      50,
+      'javascript',
+      'a',
+    );
 
     insertCall.run(rid, Number(symA.lastInsertRowid), 'b', Number(symB.lastInsertRowid), 1.0);
     insertCall.run(rid, Number(symB.lastInsertRowid), 'c', Number(symC.lastInsertRowid), 1.0);
@@ -145,8 +287,12 @@ describe('getAffectedGraph', () => {
     const { db: testDb, repoId: rid } = setupPropagationDb();
     const { getAffectedGraph } = require('../src/code-analysis/propagation-impl');
 
-    const insertFile = testDb.prepare('INSERT INTO code_files (repo_id, path, language, content, content_hash) VALUES (?, ?, ?, ?, ?)');
-    const insertCochange = testDb.prepare('INSERT INTO file_cochange (repo_id, file_a_id, file_b_id, co_commit_count, strength) VALUES (?, ?, ?, ?, ?)');
+    const insertFile = testDb.prepare(
+      'INSERT INTO code_files (repo_id, path, language, content, content_hash) VALUES (?, ?, ?, ?, ?)',
+    );
+    const insertCochange = testDb.prepare(
+      'INSERT INTO file_cochange (repo_id, file_a_id, file_b_id, co_commit_count, strength) VALUES (?, ?, ?, ?, ?)',
+    );
 
     const fA = insertFile.run(rid, 'a.js', 'javascript', '', '');
     const fB = insertFile.run(rid, 'b.js', 'javascript', '', '');
@@ -162,8 +308,12 @@ describe('getAffectedGraph', () => {
     const { db: testDb, repoId: rid } = setupPropagationDb();
     const { getAffectedGraph } = require('../src/code-analysis/propagation-impl');
 
-    const insertFile = testDb.prepare('INSERT INTO code_files (repo_id, path, language, content, content_hash) VALUES (?, ?, ?, ?, ?)');
-    const insertCochange = testDb.prepare('INSERT INTO file_cochange (repo_id, file_a_id, file_b_id, co_commit_count, strength) VALUES (?, ?, ?, ?, ?)');
+    const insertFile = testDb.prepare(
+      'INSERT INTO code_files (repo_id, path, language, content, content_hash) VALUES (?, ?, ?, ?, ?)',
+    );
+    const insertCochange = testDb.prepare(
+      'INSERT INTO file_cochange (repo_id, file_a_id, file_b_id, co_commit_count, strength) VALUES (?, ?, ?, ?, ?)',
+    );
 
     const fA = insertFile.run(rid, 'a.js', 'javascript', '', '');
     const fB = insertFile.run(rid, 'b.js', 'javascript', '', '');

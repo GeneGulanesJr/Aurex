@@ -75,9 +75,7 @@ describe('tools/format-code-result', () => {
           { path: 'src/a.ts', reachability: 0.85, signals: ['call', 'import'] },
           { path: 'src/b.ts', reachability: 0.42, signals: ['cochange'] },
         ],
-        affected_symbols: [
-          { name: 'caller1', file: 'src/a.ts', reachability: 0.7, via: 'call' },
-        ],
+        affected_symbols: [{ name: 'caller1', file: 'src/a.ts', reachability: 0.7, via: 'call' }],
       });
       expect(result).toContain('Blast radius of myFunc');
       expect(result).toContain('Affected files: 2');

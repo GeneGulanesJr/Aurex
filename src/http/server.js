@@ -16,7 +16,9 @@ function createHttpServer(deps) {
     let body = null;
     if (req.method === 'POST' || req.method === 'PATCH') {
       body = await parseBody(req, res);
-      if (body === undefined) { return; }
+      if (body === undefined) {
+        return;
+      }
     }
 
     try {
@@ -34,7 +36,10 @@ function parseBody(req, res) {
     let raw = '';
     req.on('data', (chunk) => (raw += chunk));
     req.on('end', () => {
-      if (!raw) { resolve({}); return; }
+      if (!raw) {
+        resolve({});
+        return;
+      }
       try {
         resolve(JSON.parse(raw));
       } catch {

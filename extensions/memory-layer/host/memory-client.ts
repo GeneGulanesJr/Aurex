@@ -8,7 +8,9 @@ export type { MemResult };
 let _inProcessDispatch: ((cmd: string, args: Record<string, string>) => Promise<MemResult | null>) | null = null;
 
 async function getInProcessDispatch() {
-  if (_inProcessDispatch) {return _inProcessDispatch;}
+  if (_inProcessDispatch) {
+    return _inProcessDispatch;
+  }
   try {
     const gateway = require('../../src/cli/gateway');
     if (typeof gateway.dispatch === 'function') {
@@ -38,7 +40,10 @@ export async function mem(cmd: string, args: Record<string, string | number | bo
   return memViaChildProcess(cmd, args);
 }
 
-async function memViaChildProcess(cmd: string, args: Record<string, string | number | boolean>): Promise<MemResult | null> {
+async function memViaChildProcess(
+  cmd: string,
+  args: Record<string, string | number | boolean>,
+): Promise<MemResult | null> {
   const argList: string[] = [cmd];
   for (const [k, v] of Object.entries(args)) {
     if (v === undefined || v === null || v === '') {

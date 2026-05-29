@@ -39,6 +39,7 @@ describe('platform storage repositories', () => {
 
     expect(Object.keys(repositories).sort()).toEqual([
       'analytics',
+      'aurex',
       'codeIndex',
       'docIndex',
       'memory',

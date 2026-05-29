@@ -5,7 +5,8 @@ const { CODE_EXTENSIONS, IGNORE_DIRS_CODE } = require('../../utils');
 const DEFAULT_MAX_FILE_SIZE = 1024 * 1024;
 const DEFAULT_MAX_FILES = 20000;
 const SECRET_FILE_RE = /(^|[/\\])(\.env($|\.)|id_rsa$|id_dsa$|id_ecdsa$|id_ed25519$|.*\.(pem|key|p12|pfx)$)/i;
-const SKIP_FILE_RE = /(^|[/\\])(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Gemfile\.lock|poetry\.lock|Cargo\.lock|composer\.lock|pipfile\.lock|bun\.lockb|bun\.lock|conan\.lock|mix\.lock|podfile\.lock|go\.sum|requirements\.txt\.lock|\.yarn\/integrity|package\.json|bower\.json|composer\.json|tsconfig\.json|tsconfig\.[^/\\]+\.json|jsconfig\.json|\.babelrc|babel\.config\.[^/\\]+|\.eslintrc|eslint\.config\.[^/\\]+|\.prettierrc|prettier\.config\.[^/\\]+|\.stylelintrc|manifest\.json|manifest\.webmanifest|\.node-version|\.nvmrc|\.tool-versions)$|\.lock$|\.lock\.json$/i;
+const SKIP_FILE_RE =
+  /(^|[/\\])(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Gemfile\.lock|poetry\.lock|Cargo\.lock|composer\.lock|pipfile\.lock|bun\.lockb|bun\.lock|conan\.lock|mix\.lock|podfile\.lock|go\.sum|requirements\.txt\.lock|\.yarn\/integrity|package\.json|bower\.json|composer\.json|tsconfig\.json|tsconfig\.[^/\\]+\.json|jsconfig\.json|\.babelrc|babel\.config\.[^/\\]+|\.eslintrc|eslint\.config\.[^/\\]+|\.prettierrc|prettier\.config\.[^/\\]+|\.stylelintrc|manifest\.json|manifest\.webmanifest|\.node-version|\.nvmrc|\.tool-versions)$|\.lock$|\.lock\.json$/i;
 const PRIORITY_DIRS = ['src/', 'lib/', 'pkg/', 'cmd/', 'internal/', 'app/', 'packages/'];
 
 function shouldSkipDir(dirName, extraIgnoreDirs = []) {

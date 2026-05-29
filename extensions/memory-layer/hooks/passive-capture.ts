@@ -10,11 +10,16 @@ interface PassiveCaptureDeps {
 
 const DECISION_PATTERNS: Array<{ regex: RegExp; type: string; label: string }> = [
   {
-    regex: /\b(I['']ll use|let's use|we should use|going with|switching to|using .* instead of)\b.*\b(because|since|reason|to avoid|for better)\b/i,
+    regex:
+      /\b(I['']ll use|let's use|we should use|going with|switching to|using .* instead of)\b.*\b(because|since|reason|to avoid|for better)\b/i,
     type: 'decision',
     label: 'Design decision',
   },
-  { regex: /\b(approach|strategy|architecture|pattern|design):\s.*\b(implement|chose|selected|decided)\b/i, type: 'decision', label: 'Architecture choice' },
+  {
+    regex: /\b(approach|strategy|architecture|pattern|design):\s.*\b(implement|chose|selected|decided)\b/i,
+    type: 'decision',
+    label: 'Architecture choice',
+  },
   {
     regex: /\b(root cause|the bug was|issue is that|fixed by|workaround is to)\b/i,
     type: 'bugfix',

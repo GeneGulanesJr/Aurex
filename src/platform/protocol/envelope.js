@@ -280,7 +280,7 @@ function extractResultCount(toolName, data) {
     case 'getLayerViolations':
       return (data.violations || []).length;
     case 'getFileOutline':
-      return ((data.classes || []).length + (data.standalone || []).length);
+      return (data.classes || []).length + (data.standalone || []).length;
     case 'getClassHierarchy':
       return (data.nodes || []).length;
     case 'winnow':

@@ -1,11 +1,7 @@
 // Src/code-analysis/coupling-impl.js
 // PageRank computation, coupling metrics, symbol importance, extraction candidates.
 
-const {
-  _requireNativeDb,
-  PAGERANK,
-  COUPLING,
-} = require('./shared-deps');
+const { _requireNativeDb, PAGERANK, COUPLING } = require('./shared-deps');
 
 // ══════════════════════════════════════════════════════════
 // PAGERANK CACHE
@@ -68,8 +64,8 @@ function buildPageRank(db, repoId) {
   for (const call of calls) {
     if (symbolSet.has(call.caller_symbol_id) && symbolSet.has(call.callee_symbol_id)) {
       if (!outEdges.has(call.caller_symbol_id)) {
-      outEdges.set(call.caller_symbol_id, []);
-    }
+        outEdges.set(call.caller_symbol_id, []);
+      }
       outEdges.get(call.caller_symbol_id).push(call.callee_symbol_id);
     }
   }

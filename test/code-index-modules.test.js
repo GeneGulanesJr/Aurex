@@ -286,7 +286,11 @@ describe('code-index incremental reindexer', () => {
       clearFileSymbols: (fileId) => calls.push(['clearFileSymbols', fileId]),
       updateFile: (fileId, params) => calls.push(['updateFile', fileId, params.contentHash]),
       insertSymbol: (params) => calls.push(['insertSymbol', params.name]),
-      insertSymbolBulk: (symbols) => { for (const s of symbols) { calls.push(['insertSymbol', s.name]); } },
+      insertSymbolBulk: (symbols) => {
+        for (const s of symbols) {
+          calls.push(['insertSymbol', s.name]);
+        }
+      },
       deleteFile: (fileId) => calls.push(['deleteFile', fileId]),
       updateRepoStats: (params) => calls.push(['updateRepoStats', params.repoId]),
       withTransaction: (fn) => fn(),
@@ -333,7 +337,11 @@ describe('code-index incremental reindexer', () => {
       clearFileSymbols: (fileId) => calls.push(['clearFileSymbols', fileId]),
       updateFile: (fileId) => calls.push(['updateFile', fileId]),
       insertSymbol: (params) => calls.push(['insertSymbol', params.name]),
-      insertSymbolBulk: (symbols) => { for (const s of symbols) { calls.push(['insertSymbol', s.name]); } },
+      insertSymbolBulk: (symbols) => {
+        for (const s of symbols) {
+          calls.push(['insertSymbol', s.name]);
+        }
+      },
       deleteFile: (fileId) => calls.push(['deleteFile', fileId]),
       updateRepoStats: (params) => calls.push(['updateRepoStats', params.repoId]),
       withTransaction: (fn) => fn(),

@@ -9,11 +9,15 @@ let db;
 let repoId;
 
 function setupTestDb() {
-  if (fs.existsSync(TMP_DB)) { fs.unlinkSync(TMP_DB); }
+  if (fs.existsSync(TMP_DB)) {
+    fs.unlinkSync(TMP_DB);
+  }
   db = new Database(TMP_DB);
 
   db.exec(`CREATE TABLE code_repos (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, path TEXT)`);
-  db.exec(`CREATE TABLE code_files (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER, path TEXT, language TEXT, content TEXT, content_hash TEXT)`);
+  db.exec(
+    `CREATE TABLE code_files (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER, path TEXT, language TEXT, content TEXT, content_hash TEXT)`,
+  );
   db.exec(`CREATE TABLE file_cochange (
     id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id INTEGER, file_a_id INTEGER, file_b_id INTEGER,
     co_commit_count INTEGER NOT NULL DEFAULT 0, strength REAL NOT NULL DEFAULT 0,
@@ -28,8 +32,12 @@ function setupTestDb() {
 }
 
 afterEach(() => {
-  if (db) { db.close(); }
-  if (fs.existsSync(TMP_DB)) { fs.unlinkSync(TMP_DB); }
+  if (db) {
+    db.close();
+  }
+  if (fs.existsSync(TMP_DB)) {
+    fs.unlinkSync(TMP_DB);
+  }
 });
 
 describe('parseGitLogForCochange', () => {
@@ -57,14 +65,19 @@ describe('parseGitLogForCochange', () => {
 describe('storeCochangePairs', () => {
   it('should store co-change pairs in both directions', () => {
     const { db: testDb, repoId: rid } = setupTestDb();
-    const insertFile = testDb.prepare('INSERT INTO code_files (repo_id, path, language, content, content_hash) VALUES (?, ?, ?, ?, ?)');
+    const insertFile = testDb.prepare(
+      'INSERT INTO code_files (repo_id, path, language, content, content_hash) VALUES (?, ?, ?, ?, ?)',
+    );
 
     const fA = insertFile.run(rid, 'src/a.js', 'javascript', '', '');
     const fB = insertFile.run(rid, 'src/b.js', 'javascript', '', '');
 
     const { storeCochangePairs } = require('../src/code-analysis/cochange-builder');
     const pairs = { 'src/a.js::src/b.js': 5 };
-    const pathToId = new Map([['src/a.js', Number(fA.lastInsertRowid)], ['src/b.js', Number(fB.lastInsertRowid)]]);
+    const pathToId = new Map([
+      ['src/a.js', Number(fA.lastInsertRowid)],
+      ['src/b.js', Number(fB.lastInsertRowid)],
+    ]);
 
     storeCochangePairs(testDb, rid, pairs, pathToId, 90);
 

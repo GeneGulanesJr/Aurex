@@ -121,8 +121,9 @@ describe('context injection prompt extraction', () => {
       'context',
       expect.objectContaining({ project: 'PiMemoryExtension', limit: '1' }),
     );
-    expect(content).toContain('### Project Context');
-    expect(content).toContain('Code index: `PiMemoryExtension`');
+    // Lean format: one-line header with repo name and file count, no memory titles
+    expect(content).toContain('PiMemoryExtension');
+    expect(content).not.toContain('### Project Context');
     expect(content).not.toContain('Noisy prior decision');
     expect(content).not.toContain('Personal preference');
   });
@@ -173,10 +174,9 @@ describe('context injection prompt extraction', () => {
       'context',
       expect.objectContaining({ project: 'PiMemoryExtension', limit: '5', query: 'benchmark memory context' }),
     );
-    expect(content).toContain('### Prompt-Matched Memory');
+    // Lean format: top observation as single bullet, no full content body
     expect(content).toContain('Matched decision 1');
-    expect(content).toContain('What: Use SQLite FTS5 Why: Avoid external search services Where: src/search.js');
-    expect(content).toContain('Matched bugfix 2');
+    expect(content).not.toContain('Matched bugfix 2');
     expect(content).not.toContain('Matched pattern 3');
     expect(content).not.toContain('Should not be injected');
   });
@@ -219,8 +219,9 @@ describe('context injection prompt extraction', () => {
     const result = await handler({ prompt: 'Why did LaPis choose SQLite FTS5?' }, { cwd: process.cwd() });
     const content = result.message.content;
 
-    expect(content).toContain('Code index: `PiMemoryExtension`');
+    // Historical prompt: repo name shown, no stale warning even though index is stale
+    expect(content).toContain('PiMemoryExtension');
+    expect(content).toContain('indexed (stale)');
     expect(content).not.toContain('Stale code index');
-    expect(content).toContain('Why: Avoid external services Where: src/memory-domain/search.js');
   });
 });

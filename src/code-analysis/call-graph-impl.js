@@ -83,9 +83,7 @@ function buildCallGraph(db, repoId, opts = {}) {
     }
   }
 
-  const fileRows = db
-    .prepare('SELECT id, path, size_bytes FROM code_files WHERE repo_id = ?')
-    .all(repoId);
+  const fileRows = db.prepare('SELECT id, path, size_bytes FROM code_files WHERE repo_id = ?').all(repoId);
   const fileById = new Map();
   for (const f of fileRows) {
     fileById.set(f.id, f);
@@ -361,7 +359,6 @@ function buildCallGraph(db, repoId, opts = {}) {
     }
   }
 
-
   for (const [fileId, fileSymbols] of symbolsByFile) {
     const meta = fileById.get(fileId);
     if (!meta) {
@@ -439,9 +436,20 @@ function buildCallGraph(db, repoId, opts = {}) {
     }
   }
 
-  const runInTx = typeof db.transaction === 'function'
-    ? (fn) => db.transaction(fn)()
-    : (fn) => { db.exec('BEGIN'); try { const r = fn(); db.exec('COMMIT'); return r; } catch (e) { db.exec('ROLLBACK'); throw e; } };
+  const runInTx =
+    typeof db.transaction === 'function'
+      ? (fn) => db.transaction(fn)()
+      : (fn) => {
+          db.exec('BEGIN');
+          try {
+            const r = fn();
+            db.exec('COMMIT');
+            return r;
+          } catch (e) {
+            db.exec('ROLLBACK');
+            throw e;
+          }
+        };
 
   runInTx(() => {
     for (const edge of pendingEdges) {
@@ -506,8 +514,6 @@ function getCallHierarchy(db, repoId, opts) {
     .all(symbolId, minConfidence, depth, minConfidence);
   return { symbol: symRow[0].name, direction: 'callees', depth, callees: rows };
 }
-
-
 
 module.exports = {
   buildCallGraph,
