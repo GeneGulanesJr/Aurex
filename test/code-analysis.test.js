@@ -375,7 +375,7 @@ describe('code-analysis: untested (v6)', () => {
   });
 
   it('should guard against missing db', () => {
-    const { getUntestedSymbols } = require('../code-analysis');
+    const { getUntestedSymbols } = require('../src/code-analysis');
     const result = getUntestedSymbols(null, 1);
     expect(result.error).toBeDefined();
   });
@@ -407,7 +407,7 @@ describe('code-analysis: pr-risk (v6)', () => {
   });
 
   it('should guard against missing db', () => {
-    const { getPrRiskProfile } = require('../code-analysis');
+    const { getPrRiskProfile } = require('../src/code-analysis');
     const result = getPrRiskProfile(null, 1);
     expect(result.error).toBeDefined();
   });

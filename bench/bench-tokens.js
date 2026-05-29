@@ -3,7 +3,7 @@
 const path = require('path');
 const { execSync } = require('child_process');
 const { BENCHMARK_TOOLS, formatBytes, pad, runCli, isRepoIndexed, findSymbolWithCallers } = require('./bench-helper');
-const wf = require('../wire-format');
+const wf = require('../src/platform/protocol/compact-format');
 
 // ══════════════════════════════════════════════════════════
 // CLI ARGS

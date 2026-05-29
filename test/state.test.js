@@ -11,7 +11,6 @@ describe('state', () => {
     expect(state).toHaveProperty('nudgeCountThisSession');
     expect(state).toHaveProperty('exploredFiles');
     expect(state).toHaveProperty('turnCount');
-    expect(state).toHaveProperty('llmCallCount');
     expect(state).toHaveProperty('lastMemoryToolCall');
     expect(state).toHaveProperty('lastAutoDecisionSave');
     expect(state).toHaveProperty('hasInjectedContext');

@@ -48,12 +48,5 @@ function getPendingCheckpoints(repo) {
   };
 }
 
-function listMissions(repo) {
-  return async (req, res, ctx) => {
-    const status = ctx.query.get('status') || undefined;
-    const rows = repo.listMissions(status);
-    jsonOk(res, rows);
-  };
-}
 
-module.exports = { createCheckpoint, getCheckpoint, resolveCheckpoint, getPendingCheckpoints, listMissions };
+module.exports = { createCheckpoint, getCheckpoint, resolveCheckpoint, getPendingCheckpoints };

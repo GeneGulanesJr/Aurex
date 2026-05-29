@@ -1,5 +1,5 @@
 // Tests for wire-format.js — compact encoding/decoding (MUNCH)
-const wireFormat = require('../wire-format');
+const wireFormat = require('../src/platform/protocol/compact-format');
 
 describe('wire-format.js', () => {
   describe('_escapePipe / _unescapePipe', () => {

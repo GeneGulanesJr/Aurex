@@ -1,4 +1,4 @@
-const { listWorkspaces, createWorkspace, archiveWorkspace, listProjects } = require('../data-access/workspaces');
+const { listWorkspaces, createWorkspace, archiveWorkspace, listProjects } = require('../src/memory-domain/workspaces');
 
 function mockDeps() {
   return { sqlJson: vi.fn(), sqlRun: vi.fn(), sqlRaw: vi.fn(), ensureDb: vi.fn() };

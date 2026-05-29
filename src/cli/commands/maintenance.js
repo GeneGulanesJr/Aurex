@@ -1,6 +1,5 @@
 const sesCmd = require('../../../commands/session');
 const wsCmd = require('../../../commands/workspace');
-const _obsDA = require('../../../data-access/observations');
 
 const USAGE = {
   init: '',

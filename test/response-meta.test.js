@@ -1,5 +1,5 @@
 // Tests for response-meta.js — metadata envelope, confidence, freshness
-const responseMeta = require('../response-meta');
+const responseMeta = require('../src/platform/protocol/envelope');
 
 describe('response-meta.js', () => {
   beforeEach(() => {

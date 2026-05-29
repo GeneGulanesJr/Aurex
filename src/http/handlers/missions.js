@@ -26,8 +26,16 @@ function updateMissionStatus(repo) {
   };
 }
 
+function listMissions(repo) {
+  return async (req, res, ctx) => {
+    const status = ctx.query.get('status') || undefined;
+    const rows = repo.listMissions(status);
+    jsonOk(res, rows);
+  };
+}
+
 function safeParse(str) {
   try { return JSON.parse(str); } catch { return str; }
 }
 
-module.exports = { createMission, getMission, updateMissionStatus };
+module.exports = { createMission, getMission, updateMissionStatus, listMissions };

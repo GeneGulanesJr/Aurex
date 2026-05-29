@@ -1,7 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const codeParser = require('../parse-code');
-const { extractImportBindings } = require('../code-analysis');
+const { extractImportBindings } = require('../src/code-analysis');
 
 const TMP_DIR = path.join('/tmp', 'accuracy-tests');
 
@@ -212,7 +212,7 @@ describe('accuracy: extractImportBindings', () => {
 
 describe('accuracy: end-to-end cross-file resolution', () => {
   const Database = require('libsql');
-  const codeAnalysis = require('../code-analysis');
+  const codeAnalysis = require('../src/code-analysis');
   const TEST_DB_PATH = path.join(TMP_DIR, 'accuracy-test.db');
   const TEST_REPO_DIR = path.join(TMP_DIR, 'test-repo');
 

@@ -1,4 +1,4 @@
-const wsDA = require('../data-access/workspaces');
+const wsDA = require('../src/memory-domain/workspaces');
 
 function listWorkspaces(deps) {
   return wsDA.listWorkspaces(deps);
