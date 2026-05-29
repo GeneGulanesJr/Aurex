@@ -5,11 +5,11 @@ import { useMission } from "./hooks/useMission";
 import { MissionSidebar } from "./active/MissionSidebar";
 import { StatusBoard } from "./passive/StatusBoard";
 import { EscalationOverlay } from "./active/EscalationOverlay";
-import { submitCheckpoint } from "./api";
+import { submitCheckpoint, createMission } from "./api";
 import type { WsClientEvent, CheckpointDecision } from "@aurex/shared";
 
 export function App() {
-  const { state: missionsState, selectMission, removeMission, handleWsEvent: missionsWsHandler } = useMissions();
+  const { state: missionsState, selectMission, removeMission, addOptimisticMission, handleWsEvent: missionsWsHandler } = useMissions();
   const { state, dispatch, handleWsEvent: missionWsHandler } = useMission(missionsState.selectedMissionId);
   const eventsRef = useRef<WsClientEvent[]>([]);
 
@@ -32,6 +32,11 @@ export function App() {
     dispatch({ type: "CLEAR_ESCALATION" });
   }, [state.mission, state.escalation, dispatch]);
 
+  const handleCreateMission = useCallback(async (description: string) => {
+    const { missionId } = await createMission(description);
+    addOptimisticMission(missionId, description);
+  }, [addOptimisticMission]);
+
   if (!connected) {
     return <div className="flex items-center justify-center h-screen text-gray-400">Connecting...</div>;
   }
@@ -50,6 +55,7 @@ export function App() {
           selectedMissionId={missionsState.selectedMissionId}
           onSelect={selectMission}
           onRemove={removeMission}
+          onCreateMission={handleCreateMission}
         />
         <main className="flex-1 overflow-y-auto">
           <StatusBoard
