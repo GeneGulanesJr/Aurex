@@ -1,12 +1,14 @@
 import { useCallback } from "react";
 import type { MissionListItem } from "../hooks/useMissions";
 import { abortMission } from "../api";
+import { NewMissionForm } from "./NewMissionForm";
 
 interface MissionSidebarProps {
   missions: MissionListItem[];
   selectedMissionId: string | null;
   onSelect: (missionId: string) => void;
   onRemove: (missionId: string) => void;
+  onCreateMission: (description: string) => Promise<void>;
 }
 
 function statusBadge(state: string): { label: string; className: string } {
@@ -27,7 +29,7 @@ function statusBadge(state: string): { label: string; className: string } {
   }
 }
 
-export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove }: MissionSidebarProps) {
+export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove, onCreateMission }: MissionSidebarProps) {
   const handleAbort = useCallback(async (e: React.MouseEvent, missionId: string) => {
     e.stopPropagation();
     try {
@@ -42,6 +44,7 @@ export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove
         <div className="px-4 py-3 border-b border-gray-800">
           <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Missions</h2>
         </div>
+        <NewMissionForm onSubmit={onCreateMission} />
         <div className="flex-1 flex items-center justify-center text-gray-600 text-sm">
           No missions
         </div>
@@ -54,6 +57,7 @@ export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove
       <div className="px-4 py-3 border-b border-gray-800">
         <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Missions</h2>
       </div>
+      <NewMissionForm onSubmit={onCreateMission} />
       <div className="flex-1 overflow-y-auto">
         {missions.map((mission) => {
           const badge = statusBadge(mission.state);
