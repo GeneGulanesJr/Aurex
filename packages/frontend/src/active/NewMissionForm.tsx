@@ -12,10 +12,9 @@ export function NewMissionForm({ onSubmit }: NewMissionFormProps) {
       <button
         onClick={open}
         style={{
-          width: "100%",
+          width: "calc(100% - 32px)",
           padding: "8px 16px",
           margin: "12px 16px",
-          width: "calc(100% - 32px)",
           background: "var(--accent)",
           color: "var(--bg-deep)",
           border: "none",
