@@ -11,41 +11,85 @@ export function NewMissionForm({ onSubmit }: NewMissionFormProps) {
     return (
       <button
         onClick={open}
-        className="w-full px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-gray-800/50 transition-colors text-left"
+        style={{
+          width: "100%",
+          padding: "8px 16px",
+          margin: "12px 16px",
+          width: "calc(100% - 32px)",
+          background: "var(--accent)",
+          color: "var(--bg-deep)",
+          border: "none",
+          borderRadius: "4px",
+          fontSize: "12px",
+          fontWeight: 600,
+          fontFamily: '"JetBrains Mono", monospace',
+          letterSpacing: "1px",
+          textTransform: "uppercase" as const,
+          cursor: "pointer",
+          textAlign: "left" as const,
+        }}
       >
-        + New Mission
+        + NEW MISSION
       </button>
     );
   }
 
   return (
-    <div className="px-3 py-2 space-y-2 border-b border-gray-800">
+    <div style={{ padding: "8px 16px", borderBottom: "1px solid var(--border)" }}>
       <textarea
         value={state.description}
         onChange={(e) => setDescription(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Describe what you want done..."
-        className="w-full bg-gray-900 text-sm text-gray-200 rounded px-2 py-1.5 border border-gray-700 focus:border-blue-500 focus:outline-none resize-none placeholder-gray-600"
+        style={{
+          width: "100%",
+          background: "var(--bg-inset)",
+          color: "var(--text-primary)",
+          fontSize: "14px",
+          borderRadius: "4px",
+          padding: "8px",
+          border: "1px solid var(--border)",
+          outline: "none",
+          resize: "none",
+          fontFamily: '"Inter", sans-serif',
+        }}
         rows={3}
         autoFocus
         disabled={state.submitting}
       />
-      <div className="flex items-center gap-2">
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "8px" }}>
         <button
           onClick={handleSubmit}
           disabled={!canSubmit}
-          className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded transition-colors"
+          style={{
+            padding: "4px 12px",
+            fontSize: "12px",
+            background: canSubmit ? "var(--accent)" : "var(--bg-elevated)",
+            color: canSubmit ? "var(--bg-deep)" : "var(--text-muted)",
+            border: "none",
+            borderRadius: "4px",
+            cursor: canSubmit ? "pointer" : "default",
+            fontFamily: '"JetBrains Mono", monospace',
+          }}
         >
           {state.submitting ? "Creating..." : "Create"}
         </button>
         <button
           onClick={close}
-          className="px-3 py-1 text-xs text-gray-400 hover:text-gray-200 transition-colors"
+          style={{
+            padding: "4px 12px",
+            fontSize: "12px",
+            color: "var(--text-secondary)",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            fontFamily: '"JetBrains Mono", monospace',
+          }}
         >
           Cancel
         </button>
       </div>
-      {state.error && <p className="text-xs text-red-400">{state.error}</p>}
+      {state.error && <p style={{ fontSize: "12px", color: "var(--error)", marginTop: "4px" }}>{state.error}</p>}
     </div>
   );
 }

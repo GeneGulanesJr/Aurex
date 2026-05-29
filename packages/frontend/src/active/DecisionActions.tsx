@@ -6,39 +6,60 @@ interface DecisionActionsProps {
   trigger: EscalationTrigger;
 }
 
+const btnBase: React.CSSProperties = {
+  padding: "8px 16px",
+  borderRadius: "4px",
+  fontWeight: 500,
+  fontSize: "14px",
+  border: "none",
+  cursor: "pointer",
+  fontFamily: '"Inter", sans-serif',
+};
+
 export function DecisionActions({ onDecision, trigger }: DecisionActionsProps) {
   const [guidance, setGuidance] = useState("");
   const [showGuidance, setShowGuidance] = useState(false);
 
   return (
-    <div className="flex gap-3 items-start flex-wrap">
+    <div style={{ display: "flex", gap: "12px", alignItems: "flex-start", flexWrap: "wrap" }}>
       {trigger.kind === "milestone_complete" && (
         <>
-          <button onClick={() => onDecision("approve")} className="px-4 py-2 bg-green-600 hover:bg-green-500 rounded font-medium">Approve</button>
-          <button onClick={() => onDecision("reject", undefined, "abandon")} className="px-4 py-2 bg-red-600 hover:bg-red-500 rounded font-medium">Reject</button>
+          <button onClick={() => onDecision("approve")} style={{ ...btnBase, background: "var(--success)", color: "var(--bg-deep)" }}>Approve</button>
+          <button onClick={() => onDecision("reject", undefined, "abandon")} style={{ ...btnBase, background: "var(--error)", color: "#fff" }}>Reject</button>
         </>
       )}
 
       {(trigger.kind === "rescope_limit" || trigger.kind === "unclassifiable_error") && (
         <>
-          <button onClick={() => onDecision("rescope", guidance || undefined)} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded font-medium">Review & Rescope</button>
-          <button onClick={() => onDecision("reject", undefined, "abort")} className="px-4 py-2 bg-red-600 hover:bg-red-500 rounded font-medium">Abort Mission</button>
+          <button onClick={() => onDecision("rescope", guidance || undefined)} style={{ ...btnBase, background: "var(--info)", color: "var(--bg-deep)" }}>Review & Rescope</button>
+          <button onClick={() => onDecision("reject", undefined, "abort")} style={{ ...btnBase, background: "var(--error)", color: "#fff" }}>Abort Mission</button>
           {trigger.kind === "unclassifiable_error" && (
-            <button onClick={() => setShowGuidance(!showGuidance)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded font-medium">Provide Guidance</button>
+            <button onClick={() => setShowGuidance(!showGuidance)} style={{ ...btnBase, background: "var(--bg-elevated)", color: "var(--text-primary)" }}>Provide Guidance</button>
           )}
         </>
       )}
 
       {showGuidance && (
-        <div className="w-full mt-3">
+        <div style={{ width: "100%", marginTop: "12px" }}>
           <textarea
             value={guidance}
             onChange={(e) => setGuidance(e.target.value)}
             placeholder="Enter guidance for the Orchestrator..."
-            className="w-full bg-gray-900 text-gray-200 rounded p-3 border border-gray-700 focus:border-blue-500 outline-none resize-none"
+            style={{
+              width: "100%",
+              background: "var(--bg-inset)",
+              color: "var(--text-primary)",
+              borderRadius: "4px",
+              padding: "12px",
+              border: "1px solid var(--border)",
+              outline: "none",
+              resize: "none",
+              fontFamily: '"Inter", sans-serif',
+              fontSize: "14px",
+            }}
             rows={3}
           />
-          <button onClick={() => onDecision("rescope", guidance)} className="mt-2 px-4 py-2 bg-blue-600 rounded font-medium">Submit Guidance</button>
+          <button onClick={() => onDecision("rescope", guidance)} style={{ ...btnBase, background: "var(--info)", color: "var(--bg-deep)", marginTop: "8px" }}>Submit Guidance</button>
         </div>
       )}
     </div>
