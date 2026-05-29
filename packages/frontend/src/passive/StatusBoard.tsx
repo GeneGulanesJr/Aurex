@@ -3,6 +3,7 @@ import { AgentGrid } from "./AgentGrid";
 import { MilestoneBar } from "./MilestoneBar";
 import { CostCounter } from "./CostCounter";
 import { StatusFeed } from "./StatusFeed";
+import { EmptyState } from "../frame/EmptyState";
 import { dimPassive, restorePassive } from "../animations/state-transitions";
 import type { Mission, Milestone, WorkingUnit, CostSummary, WsClientEvent } from "@aurex/shared";
 
@@ -29,7 +30,11 @@ export function StatusBoard({ mission, milestones, workers, cost, events, blurre
   }, [blurred]);
 
   if (!mission) {
-    return <div className="text-gray-500 text-center py-20">No active mission</div>;
+    return (
+      <div style={{ display: "flex", height: "100%" }}>
+        <EmptyState />
+      </div>
+    );
   }
 
   const currentMilestone = milestones.find((m) => m.status === "in_progress") || milestones[0];
