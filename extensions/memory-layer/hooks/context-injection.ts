@@ -132,7 +132,10 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
     lines.push(`- Directory: \`${projectDir}\``);
     lines.push(`- Summary: ${projectSummary}`);
     if (cwdRepo) {
-      const staleLabel = isStale ? ' (stale)' : '';
+      // Suppress stale label when the agent got its answer from prompt-matched memory.
+      // Staleness is irrelevant for recall — the answer is already injected.
+      const suppressStale = isStale && effectiveObservations.length > 0;
+      const staleLabel = isStale && !suppressStale ? ' (stale)' : '';
       lines.push(
         `- Code index: \`${cwdRepo.name}\` with ${cwdRepo.file_count} files / ${cwdRepo.symbol_count} symbols${staleLabel}`,
       );
@@ -177,7 +180,7 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
       lines.push(
         `⚠️ **Code not indexed:** Project "${deps.state.currentProject}" has no code index yet. Run \`memory-code index-repo --path ${ctx.cwd} --name ${deps.state.currentProject}\` to enable memory-code analysis.`,
       );
-    } else if (isStale && !isHistoricalMemoryPrompt(promptQuery)) {
+    } else if (isStale && !isHistoricalMemoryPrompt(promptQuery) && effectiveObservations.length === 0) {
       lines.push('');
       lines.push(CONTEXT.STALE_GUIDANCE.replace('{repo}', cwdRepo.name));
     }

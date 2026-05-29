@@ -154,8 +154,9 @@ describe('rich context injection', () => {
     const result = await handler({ prompt: 'Why did we choose SQLite?' }, { cwd: process.cwd() });
     const content = result.message.content;
 
-    // (stale) label is shown in Project Context, but STALE_GUIDANCE block is suppressed
-    expect(content).toContain('(stale)');
+    // (stale) label is suppressed because agent has prompt-matched observation
+    // STALE_GUIDANCE block is also suppressed (historical prompt + has observations)
+    expect(content).not.toContain('(stale)');
     expect(content).not.toContain('Stale code index');
     expect(content).not.toContain('reindex');
   });
