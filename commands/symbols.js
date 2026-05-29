@@ -9,5 +9,4 @@ module.exports = {
   adjustTrust: trustSync.adjustTrust,
   recordRecall: trustSync.recordRecall,
   staleLinks: trustSync.staleLinks,
-  trustRecovery: trustSync.trustRecovery,
 };

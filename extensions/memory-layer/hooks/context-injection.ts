@@ -11,11 +11,6 @@ interface ContextDeps {
   mem: typeof mem;
   getKnownRepos: typeof getKnownRepos;
   isRepoStale: typeof isRepoStale;
-  /**
-   * Optional settings reader provided by the extension host.
-   * Returns the `contextLimit` setting value (number) or undefined when not set.
-   */
-  getSettings?: () => { contextLimit?: number };
 }
 
 export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
@@ -40,11 +35,7 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
       return;
     }
 
-    // Read optional contextLimit override from extension settings; fall back to defaults
-    const settingsContextLimit = deps.getSettings?.().contextLimit;
-    const contextLimit = settingsContextLimit != null && settingsContextLimit > 0
-      ? settingsContextLimit
-      : (promptQuery ? CONTEXT.PROMPT_RELEVANT_LIMIT : CONTEXT.PROJECT_SUMMARY_LIMIT);
+    const contextLimit = promptQuery ? CONTEXT.PROMPT_RELEVANT_LIMIT : CONTEXT.PROJECT_SUMMARY_LIMIT;
     const contextResult = await deps.mem('context', {
       project: deps.state.currentProject,
       limit: String(contextLimit),

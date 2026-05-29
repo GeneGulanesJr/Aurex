@@ -36,7 +36,6 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionDeps) {
     deps.state.currentProject = await deps.detectProject(ctx.cwd);
     deps.state.nudgeCountThisSession = 0;
     deps.state.turnCount = 0;
-    deps.state.llmCallCount = 0;
     deps.state.lastMemoryToolCall = 0;
     deps.state.lastAutoDecisionSave = 0;
     deps.state.hasInjectedContext = false;

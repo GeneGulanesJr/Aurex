@@ -109,7 +109,6 @@ export const state = {
   MAX_NUDGES_PER_SESSION: 8 as number,
   exploredFiles: new Set<string>(),
   turnCount: 0 as number,
-  llmCallCount: 0 as number,
   lastMemoryToolCall: 0 as number,
   callsSinceLastMemory: 0 as number,
   lastAutoDecisionSave: 0 as number,

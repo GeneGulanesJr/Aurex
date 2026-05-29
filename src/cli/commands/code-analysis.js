@@ -1,4 +1,4 @@
-const codeAnalysis = require('../../../code-analysis');
+const codeAnalysis = require('../../code-analysis');
 const { formatAnalysisForLlm } = require('../../platform/protocol/llm-format');
 
 const USAGE = {

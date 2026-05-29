@@ -71,7 +71,7 @@ function buildRoutes(deps) {
 
     // Missions
     { method: 'POST', pattern: '/missions', handler: missions.createMission(aurex) },
-    { method: 'GET', pattern: '/missions', handler: checkpoints.listMissions(aurex) },
+    { method: 'GET', pattern: '/missions', handler: missions.listMissions(aurex) },
     { method: 'GET', pattern: '/missions/:id', handler: missions.getMission(aurex) },
     { method: 'PATCH', pattern: '/missions/:id/status', handler: missions.updateMissionStatus(aurex) },
 

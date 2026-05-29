@@ -1,4 +1,4 @@
-import { RepoInfo, state } from '../state';
+import { REPO_CACHE_TTL, RepoInfo, state } from '../state';
 import { mem, memCmd } from './memory-client';
 import path from 'node:path';
 
@@ -6,7 +6,7 @@ export { type RepoInfo };
 
 export async function getKnownRepos(): Promise<RepoInfo[]> {
   const now = Date.now();
-  if (state.cachedRepos && now - state.repoCacheTime < 5 * 60 * 1000) {
+  if (state.cachedRepos && now - state.repoCacheTime < REPO_CACHE_TTL) {
     return state.cachedRepos;
   }
   const result = await memCmd('list-code-repos');

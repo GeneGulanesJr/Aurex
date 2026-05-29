@@ -1,4 +1,4 @@
-const codeAnalysis = require('../../code-analysis');
+const codeAnalysis = require('../code-analysis');
 
 function buildImportEdges(db, repoId) {
   return codeAnalysis.buildImportGraph(db, repoId);
