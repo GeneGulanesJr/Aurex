@@ -162,7 +162,7 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
       lines.push('');
     }
 
-    if (promptQuery && personal.length > 0) {
+    if (promptQuery && personal.length > 0 && CONTEXT.PERSONAL_INJECT_LIMIT > 0) {
       lines.push('### Personal Preferences');
       for (const p of personal.slice(0, CONTEXT.PERSONAL_INJECT_LIMIT)) {
         lines.push(`- ${p.title}`);

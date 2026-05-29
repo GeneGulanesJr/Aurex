@@ -1,240 +1,228 @@
+import { registerBeforeAgentStart } from '../extensions/memory-layer/hooks/context-injection.ts';
+
 /**
- * Tests for lean context injection format.
- *
- * Tests the output format of buildLeanContext, which mirrors the
- * lines-building logic in context-injection.ts registerBeforeAgentStart.
+ * Extract the handler registered by registerBeforeAgentStart
  */
-
-const CONTEXT = {
-  MIN_OBSERVATION_TRUST: 0.8,
-  PROMPT_INJECT_LIMIT: 1,
-  PERSONAL_INJECT_LIMIT: 0,
-};
-
-function buildLeanContext({ observations, personal, isStale, projectName, stats, cwdRepo, projectSummary }) {
-  const lines = [];
-
-  // Header
-  if (!cwdRepo) {
-    lines.push(`🧠 **${projectName}** — new project · ${stats.total_memories} memories across all projects`);
-  } else {
-    const indexPart = cwdRepo ? `${cwdRepo.file_count} files indexed${isStale ? ' (stale)' : ''}` : 'not indexed';
-    lines.push(`🧠 **${projectName}** — ${stats.total_memories} memories · ${indexPart} · ${projectSummary}`);
-  }
-
-  // Observation: max 1, trust >= 0.8, title only
-  const top = observations?.[0];
-  if (top && (top.trust_score ?? 0) >= CONTEXT.MIN_OBSERVATION_TRUST) {
-    lines.push(`- [${top.type}] ${top.title}`);
-  }
-
-  // Footer
-  const footerParts = ['`memory-search` for recall', '`memory-save` for decisions'];
-  if (isStale && cwdRepo) {
-    footerParts.push(`reindex: \`memory-code reindex-repo --repo ${cwdRepo.name}\``);
-  }
-  lines.push(footerParts.join(' · '));
-
-  return lines;
+function extractHandler(deps) {
+  let handler;
+  const pi = {
+    on: vi.fn((_eventName, callback) => {
+      handler = callback;
+    }),
+  };
+  registerBeforeAgentStart(pi, deps);
+  return handler;
 }
 
-describe('lean context injection', () => {
-  test('basic stale project with no observations', () => {
-    const result = buildLeanContext({
+function buildDeps(overrides = {}) {
+  return {
+    state: { currentProject: 'TestProject', hasInjectedContext: false, sessionId: 1 },
+    mem: vi.fn().mockResolvedValue({
       observations: [],
-      isStale: true,
-      projectName: 'PiMemoryExtension',
-      stats: { total_memories: 408 },
-      cwdRepo: { name: 'PiMemoryExtension', file_count: 292 },
-      projectSummary: '💎 LaPis persistent memory',
-    });
-    const text = result.join('\n');
+      personal: [],
+      stats: { total_memories: 42, total_personal: 1, active_workflows: 0 },
+      topic: null,
+    }),
+    getKnownRepos: vi.fn().mockResolvedValue([]),
+    isRepoStale: vi.fn().mockReturnValue(false),
+    ...overrides,
+  };
+}
 
-    expect(result.length).toBe(2);
-    expect(text).toContain(
-      '🧠 **PiMemoryExtension** — 408 memories · 292 files indexed (stale) · 💎 LaPis persistent memory',
-    );
-    expect(text).toContain('reindex: `memory-code reindex-repo --repo PiMemoryExtension`');
-    expect(text).not.toContain('###');
-    expect(text).not.toContain('Personal');
+describe('rich context injection', () => {
+  test('produces structured format with Memory Context heading', async () => {
+    const deps = buildDeps();
+    const handler = extractHandler(deps);
+
+    const result = await handler({}, { cwd: process.cwd() });
+    const content = result.message.content;
+
+    expect(content).toContain('## Memory Context (auto-loaded)');
+    expect(content).toContain('### Project Context');
+    expect(content).toContain('Project: **TestProject**');
   });
 
-  test('fresh project with no observations', () => {
-    const result = buildLeanContext({
-      observations: [],
-      isStale: false,
-      projectName: 'PiMemoryExtension',
-      stats: { total_memories: 408 },
-      cwdRepo: { name: 'PiMemoryExtension', file_count: 292 },
-      projectSummary: '💎 LaPis persistent memory',
-    });
-    const text = result.join('\n');
+  test('includes project summary from package.json', async () => {
+    const deps = buildDeps();
+    const handler = extractHandler(deps);
 
-    expect(result.length).toBe(2);
-    expect(text).toContain('292 files indexed');
-    expect(text).not.toContain('(stale)');
-    expect(text).not.toContain('reindex');
+    const result = await handler({}, { cwd: process.cwd() });
+    const content = result.message.content;
+
+    // LaPis package.json has a description
+    expect(content).toContain('LaPis');
   });
 
-  test('high-trust observation is included (title only)', () => {
-    const result = buildLeanContext({
-      observations: [{ type: 'decision', title: 'Architecture: context injection wiring', trust_score: 0.92 }],
-      isStale: false,
-      projectName: 'PiMemoryExtension',
-      stats: { total_memories: 408 },
-      cwdRepo: { name: 'PiMemoryExtension', file_count: 292 },
-      projectSummary: '💎 LaPis persistent memory',
+  test('includes code index details when repo is known', async () => {
+    const deps = buildDeps({
+      getKnownRepos: vi.fn().mockResolvedValue([
+        {
+          name: 'TestRepo',
+          path: process.cwd(),
+          file_count: 100,
+          symbol_count: 500,
+          indexed_at: '2026-05-29T00:00:00Z',
+        },
+      ]),
+      isRepoStale: vi.fn().mockReturnValue(false),
     });
-    const text = result.join('\n');
+    const handler = extractHandler(deps);
 
-    expect(result.length).toBe(3);
-    expect(text).toContain('- [decision] Architecture: context injection wiring');
-    expect(text).not.toContain('What:');
-    expect(text).not.toContain('Why:');
+    const result = await handler({}, { cwd: process.cwd() });
+    const content = result.message.content;
+
+    expect(content).toContain('Code index: `TestRepo`');
+    expect(content).toContain('100 files');
+    expect(content).toContain('500 symbols');
   });
 
-  test('low-trust observation is filtered out (the "lol" case)', () => {
-    const result = buildLeanContext({
-      observations: [{ type: 'bugfix', title: 'Bug fix: comprehensive review', trust_score: 0.35 }],
-      isStale: false,
-      projectName: 'PiMemoryExtension',
-      stats: { total_memories: 408 },
-      cwdRepo: { name: 'PiMemoryExtension', file_count: 292 },
-      projectSummary: '💎 LaPis persistent memory',
+  test('shows stale label when index is stale', async () => {
+    const deps = buildDeps({
+      getKnownRepos: vi.fn().mockResolvedValue([
+        {
+          name: 'TestRepo',
+          path: process.cwd(),
+          file_count: 100,
+          symbol_count: 500,
+          indexed_at: '2026-05-01T00:00:00Z',
+        },
+      ]),
+      isRepoStale: vi.fn().mockReturnValue(true),
     });
-    const text = result.join('\n');
+    const handler = extractHandler(deps);
 
-    expect(result.length).toBe(2);
-    expect(text).not.toContain('Bug fix');
-    expect(text).not.toContain('comprehensive review');
+    const result = await handler({}, { cwd: process.cwd() });
+    const content = result.message.content;
+
+    expect(content).toContain('(stale)');
   });
 
-  test('medium-trust observation (0.6) is filtered out', () => {
-    const result = buildLeanContext({
-      observations: [{ type: 'architecture', title: 'Some architecture note', trust_score: 0.6 }],
-      isStale: false,
-      projectName: 'PiMemoryExtension',
-      stats: { total_memories: 408 },
-      cwdRepo: { name: 'PiMemoryExtension', file_count: 292 },
-      projectSummary: '💎 LaPis persistent memory',
+  test('injects prompt-matched memory with inline content', async () => {
+    const deps = buildDeps({
+      mem: vi.fn().mockResolvedValue({
+        observations: [
+          {
+            type: 'decision',
+            title: 'Use SQLite FTS5',
+            trust_score: 0.95,
+            content: '**What**: Use FTS5\n**Why**: No external deps\n**Where**: search.js',
+          },
+        ],
+        personal: [],
+        stats: { total_memories: 10, total_personal: 0, active_workflows: 0 },
+        topic: 'fts5',
+      }),
     });
+    const handler = extractHandler(deps);
 
-    expect(result.length).toBe(2);
-    expect(result.join('\n')).not.toContain('Some architecture note');
+    const result = await handler({ prompt: 'why fts5' }, { cwd: process.cwd() });
+    const content = result.message.content;
+
+    expect(content).toContain('### Prompt-Matched Memory');
+    expect(content).toContain('[decision] Use SQLite FTS5');
+    expect(content).toContain('What: Use FTS5 Why: No external deps Where: search.js');
   });
 
-  test('trust threshold boundary: 0.79 filtered, 0.80 included', () => {
-    const below = buildLeanContext({
-      observations: [{ type: 'decision', title: 'Below threshold', trust_score: 0.79 }],
-      isStale: false,
-      projectName: 'PiMemoryExtension',
-      stats: { total_memories: 408 },
-      cwdRepo: { name: 'PiMemoryExtension', file_count: 292 },
-      projectSummary: '💎 LaPis persistent memory',
+  test('suppresses stale warning for historical prompts', async () => {
+    const deps = buildDeps({
+      mem: vi.fn().mockResolvedValue({
+        observations: [
+          {
+            type: 'architecture',
+            title: 'FTS5 rationale',
+            trust_score: 0.95,
+            content: '**Why**: Performance',
+          },
+        ],
+        personal: [],
+        stats: { total_memories: 10, total_personal: 0, active_workflows: 0 },
+        topic: 'fts5',
+      }),
+      getKnownRepos: vi.fn().mockResolvedValue([
+        {
+          name: 'TestRepo',
+          path: process.cwd(),
+          file_count: 100,
+          symbol_count: 500,
+          indexed_at: '2026-05-01T00:00:00Z',
+        },
+      ]),
+      isRepoStale: vi.fn().mockReturnValue(true),
     });
-    expect(below.length).toBe(2);
+    const handler = extractHandler(deps);
 
-    const atThreshold = buildLeanContext({
-      observations: [{ type: 'decision', title: 'At threshold', trust_score: 0.8 }],
-      isStale: false,
-      projectName: 'PiMemoryExtension',
-      stats: { total_memories: 408 },
-      cwdRepo: { name: 'PiMemoryExtension', file_count: 292 },
-      projectSummary: '💎 LaPis persistent memory',
-    });
-    expect(atThreshold.length).toBe(3);
-    expect(atThreshold.join('\n')).toContain('- [decision] At threshold');
+    const result = await handler({ prompt: 'Why did we choose SQLite?' }, { cwd: process.cwd() });
+    const content = result.message.content;
+
+    // (stale) label is shown in Project Context, but STALE_GUIDANCE block is suppressed
+    expect(content).toContain('(stale)');
+    expect(content).not.toContain('Stale code index');
+    expect(content).not.toContain('reindex');
   });
 
-  test('only top observation is included even with multiple high-trust', () => {
-    const result = buildLeanContext({
-      observations: [
-        { type: 'decision', title: 'First decision', trust_score: 0.95 },
-        { type: 'bugfix', title: 'Second bugfix', trust_score: 0.9 },
-      ],
-      isStale: false,
-      projectName: 'PiMemoryExtension',
-      stats: { total_memories: 408 },
-      cwdRepo: { name: 'PiMemoryExtension', file_count: 292 },
-      projectSummary: '💎 LaPis persistent memory',
+  test('shows stale guidance block for non-historical prompts', async () => {
+    const deps = buildDeps({
+      getKnownRepos: vi.fn().mockResolvedValue([
+        {
+          name: 'TestRepo',
+          path: process.cwd(),
+          file_count: 100,
+          symbol_count: 500,
+          indexed_at: '2026-05-01T00:00:00Z',
+        },
+      ]),
+      isRepoStale: vi.fn().mockReturnValue(true),
     });
-    const text = result.join('\n');
+    const handler = extractHandler(deps);
 
-    expect(result.length).toBe(3);
-    expect(text).toContain('First decision');
-    expect(text).not.toContain('Second bugfix');
+    const result = await handler({ prompt: 'refactor the context module' }, { cwd: process.cwd() });
+    const content = result.message.content;
+
+    expect(content).toContain('Stale code index');
+    expect(content).toContain('reindex');
   });
 
-  test('new project (no cwdRepo) format', () => {
-    const result = buildLeanContext({
-      observations: [],
-      isStale: false,
-      projectName: 'MyNewApp',
-      stats: { total_memories: 12 },
-      cwdRepo: null,
-      projectSummary: '',
+  test('new project format shows cross-project context', async () => {
+    const callCount = { n: 0 };
+    const deps = buildDeps({
+      mem: vi.fn().mockImplementation(() => {
+        callCount.n++;
+        // First call (project-specific) returns null → triggers cross-project
+        if (callCount.n === 1) {
+          return null;
+        }
+        return {
+          observations: [],
+          personal: [],
+          stats: { total_memories: 5, total_personal: 0, active_workflows: 0 },
+          topic: null,
+        };
+      }),
     });
-    const text = result.join('\n');
+    const handler = extractHandler(deps);
 
-    expect(result.length).toBe(2);
-    expect(text).toContain('🧠 **MyNewApp** — new project · 12 memories across all projects');
-    expect(text).not.toContain('reindex');
+    const result = await handler({}, { cwd: process.cwd() });
+    const content = result.message.content;
+
+    expect(content).toContain('new project');
   });
 
-  test('no personal preferences are ever injected', () => {
-    const result = buildLeanContext({
-      observations: [],
-      personal: [{ title: 'My preference' }, { title: 'Another preference' }],
-      isStale: false,
-      projectName: 'PiMemoryExtension',
-      stats: { total_memories: 408 },
-      cwdRepo: { name: 'PiMemoryExtension', file_count: 292 },
-      projectSummary: '💎 LaPis persistent memory',
+  test('personal preferences are not injected when PERSONAL_INJECT_LIMIT is 0', async () => {
+    const deps = buildDeps({
+      mem: vi.fn().mockResolvedValue({
+        observations: [],
+        personal: [{ id: 1, title: 'Use tabs not spaces', type: 'preference' }],
+        stats: { total_memories: 10, total_personal: 1, active_workflows: 0 },
+        topic: null,
+      }),
     });
-    const text = result.join('\n');
+    const handler = extractHandler(deps);
 
-    expect(text).not.toContain('preference');
-    expect(text).not.toContain('Personal');
-  });
+    const result = await handler({ prompt: 'format code' }, { cwd: process.cwd() });
+    const content = result.message.content;
 
-  test('lean output is significantly shorter than old format', () => {
-    const lean = buildLeanContext({
-      observations: [{ type: 'decision', title: 'Architecture decision', trust_score: 0.9 }],
-      isStale: true,
-      projectName: 'PiMemoryExtension',
-      stats: { total_memories: 408 },
-      cwdRepo: { name: 'PiMemoryExtension', file_count: 292 },
-      projectSummary: '💎 LaPis persistent memory',
-    });
-
-    // Simulate old format size
-    const oldLines = [
-      '## Memory Context (auto-loaded)',
-      '',
-      'Project: **PiMemoryExtension** | 408 memories | 3 personal preferences | topic: something',
-      '',
-      '### Project Context',
-      '- Directory: `/home/user/project`',
-      '- Summary: 💎 LaPis persistent memory',
-      '- Code index: `PiMemoryExtension` with 292 files / 6967 symbols (stale)',
-      '',
-      '### Prompt-Matched Memory',
-      '- [decision] Architecture decision 🔎',
-      '  What: The architecture was decided Where: src/something.js',
-      '',
-      '### Personal Preferences',
-      '- Context test personal',
-      '- Timestamp check',
-      '',
-      'Use `memory-search` for deeper recall and `memory-save` for durable decisions.',
-      '',
-      '📝 **Stale code index:** indexed code may not match current source files. Run `memory-code reindex-repo --repo PiMemoryExtension` to update.',
-      '',
-      '📂 Extension source: `extensions/memory-layer/` in this project repo.',
-    ];
-
-    const leanLen = lean.join('\n').length;
-    const oldLen = oldLines.join('\n').length;
-    expect(leanLen).toBeLessThan(oldLen * 0.35);
+    // PERSONAL_INJECT_LIMIT = 0, so no personal section appears
+    expect(content).not.toContain('### Personal Preferences');
+    expect(content).not.toContain('Use tabs not spaces');
   });
 });
