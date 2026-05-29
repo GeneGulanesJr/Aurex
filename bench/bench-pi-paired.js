@@ -384,7 +384,7 @@ async function runSide(side, commandTemplate, task, repo, outDir, cwd, timeoutMs
   const run = await runCommand(command, cwd, timeoutMs, outFile);
   benchLog(`[bench] ${task.id}: finished ${side} in ${run.elapsed_ms}ms`);
   if (run.status !== 0 && run.status != null) {
-    if (!run.error) run.error = `Command exited with status ${run.status}`;
+    if (!run.error) { run.error = `Command exited with status ${run.status}`; }
     benchLog(`[bench] WARNING: ${task.id} ${side}: command exited with status ${run.status}`);
   }
 

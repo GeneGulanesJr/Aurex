@@ -22,6 +22,9 @@ const _complexity = require('./complexity-impl');
 const _signalChains = require('./signal-chains-impl');
 const _risk = require('./risk-impl');
 const _builders = require('./incremental-builders');
+const _relationBuilder = require('./relation-builder');
+const _cochangeBuilder = require('./cochange-builder');
+const _propagation = require('./propagation-impl');
 
 module.exports = {
   // Import graph
@@ -77,4 +80,11 @@ module.exports = {
   buildImportGraphForFiles: _builders.buildImportGraphForFiles,
   buildCallGraphForFiles: _builders.buildCallGraphForFiles,
   buildComplexityForFiles: _builders.buildComplexityForFiles,
+
+  buildExtendsEdges: _relationBuilder.buildExtendsEdges,
+  buildImplementsEdges: _relationBuilder.buildImplementsEdges,
+  buildReexportEdges: _relationBuilder.buildReexportEdges,
+  buildReferenceEdges: _relationBuilder.buildReferenceEdges,
+  buildCochangeEdges: _cochangeBuilder.buildCochangeEdges,
+  getAffectedGraph: _propagation.getAffectedGraph,
 };

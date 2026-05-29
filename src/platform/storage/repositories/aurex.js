@@ -153,7 +153,7 @@ function createAurexRepository(deps) {
     },
     getMissionCost(missionId) {
       const rows = sqlJson('SELECT SUM(cost) as totalCost, SUM(prompt_tokens + completion_tokens) as totalTokens, COUNT(*) as entries FROM cost_entries WHERE mission_id = ?', [missionId]);
-      if (rows.length === 0) return { totalCost: 0, totalTokens: 0, entries: 0 };
+      if (rows.length === 0) { return { totalCost: 0, totalTokens: 0, entries: 0 }; }
       return {
         totalCost: rows[0].totalCost || 0,
         totalTokens: rows[0].totalTokens || 0,

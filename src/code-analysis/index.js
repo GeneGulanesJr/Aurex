@@ -26,4 +26,10 @@ module.exports = {
   buildCallGraphForFiles: legacy.buildCallGraphForFiles,
   buildComplexityForFiles: legacy.buildComplexityForFiles,
   clearPageRankCache: legacy.clearPageRankCache,
+  buildExtendsEdges: legacy.buildExtendsEdges,
+  buildImplementsEdges: legacy.buildImplementsEdges,
+  buildReexportEdges: legacy.buildReexportEdges,
+  buildReferenceEdges: legacy.buildReferenceEdges,
+  buildCochangeEdges: legacy.buildCochangeEdges,
+  getAffectedGraph: legacy.getAffectedGraph,
 };

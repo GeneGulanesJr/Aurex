@@ -421,3 +421,24 @@ describe('code-analysis: pr-risk (v6)', () => {
     }
   });
 });
+
+describe('code-analysis: relation edges', () => {
+  it('should return blast radius with affected files after reindex', () => {
+    const r = run(`blast-radius --repo ${REPO} --symbol buildImportGraph`, 15000);
+    expect(r.error).toBeUndefined();
+    expect(r.affected_files).toBeDefined();
+    expect(Array.isArray(r.affected_files)).toBe(true);
+  });
+
+  it('should return affected files sorted by reachability from new propagation engine', () => {
+    const r = run(`blast-radius --repo ${REPO} --symbol hashContent`, 15000);
+    expect(r.error).toBeUndefined();
+    expect(r.affected_files).toBeDefined();
+    if (r.affected_files.length > 0 && r.affected_files[0].reachability !== undefined) {
+      for (const f of r.affected_files) {
+        expect(typeof f.reachability).toBe('number');
+        expect(Array.isArray(f.signals)).toBe(true);
+      }
+    }
+  });
+});

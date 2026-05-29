@@ -446,7 +446,7 @@ function runMigrations() {
     console.error('[db] Failed to read user_version:', e.message);
   }
 
-  if (version >= 12) {
+  if (version >= 13) {
     return { migrated: false, version };
   }
 
@@ -462,6 +462,7 @@ function runMigrations() {
     { to: 10, run: runMigrationV10 },
     { to: 11, run: runMigrationV11 },
     { to: 12, run: runMigrationV12 },
+    { to: 13, run: runMigrationV13 },
   ];
 
   const fromVersion = version;
@@ -976,6 +977,48 @@ function runMigrationV8() {
   }
   return errors;
 }
+function runMigrationV13() {
+  const errors = [];
+  try {
+    withTransaction(() => {
+      sqlRaw(`CREATE TABLE IF NOT EXISTS code_relations (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        repo_id             INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE,
+        source_symbol_id    INTEGER REFERENCES code_symbols(id) ON DELETE CASCADE,
+        target_symbol_id    INTEGER REFERENCES code_symbols(id) ON DELETE CASCADE,
+        source_file_id      INTEGER REFERENCES code_files(id) ON DELETE CASCADE,
+        target_file_id      INTEGER REFERENCES code_files(id) ON DELETE CASCADE,
+        kind                TEXT NOT NULL,
+        weight              REAL NOT NULL DEFAULT 1.0,
+        line_number         INTEGER,
+        UNIQUE(repo_id, source_symbol_id, target_symbol_id, source_file_id, target_file_id, kind)
+      )`);
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_cr_source_sym ON code_relations(source_symbol_id)');
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_cr_target_sym ON code_relations(target_symbol_id)');
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_cr_source_file ON code_relations(source_file_id)');
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_cr_target_file ON code_relations(target_file_id)');
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_cr_repo_kind ON code_relations(repo_id, kind)');
+      sqlRaw(`CREATE TABLE IF NOT EXISTS file_cochange (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        repo_id         INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE,
+        file_a_id       INTEGER NOT NULL REFERENCES code_files(id) ON DELETE CASCADE,
+        file_b_id       INTEGER NOT NULL REFERENCES code_files(id) ON DELETE CASCADE,
+        co_commit_count INTEGER NOT NULL DEFAULT 0,
+        strength        REAL NOT NULL DEFAULT 0,
+        window_days     INTEGER NOT NULL DEFAULT 90,
+        UNIQUE(repo_id, file_a_id, file_b_id)
+      )`);
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_fcc_a ON file_cochange(file_a_id)');
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_fcc_b ON file_cochange(file_b_id)');
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_fcc_repo ON file_cochange(repo_id)');
+      sqlRaw('PRAGMA user_version = 13');
+    });
+  } catch (e) {
+    errors.push(`V13: ${e.message}`);
+  }
+  return errors;
+}
+
 /* ── utilities ────────────────────────────────────────────── */
 
 function jsonOut(obj) {

@@ -15,6 +15,8 @@ const {
   buildCallEdgesForFiles,
   buildComplexityMetrics,
   buildComplexityMetricsForFiles,
+  buildRelationEdges,
+  buildCochangeEdges,
 } = require('./edge-extractor');
 const { createParsePool } = require('./worker-pool');
 const { buildScopeBindings: _buildScopeBindings } = require('./scope-builder');
@@ -344,7 +346,31 @@ function rebuildDerivedIndexes(db, repoId, args, totalFiles, fileCount, symbolCo
     }
   } catch {}
 
-  return { importEdges, callEdges, complexityCount, scopeResolved, derived_scope: 'repo' };
+  let relationEdges = 0;
+  emitProgress(
+    args,
+    'analysis',
+    { step: 'build-relations', message: 'Step 5/5: building relation edges...' },
+    stats,
+  );
+  try {
+    const re = buildRelationEdges(db, repoId);
+    if (re.success) { relationEdges = re.count; }
+  } catch {}
+
+  let cochangeEdges = 0;
+  emitProgress(
+    args,
+    'analysis',
+    { step: 'build-cochange', message: 'Step 5/5: building co-change edges...' },
+    stats,
+  );
+  try {
+    const cc2 = buildCochangeEdges(db, repoId);
+    if (cc2.success) { cochangeEdges = cc2.count; }
+  } catch {}
+
+  return { importEdges, callEdges, complexityCount, scopeResolved, relationEdges, cochangeEdges, derived_scope: 'repo' };
 }
 
 function rebuildDerivedIncremental(db, repoId, args, stats, changedFileIds, deletedFileIds) {
@@ -424,11 +450,18 @@ function rebuildDerivedIncremental(db, repoId, args, stats, changedFileIds, dele
     if (cc.success) {complexityCount = cc.symbols;}
   } catch {}
 
+  let relationEdges = 0;
+  try {
+    const re = buildRelationEdges(db, repoId);
+    if (re.success) { relationEdges = re.count; }
+  } catch {}
+
   return {
     importEdges,
     callEdges,
     complexityCount,
     scopeResolved,
+    relationEdges,
     derived_scope: 'file',
     derived_files_changed: changedFileIds.length,
     derived_files_deleted: deletedFileIds.length,
