@@ -17,17 +17,18 @@ interface MissionsState {
 type Action =
   | { type: "SET_MISSIONS"; missions: MissionListItem[] }
   | { type: "SELECT"; missionId: string }
+  | { type: "MISSION_CREATED"; missionId: string; description: string }
   | { type: "WS_MISSION_QUEUED"; missionId: string; queuePosition: number }
   | { type: "WS_MISSION_STARTED"; missionId: string }
   | { type: "WS_MISSION_COMPLETED"; missionId: string; finalState: string }
   | { type: "REMOVE"; missionId: string };
 
-const initial: MissionsState = {
+export const initialMissionsState: MissionsState = {
   missions: [],
   selectedMissionId: null,
 };
 
-function reducer(state: MissionsState, action: Action): MissionsState {
+export function missionsReducer(state: MissionsState, action: Action): MissionsState {
   switch (action.type) {
     case "SET_MISSIONS": {
       const missions = action.missions;
@@ -36,6 +37,13 @@ function reducer(state: MissionsState, action: Action): MissionsState {
     }
     case "SELECT":
       return { ...state, selectedMissionId: action.missionId };
+    case "MISSION_CREATED": {
+      const exists = state.missions.some((m) => m.missionId === action.missionId);
+      if (exists) return state;
+      const newMissions = [...state.missions, { missionId: action.missionId, state: "planning" as const, description: action.description }];
+      const selectedMissionId = state.selectedMissionId ?? action.missionId;
+      return { ...state, missions: newMissions, selectedMissionId };
+    }
     case "WS_MISSION_QUEUED": {
       const exists = state.missions.some((m) => m.missionId === action.missionId);
       if (exists) {
@@ -80,7 +88,7 @@ function reducer(state: MissionsState, action: Action): MissionsState {
 }
 
 export function useMissions() {
-  const [state, dispatch] = useReducer(reducer, initial);
+  const [state, dispatch] = useReducer(missionsReducer, initialMissionsState);
 
   useEffect(() => {
     let cancelled = false;
@@ -117,5 +125,9 @@ export function useMissions() {
     dispatch({ type: "REMOVE", missionId });
   }, []);
 
-  return { state, selectMission, removeMission, handleWsEvent };
+  const addOptimisticMission = useCallback((missionId: string, description: string) => {
+    dispatch({ type: "MISSION_CREATED", missionId, description });
+  }, []);
+
+  return { state, selectMission, removeMission, addOptimisticMission, handleWsEvent };
 }
