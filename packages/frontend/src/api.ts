@@ -24,6 +24,7 @@ export async function createMission(description: string): Promise<CreateMissionR
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ description }),
   });
+  if (!res.ok) throw new Error(`Failed to create mission: ${res.status}`);
   return res.json() as Promise<CreateMissionResponse>;
 }
 
