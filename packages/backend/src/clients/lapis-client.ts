@@ -83,6 +83,11 @@ export interface LaPisClient {
   // Mission listing
   listMissions(opts?: { status?: string }): Promise<Mission[]>;
 
+  // Settings KV
+  getSetting<T = unknown>(key: string): Promise<T | null>;
+  setSetting(key: string, value: unknown): Promise<void>;
+  deleteSetting(key: string): Promise<void>;
+
   // Connectivity
   ping(): Promise<void>;
 }
@@ -112,6 +117,18 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
 
   function get<T>(path: string): Promise<T> {
     return request<T>(path, { method: "GET" });
+  }
+
+  function put<T>(path: string, body: unknown): Promise<T> {
+    return request<T>(path, { method: "PUT", body: JSON.stringify(body) });
+  }
+
+  async function del(path: string): Promise<void> {
+    const res = await fetch(`${base}${path}`, { method: "DELETE" });
+    if (!res.ok && res.status !== 404) {
+      const text = await res.text().catch(() => "unknown error");
+      throw new Error(`LaPis ${res.status}: ${path} — ${text}`);
+    }
   }
 
   return {
@@ -260,6 +277,22 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
       if (opts?.status) params.set("status", opts.status);
       const qs = params.toString();
       return get(`/missions${qs ? `?${qs}` : ""}`);
+    },
+
+    // Settings KV
+    getSetting<T = unknown>(key: string): Promise<T | null> {
+      return get<{ key: string; value: T }>(`/settings/${encodeURIComponent(key)}`)
+        .then((res) => res.value)
+        .catch((err) => {
+          if (err instanceof Error && err.message.includes("LaPis 404")) return null;
+          throw err;
+        });
+    },
+    setSetting(key, value) {
+      return put(`/settings/${encodeURIComponent(key)}`, { value }).then(() => {});
+    },
+    deleteSetting(key) {
+      return del(`/settings/${encodeURIComponent(key)}`);
     },
 
     // Connectivity
