@@ -105,6 +105,7 @@ export function App() {
         theme={theme}
         onThemeChange={setTheme}
         githubUser={github.user}
+        pinyxConfigured={pinyxStatus.configured}
         onOpenIntegrations={() => setIntegrationsOpen(true)}
       />
       <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gridTemplateRows: "1fr 36px", flex: 1, overflow: "hidden" }}>

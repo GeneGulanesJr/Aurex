@@ -8,6 +8,7 @@ interface TopBarProps {
   theme: ThemeId;
   onThemeChange: (theme: ThemeId) => void;
   githubUser?: { login: string; avatar_url: string } | null;
+  pinyxConfigured?: boolean;
   onOpenIntegrations?: () => void;
 }
 
@@ -46,7 +47,7 @@ function StatusItem({ color, label }: { color: string; label: string }) {
   );
 }
 
-export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, githubUser, onOpenIntegrations }: TopBarProps) {
+export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, githubUser, pinyxConfigured, onOpenIntegrations }: TopBarProps) {
   const dotColor = connected ? "var(--success)" : "var(--error)";
   return (
     <header
@@ -87,8 +88,8 @@ export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, 
 
       {/* Center: Connection status */}
       <div style={{ display: "flex", gap: "20px" }}>
-        <StatusItem color={dotColor} label="LAPIS CONNECTED" />
-        <StatusItem color={dotColor} label="PINYX CONNECTED" />
+        <StatusItem color={connected ? "var(--success)" : "var(--error)"} label="LAPIS CONNECTED" />
+        <StatusItem color={pinyxConfigured ? "var(--success)" : "var(--warning)"} label={pinyxConfigured ? "PINYX CONNECTED" : "PINYX OFFLINE"} />
         <StatusItem color={connected ? "var(--success)" : "var(--warning)"} label="SYSTEMS NOMINAL" />
       </div>
 

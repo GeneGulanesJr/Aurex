@@ -39,6 +39,13 @@ export function DecisionActions({ onDecision, trigger }: DecisionActionsProps) {
         </>
       )}
 
+      {trigger.kind === "cost_cap_exceeded" && (
+        <>
+          <button onClick={() => onDecision("approve")} style={{ ...btnBase, background: "var(--warning)", color: "var(--bg-deep)" }}>Approve Over Budget</button>
+          <button onClick={() => onDecision("reject", undefined, "cost_exceeded")} style={{ ...btnBase, background: "var(--error)", color: "#fff" }}>Abort Mission</button>
+        </>
+      )}
+
       {showGuidance && (
         <div style={{ width: "100%", marginTop: "12px" }}>
           <textarea

@@ -33,5 +33,13 @@ export function CheckpointPanel({ trigger }: CheckpointPanelProps) {
           <p style={{ fontSize: "14px", color: "var(--text-secondary)" }}>Last attempt: {trigger.lastAttempt ?? "unknown"}</p>
         </div>
       );
+
+    case "cost_cap_exceeded":
+      return (
+        <div style={{ marginBottom: "24px" }}>
+          <h2 style={{ fontSize: "20px", fontWeight: 700, color: "var(--warning)", marginBottom: "8px" }}>Cost Cap Exceeded</h2>
+          <p style={{ fontSize: "14px", color: "var(--text-secondary)" }}>Mission spending has reached the cost limit. Approve to continue over budget or abort the mission.</p>
+        </div>
+      );
   }
 }
