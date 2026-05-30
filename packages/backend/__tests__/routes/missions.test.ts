@@ -21,6 +21,7 @@ describe("POST /api/missions", () => {
   it("creates a mission and returns missionId", async () => {
     const app = Fastify();
     const mockLapis = {
+      getSetting: vi.fn().mockResolvedValue(null),
       createMission: vi.fn().mockResolvedValue({ id: "m-1", status: "planning" }),
     } as unknown as LaPisClient;
     const pool = createMockPool();
@@ -40,9 +41,44 @@ describe("POST /api/missions", () => {
     expect(pool.submit).toHaveBeenCalledWith("m-1");
   });
 
+  it("uses saved PiNyx model hints from integration settings when creating missions", async () => {
+    const app = Fastify();
+    const mockLapis = {
+      getSetting: vi.fn().mockResolvedValue({
+        modelHints: {
+          worker: "gpt-4o-mini",
+          orchestrator: "claude-sonnet-4",
+        },
+      }),
+      createMission: vi.fn().mockResolvedValue({ id: "m-1", status: "planning" }),
+    } as unknown as LaPisClient;
+
+    app.register(missionRoutes, {
+      lapis: mockLapis,
+      pool: createMockPool(),
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/api/missions",
+      payload: { description: "Build auth system" },
+    });
+
+    expect(mockLapis.createMission).toHaveBeenCalledWith(
+      "Build auth system",
+      expect.objectContaining({
+        modelHints: expect.objectContaining({
+          worker: "gpt-4o-mini",
+          orchestrator: "claude-sonnet-4",
+        }),
+      }),
+    );
+  });
+
   it("creates missions with configured concrete PiNyx model hints", async () => {
     const app = Fastify();
     const mockLapis = {
+      getSetting: vi.fn().mockResolvedValue(null),
       createMission: vi.fn().mockResolvedValue({ id: "m-1", status: "planning" }),
     } as unknown as LaPisClient;
 

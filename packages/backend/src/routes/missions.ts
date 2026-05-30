@@ -45,7 +45,12 @@ export async function missionRoutes(
     if (!description) {
       return reply.status(400).send({ error: "description is required" });
     }
-    const config = cloneUrl ? { ...missionConfig, cloneUrl } : missionConfig;
+    const pinyxConfig = await lapis.getSetting<{ modelHints?: Partial<MissionConfig["modelHints"]> }>("pinyx_config");
+    const config: MissionConfig = {
+      ...missionConfig,
+      modelHints: { ...missionConfig.modelHints, ...(pinyxConfig?.modelHints ?? {}) },
+      ...(cloneUrl && { cloneUrl }),
+    };
     const mission = await lapis.createMission(description, config);
     pool.submit(mission.id);
     return reply.status(201).send({ missionId: mission.id, status: mission.status });

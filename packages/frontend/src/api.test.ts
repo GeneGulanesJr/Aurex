@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getCurrentMission, createMission, getGitHubConfig, saveGitHubConfig } from "./api";
+import { getCurrentMission, createMission, getGitHubConfig, saveGitHubConfig, getPinyxConfig, savePinyxConfig, getPinyxModels } from "./api";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
@@ -61,6 +61,33 @@ describe("frontend api", () => {
 
     await expect(getGitHubConfig()).resolves.toEqual(payload);
     expect(mockFetch).toHaveBeenCalledWith("/api/github/config", expect.objectContaining({ headers: expect.any(Object) }));
+  });
+
+  it("reads PiNyx integration config", async () => {
+    const payload = { endpoint: "http://pinyx-stub:7331", modelHints: { worker: "gpt-4o-mini" }, providers: [] };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => payload });
+
+    await expect(getPinyxConfig()).resolves.toEqual(payload);
+    expect(mockFetch).toHaveBeenCalledWith("/api/pinyx/config", expect.objectContaining({ headers: expect.any(Object) }));
+  });
+
+  it("saves PiNyx integration config", async () => {
+    const payload = { endpoint: "http://host.docker.internal:7331", modelHints: { worker: "gpt-4o-mini" }, providers: [] };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => payload });
+
+    await expect(savePinyxConfig(payload)).resolves.toEqual(payload);
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/pinyx/config",
+      expect.objectContaining({ method: "POST", body: JSON.stringify(payload) }),
+    );
+  });
+
+  it("gets PiNyx models", async () => {
+    const payload = { models: [{ id: "gpt-4o-mini" }] };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => payload });
+
+    await expect(getPinyxModels()).resolves.toEqual(payload);
+    expect(mockFetch).toHaveBeenCalledWith("/api/pinyx/models", expect.objectContaining({ headers: expect.any(Object) }));
   });
 
   it("saveGitHubConfig posts client id, secret, and callback url", async () => {

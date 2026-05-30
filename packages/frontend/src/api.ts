@@ -141,3 +141,39 @@ export async function disconnectGitHub(): Promise<{ success: boolean }> {
   if (!res.ok) throw new Error(`Failed to disconnect GitHub: ${res.status}`);
   return res.json() as Promise<{ success: boolean }>;
 }
+
+export interface PinyxProviderConfigResponse {
+  id: string;
+  name: string;
+  baseUrl: string;
+  hasApiKey?: boolean;
+  apiKey?: string;
+}
+
+export interface PinyxConfigResponse {
+  endpoint: string;
+  modelHints: Record<string, string>;
+  providers: PinyxProviderConfigResponse[];
+}
+
+export async function getPinyxConfig(): Promise<PinyxConfigResponse> {
+  const res = await apiFetch("/api/pinyx/config");
+  if (!res.ok) throw new Error(`Failed to fetch PiNyx config: ${res.status}`);
+  return res.json() as Promise<PinyxConfigResponse>;
+}
+
+export async function savePinyxConfig(config: PinyxConfigResponse): Promise<PinyxConfigResponse> {
+  const res = await apiFetch("/api/pinyx/config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) throw new Error(`Failed to save PiNyx config: ${res.status}`);
+  return res.json() as Promise<PinyxConfigResponse>;
+}
+
+export async function getPinyxModels(): Promise<{ models: Array<{ id?: string; name?: string }> }> {
+  const res = await apiFetch("/api/pinyx/models");
+  if (!res.ok) throw new Error(`Failed to fetch PiNyx models: ${res.status}`);
+  return res.json() as Promise<{ models: Array<{ id?: string; name?: string }> }>;
+}

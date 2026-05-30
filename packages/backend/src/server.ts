@@ -10,6 +10,7 @@ import { missionRoutes } from "./routes/missions.js";
 import { checkpointRoutes } from "./routes/checkpoints.js";
 import { registerGlobalAuth } from "./routes/auth.js";
 import { registerGitHubRoutes } from "./routes/github.js";
+import { registerPinyxRoutes } from "./routes/pinyx.js";
 
 async function main() {
   const config = loadConfig();
@@ -83,6 +84,13 @@ async function main() {
     },
   });
   await app.register(checkpointRoutes, { lapis });
+
+  // PiNyx config (env-backed defaults, UI-configured overrides stored in LaPis settings)
+  registerPinyxRoutes(app, {
+    lapis,
+    endpoint: config.pinyxEndpoint,
+    modelHints: config.modelHints,
+  });
 
   // GitHub OAuth/config (env-backed or configured from UI into LaPis settings)
   registerGitHubRoutes(app, {
