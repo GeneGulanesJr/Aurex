@@ -1,0 +1,272 @@
+# GitHub Integration — Design Spec
+
+**Date**: 2026-05-30
+**Status**: Approved
+**Scope**: Full GitHub OAuth integration for repo browsing and mission creation
+
+## Overview
+
+Aurex connects to the user's GitHub account via OAuth 2.0. Once connected, the UI shows a searchable repo picker when creating missions. The backend stores the GitHub token securely and proxies all GitHub API calls — the token never reaches the frontend.
+
+## Architecture
+
+```
+User clicks "Connect GitHub"
+        │
+        ▼
+Browser → github.com/login/oauth/authorize?client_id=...&scope=repo&state=<csrf>
+        │
+        ▼
+User authorizes on GitHub
+        │
+        ▼
+GitHub → GET /api/github/callback?code=...&state=<csrf>
+        │
+        ▼
+Backend exchanges code → access_token (server-to-server POST to github.com)
+        │
+        ▼
+Backend stores token + user info in LaPis (keyed values)
+        │
+        ▼
+Backend redirects to frontend (302 → /)
+        │
+        ▼
+Frontend calls GET /api/github/status → { connected, user }
+Frontend calls GET /api/github/repos → [{ full_name, clone_url, private, default_branch }]
+        │
+        ▼
+User selects repo → creates mission against it
+```
+
+## Backend
+
+### New Files
+
+#### `packages/backend/src/clients/github-client.ts`
+
+Thin wrapper around GitHub REST API using native `fetch` (Node 22 built-in).
+
+**Functions:**
+- `exchangeCode(clientId, clientSecret, code, redirectUri)` → `{ access_token }` — POST to `https://github.com/login/oauth/access_token`
+- `getUser(token)` → `{ login, avatar_url, name }` — GET `https://api.github.com/user`
+- `listRepos(token, opts?)` → `[{ id, full_name, clone_url, ssh_url, private, default_branch, updated_at }]` — GET `https://api.github.com/user/repos?sort=updated&per_page=100`
+- `revokeToken(clientId, clientSecret, token)` → void — DELETE `https://api.github.com/applications/{clientId}/token`
+
+All functions set `Accept: application/vnd.github+json` header.
+
+#### `packages/backend/src/routes/github.ts`
+
+Fastify route plugin registered at `/api/github`.
+
+**Endpoints:**
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/github/status` | API key (if configured) | Returns `{ connected: bool, user: { login, avatar_url } }` or `{ connected: false }` |
+| `GET` | `/api/github/repos` | API key (if configured) | Returns array of repos. Returns 401 if not connected. |
+| `GET` | `/api/github/callback` | None | OAuth callback. Validates `state` param, exchanges `code` for token, stores in LaPis, redirects to `/` |
+| `POST` | `/api/github/disconnect` | API key (if configured) | Revokes token on GitHub, deletes stored token from LaPis |
+| `GET` | `/api/github/connect` | API key (if configured) | Returns `{ url }` — the GitHub OAuth authorize URL with generated `state` nonce. State is stored server-side with TTL. |
+
+**Callback flow detail:**
+1. Frontend calls `GET /api/github/connect` → gets `{ url, state }`
+2. Frontend stores `state` in localStorage, redirects to `url`
+3. GitHub redirects back to `/api/github/callback?code=...&state=...`
+4. Backend validates `state` matches stored nonce
+5. Backend calls `exchangeCode()`
+6. Backend calls `getUser()` to get profile
+7. Backend stores `github_token` and `github_user` in LaPis
+8. Backend redirects (302) to frontend root `/`
+
+### Token Storage (LaPis)
+
+Store as keyed values in LaPis:
+- Key `github_token` → `{ access_token, created_at }`
+- Key `github_user` → `{ login, avatar_url, name }`
+
+LaPis client needs two new methods (or reuse existing KV store if available):
+- `getKV(key)` → value or null
+- `setKV(key, value)` → void
+- `deleteKV(key)` → void
+
+If LaPis doesn't have a KV store, use a simple `settings` table pattern with `POST /settings/{key}` and `GET /settings/{key}`.
+
+### State Nonce Storage
+
+OAuth `state` parameter needs short-lived server-side storage:
+- Store in-memory `Map<string, { createdAt: number }>` with 10-minute TTL
+- Cleaned up on access (delete after validation)
+- No persistence needed — if server restarts during OAuth flow, user just re-connects
+
+### Configuration
+
+New environment variables:
+
+| Variable | Required | Description |
+|---|---|---|
+| `GITHUB_CLIENT_ID` | Yes | OAuth App client ID from GitHub Developer Settings |
+| `GITHUB_CLIENT_SECRET` | Yes | OAuth App client secret |
+| `GITHUB_CALLBACK_URL` | No (default: `http://localhost:8080/api/github/callback`) | OAuth callback URL |
+
+These go in `.env` and `docker-compose.yml` environment section.
+
+### Route Registration
+
+Register in `packages/backend/src/server.ts`:
+```ts
+import { registerGitHubRoutes } from "./routes/github.js";
+registerGitHubRoutes(app, lapis, { clientId, clientSecret, callbackUrl });
+```
+
+Only register if `GITHUB_CLIENT_ID` is set — gracefully skip if not configured (status endpoint returns `{ connected: false, configured: false }`).
+
+## Frontend
+
+### New Files
+
+#### `packages/frontend/src/hooks/useGitHub.ts`
+
+Hook that manages GitHub connection state.
+
+```ts
+interface GitHubState {
+  configured: boolean;  // backend has GitHub OAuth configured
+  connected: boolean;   // user has authorized
+  user: { login: string; avatar_url: string } | null;
+  repos: GitHubRepo[];
+  loading: boolean;
+  error: string | null;
+}
+
+interface UseGitHubReturn extends GitHubState {
+  connect: () => void;       // redirects to GitHub
+  disconnect: () => void;    // calls POST /api/github/disconnect
+  refreshRepos: () => void;  // re-fetches repo list
+}
+```
+
+- On mount: `GET /api/github/status` → sets `connected`, `configured`, `user`
+- If connected: auto-fetches `GET /api/github/repos`
+- `connect()` — calls `GET /api/github/connect`, stores state nonce, redirects
+
+#### `packages/frontend/src/active/GitHubStatus.tsx`
+
+Small component for TopBar — shows GitHub icon (connected/disconnected state). Click to open settings or shows connect button.
+
+#### `packages/frontend/src/active/RepoPicker.tsx`
+
+Searchable dropdown component:
+- Text input with search filter
+- Lists repos sorted by `updated_at` (most recent first)
+- Shows `full_name`, private badge, default branch
+- Click to select → calls `onSelect(repo)` callback
+- Uses DESIGN.md tokens: `var(--bg-surface)`, `var(--border)`, `var(--text-primary)`, etc.
+
+### Modified Files
+
+#### `packages/frontend/src/App.tsx`
+
+- Add `useGitHub()` hook at top level
+- Pass `gitHubState` and `connect/disconnect` to TopBar
+
+#### `packages/frontend/src/active/MissionSidebar.tsx`
+
+- Pass `gitHubState` to NewMissionForm
+
+#### `packages/frontend/src/active/NewMissionForm.tsx`
+
+- Add conditional rendering:
+  - If `connected && repos.length > 0` → show RepoPicker
+  - If `configured && !connected` → show "Connect GitHub" button
+  - If `!configured` → show manual repo path input (current behavior)
+- On repo select: pre-fill `REPO_ROOT` or call `createMission(description, repo.clone_url)`
+
+#### `packages/frontend/src/frame/TopBar.tsx`
+
+- Add GitHub icon/status indicator on the right side (next to theme switcher)
+- Shows avatar if connected, gray icon if not
+
+### Shared Types
+
+Add to `packages/shared/src/types.ts`:
+
+```ts
+export interface GitHubRepo {
+  id: number;
+  full_name: string;
+  clone_url: string;
+  ssh_url: string;
+  private: boolean;
+  default_branch: string;
+  updated_at: string;
+}
+
+export interface GitHubStatus {
+  configured: boolean;
+  connected: boolean;
+  user: { login: string; avatar_url: string; name: string } | null;
+}
+```
+
+## Security
+
+1. **CSRF protection**: `state` nonce generated server-side, stored with TTL, validated on callback
+2. **Token never in frontend**: all GitHub API calls proxied through backend
+3. **Client secret server-only**: `GITHUB_CLIENT_SECRET` never leaves backend process
+4. **Token revocation on disconnect**: calls GitHub's token revocation endpoint before deleting
+5. **Existing API key auth**: all `/api/github/*` endpoints respect the existing `API_KEY` config
+
+## Dependencies
+
+**No new npm dependencies.** Node 22 has native `fetch`. GitHub API returns JSON. Frontend uses existing `api.ts` pattern.
+
+## Docker Compose Updates
+
+Add to `docker-compose.yml` environment for backend service:
+```yaml
+GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+GITHUB_CALLBACK_URL: ${GITHUB_CALLBACK_URL:-http://localhost:8080/api/github/callback}
+```
+
+Add to `.env.example`:
+```
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+GITHUB_CALLBACK_URL=http://localhost:8080/api/github/callback
+```
+
+## Implementation Order
+
+1. Shared types (`GitHubRepo`, `GitHubStatus`)
+2. Backend GitHub client (`github-client.ts`)
+3. Backend routes (`github.ts`) + registration in `server.ts`
+4. Frontend `useGitHub` hook
+5. Frontend `RepoPicker` component
+6. Frontend integration (NewMissionForm, TopBar, App)
+7. Docker/env config updates
+8. Tests (unit tests for github-client, route tests)
+
+## Files Summary
+
+| File | Action |
+|---|---|
+| `packages/shared/src/types.ts` | Modify — add GitHubRepo, GitHubStatus |
+| `packages/shared/src/index.ts` | Modify — re-export new types |
+| `packages/backend/src/clients/github-client.ts` | New |
+| `packages/backend/src/clients/lapis-client.ts` | Modify — add KV methods |
+| `packages/backend/src/routes/github.ts` | New |
+| `packages/backend/src/server.ts` | Modify — register GitHub routes |
+| `packages/backend/src/config.ts` | Modify — add GitHub env vars |
+| `packages/frontend/src/hooks/useGitHub.ts` | New |
+| `packages/frontend/src/active/GitHubStatus.tsx` | New |
+| `packages/frontend/src/active/RepoPicker.tsx` | New |
+| `packages/frontend/src/active/NewMissionForm.tsx` | Modify — add RepoPicker |
+| `packages/frontend/src/active/MissionSidebar.tsx` | Modify — pass GitHub state |
+| `packages/frontend/src/frame/TopBar.tsx` | Modify — add status indicator |
+| `packages/frontend/src/App.tsx` | Modify — add useGitHub |
+| `packages/frontend/src/api.ts` | Modify — add GitHub API calls |
+| `docker-compose.yml` | Modify — add GitHub env vars |
+| `.env.example` | Modify — add GitHub vars |
+| `docs/superpowers/plans/PROGRESS.md` | Modify — add GitHub integration status |
