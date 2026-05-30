@@ -1,6 +1,6 @@
 // packages/backend/__tests__/github-client.test.ts
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { exchangeCode, getUser, listRepos, revokeToken } from "../src/clients/github-client.js";
+import { getUser, listRepos } from "../src/clients/github-client.js";
 
 describe("github-client", () => {
   beforeEach(() => {
@@ -9,38 +9,6 @@ describe("github-client", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
-  });
-
-  describe("exchangeCode", () => {
-    it("exchanges code for access token", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ access_token: "ghp_test123" }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const token = await exchangeCode("cid", "csec", "code123", "http://localhost/callback");
-      expect(token).toBe("ghp_test123");
-      expect(mockFetch).toHaveBeenCalledWith(
-        "https://github.com/login/oauth/access_token",
-        expect.objectContaining({ method: "POST" }),
-      );
-    });
-
-    it("throws on OAuth error", async () => {
-      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ error: "bad_verification_code" }),
-      }));
-      await expect(exchangeCode("cid", "csec", "bad", "http://localhost/callback"))
-        .rejects.toThrow("GitHub OAuth error: bad_verification_code");
-    });
-
-    it("throws on HTTP error", async () => {
-      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 422 }));
-      await expect(exchangeCode("cid", "csec", "code", "http://localhost/callback"))
-        .rejects.toThrow("GitHub token exchange failed: 422");
-    });
   });
 
   describe("getUser", () => {
@@ -89,31 +57,6 @@ describe("github-client", () => {
     it("throws on failure", async () => {
       vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 403 }));
       await expect(listRepos("bad")).rejects.toThrow("GitHub listRepos failed: 403");
-    });
-  });
-
-  describe("revokeToken", () => {
-    it("sends DELETE with Basic auth", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 204 });
-      vi.stubGlobal("fetch", mockFetch);
-      await revokeToken("cid", "csec", "token");
-      expect(mockFetch).toHaveBeenCalledWith(
-        "https://api.github.com/applications/cid/token",
-        expect.objectContaining({
-          method: "DELETE",
-          headers: expect.objectContaining({ Authorization: expect.stringContaining("Basic") }),
-        }),
-      );
-    });
-
-    it("ignores 404 (already revoked)", async () => {
-      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404 }));
-      await expect(revokeToken("cid", "csec", "token")).resolves.toBeUndefined();
-    });
-
-    it("throws on other errors", async () => {
-      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500 }));
-      await expect(revokeToken("cid", "csec", "token")).rejects.toThrow("GitHub revokeToken failed: 500");
     });
   });
 });

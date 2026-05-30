@@ -16,7 +16,8 @@ export type WsEvent = WsClientEvent;
 export type EscalationTrigger =
   | { kind: "milestone_complete"; milestoneId: string; releaseBranch?: string }
   | { kind: "rescope_limit"; milestoneId: string; attemptHistory?: AttemptSummary[] }
-  | { kind: "unclassifiable_error"; milestoneId: string; error?: string; lastAttempt?: string };
+  | { kind: "unclassifiable_error"; milestoneId: string; error?: string; lastAttempt?: string }
+  | { kind: "cost_cap_exceeded"; milestoneId: string };
 
 export interface WsServerMessage {
   event: WsClientEvent;

@@ -1,7 +1,18 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import Fastify from "fastify";
 import { registerGitHubRoutes } from "../../src/routes/github";
 import type { LaPisClient } from "../../src/clients/lapis-client";
+
+// Mock github-client to avoid real API calls
+vi.mock("../../src/clients/github-client.js", () => ({
+  getUser: vi.fn(),
+  listRepos: vi.fn(),
+}));
+
+import { getUser, listRepos } from "../../src/clients/github-client.js";
+
+const mockGetUser = getUser as ReturnType<typeof vi.fn>;
+const mockListRepos = listRepos as ReturnType<typeof vi.fn>;
 
 function createMockLapis(settings: Record<string, unknown> = {}) {
   return {
@@ -11,88 +22,156 @@ function createMockLapis(settings: Record<string, unknown> = {}) {
   } as unknown as LaPisClient;
 }
 
-describe("GitHub integration config routes", () => {
-  it("reports unconfigured when no env or saved config exists", async () => {
-    const app = Fastify();
-    const lapis = createMockLapis();
-    registerGitHubRoutes(app, { lapis, clientId: undefined, clientSecret: undefined, callbackUrl: "http://localhost:8080/api/github/callback" });
-
-    const res = await app.inject({ method: "GET", url: "/api/github/status" });
-
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ configured: false, connected: false, user: null });
+describe("GitHub PAT integration routes", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  it("saves GitHub OAuth config through frontend-safe config route", async () => {
-    const app = Fastify();
-    const lapis = createMockLapis();
-    registerGitHubRoutes(app, { lapis, clientId: undefined, clientSecret: undefined, callbackUrl: "http://localhost:8080/api/github/callback" });
+  describe("GET /api/github/status", () => {
+    it("returns disconnected when no token stored", async () => {
+      const app = Fastify();
+      const lapis = createMockLapis();
+      registerGitHubRoutes(app, { lapis });
 
-    const res = await app.inject({
-      method: "POST",
-      url: "/api/github/config",
-      payload: {
-        clientId: "github-client-id",
-        clientSecret: "github-client-secret",
-        callbackUrl: "http://localhost:8080/api/github/callback",
-      },
+      const res = await app.inject({ method: "GET", url: "/api/github/status" });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ connected: false, user: null });
     });
 
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ configured: true, clientId: "github-client-id", callbackUrl: "http://localhost:8080/api/github/callback", hasClientSecret: true });
-    expect(lapis.setSetting).toHaveBeenCalledWith("github_config", {
-      clientId: "github-client-id",
-      clientSecret: "github-client-secret",
-      callbackUrl: "http://localhost:8080/api/github/callback",
+    it("returns connected with user when token exists", async () => {
+      const user = { login: "octocat", avatar_url: "https://avatars.githubusercontent.com/u/1", name: "Octocat" };
+      const app = Fastify();
+      const lapis = createMockLapis({
+        github_token: { access_token: "ghp_abc123", created_at: "2026-01-01T00:00:00Z" },
+        github_user: user,
+      });
+      registerGitHubRoutes(app, { lapis });
+
+      const res = await app.inject({ method: "GET", url: "/api/github/status" });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ connected: true, user });
     });
   });
 
-  it("returns saved config without exposing the client secret", async () => {
-    const app = Fastify();
-    const lapis = createMockLapis({
-      github_config: {
-        clientId: "saved-id",
-        clientSecret: "saved-secret",
-        callbackUrl: "http://localhost:8080/api/github/callback",
-      },
+  describe("POST /api/github/connect", () => {
+    it("validates token and stores user", async () => {
+      const user = { login: "octocat", avatar_url: "https://avatars.githubusercontent.com/u/1", name: "Octocat" };
+      mockGetUser.mockResolvedValueOnce(user);
+
+      const app = Fastify();
+      const settings: Record<string, unknown> = {};
+      const lapis = createMockLapis(settings);
+      registerGitHubRoutes(app, { lapis });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/github/connect",
+        payload: { token: "ghp_abc123" },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ connected: true, user });
+      expect(lapis.setSetting).toHaveBeenCalledWith("github_token", expect.objectContaining({ access_token: "ghp_abc123" }));
+      expect(lapis.setSetting).toHaveBeenCalledWith("github_user", user);
     });
-    registerGitHubRoutes(app, { lapis, clientId: undefined, clientSecret: undefined, callbackUrl: "http://localhost:8080/api/github/callback" });
 
-    const res = await app.inject({ method: "GET", url: "/api/github/config" });
+    it("rejects missing token", async () => {
+      const app = Fastify();
+      const lapis = createMockLapis();
+      registerGitHubRoutes(app, { lapis });
 
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ configured: true, clientId: "saved-id", callbackUrl: "http://localhost:8080/api/github/callback", hasClientSecret: true });
-    expect(JSON.stringify(res.json())).not.toContain("saved-secret");
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/github/connect",
+        payload: {},
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error: "token is required" });
+    });
+
+    it("rejects invalid token", async () => {
+      mockGetUser.mockRejectedValueOnce(new Error("GitHub getUser failed: 401"));
+
+      const app = Fastify();
+      const lapis = createMockLapis();
+      registerGitHubRoutes(app, { lapis });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/github/connect",
+        payload: { token: "invalid-token" },
+      });
+
+      expect(res.statusCode).toBe(401);
+      expect(res.json()).toEqual({ error: "Invalid GitHub token" });
+      expect(lapis.setSetting).not.toHaveBeenCalled();
+    });
   });
 
-  it("uses saved config to generate the GitHub authorize URL", async () => {
-    const app = Fastify();
-    const lapis = createMockLapis({
-      github_config: {
-        clientId: "saved-id",
-        clientSecret: "saved-secret",
-        callbackUrl: "http://localhost:8080/api/github/callback",
-      },
+  describe("POST /api/github/disconnect", () => {
+    it("clears stored token and user", async () => {
+      const app = Fastify();
+      const settings: Record<string, unknown> = {
+        github_token: { access_token: "ghp_abc123", created_at: "2026-01-01T00:00:00Z" },
+        github_user: { login: "octocat", avatar_url: "https://avatars.githubusercontent.com/u/1", name: null },
+      };
+      const lapis = createMockLapis(settings);
+      registerGitHubRoutes(app, { lapis });
+
+      const res = await app.inject({ method: "POST", url: "/api/github/disconnect" });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ success: true });
+      expect(lapis.deleteSetting).toHaveBeenCalledWith("github_token");
+      expect(lapis.deleteSetting).toHaveBeenCalledWith("github_user");
     });
-    registerGitHubRoutes(app, { lapis, clientId: undefined, clientSecret: undefined, callbackUrl: "http://localhost:8080/api/github/callback" });
-
-    const res = await app.inject({ method: "GET", url: "/api/github/connect" });
-
-    expect(res.statusCode).toBe(200);
-    const url = new URL(res.json().url);
-    expect(url.hostname).toBe("github.com");
-    expect(url.searchParams.get("client_id")).toBe("saved-id");
-    expect(url.searchParams.get("redirect_uri")).toBe("http://localhost:8080/api/github/callback");
   });
 
-  it("rejects connect when GitHub config is missing", async () => {
-    const app = Fastify();
-    const lapis = createMockLapis();
-    registerGitHubRoutes(app, { lapis, clientId: undefined, clientSecret: undefined, callbackUrl: "http://localhost:8080/api/github/callback" });
+  describe("GET /api/github/repos", () => {
+    it("returns repos when connected", async () => {
+      const repos = [{ id: 1, full_name: "octocat/hello-world", clone_url: "https://github.com/octocat/hello-world.git", private: false, default_branch: "main", updated_at: "2026-01-01T00:00:00Z" }];
+      mockListRepos.mockResolvedValueOnce(repos);
 
-    const res = await app.inject({ method: "GET", url: "/api/github/connect" });
+      const app = Fastify();
+      const lapis = createMockLapis({
+        github_token: { access_token: "ghp_abc123", created_at: "2026-01-01T00:00:00Z" },
+      });
+      registerGitHubRoutes(app, { lapis });
 
-    expect(res.statusCode).toBe(400);
-    expect(res.json()).toEqual({ error: "GitHub OAuth is not configured" });
+      const res = await app.inject({ method: "GET", url: "/api/github/repos" });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual(repos);
+      expect(mockListRepos).toHaveBeenCalledWith("ghp_abc123");
+    });
+
+    it("returns 401 when not connected", async () => {
+      const app = Fastify();
+      const lapis = createMockLapis();
+      registerGitHubRoutes(app, { lapis });
+
+      const res = await app.inject({ method: "GET", url: "/api/github/repos" });
+
+      expect(res.statusCode).toBe(401);
+      expect(res.json()).toEqual({ error: "GitHub not connected" });
+    });
+
+    it("returns 502 when GitHub API fails", async () => {
+      mockListRepos.mockRejectedValueOnce(new Error("GitHub listRepos failed: 500"));
+
+      const app = Fastify();
+      const lapis = createMockLapis({
+        github_token: { access_token: "ghp_abc123", created_at: "2026-01-01T00:00:00Z" },
+      });
+      registerGitHubRoutes(app, { lapis });
+
+      const res = await app.inject({ method: "GET", url: "/api/github/repos" });
+
+      expect(res.statusCode).toBe(502);
+      expect(res.json()).toEqual({ error: "Failed to fetch repos from GitHub" });
+    });
   });
 });

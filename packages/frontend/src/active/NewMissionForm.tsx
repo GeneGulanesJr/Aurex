@@ -43,25 +43,6 @@ export function NewMissionForm({ onSubmit, github }: NewMissionFormProps) {
 
   return (
     <div style={{ padding: "8px 16px", borderBottom: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: "8px" }}>
-      {github?.configured && !github.connected && (
-        <button
-          onClick={() => void github.connect()}
-          style={{
-            padding: "6px 8px",
-            background: "transparent",
-            color: "var(--accent)",
-            border: "1px solid var(--accent-dim)",
-            borderRadius: "4px",
-            fontSize: "11px",
-            fontFamily: '"JetBrains Mono", monospace',
-            cursor: "pointer",
-            textTransform: "uppercase" as const,
-            letterSpacing: "1px",
-          }}
-        >
-          Connect GitHub
-        </button>
-      )}
       {github?.connected && github.repos.length > 0 && (
         <RepoPicker repos={github.repos} selectedRepoId={state.selectedRepoId} onSelect={handleRepoSelect} />
       )}

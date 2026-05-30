@@ -31,8 +31,6 @@ export interface PublicPinyxConfig {
 
 interface PinyxRouteDeps {
   lapis: LaPisClient;
-  endpoint: string;
-  modelHints: MissionConfig["modelHints"];
 }
 
 function publicProvider(provider: PinyxProviderConfig): PublicPinyxProviderConfig {
@@ -52,23 +50,37 @@ export function publicPinyxConfig(config: PinyxConfigSetting): PublicPinyxConfig
   };
 }
 
-export async function resolvePinyxConfig(
-  lapis: LaPisClient,
-  defaults: { endpoint: string; modelHints: MissionConfig["modelHints"] },
-): Promise<PinyxConfigSetting> {
-  const saved = await lapis.getSetting<Partial<PinyxConfigSetting>>("pinyx_config");
+const defaultModelHints: Record<AgentType, string> = {
+  orchestrator: "reasoning-strong",
+  worker: "code-fast",
+  validator_scrutiny: "reasoning",
+  validator_user_testing: "computer-use",
+  research: "fast-cheap",
+};
+
+export async function resolvePinyxConfig(lapis: LaPisClient): Promise<PinyxConfigSetting | null> {
+  const saved = await lapis.getSetting<PinyxConfigSetting>("pinyx_config");
+  if (!saved?.endpoint) return null;
   return {
-    endpoint: saved?.endpoint || defaults.endpoint,
-    modelHints: { ...defaults.modelHints, ...(saved?.modelHints ?? {}) },
-    providers: saved?.providers ?? [],
+    endpoint: saved.endpoint,
+    modelHints: { ...defaultModelHints, ...(saved.modelHints ?? {}) },
+    providers: saved.providers ?? [],
   };
 }
 
 export function registerPinyxRoutes(app: FastifyInstance, deps: PinyxRouteDeps) {
-  const defaults = { endpoint: deps.endpoint, modelHints: deps.modelHints };
+  const { lapis } = deps;
+
+  app.get("/api/pinyx/status", async () => {
+    const config = await resolvePinyxConfig(lapis);
+    return { configured: Boolean(config), endpoint: config?.endpoint ?? null };
+  });
 
   app.get("/api/pinyx/config", async () => {
-    const config = await resolvePinyxConfig(deps.lapis, defaults);
+    const config = await resolvePinyxConfig(lapis);
+    if (!config) {
+      return { endpoint: "", modelHints: defaultModelHints, providers: [] };
+    }
     return publicPinyxConfig(config);
   });
 
@@ -77,8 +89,20 @@ export function registerPinyxRoutes(app: FastifyInstance, deps: PinyxRouteDeps) 
     if (!body.endpoint) {
       return reply.status(400).send({ error: "endpoint is required" });
     }
-    const existing = await resolvePinyxConfig(deps.lapis, defaults);
-    const existingById = new Map(existing.providers.map((provider) => [provider.id, provider]));
+
+    // Validate endpoint is reachable
+    const endpoint = body.endpoint.replace(/\/$/, "");
+    try {
+      const res = await fetch(`${endpoint}/v1/models`, { method: "GET" });
+      if (!res.ok) {
+        return reply.status(502).send({ error: `PiNyx endpoint returned ${res.status}` });
+      }
+    } catch {
+      return reply.status(502).send({ error: "Cannot reach PiNyx endpoint" });
+    }
+
+    const existing = await resolvePinyxConfig(lapis);
+    const existingById = new Map((existing?.providers ?? []).map((p) => [p.id, p]));
     const providers = (body.providers ?? []).map((provider) => {
       const existingProvider = existingById.get(provider.id);
       return {
@@ -90,15 +114,18 @@ export function registerPinyxRoutes(app: FastifyInstance, deps: PinyxRouteDeps) 
     });
     const config: PinyxConfigSetting = {
       endpoint: body.endpoint,
-      modelHints: { ...defaults.modelHints, ...(body.modelHints ?? {}) },
+      modelHints: { ...defaultModelHints, ...(body.modelHints ?? {}) },
       providers,
     };
-    await deps.lapis.setSetting("pinyx_config", config);
+    await lapis.setSetting("pinyx_config", config);
     return publicPinyxConfig(config);
   });
 
   app.get("/api/pinyx/models", async (_request, reply) => {
-    const config = await resolvePinyxConfig(deps.lapis, defaults);
+    const config = await resolvePinyxConfig(lapis);
+    if (!config) {
+      return reply.status(400).send({ error: "PiNyx is not configured" });
+    }
     const endpoint = config.endpoint.replace(/\/$/, "");
     try {
       const res = await fetch(`${endpoint}/v1/models`, { method: "GET" });

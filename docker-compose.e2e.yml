@@ -33,7 +33,6 @@ services:
       - "3000:3000"
     environment:
       - LAPIS_ENDPOINT=http://lapis:9100
-      - PINYX_ENDPOINT=http://pinyx-stub:7331
       - REPO_ROOT=/workspace
       - GIT_MAIN_BRANCH=main
     volumes:

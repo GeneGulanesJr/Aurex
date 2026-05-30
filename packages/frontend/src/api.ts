@@ -75,7 +75,6 @@ export async function getHealth(): Promise<HealthResponse> {
 }
 
 export interface GitHubStatusResponse {
-  configured: boolean;
   connected: boolean;
   user: { login: string; avatar_url: string; name: string | null } | null;
 }
@@ -89,45 +88,20 @@ export interface GitHubRepoResponse {
   updated_at: string;
 }
 
-export interface GitHubConfigResponse {
-  configured: boolean;
-  clientId: string;
-  callbackUrl: string;
-  hasClientSecret: boolean;
-}
-
-export interface SaveGitHubConfigRequest {
-  clientId: string;
-  clientSecret: string;
-  callbackUrl: string;
-}
-
-export async function getGitHubConfig(): Promise<GitHubConfigResponse> {
-  const res = await apiFetch("/api/github/config");
-  if (!res.ok) throw new Error(`Failed to fetch GitHub config: ${res.status}`);
-  return res.json() as Promise<GitHubConfigResponse>;
-}
-
-export async function saveGitHubConfig(config: SaveGitHubConfigRequest): Promise<GitHubConfigResponse> {
-  const res = await apiFetch("/api/github/config", {
+export async function connectGitHub(token: string): Promise<GitHubStatusResponse> {
+  const res = await apiFetch("/api/github/connect", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(config),
+    body: JSON.stringify({ token }),
   });
-  if (!res.ok) throw new Error(`Failed to save GitHub config: ${res.status}`);
-  return res.json() as Promise<GitHubConfigResponse>;
+  if (!res.ok) throw new Error(`Failed to connect GitHub: ${res.status}`);
+  return res.json() as Promise<GitHubStatusResponse>;
 }
 
 export async function getGitHubStatus(): Promise<GitHubStatusResponse> {
   const res = await apiFetch("/api/github/status");
   if (!res.ok) throw new Error(`Failed to fetch GitHub status: ${res.status}`);
   return res.json() as Promise<GitHubStatusResponse>;
-}
-
-export async function getGitHubConnectUrl(): Promise<{ url: string }> {
-  const res = await apiFetch("/api/github/connect");
-  if (!res.ok) throw new Error(`Failed to start GitHub OAuth: ${res.status}`);
-  return res.json() as Promise<{ url: string }>;
 }
 
 export async function getGitHubRepos(): Promise<GitHubRepoResponse[]> {
@@ -140,6 +114,17 @@ export async function disconnectGitHub(): Promise<{ success: boolean }> {
   const res = await apiFetch("/api/github/disconnect", { method: "POST" });
   if (!res.ok) throw new Error(`Failed to disconnect GitHub: ${res.status}`);
   return res.json() as Promise<{ success: boolean }>;
+}
+
+export interface PinyxStatusResponse {
+  configured: boolean;
+  endpoint: string | null;
+}
+
+export async function getPinyxStatus(): Promise<PinyxStatusResponse> {
+  const res = await apiFetch("/api/pinyx/status");
+  if (!res.ok) throw new Error(`Failed to fetch PiNyx status: ${res.status}`);
+  return res.json() as Promise<PinyxStatusResponse>;
 }
 
 export interface PinyxProviderConfigResponse {

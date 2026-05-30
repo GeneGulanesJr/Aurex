@@ -6,6 +6,7 @@ import type { CheckpointDecision, CheckpointTrigger, Milestone } from "@aurex/sh
 import type { EscalationTrigger, EscalationContext, AgentType, AgentStatus, MilestoneStatus } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { PinyxClient } from "../clients/pinyx-client.js";
+import { createPinyxClient } from "../clients/pinyx-client.js";
 import type { EventBus } from "../ws/events.js";
 import { createCheckpointManager } from "./checkpoint-manager.js";
 import { createMilestoneLoop } from "./milestone-loop.js";
@@ -63,7 +64,6 @@ export interface MissionRunner {
 
 export interface MissionRunnerConfig {
   lapis: LaPisClient;
-  pinyx: PinyxClient;
   eventBus: EventBus;
   agentDir: string;
   repoRoot: string;
@@ -71,7 +71,7 @@ export interface MissionRunnerConfig {
 }
 
 export function createMissionRunner(config: MissionRunnerConfig): MissionRunner {
-  const { lapis, pinyx, eventBus, agentDir, repoRoot, gitMainBranch } = config;
+  const { lapis, eventBus, agentDir, repoRoot, gitMainBranch } = config;
   const checkpointManager = createCheckpointManager(lapis);
   const compression = createCompressionService(lapis, eventBus);
 
@@ -89,9 +89,16 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
     for (const resolve of waiters) resolve();
   }
 
+  async function resolvePinyx(): Promise<PinyxClient> {
+    const saved = await lapis.getSetting<{ endpoint: string }>("pinyx_config");
+    if (!saved?.endpoint) throw new Error("PiNyx is not configured. Configure it in the Integrations panel.");
+    return createPinyxClient({ endpoint: saved.endpoint });
+  }
+
   async function runMission(missionId: string): Promise<void> {
     try {
       setStatus("planning", missionId);
+      const pinyx = await resolvePinyx();
       const mission = await lapis.getMission(missionId);
       const missionRepoRoot = await prepareMissionRepo(lapis, repoRoot, mission.configJson.cloneUrl);
       const planner = createPlanner(lapis, pinyx, { model: mission.configJson.modelHints.orchestrator });

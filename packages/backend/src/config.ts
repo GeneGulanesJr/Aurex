@@ -4,18 +4,6 @@ export interface AppConfig {
   // LaPis (shared state) — HTTP only
   lapisEndpoint: string;
 
-  // PiNyx (LLM gateway)
-  pinyxEndpoint: string;
-
-  // Agent model hints (passed to PiNyx routing)
-  modelHints: {
-    orchestrator: string;
-    worker: string;
-    validator_scrutiny: string;
-    validator_user_testing: string;
-    research: string;
-  };
-
   // Agent timeouts (ms)
   workerTimeouts: {
     simple: number;
@@ -40,11 +28,6 @@ export interface AppConfig {
   // Authentication
   apiKey: string | null;
 
-  // GitHub OAuth
-  githubClientId?: string;
-  githubClientSecret?: string;
-  githubCallbackUrl: string;
-
   // Multi-mission concurrency
   maxConcurrentMissions: number;
 }
@@ -68,28 +51,15 @@ function envFloat(key: string, fallback: number): number {
 }
 
 export function loadConfig(): AppConfig {
-  const required = ["LAPIS_ENDPOINT", "PINYX_ENDPOINT", "REPO_ROOT"];
+  const required = ["LAPIS_ENDPOINT", "REPO_ROOT"];
   for (const key of required) {
     if (!process.env[key]) {
       throw new Error(`Missing required env var: ${key}`);
     }
   }
 
-  const githubClientId = env("GITHUB_CLIENT_ID", "");
-  const githubClientSecret = env("GITHUB_CLIENT_SECRET", "");
-  const githubCallbackUrl = env("GITHUB_CALLBACK_URL", "http://localhost:8080/api/github/callback");
-
   return {
     lapisEndpoint: env("LAPIS_ENDPOINT"),
-    pinyxEndpoint: env("PINYX_ENDPOINT"),
-
-    modelHints: {
-      orchestrator: env("MODEL_ORCHESTRATOR", "reasoning-strong"),
-      worker: env("MODEL_WORKER", "code-fast"),
-      validator_scrutiny: env("MODEL_VALIDATOR_SCRUTINY", "reasoning"),
-      validator_user_testing: env("MODEL_VALIDATOR_USER_TESTING", "computer-use"),
-      research: env("MODEL_RESEARCH", "fast-cheap"),
-    },
 
     workerTimeouts: {
       simple: envInt("WORKER_TIMEOUT_SIMPLE", 120_000),
@@ -108,9 +78,6 @@ export function loadConfig(): AppConfig {
 
     port: envInt("PORT", 3000),
     apiKey: process.env.API_KEY || null,
-    githubClientId: githubClientId || undefined,
-    githubClientSecret: githubClientSecret || undefined,
-    githubCallbackUrl,
     maxConcurrentMissions: envInt("MAX_CONCURRENT_MISSIONS", 3),
   };
 }

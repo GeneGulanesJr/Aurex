@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import Fastify from "fastify";
 import { registerPinyxRoutes } from "../../src/routes/pinyx";
 import type { LaPisClient } from "../../src/clients/lapis-client";
@@ -19,21 +19,56 @@ const defaultModelHints = {
 };
 
 describe("PiNyx integration routes", () => {
-  it("returns default PiNyx config when no saved config exists", async () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("returns empty config when no saved config exists", async () => {
     const app = Fastify();
     const lapis = createMockLapis();
-    registerPinyxRoutes(app, { lapis, endpoint: "http://pinyx-stub:7331", modelHints: defaultModelHints });
+    registerPinyxRoutes(app, { lapis });
 
     const res = await app.inject({ method: "GET", url: "/api/pinyx/config" });
 
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ endpoint: "http://pinyx-stub:7331", modelHints: defaultModelHints, providers: [] });
+    expect(res.json()).toEqual({ endpoint: "", modelHints: defaultModelHints, providers: [] });
   });
 
-  it("saves endpoint, model hints, and providers", async () => {
+  it("returns unconfigured status when no saved config", async () => {
     const app = Fastify();
     const lapis = createMockLapis();
-    registerPinyxRoutes(app, { lapis, endpoint: "http://pinyx-stub:7331", modelHints: defaultModelHints });
+    registerPinyxRoutes(app, { lapis });
+
+    const res = await app.inject({ method: "GET", url: "/api/pinyx/status" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ configured: false, endpoint: null });
+  });
+
+  it("returns configured status when config exists", async () => {
+    const app = Fastify();
+    const lapis = createMockLapis({
+      pinyx_config: { endpoint: "http://pinyx.example", modelHints: defaultModelHints, providers: [] },
+    });
+    registerPinyxRoutes(app, { lapis });
+
+    const res = await app.inject({ method: "GET", url: "/api/pinyx/status" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ configured: true, endpoint: "http://pinyx.example" });
+  });
+
+  it("saves endpoint, model hints, and providers after validating endpoint", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [] }) });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const app = Fastify();
+    const lapis = createMockLapis();
+    registerPinyxRoutes(app, { lapis });
 
     const payload = {
       endpoint: "http://host.docker.internal:7331",
@@ -47,8 +82,28 @@ describe("PiNyx integration routes", () => {
     expect(lapis.setSetting).toHaveBeenCalledWith("pinyx_config", payload);
   });
 
-  it("preserves existing provider API key when frontend sends no replacement", async () => {
+  it("rejects save when endpoint is unreachable", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")));
+
     const app = Fastify();
+    const lapis = createMockLapis();
+    registerPinyxRoutes(app, { lapis });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/pinyx/config",
+      payload: { endpoint: "http://bad-host:7331", modelHints: defaultModelHints, providers: [] },
+    });
+
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toEqual({ error: "Cannot reach PiNyx endpoint" });
+    expect(lapis.setSetting).not.toHaveBeenCalled();
+  });
+
+  it("preserves existing provider API key when frontend sends no replacement", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [] }) });
+    vi.stubGlobal("fetch", mockFetch);
+
     const settings = {
       pinyx_config: {
         endpoint: "http://pinyx.example",
@@ -56,8 +111,9 @@ describe("PiNyx integration routes", () => {
         providers: [{ id: "openai", name: "OpenAI", baseUrl: "https://api.openai.com/v1", apiKey: "saved-key" }],
       },
     };
+    const app = Fastify();
     const lapis = createMockLapis(settings);
-    registerPinyxRoutes(app, { lapis, endpoint: "http://pinyx-stub:7331", modelHints: defaultModelHints });
+    registerPinyxRoutes(app, { lapis });
 
     const res = await app.inject({
       method: "POST",
@@ -84,7 +140,7 @@ describe("PiNyx integration routes", () => {
         providers: [{ id: "anthropic", name: "Anthropic", baseUrl: "https://api.anthropic.com", apiKey: "secret" }],
       },
     });
-    registerPinyxRoutes(app, { lapis, endpoint: "http://pinyx-stub:7331", modelHints: defaultModelHints });
+    registerPinyxRoutes(app, { lapis });
 
     const res = await app.inject({ method: "GET", url: "/api/pinyx/config" });
 
@@ -96,7 +152,7 @@ describe("PiNyx integration routes", () => {
   it("fetches models from configured PiNyx endpoint", async () => {
     const app = Fastify();
     const lapis = createMockLapis({ pinyx_config: { endpoint: "http://pinyx.example", modelHints: defaultModelHints, providers: [] } });
-    registerPinyxRoutes(app, { lapis, endpoint: "http://pinyx-stub:7331", modelHints: defaultModelHints });
+    registerPinyxRoutes(app, { lapis });
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ id: "gpt-4o-mini" }] }) });
     vi.stubGlobal("fetch", mockFetch);
 
@@ -105,6 +161,16 @@ describe("PiNyx integration routes", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ models: [{ id: "gpt-4o-mini" }] });
     expect(mockFetch).toHaveBeenCalledWith("http://pinyx.example/v1/models", expect.objectContaining({ method: "GET" }));
-    vi.unstubAllGlobals();
+  });
+
+  it("rejects models fetch when PiNyx not configured", async () => {
+    const app = Fastify();
+    const lapis = createMockLapis();
+    registerPinyxRoutes(app, { lapis });
+
+    const res = await app.inject({ method: "GET", url: "/api/pinyx/models" });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: "PiNyx is not configured" });
   });
 });

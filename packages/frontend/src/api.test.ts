@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getCurrentMission, createMission, getGitHubConfig, saveGitHubConfig, getPinyxConfig, savePinyxConfig, getPinyxModels } from "./api";
+import { getCurrentMission, createMission, connectGitHub, getPinyxConfig, savePinyxConfig, getPinyxModels, getPinyxStatus } from "./api";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
@@ -55,12 +55,19 @@ describe("frontend api", () => {
     );
   });
 
-  it("getGitHubConfig reads frontend-safe GitHub OAuth config", async () => {
-    const payload = { configured: true, clientId: "cid", callbackUrl: "http://localhost:8080/api/github/callback", hasClientSecret: true };
+  it("connectGitHub validates and stores a PAT", async () => {
+    const payload = { connected: true, user: { login: "octocat", avatar_url: "https://avatars.githubusercontent.com/u/1", name: "Octocat" } };
     mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => payload });
 
-    await expect(getGitHubConfig()).resolves.toEqual(payload);
-    expect(mockFetch).toHaveBeenCalledWith("/api/github/config", expect.objectContaining({ headers: expect.any(Object) }));
+    await expect(connectGitHub("ghp_test123")).resolves.toEqual(payload);
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/github/connect",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ token: "ghp_test123" }),
+      }),
+    );
   });
 
   it("reads PiNyx integration config", async () => {
@@ -69,6 +76,14 @@ describe("frontend api", () => {
 
     await expect(getPinyxConfig()).resolves.toEqual(payload);
     expect(mockFetch).toHaveBeenCalledWith("/api/pinyx/config", expect.objectContaining({ headers: expect.any(Object) }));
+  });
+
+  it("reads PiNyx status", async () => {
+    const payload = { configured: true, endpoint: "http://pinyx:7331" };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => payload });
+
+    await expect(getPinyxStatus()).resolves.toEqual(payload);
+    expect(mockFetch).toHaveBeenCalledWith("/api/pinyx/status", expect.objectContaining({ headers: expect.any(Object) }));
   });
 
   it("saves PiNyx integration config", async () => {
@@ -90,18 +105,5 @@ describe("frontend api", () => {
     expect(mockFetch).toHaveBeenCalledWith("/api/pinyx/models", expect.objectContaining({ headers: expect.any(Object) }));
   });
 
-  it("saveGitHubConfig posts client id, secret, and callback url", async () => {
-    const payload = { configured: true, clientId: "cid", callbackUrl: "http://localhost:8080/api/github/callback", hasClientSecret: true };
-    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => payload });
 
-    await expect(saveGitHubConfig({ clientId: "cid", clientSecret: "secret", callbackUrl: "http://localhost:8080/api/github/callback" })).resolves.toEqual(payload);
-    expect(mockFetch).toHaveBeenCalledWith(
-      "/api/github/config",
-      expect.objectContaining({
-        method: "POST",
-        headers: expect.objectContaining({ "Content-Type": "application/json" }),
-        body: JSON.stringify({ clientId: "cid", clientSecret: "secret", callbackUrl: "http://localhost:8080/api/github/callback" }),
-      }),
-    );
-  });
 });
