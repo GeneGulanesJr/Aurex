@@ -3,7 +3,6 @@ import Fastify from "fastify";
 import websocket from "@fastify/websocket";
 import { loadConfig } from "./config.js";
 import { createLaPisClient } from "./clients/lapis-client.js";
-import { createPinyxClient } from "./clients/pinyx-client.js";
 import { createEventBus, registerWebSocketRoutes } from "./ws/events.js";
 import { createMissionRunnerPool } from "./orchestrator/mission-runner-pool.js";
 import { missionRoutes } from "./routes/missions.js";
@@ -15,10 +14,9 @@ import { registerPinyxRoutes } from "./routes/pinyx.js";
 async function main() {
   const config = loadConfig();
   const lapis = createLaPisClient({ lapisEndpoint: config.lapisEndpoint });
-  const pinyx = createPinyxClient({ endpoint: config.pinyxEndpoint });
   const eventBus = createEventBus();
 
-  // Startup healthchecks
+  // Startup healthcheck — LaPis is required
   try {
     await lapis.ping();
     console.log("[startup] LaPis connected");
@@ -27,17 +25,8 @@ async function main() {
     process.exit(1);
   }
 
-  try {
-    await pinyx.ping();
-    console.log("[startup] PiNyx connected");
-  } catch {
-    console.error("[startup] PiNyx UNREACHABLE — exiting");
-    process.exit(1);
-  }
-
   const pool = createMissionRunnerPool({
     lapis,
-    pinyx,
     eventBus,
     agentDir: process.env.PI_AGENT_DIR || `${process.env.HOME}/.pi/agent`,
     repoRoot: config.repoRoot,
@@ -66,9 +55,7 @@ async function main() {
   // Health endpoint
   app.get("/health", async () => {
     const lapisOk = await lapis.ping().then(() => true, () => false);
-    const pinyxOk = await pinyx.ping().then(() => true, () => false);
-    const ok = lapisOk && pinyxOk;
-    return { status: ok ? "ok" : "degraded", lapis: lapisOk, pinyx: pinyxOk };
+    return { status: lapisOk ? "ok" : "degraded", lapis: lapisOk };
   });
 
   // REST routes
@@ -76,7 +63,6 @@ async function main() {
     lapis,
     pool,
     missionConfig: {
-      modelHints: config.modelHints,
       workerTimeouts: config.workerTimeouts,
       costCap: config.missionCostCap,
       maxValidatorRetries: config.maxValidatorRetries,
@@ -85,14 +71,10 @@ async function main() {
   });
   await app.register(checkpointRoutes, { lapis });
 
-  // PiNyx config (env-backed defaults, UI-configured overrides stored in LaPis settings)
-  registerPinyxRoutes(app, {
-    lapis,
-    endpoint: config.pinyxEndpoint,
-    modelHints: config.modelHints,
-  });
+  // PiNyx config (fully UI-configured, stored in LaPis settings)
+  registerPinyxRoutes(app, { lapis });
 
-  // GitHub OAuth/config (env-backed or configured from UI into LaPis settings)
+  // GitHub PAT (fully UI-configured, stored in LaPis settings)
   registerGitHubRoutes(app, { lapis });
 
   // Start

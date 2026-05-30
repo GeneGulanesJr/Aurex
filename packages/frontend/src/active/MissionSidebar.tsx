@@ -11,6 +11,7 @@ interface MissionSidebarProps {
   onRemove: (missionId: string) => void;
   onCreateMission: (description: string, cloneUrl?: string) => Promise<void>;
   github?: UseGitHubReturn;
+  systemReady?: boolean;
 }
 
 function statusBadge(state: string): { label: string; style: React.CSSProperties } {
@@ -31,7 +32,7 @@ function statusBadge(state: string): { label: string; style: React.CSSProperties
   }
 }
 
-export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove, onCreateMission, github }: MissionSidebarProps) {
+export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove, onCreateMission, github, systemReady }: MissionSidebarProps) {
   const handleAbort = useCallback(async (e: React.MouseEvent, missionId: string) => {
     e.stopPropagation();
     try {
@@ -50,7 +51,11 @@ export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove
         <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "8px" }}>
           <div style={{ width: "32px", height: "32px", border: "1px dashed var(--border)", borderRadius: "4px", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--border-bright)", fontSize: "16px" }}>◎</div>
           <span style={{ fontSize: "11px", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace' }}>NO ACTIVE MISSIONS</span>
-          <span style={{ fontSize: "10px", color: "var(--border-bright)" }}>Create a mission to begin</span>
+          {!systemReady ? (
+            <span style={{ fontSize: "10px", color: "var(--warning)" }}>Configure integrations first</span>
+          ) : (
+            <span style={{ fontSize: "10px", color: "var(--border-bright)" }}>Create a mission to begin</span>
+          )}
         </div>
         <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", fontFamily: '"JetBrains Mono", monospace', fontSize: "11px", color: "var(--text-muted)" }}>
           <span>TOTAL SPENT</span>
@@ -65,7 +70,14 @@ export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove
       <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)" }}>
         <h2 style={{ fontSize: "11px", fontWeight: 500, color: "var(--text-secondary)", fontFamily: '"JetBrains Mono", monospace', textTransform: "uppercase", letterSpacing: "2px", margin: 0 }}>Missions</h2>
       </div>
-      <NewMissionForm onSubmit={onCreateMission} github={github} />
+      {!systemReady ? (
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: "4px" }}>
+          <span style={{ color: "var(--warning)", fontSize: "11px", fontFamily: '"JetBrains Mono", monospace', textTransform: "uppercase", letterSpacing: "1px" }}>Integrations Required</span>
+          <span style={{ color: "var(--text-muted)", fontSize: "10px" }}>Configure GitHub & PiNyx in Integrations panel before creating missions.</span>
+        </div>
+      ) : (
+        <NewMissionForm onSubmit={onCreateMission} github={github} />
+      )}
       <div style={{ flex: 1, overflowY: "auto" }}>
         {missions.map((mission) => {
           const badge = statusBadge(mission.state);

@@ -17,7 +17,7 @@ export interface MissionRunnerPool {
   drain(): Promise<void>;
 }
 
-export interface MissionRunnerPoolConfig extends MissionRunnerConfig {
+export interface MissionRunnerPoolConfig extends Omit<MissionRunnerConfig, "eventBus"> {
   maxConcurrent: number;
   eventBus: EventBus;
 }

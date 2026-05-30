@@ -78,14 +78,8 @@ describe("POST /api/missions", () => {
   it("creates missions with configured concrete PiNyx model hints", async () => {
     const app = Fastify();
     const mockLapis = {
-      getSetting: vi.fn().mockResolvedValue(null),
-      createMission: vi.fn().mockResolvedValue({ id: "m-1", status: "planning" }),
-    } as unknown as LaPisClient;
-
-    app.register(missionRoutes, {
-      lapis: mockLapis,
-      pool: createMockPool(),
-      missionConfig: {
+      getSetting: vi.fn().mockResolvedValue({
+        endpoint: "http://pinyx:7331",
         modelHints: {
           orchestrator: "kilo/kilo-auto/free",
           worker: "kilo/kilo-auto/free",
@@ -93,6 +87,14 @@ describe("POST /api/missions", () => {
           validator_user_testing: "kilo/kilo-auto/free",
           research: "kilo/kilo-auto/free",
         },
+      }),
+      createMission: vi.fn().mockResolvedValue({ id: "m-1", status: "planning" }),
+    } as unknown as LaPisClient;
+
+    app.register(missionRoutes, {
+      lapis: mockLapis,
+      pool: createMockPool(),
+      missionConfig: {
         workerTimeouts: { simple: 1, build: 2, testHeavy: 3 },
         costCap: 10,
         maxValidatorRetries: 1,

@@ -38,13 +38,30 @@ vi.mock("@earendil-works/pi-coding-agent", () => {
 
 vi.mock("node:child_process", () => ({ exec: vi.fn(), execFile: vi.fn() }));
 vi.mock("node:util", () => ({ promisify: () => vi.fn().mockResolvedValue({ stdout: "", stderr: "" }) }));
+vi.mock("../src/clients/pinyx-client.js", () => ({
+  createPinyxClient: vi.fn().mockReturnValue({
+    chat: vi.fn().mockResolvedValue({
+      content: JSON.stringify({
+        milestones: [{ title: "M1", description: "First", units: [], criteria: [], testCommands: [] }],
+      }),
+      finishReason: "stop",
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+    }),
+    ping: vi.fn().mockResolvedValue(undefined),
+  }),
+}));
 
 import { createMissionRunner } from "../src/orchestrator/mission-runner";
 import type { LaPisClient } from "../src/clients/lapis-client";
-import type { PinyxClient } from "../src/clients/pinyx-client";
+import { createPinyxClient } from "../src/clients/pinyx-client.js";
 
 function createMockLapis(): LaPisClient {
   return {
+    getSetting: vi.fn().mockImplementation((key: string) => {
+      if (key === "pinyx_config") return { endpoint: "http://pinyx:7331" };
+      if (key === "github_token") return null;
+      return null;
+    }),
     getMission: vi.fn().mockResolvedValue({
       id: "m-1",
       description: "Build auth",
@@ -101,19 +118,6 @@ function createMockLapis(): LaPisClient {
   } as unknown as LaPisClient;
 }
 
-function createMockPinyx(): PinyxClient {
-  return {
-    chat: vi.fn().mockResolvedValue({
-      content: JSON.stringify({
-        milestones: [{ title: "M1", description: "First", units: [], criteria: [], testCommands: [] }],
-      }),
-      finishReason: "stop",
-      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-    }),
-    ping: vi.fn().mockResolvedValue(undefined),
-  } as unknown as PinyxClient;
-}
-
 const mockEventBus = { emit: vi.fn(), subscribe: vi.fn().mockReturnValue(() => {}) };
 
 describe("MissionRunner", () => {
@@ -124,7 +128,6 @@ describe("MissionRunner", () => {
   it("starts in idle state", () => {
     const runner = createMissionRunner({
       lapis: createMockLapis(),
-      pinyx: createMockPinyx(),
       eventBus: mockEventBus as any,
       agentDir: "/test/.pi/agent",
       repoRoot: "/test/repo",
@@ -139,7 +142,6 @@ describe("MissionRunner", () => {
     (lapis.searchMemory as any).mockImplementation(() => new Promise(() => {}));
     const runner = createMissionRunner({
       lapis,
-      pinyx: createMockPinyx(),
       eventBus: mockEventBus as any,
       agentDir: "/test/.pi/agent",
       repoRoot: "/test/repo",
@@ -153,7 +155,6 @@ describe("MissionRunner", () => {
     const lapis = createMockLapis();
     const runner = createMissionRunner({
       lapis,
-      pinyx: createMockPinyx(),
       eventBus: mockEventBus as any,
       agentDir: "/test/.pi/agent",
       repoRoot: "/test/repo",
@@ -171,7 +172,7 @@ describe("MissionRunner", () => {
 
   it("passes the mission orchestrator model hint to the planner", async () => {
     const lapis = createMockLapis();
-    const pinyx = createMockPinyx();
+    const mockPinyx = createPinyxClient({ endpoint: "http://pinyx:7331" });
     (lapis.getMission as any).mockResolvedValue({
       id: "m-1",
       description: "Build auth",
@@ -193,7 +194,6 @@ describe("MissionRunner", () => {
     });
     const runner = createMissionRunner({
       lapis,
-      pinyx,
       eventBus: mockEventBus as any,
       agentDir: "/test/.pi/agent",
       repoRoot: "/test/repo",
@@ -204,15 +204,15 @@ describe("MissionRunner", () => {
     runner.start("m-1");
     await done;
 
-    expect(pinyx.chat).toHaveBeenCalledWith(expect.objectContaining({ model: "kilo/kilo-auto/free" }));
+    expect(mockPinyx.chat).toHaveBeenCalledWith(expect.objectContaining({ model: "kilo/kilo-auto/free" }));
   });
 
   it("resolves milestone_complete checkpoint and continues to next milestone", async () => {
     const lapis = createMockLapis();
-    const pinyx = createMockPinyx();
+    const mockPinyx = createPinyxClient({ endpoint: "http://pinyx:7331" });
 
     // Plan returns 2 milestones
-    (pinyx.chat as any).mockResolvedValue({
+    (mockPinyx.chat as any).mockResolvedValue({
       content: JSON.stringify({
         milestones: [
           { title: "M1", description: "First", units: [], criteria: [], testCommands: [] },
@@ -244,7 +244,6 @@ describe("MissionRunner", () => {
 
     const runner = createMissionRunner({
       lapis,
-      pinyx,
       eventBus: mockEventBus as any,
       agentDir: "/test/.pi/agent",
       repoRoot: "/test/repo",
@@ -267,10 +266,10 @@ describe("MissionRunner", () => {
 
   it("approval of cost_cap_exceeded checkpoint lets the mission continue", async () => {
     const lapis = createMockLapis();
-    const pinyx = createMockPinyx();
+    const mockPinyx = createPinyxClient({ endpoint: "http://pinyx:7331" });
 
     // Make the plan include a worker so the mocked session emits usage before validation.
-    (pinyx.chat as any).mockResolvedValue({
+    (mockPinyx.chat as any).mockResolvedValue({
       content: JSON.stringify({
         milestones: [{ title: "M1", description: "First", units: [{ description: "Do work", declaredPaths: ["src/a.ts"], declaredModules: ["a"] }], criteria: [], testCommands: [] }],
       }),
@@ -314,7 +313,6 @@ describe("MissionRunner", () => {
 
     const runner = createMissionRunner({
       lapis,
-      pinyx,
       eventBus: mockEventBus as any,
       agentDir: "/test/.pi/agent",
       repoRoot: "/test/repo",

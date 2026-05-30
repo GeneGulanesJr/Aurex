@@ -116,6 +116,17 @@ export async function disconnectGitHub(): Promise<{ success: boolean }> {
   return res.json() as Promise<{ success: boolean }>;
 }
 
+export interface PinyxStatusResponse {
+  configured: boolean;
+  endpoint: string | null;
+}
+
+export async function getPinyxStatus(): Promise<PinyxStatusResponse> {
+  const res = await apiFetch("/api/pinyx/status");
+  if (!res.ok) throw new Error(`Failed to fetch PiNyx status: ${res.status}`);
+  return res.json() as Promise<PinyxStatusResponse>;
+}
+
 export interface PinyxProviderConfigResponse {
   id: string;
   name: string;

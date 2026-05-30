@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getCurrentMission, createMission, connectGitHub, getPinyxConfig, savePinyxConfig, getPinyxModels } from "./api";
+import { getCurrentMission, createMission, connectGitHub, getPinyxConfig, savePinyxConfig, getPinyxModels, getPinyxStatus } from "./api";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
@@ -76,6 +76,14 @@ describe("frontend api", () => {
 
     await expect(getPinyxConfig()).resolves.toEqual(payload);
     expect(mockFetch).toHaveBeenCalledWith("/api/pinyx/config", expect.objectContaining({ headers: expect.any(Object) }));
+  });
+
+  it("reads PiNyx status", async () => {
+    const payload = { configured: true, endpoint: "http://pinyx:7331" };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => payload });
+
+    await expect(getPinyxStatus()).resolves.toEqual(payload);
+    expect(mockFetch).toHaveBeenCalledWith("/api/pinyx/status", expect.objectContaining({ headers: expect.any(Object) }));
   });
 
   it("saves PiNyx integration config", async () => {

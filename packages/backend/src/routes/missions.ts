@@ -4,14 +4,7 @@ import type { MissionConfig } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { MissionRunnerPool } from "../orchestrator/mission-runner-pool.js";
 
-const defaultMissionConfig: MissionConfig = {
-  modelHints: {
-    orchestrator: "reasoning-strong",
-    worker: "code-fast",
-    validator_scrutiny: "reasoning",
-    validator_user_testing: "computer-use",
-    research: "fast-cheap",
-  },
+const defaultMissionConfig: Omit<MissionConfig, "modelHints"> = {
   workerTimeouts: { simple: 120000, build: 300000, testHeavy: 600000 },
   costCap: 50,
   maxValidatorRetries: 2,
@@ -23,7 +16,7 @@ export async function missionRoutes(
   { lapis, pool, missionConfig = defaultMissionConfig }: {
     lapis: LaPisClient;
     pool: MissionRunnerPool;
-    missionConfig?: MissionConfig;
+    missionConfig?: typeof defaultMissionConfig;
   },
 ) {
   async function hydrateMissionPayload(missionId: string) {
@@ -48,7 +41,7 @@ export async function missionRoutes(
     const pinyxConfig = await lapis.getSetting<{ modelHints?: Partial<MissionConfig["modelHints"]> }>("pinyx_config");
     const config: MissionConfig = {
       ...missionConfig,
-      modelHints: { ...missionConfig.modelHints, ...(pinyxConfig?.modelHints ?? {}) },
+      modelHints: { orchestrator: "reasoning-strong", worker: "code-fast", validator_scrutiny: "reasoning", validator_user_testing: "computer-use", research: "fast-cheap", ...pinyxConfig?.modelHints },
       ...(cloneUrl && { cloneUrl }),
     };
     const mission = await lapis.createMission(description, config);
