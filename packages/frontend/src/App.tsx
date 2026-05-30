@@ -1,15 +1,19 @@
-import { useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useMissions } from "./hooks/useMissions";
 import { useMission } from "./hooks/useMission";
+import { useTheme } from "./hooks/useTheme";
 import { MissionSidebar } from "./active/MissionSidebar";
 import { StatusBoard } from "./passive/StatusBoard";
 import { EscalationOverlay } from "./active/EscalationOverlay";
-import { submitCheckpoint } from "./api";
+import { TopBar } from "./frame/TopBar";
+import { TelemetryBar } from "./frame/TelemetryBar";
+import { submitCheckpoint, createMission } from "./api";
 import type { WsClientEvent, CheckpointDecision } from "@aurex/shared";
 
 export function App() {
-  const { state: missionsState, selectMission, removeMission, handleWsEvent: missionsWsHandler } = useMissions();
+  const { theme, setTheme } = useTheme();
+  const { state: missionsState, selectMission, removeMission, addOptimisticMission, handleWsEvent: missionsWsHandler } = useMissions();
   const { state, dispatch, handleWsEvent: missionWsHandler } = useMission(missionsState.selectedMissionId);
   const eventsRef = useRef<WsClientEvent[]>([]);
 
@@ -24,6 +28,23 @@ export function App() {
     apiKey: import.meta.env.VITE_AUREX_API_KEY || undefined,
   });
 
+  // Uptime timer
+  const [uptime, setUptime] = useState("00:00:00");
+  useEffect(() => {
+    if (!connected) { setUptime("00:00:00"); return; }
+    const start = Date.now();
+    const fmt = () => {
+      const s = Math.floor((Date.now() - start) / 1000);
+      const h = String(Math.floor(s / 3600)).padStart(2, "0");
+      const m = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+      const sec = String(s % 60).padStart(2, "0");
+      return `${h}:${m}:${sec}`;
+    };
+    setUptime(fmt());
+    const id = setInterval(() => setUptime(fmt()), 1000);
+    return () => clearInterval(id);
+  }, [connected]);
+
   const handleDecision = useCallback(async (decision: CheckpointDecision, guidance?: string, reason?: string) => {
     if (!state.mission) return;
     const escalation = state.escalation;
@@ -32,26 +53,60 @@ export function App() {
     dispatch({ type: "CLEAR_ESCALATION" });
   }, [state.mission, state.escalation, dispatch]);
 
+  const handleCreateMission = useCallback(async (description: string) => {
+    const { missionId } = await createMission(description);
+    addOptimisticMission(missionId, description);
+  }, [addOptimisticMission]);
+
+  // Connecting overlay
   if (!connected) {
-    return <div className="flex items-center justify-center h-screen text-gray-400">Connecting...</div>;
+    return (
+      <div style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        height: "100vh",
+        background: "var(--bg-deep)",
+        color: "var(--text-muted)",
+        fontFamily: '"JetBrains Mono", monospace',
+        letterSpacing: "4px",
+        fontSize: "13px",
+      }}>
+        <div style={{
+          fontSize: "48px",
+          fontWeight: 700,
+          letterSpacing: "12px",
+          color: "var(--accent)",
+          marginBottom: "16px",
+        }}>AUREX</div>
+        CONNECTING...
+      </div>
+    );
   }
 
+  const activeMissionCount = missionsState.missions.filter(m =>
+    ["queued", "planning", "executing", "waiting_checkpoint"].includes(m.state)
+  ).length;
+
   return (
-    <div className="flex flex-col h-screen">
-      <header className="px-6 py-4 border-b border-gray-800">
-        <h1 className="text-2xl font-bold">Aurex</h1>
-        <span className="text-sm text-gray-400">
-          {state.mission ? state.mission.description : "No active mission"}
-        </span>
-      </header>
-      <div className="flex flex-1 overflow-hidden">
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
+      <TopBar
+        connected={connected}
+        missionCount={activeMissionCount}
+        uptime={uptime}
+        theme={theme}
+        onThemeChange={setTheme}
+      />
+      <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gridTemplateRows: "1fr 36px", flex: 1, overflow: "hidden" }}>
         <MissionSidebar
           missions={missionsState.missions}
           selectedMissionId={missionsState.selectedMissionId}
           onSelect={selectMission}
           onRemove={removeMission}
+          onCreateMission={handleCreateMission}
         />
-        <main className="flex-1 overflow-y-auto">
+        <main style={{ overflowY: "auto", background: "var(--bg-deep)" }}>
           <StatusBoard
             mission={state.mission}
             milestones={state.milestones}
@@ -61,6 +116,12 @@ export function App() {
             blurred={!!state.escalation}
           />
         </main>
+        <TelemetryBar
+          tokens={state.cost?.totalTokens ?? 0}
+          cost={state.cost?.totalCost ?? 0}
+          agentCount={state.activeWorkers.length}
+          wsConnected={connected}
+        />
       </div>
       {state.escalation?.type === "escalation" && (
         <EscalationOverlay

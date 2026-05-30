@@ -1,1 +1,74 @@
 @import "tailwindcss";
+
+/* === Solar Flare (default) === */
+[data-theme="solar-flare"],
+:root {
+  --accent: #e8920d;
+  --accent-bright: #f5a623;
+  --accent-dim: #a66808;
+  --accent-glow: rgba(232, 146, 13, 0.15);
+  --bg-deep: #0f0d0a;
+  --bg-surface: #1a1714;
+  --bg-elevated: #241f19;
+  --bg-inset: #0c0a08;
+  --border: #3d3529;
+  --border-bright: #5a4d3a;
+  --text-primary: #e8dcc8;
+  --text-secondary: #9b8e7a;
+  --text-muted: #6b5f4e;
+}
+
+/* === Frost Command === */
+[data-theme="frost-command"] {
+  --accent: #22d3ee;
+  --accent-bright: #67e8f9;
+  --accent-dim: #0891b2;
+  --accent-glow: rgba(34, 211, 238, 0.12);
+  --bg-deep: #080c11;
+  --bg-surface: #0d1219;
+  --bg-elevated: #141c26;
+  --bg-inset: #060a0e;
+  --border: #1e2d3d;
+  --border-bright: #2a4158;
+  --text-primary: #d4e3f0;
+  --text-secondary: #7a99b5;
+  --text-muted: #4a6580;
+}
+
+/* === Signal Red === */
+[data-theme="signal-red"] {
+  --accent: #ef4444;
+  --accent-bright: #f87171;
+  --accent-dim: #b91c1c;
+  --accent-glow: rgba(239, 68, 68, 0.12);
+  --bg-deep: #0e0c0c;
+  --bg-surface: #161313;
+  --bg-elevated: #1f1b1b;
+  --bg-inset: #0a0909;
+  --border: #332c2c;
+  --border-bright: #4d4242;
+  --text-primary: #e0d6d6;
+  --text-secondary: #998888;
+  --text-muted: #664f4f;
+}
+
+/* Semantic (shared across all themes) */
+:root {
+  --success: #4ade80;
+  --warning: #facc15;
+  --error: #ef4444;
+  --info: #818cf8;
+}
+
+/* Base resets */
+body {
+  margin: 0;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  font-family: "Inter", -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}

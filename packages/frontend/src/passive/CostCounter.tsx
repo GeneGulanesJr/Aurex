@@ -22,12 +22,12 @@ export function CostCounter({ cost }: CostCounterProps) {
   }, [cost?.totalCost]);
 
   return (
-    <div className="bg-surface rounded-lg p-4">
-      <div className="text-sm text-gray-400 mb-2">Cost</div>
-      <div ref={valueRef} className="text-3xl font-mono">
+    <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "6px", padding: "12px 16px" }}>
+      <div style={{ fontSize: "14px", color: "var(--text-secondary)", marginBottom: "8px" }}>Cost</div>
+      <div ref={valueRef} style={{ fontSize: "28px", fontFamily: '"JetBrains Mono", monospace', color: "var(--text-primary)" }}>
         ${cost ? cost.totalCost.toFixed(2) : "0.00"}
       </div>
-      <div className="text-xs text-gray-500 mt-1">
+      <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>
         {cost ? `${cost.totalTokens.toLocaleString()} tokens` : "—"}
       </div>
     </div>

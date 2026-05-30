@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getCurrentMission } from "./api";
+import { getCurrentMission, createMission } from "./api";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
@@ -24,5 +24,34 @@ describe("frontend api", () => {
     mockFetch.mockResolvedValue({ ok: false, status: 404, json: async () => ({ error: "No active mission" }) });
 
     await expect(getCurrentMission()).resolves.toBeNull();
+  });
+
+  it("createMission throws on non-OK response", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: "description is required" }),
+    });
+
+    await expect(createMission("")).rejects.toThrow("Failed to create mission: 400");
+  });
+
+  it("createMission returns missionId on success", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({ missionId: "m-1", status: "queued" }),
+    });
+
+    const result = await createMission("Build a login page");
+    expect(result).toEqual({ missionId: "m-1", status: "queued" });
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/missions",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ description: "Build a login page" }),
+      }),
+    );
   });
 });

@@ -31,11 +31,16 @@ export function EscalationOverlay({ event, onDecision, onDismiss }: EscalationOv
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" ref={overlayRef}>
-      <div className="bg-gray-800 rounded-xl p-8 max-w-2xl w-full mx-4 shadow-2xl">
+    <div ref={overlayRef} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
+      <div style={{ background: "var(--bg-surface)", borderRadius: "12px", padding: "32px", maxWidth: "672px", width: "100%", margin: "0 16px", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)" }}>
         <CheckpointPanel trigger={event.trigger} />
         <DecisionActions onDecision={onDecision} trigger={event.trigger} />
-        <button onClick={handleDismiss} className="mt-4 text-gray-500 text-sm hover:text-gray-300">Dismiss</button>
+        <button
+          onClick={handleDismiss}
+          style={{ marginTop: "16px", color: "var(--text-muted)", fontSize: "13px", background: "none", border: "none", cursor: "pointer" }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-primary)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
+        >Dismiss</button>
       </div>
     </div>
   );

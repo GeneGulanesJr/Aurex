@@ -29,15 +29,15 @@ export function MilestoneBar({ milestone }: MilestoneBarProps) {
   }, [milestone?.status]);
 
   if (!milestone) {
-    return <div className="text-gray-500">No current milestone</div>;
+    return <div style={{ color: "var(--text-muted)", fontSize: "13px" }}>No current milestone</div>;
   }
 
   return (
-    <div className="bg-surface rounded-lg p-4">
-      <div className="text-sm text-gray-400 mb-2">Milestone</div>
-      <div className="text-lg font-semibold">{milestone.title}</div>
-      <div className="mt-2 h-2 bg-gray-700 rounded-full overflow-hidden">
-        <div ref={barRef} className="h-full bg-accent" style={{ width: `${prevProgressRef.current}%` }} />
+    <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "6px", padding: "12px 16px" }}>
+      <div style={{ fontSize: "14px", color: "var(--text-secondary)", marginBottom: "8px" }}>Milestone</div>
+      <div style={{ fontSize: "18px", fontWeight: 600, color: "var(--text-primary)" }}>{milestone.title}</div>
+      <div style={{ marginTop: "8px", height: "8px", background: "var(--bg-elevated)", borderRadius: "9999px", overflow: "hidden" }}>
+        <div ref={barRef} style={{ height: "100%", background: "var(--accent)", width: `${prevProgressRef.current}%` }} />
       </div>
     </div>
   );

@@ -7,7 +7,7 @@ interface AgentGridProps {
 
 export function AgentGrid({ workers }: AgentGridProps) {
   if (workers.length === 0) {
-    return <div className="text-gray-500 text-center py-8">No active agents</div>;
+    return <div style={{ color: "var(--text-muted)", textAlign: "center", padding: "32px 0", fontSize: "13px" }}>No active agents</div>;
   }
 
   return (

@@ -9,28 +9,28 @@ export function CheckpointPanel({ trigger }: CheckpointPanelProps) {
   switch (trigger.kind) {
     case "milestone_complete":
       return (
-        <div className="mb-6">
-          <h2 className="text-xl font-bold text-green-400 mb-2">Milestone Complete</h2>
-          <p className="text-gray-300">Release branch: <code className="text-blue-400">{trigger.releaseBranch ?? "unknown"}</code></p>
-          <p className="text-sm text-gray-400 mt-2">Review the milestone and approve or reject the release.</p>
+        <div style={{ marginBottom: "24px" }}>
+          <h2 style={{ fontSize: "20px", fontWeight: 700, color: "var(--success)", marginBottom: "8px" }}>Milestone Complete</h2>
+          <p style={{ color: "var(--text-primary)" }}>Release branch: <code style={{ color: "var(--info)" }}>{trigger.releaseBranch ?? "unknown"}</code></p>
+          <p style={{ fontSize: "14px", color: "var(--text-secondary)", marginTop: "8px" }}>Review the milestone and approve or reject the release.</p>
         </div>
       );
 
     case "rescope_limit":
       return (
-        <div className="mb-6">
-          <h2 className="text-xl font-bold text-orange-400 mb-2">Rescope Limit Reached</h2>
+        <div style={{ marginBottom: "24px" }}>
+          <h2 style={{ fontSize: "20px", fontWeight: 700, color: "var(--warning)", marginBottom: "8px" }}>Rescope Limit Reached</h2>
           <AttemptHistory history={trigger.attemptHistory ?? []} />
-          <p className="text-sm text-gray-400 mt-2">Review the attempts and decide: rescope or abort.</p>
+          <p style={{ fontSize: "14px", color: "var(--text-secondary)", marginTop: "8px" }}>Review the attempts and decide: rescope or abort.</p>
         </div>
       );
 
     case "unclassifiable_error":
       return (
-        <div className="mb-6">
-          <h2 className="text-xl font-bold text-red-400 mb-2">Unclassifiable Error</h2>
-          <p className="text-gray-300 mb-2">{trigger.error ?? "Unknown error"}</p>
-          <p className="text-sm text-gray-400">Last attempt: {trigger.lastAttempt ?? "unknown"}</p>
+        <div style={{ marginBottom: "24px" }}>
+          <h2 style={{ fontSize: "20px", fontWeight: 700, color: "var(--error)", marginBottom: "8px" }}>Unclassifiable Error</h2>
+          <p style={{ color: "var(--text-primary)", marginBottom: "8px" }}>{trigger.error ?? "Unknown error"}</p>
+          <p style={{ fontSize: "14px", color: "var(--text-secondary)" }}>Last attempt: {trigger.lastAttempt ?? "unknown"}</p>
         </div>
       );
   }

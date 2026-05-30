@@ -7,12 +7,12 @@ interface AgentNodeProps {
 }
 
 const statusColor: Record<string, string> = {
-  spawned: "bg-yellow-500",
-  working: "bg-blue-500",
-  committing: "bg-purple-500",
-  completed: "bg-green-500",
-  timed_out: "bg-orange-500",
-  failed: "bg-red-500",
+  spawned: "var(--warning)",
+  working: "var(--accent)",
+  committing: "var(--info)",
+  completed: "var(--success)",
+  timed_out: "var(--warning)",
+  failed: "var(--error)",
 };
 
 export function AgentNode({ worker }: AgentNodeProps) {
@@ -33,11 +33,11 @@ export function AgentNode({ worker }: AgentNodeProps) {
   }, [worker.status]);
 
   return (
-    <div ref={nodeRef} className="bg-surface rounded-lg p-4 flex items-center gap-3">
-      <div className={`w-3 h-3 rounded-full status-dot ${statusColor[worker.status] || "bg-gray-500"}`} />
-      <div>
-        <div className="text-sm font-medium truncate">{worker.description}</div>
-        <div className="text-xs text-gray-400">{worker.status}</div>
+    <div ref={nodeRef} style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "6px", padding: "12px 16px", display: "flex", alignItems: "center", gap: "12px" }}>
+      <div className="status-dot" style={{ width: "12px", height: "12px", borderRadius: "50%", background: statusColor[worker.status] || "var(--text-muted)", flexShrink: 0 }} />
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: "14px", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-primary)" }}>{worker.description}</div>
+        <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>{worker.status}</div>
       </div>
     </div>
   );
