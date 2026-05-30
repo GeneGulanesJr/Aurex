@@ -50,7 +50,7 @@ Thin wrapper around GitHub REST API using native `fetch` (Node 22 built-in).
 **Functions:**
 - `exchangeCode(clientId, clientSecret, code, redirectUri)` → `{ access_token }` — POST to `https://github.com/login/oauth/access_token`
 - `getUser(token)` → `{ login, avatar_url, name }` — GET `https://api.github.com/user`
-- `listRepos(token, opts?)` → `[{ id, full_name, clone_url, ssh_url, private, default_branch, updated_at }]` — GET `https://api.github.com/user/repos?sort=updated&per_page=100`
+- `listRepos(token, opts?)` → `[{ id, full_name, clone_url, private, default_branch, updated_at }]` — GET `https://api.github.com/user/repos?sort=updated&per_page=100`
 - `revokeToken(clientId, clientSecret, token)` → void — DELETE `https://api.github.com/applications/{clientId}/token`
 
 All functions set `Accept: application/vnd.github+json` header.
@@ -70,34 +70,52 @@ Fastify route plugin registered at `/api/github`.
 | `GET` | `/api/github/connect` | API key (if configured) | Returns `{ url }` — the GitHub OAuth authorize URL with generated `state` nonce. State is stored server-side with TTL. |
 
 **Callback flow detail:**
-1. Frontend calls `GET /api/github/connect` → gets `{ url, state }`
-2. Frontend stores `state` in localStorage, redirects to `url`
+1. Frontend calls `GET /api/github/connect` → gets `{ url }`
+2. Frontend redirects browser to `url`
 3. GitHub redirects back to `/api/github/callback?code=...&state=...`
-4. Backend validates `state` matches stored nonce
+4. Backend validates `state` matches its stored nonce (generated in step 1, kept server-side only)
 5. Backend calls `exchangeCode()`
 6. Backend calls `getUser()` to get profile
 7. Backend stores `github_token` and `github_user` in LaPis
 8. Backend redirects (302) to frontend root `/`
 
+> **Note**: The `state` nonce is generated and validated entirely server-side. It is never sent to the frontend — CSRF protection comes from the server-side nonce matching, not client-side storage.
+
 ### Token Storage (LaPis)
 
-Store as keyed values in LaPis:
-- Key `github_token` → `{ access_token, created_at }`
-- Key `github_user` → `{ login, avatar_url, name }`
+Store as keyed values via a new `settings` route in LaPis.
 
-LaPis client needs two new methods (or reuse existing KV store if available):
-- `getKV(key)` → value or null
-- `setKV(key, value)` → void
-- `deleteKV(key)` → void
+**LaPis does not currently have a KV/settings endpoint** (verified — `src/http/server.js` has no settings routes). We need to add one.
 
-If LaPis doesn't have a KV store, use a simple `settings` table pattern with `POST /settings/{key}` and `GET /settings/{key}`.
+**New LaPis routes** (in `src/http/handlers/settings.js`):
+- `GET /settings/:key` → value or 404
+- `PUT /settings/:key` → upsert value (body: `{ value: any }`)
+- `DELETE /settings/:key` → 204
+
+**Schema**: Simple `settings` table in SQLite:
+```sql
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+```
+
+Keys stored:
+- `github_token` → `JSON.stringify({ access_token, created_at })`
+- `github_user` → `JSON.stringify({ login, avatar_url, name })`
+
+**Aurex LaPis client** gets 3 new methods:
+- `getSetting(key)` → parsed value or null
+- `setSetting(key, value)` → void
+- `deleteSetting(key)` → void
 
 ### State Nonce Storage
 
-OAuth `state` parameter needs short-lived server-side storage:
+OAuth `state` parameter is generated and stored server-side only (never sent to the frontend):
 - Store in-memory `Map<string, { createdAt: number }>` with 10-minute TTL
 - Cleaned up on access (delete after validation)
 - No persistence needed — if server restarts during OAuth flow, user just re-connects
+- Graceful error handling: if the callback receives an unknown/expired `state`, redirect to `/?github_error=expired` so the frontend can show "Connection expired, please try again"
 
 ### Configuration
 
@@ -196,7 +214,6 @@ export interface GitHubRepo {
   id: number;
   full_name: string;
   clone_url: string;
-  ssh_url: string;
   private: boolean;
   default_branch: string;
   updated_at: string;
@@ -211,11 +228,17 @@ export interface GitHubStatus {
 
 ## Security
 
-1. **CSRF protection**: `state` nonce generated server-side, stored with TTL, validated on callback
+1. **CSRF protection**: `state` nonce generated and stored server-side only (never sent to frontend), validated on callback
 2. **Token never in frontend**: all GitHub API calls proxied through backend
 3. **Client secret server-only**: `GITHUB_CLIENT_SECRET` never leaves backend process
 4. **Token revocation on disconnect**: calls GitHub's token revocation endpoint before deleting
-5. **Existing API key auth**: all `/api/github/*` endpoints respect the existing `API_KEY` config
+5. **Existing API key auth**: all `/api/github/*` endpoints (except `/callback`) respect the existing `API_KEY` config
+
+### Known Limitations
+
+- **GitHub OAuth App tokens don't expire** — unlike GitHub App tokens, OAuth App tokens have no expiration. If compromised, use disconnect → reconnect to rotate. Consider migrating to a GitHub App in the future for automatic token expiration.
+- **Single-user — one GitHub token globally** — the token is stored as a global setting in LaPis, not per-user. This is intentional for now (Aurex is a single-user tool). If multi-user support is needed later, tokens would need to be scoped per user.
+- **100-repo limit** — `GET /user/repos` returns max 100 per page. Users with 100+ repos will see only the 100 most recently updated. Pagination can be added later if needed.
 
 ## Dependencies
 
@@ -239,26 +262,35 @@ GITHUB_CALLBACK_URL=http://localhost:8080/api/github/callback
 
 ## Implementation Order
 
-1. Shared types (`GitHubRepo`, `GitHubStatus`)
-2. Backend GitHub client (`github-client.ts`)
-3. Backend routes (`github.ts`) + registration in `server.ts`
-4. Frontend `useGitHub` hook
-5. Frontend `RepoPicker` component
-6. Frontend integration (NewMissionForm, TopBar, App)
-7. Docker/env config updates
-8. Tests (unit tests for github-client, route tests)
+1. **LaPis settings routes** — add `GET/PUT/DELETE /settings/:key` to LaPis (`src/http/handlers/settings.js` + route registration in `src/http/server.js` + `settings` table in `schema.sql`)
+2. Shared types (`GitHubRepo`, `GitHubStatus`)
+3. Backend GitHub client (`github-client.ts`)
+4. Backend LaPis client update — add `getSetting`, `setSetting`, `deleteSetting` methods
+5. Backend routes (`github.ts`) + registration in `server.ts`
+6. Frontend `useGitHub` hook
+7. Frontend `RepoPicker` component
+8. Frontend integration (NewMissionForm, TopBar, App)
+9. Docker/env config updates
+10. Tests (unit tests for github-client, route tests, LaPis settings handler)
 
 ## Files Summary
 
 | File | Action |
 |---|---|
+| **LaPis** (`github.com/GeneGulanesJr/LaPis`) | |
+| `src/http/handlers/settings.js` | New — GET/PUT/DELETE handler |
+| `src/http/server.js` | Modify — register settings routes |
+| `schema.sql` | Modify — add `settings` table |
+| **Aurex shared** | |
 | `packages/shared/src/types.ts` | Modify — add GitHubRepo, GitHubStatus |
 | `packages/shared/src/index.ts` | Modify — re-export new types |
+| **Aurex backend** | |
 | `packages/backend/src/clients/github-client.ts` | New |
-| `packages/backend/src/clients/lapis-client.ts` | Modify — add KV methods |
+| `packages/backend/src/clients/lapis-client.ts` | Modify — add getSetting/setSetting/deleteSetting |
 | `packages/backend/src/routes/github.ts` | New |
 | `packages/backend/src/server.ts` | Modify — register GitHub routes |
 | `packages/backend/src/config.ts` | Modify — add GitHub env vars |
+| **Aurex frontend** | |
 | `packages/frontend/src/hooks/useGitHub.ts` | New |
 | `packages/frontend/src/active/GitHubStatus.tsx` | New |
 | `packages/frontend/src/active/RepoPicker.tsx` | New |
@@ -267,6 +299,7 @@ GITHUB_CALLBACK_URL=http://localhost:8080/api/github/callback
 | `packages/frontend/src/frame/TopBar.tsx` | Modify — add status indicator |
 | `packages/frontend/src/App.tsx` | Modify — add useGitHub |
 | `packages/frontend/src/api.ts` | Modify — add GitHub API calls |
+| **Config** | |
 | `docker-compose.yml` | Modify — add GitHub env vars |
 | `.env.example` | Modify — add GitHub vars |
 | `docs/superpowers/plans/PROGRESS.md` | Modify — add GitHub integration status |
