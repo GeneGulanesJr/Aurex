@@ -161,6 +161,10 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
         if (snippet) {
           lines.push(`  ${snippet}`);
         }
+        const filePaths = extractFilePaths(o.content);
+        if (filePaths.length > 0) {
+          lines.push(`  Related: ${filePaths.map((p) => '`' + p + '`').join(', ')}`);
+        }
       }
       lines.push('');
     }
@@ -359,6 +363,26 @@ function appendExtensionHint(lines: string[], cwd: string) {
   } catch {
     // No local extension dir — skip hint
   }
+}
+
+export function extractFilePaths(content: string): string[] {
+  if (!content || typeof content !== 'string') {
+    return [];
+  }
+
+  const pathRe =
+    /(?:^|\s|`)([\w/.-]+\.(?:js|ts|tsx|jsx|mjs|cjs|py|go|rs|sql))(?:`|\s|,|\.|$)/gm;
+  const matches: string[] = [];
+  let match;
+  while ((match = pathRe.exec(content)) !== null) {
+    const p = match[1];
+    // Filter out short strings without directory separators
+    if (p.includes('/') && p.length > 5) {
+      matches.push(p);
+    }
+  }
+  // Deduplicate, max 3
+  return [...new Set(matches)].slice(0, 3);
 }
 
 export function registerContextReminder(pi: ExtensionAPI, deps: ContextDeps) {

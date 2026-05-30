@@ -177,13 +177,13 @@ describe('context injection prompt extraction', () => {
     );
     // Rich format: ### Prompt-Matched Memory with inline content
     expect(content).toContain('### Prompt-Matched Memory');
-    // PROMPT_INJECT_LIMIT = 1, so only first observation is included
+    // PROMPT_INJECT_LIMIT = 3, so all three observations are included
     expect(content).toContain('Matched decision 1');
     expect(content).toContain('What: Use SQLite FTS5 Why: Avoid external search services Where: src/search.js');
-    // Second and third observations are beyond PROMPT_INJECT_LIMIT
-    expect(content).not.toContain('Matched bugfix 2');
-    expect(content).not.toContain('Matched pattern 3');
-    expect(content).not.toContain('Should not be injected');
+    expect(content).toContain('Matched bugfix 2');
+    expect(content).toContain('Matched pattern 3');
+    // The third observation's content should be injected too
+    expect(content).toContain('Should not be injected');
   });
 
   test('historical prompt suppresses stale code verification warning', async () => {

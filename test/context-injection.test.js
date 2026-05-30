@@ -227,3 +227,44 @@ describe('rich context injection', () => {
     expect(content).not.toContain('Use tabs not spaces');
   });
 });
+
+import { extractFilePaths } from '../extensions/memory-layer/hooks/context-injection.ts';
+
+describe('extractFilePaths', () => {
+  it('should extract file paths from memory content', () => {
+    const content =
+      '**What**: Search module\n**Why**: FTS5\n**Where**: src/memory-domain/search.js handles FTS5 queries';
+    const paths = extractFilePaths(content);
+    expect(paths).toContain('src/memory-domain/search.js');
+  });
+
+  it('should extract multiple paths and deduplicate', () => {
+    const content =
+      '**Where**: src/memory-domain/search.js and src/memory-domain/context.js also uses src/memory-domain/search.js';
+    const paths = extractFilePaths(content);
+    expect(paths).toEqual(['src/memory-domain/search.js', 'src/memory-domain/context.js']);
+  });
+
+  it('should limit to 3 paths', () => {
+    const content = 'src/a.js src/b.js src/c.js src/d.js src/e.js';
+    const paths = extractFilePaths(content);
+    expect(paths.length).toBe(3);
+  });
+
+  it('should return empty array for content without paths', () => {
+    const paths = extractFilePaths('No file paths here, just a decision about architecture.');
+    expect(paths).toEqual([]);
+  });
+
+  it('should ignore short strings without slashes', () => {
+    const paths = extractFilePaths('Used test.js in the project');
+    expect(paths).toEqual([]);
+  });
+
+  it('should extract paths from backtick-wrapped content', () => {
+    const content = 'Module is `src/code-index/scanner.js` and also `src/code-index/parser-registry.js`';
+    const paths = extractFilePaths(content);
+    expect(paths).toContain('src/code-index/scanner.js');
+    expect(paths).toContain('src/code-index/parser-registry.js');
+  });
+});
