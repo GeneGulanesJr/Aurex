@@ -2,13 +2,14 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Use Sequential mode for planned tasks or Direct mode if subagents aren't available. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Two improvements to the `before_agent_start` context injection:
-1. Bump `PROMPT_INJECT_LIMIT` from 1 to 3 so more complementary memories surface.
-2. For each injected memory, extract file paths from its content and cross-reference against the code index, appending verified paths as a compact `Related:` line.
+**Goal:** Three improvements to the `before_agent_start` context injection:
+1. Bump `PROMPT_INJECT_LIMIT` from 1 to 3 as the maximum prompt-matched injection limit.
+2. Apply that maximum adaptively: navigation/location prompts can receive up to 3 memories; policy/advice prompts stay at 1.
+3. For navigation/location prompts only, extract file paths from injected memory content and append them as a compact `Related:` line.
 
 **Motivation:** Benchmark (`bench:pi-paired`) showed `decision-fts5-no-external-service` scoring 2/3 facts — missing the file path `src/memory-domain/search.js` that existed in memory #7075 but wasn't injected because only the top-1 memory was surfaced. The LLM answered from context alone and never searched the code.
 
-**Architecture:** Pure extension-layer change. No CLI, no DB schema, no new modules. The `registerBeforeAgentStart` function in `context-injection.ts` already has access to `getKnownRepos` and the code index path. We extract paths from memory content using regex, then verify against the repo's file list via a lightweight `memory-code outline`-style check (or simpler: just check if the path starts with `src/`, `lib/`, etc. and is under the indexed repo).
+**Architecture:** Pure extension-layer change. No CLI, no DB schema, no new modules. The `registerBeforeAgentStart` function in `context-injection.ts` classifies prompts as navigation/location vs policy/advice. Navigation/location prompts use the configured maximum (`PROMPT_INJECT_LIMIT: 3`) and receive `Related:` path hints. Policy/advice prompts use a compact limit of 1 and omit `Related:` path hints to avoid code-browsing rabbit holes.
 
 ---
 
@@ -93,7 +94,7 @@ The rendering change — after the existing snippet line in the `effectiveObserv
 
 This appends a `Related:` line only when file paths are found in the memory's content. The paths come from the memory's `**Where**:` field or inline mentions.
 
-No code-index lookup needed — the paths in memory content are already verified (they were written when the memory was created). We just need to surface them compactly.
+No code-index lookup needed — the paths in memory content are already verified (they were written when the memory was created). We surface them compactly only when the prompt asks for navigation/location information.
 
 - [ ] **Step 1: Write the failing test**
 

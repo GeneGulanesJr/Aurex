@@ -148,8 +148,10 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
     lines.push('');
 
     if (effectiveObservations.length > 0) {
+      const navigationPrompt = isNavigationPrompt(promptQuery);
+      const injectLimit = navigationPrompt ? CONTEXT.PROMPT_INJECT_LIMIT : 1;
       lines.push('### Prompt-Matched Memory');
-      for (const o of effectiveObservations.slice(0, CONTEXT.PROMPT_INJECT_LIMIT)) {
+      for (const o of effectiveObservations.slice(0, injectLimit)) {
         let trust = '';
         if (o.trust_score < 0.5) {
           trust = ' ⚠️';
@@ -161,9 +163,11 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
         if (snippet) {
           lines.push(`  ${snippet}`);
         }
-        const filePaths = extractFilePaths(o.content);
-        if (filePaths.length > 0) {
-          lines.push(`  Related: ${filePaths.map((p) => '`' + p + '`').join(', ')}`);
+        if (navigationPrompt) {
+          const filePaths = extractFilePaths(o.content);
+          if (filePaths.length > 0) {
+            lines.push(`  Related: ${filePaths.map((p) => '`' + p + '`').join(', ')}`);
+          }
         }
       }
       lines.push('');
@@ -280,6 +284,18 @@ export function isHistoricalMemoryPrompt(prompt: string | null): boolean {
     /\bdecision\b/.test(normalized) ||
     /\bchoose\b/.test(normalized) ||
     /\bchose\b/.test(normalized)
+  );
+}
+
+export function isNavigationPrompt(prompt: string | null): boolean {
+  if (!prompt) {
+    return false;
+  }
+
+  const normalized = prompt.toLowerCase();
+  return (
+    /\b(where|module|file|hook|wired|location|path|lives|implemented|implementation|identify)\b/.test(normalized) ||
+    /\bcurrent\s+\w*\s*module\b/.test(normalized)
   );
 }
 

@@ -129,7 +129,7 @@ describe('context injection prompt extraction', () => {
     expect(content).not.toContain('Personal preference');
   });
 
-  test('prompt-matched startup caps injected memories', async () => {
+  test('policy prompt caps injected memories to one and omits Related paths', async () => {
     let handler;
     const pi = {
       on: vi.fn((_eventName, callback) => {
@@ -168,22 +168,73 @@ describe('context injection prompt extraction', () => {
     };
 
     registerBeforeAgentStart(pi, deps);
-    const result = await handler({ prompt: 'benchmark memory context' }, { cwd: process.cwd() });
+    const prompt = 'what should the agent do before relying on stale code-memory results?';
+    const result = await handler({ prompt }, { cwd: process.cwd() });
     const content = result.message.content;
 
     expect(deps.mem).toHaveBeenCalledWith(
       'context',
-      expect.objectContaining({ project: 'PiMemoryExtension', limit: '5', query: 'benchmark memory context' }),
+      expect.objectContaining({ project: 'PiMemoryExtension', limit: '5', query: prompt }),
     );
-    // Rich format: ### Prompt-Matched Memory with inline content
+    // Policy/advice prompts should stay compact: inject only the best memory and no Related file paths.
     expect(content).toContain('### Prompt-Matched Memory');
-    // PROMPT_INJECT_LIMIT = 3, so all three observations are included
     expect(content).toContain('Matched decision 1');
     expect(content).toContain('What: Use SQLite FTS5 Why: Avoid external search services Where: src/search.js');
+    expect(content).not.toContain('Related:');
+    expect(content).not.toContain('Matched bugfix 2');
+    expect(content).not.toContain('Matched pattern 3');
+    expect(content).not.toContain('Should not be injected');
+  });
+
+  test('navigation prompt injects up to three memories and includes Related paths', async () => {
+    let handler;
+    const pi = {
+      on: vi.fn((_eventName, callback) => {
+        handler = callback;
+      }),
+    };
+    const deps = {
+      state: { currentProject: 'PiMemoryExtension', hasInjectedContext: false, sessionId: 1 },
+      mem: vi.fn().mockResolvedValue({
+        observations: [
+          {
+            type: 'decision',
+            title: 'Matched decision 1',
+            trust_score: 0.95,
+            content: '**What**: Use SQLite FTS5\n**Why**: Avoid external search services\n**Where**: src/search.js',
+          },
+          {
+            type: 'bugfix',
+            title: 'Matched bugfix 2',
+            trust_score: 0.95,
+            content: '**What**: Fixed config leak\n**Where**: src/config.js',
+          },
+          {
+            type: 'pattern',
+            title: 'Matched pattern 3',
+            trust_score: 0.95,
+            content: '**What**: Third complementary memory\n**Where**: src/pattern.js',
+          },
+        ],
+        personal: [],
+        stats: { total_memories: 42, total_personal: 0, active_workflows: 0 },
+        topic: 'benchmark',
+      }),
+      getKnownRepos: vi.fn().mockResolvedValue([]),
+      isRepoStale: vi.fn().mockReturnValue(false),
+    };
+
+    registerBeforeAgentStart(pi, deps);
+    const prompt = 'identify the current search module path';
+    const result = await handler({ prompt }, { cwd: process.cwd() });
+    const content = result.message.content;
+
+    expect(content).toContain('Matched decision 1');
     expect(content).toContain('Matched bugfix 2');
     expect(content).toContain('Matched pattern 3');
-    // The third observation's content should be injected too
-    expect(content).toContain('Should not be injected');
+    expect(content).toContain('Related: `src/search.js`');
+    expect(content).toContain('Related: `src/config.js`');
+    expect(content).toContain('Related: `src/pattern.js`');
   });
 
   test('historical prompt suppresses stale code verification warning', async () => {
