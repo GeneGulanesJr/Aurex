@@ -1,7 +1,6 @@
 // packages/backend/src/clients/github-client.ts
 
 const GITHUB_API = "https://api.github.com";
-const GITHUB_OAUTH = "https://github.com";
 
 const headers = (token?: string): Record<string, string> => {
   const h: Record<string, string> = {
@@ -25,29 +24,6 @@ export interface GitHubRepo {
   private: boolean;
   default_branch: string;
   updated_at: string;
-}
-
-export async function exchangeCode(
-  clientId: string,
-  clientSecret: string,
-  code: string,
-  redirectUri: string,
-): Promise<string> {
-  const res = await fetch(`${GITHUB_OAUTH}/login/oauth/access_token`, {
-    method: "POST",
-    headers: { Accept: "application/json", "User-Agent": "Aurex", "Content-Type": "application/json" },
-    body: JSON.stringify({
-      client_id: clientId,
-      client_secret: clientSecret,
-      code,
-      redirect_uri: redirectUri,
-    }),
-  });
-  if (!res.ok) throw new Error(`GitHub token exchange failed: ${res.status}`);
-  const data = await res.json() as { access_token?: string; error?: string };
-  if (data.error) throw new Error(`GitHub OAuth error: ${data.error}`);
-  if (!data.access_token) throw new Error("No access_token in GitHub response");
-  return data.access_token;
 }
 
 export async function getUser(token: string): Promise<GitHubUser> {
@@ -76,25 +52,4 @@ export async function listRepos(token: string): Promise<GitHubRepo[]> {
     default_branch: r.default_branch as string,
     updated_at: r.updated_at as string,
   }));
-}
-
-export async function revokeToken(
-  clientId: string,
-  clientSecret: string,
-  token: string,
-): Promise<void> {
-  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
-  const res = await fetch(`${GITHUB_API}/applications/${clientId}/token`, {
-    method: "DELETE",
-    headers: {
-      Authorization: `Basic ${credentials}`,
-      Accept: "application/vnd.github+json",
-      "Content-Type": "application/json",
-      "User-Agent": "Aurex",
-    },
-    body: JSON.stringify({ access_token: token }),
-  });
-  if (!res.ok && res.status !== 404) {
-    throw new Error(`GitHub revokeToken failed: ${res.status}`);
-  }
 }

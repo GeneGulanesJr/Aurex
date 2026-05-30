@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import type { CSSProperties } from "react";
 import type { UseGitHubReturn } from "../hooks/useGitHub";
 import { getPinyxConfig, getPinyxModels, savePinyxConfig } from "../api";
@@ -11,10 +11,8 @@ interface IntegrationsPanelProps {
 }
 
 export function IntegrationsPanel({ open, github, onClose }: IntegrationsPanelProps) {
-  const [clientId, setClientId] = useState("");
-  const [clientSecret, setClientSecret] = useState("");
-  const [callbackUrl, setCallbackUrl] = useState("http://localhost:8080/api/github/callback");
-  const [saving, setSaving] = useState(false);
+  const [token, setToken] = useState("");
+  const [connecting, setConnecting] = useState(false);
   const [pinyx, setPinyx] = useState<PinyxConfigResponse | null>(null);
   const [pinyxModels, setPinyxModels] = useState<Array<{ id?: string; name?: string }>>([]);
   const [pinyxSaving, setPinyxSaving] = useState(false);
@@ -22,29 +20,20 @@ export function IntegrationsPanel({ open, github, onClose }: IntegrationsPanelPr
 
   useEffect(() => {
     if (!open) return;
-    setClientId(github.config?.clientId ?? "");
-    setCallbackUrl(github.config?.callbackUrl ?? "http://localhost:8080/api/github/callback");
-    setClientSecret("");
     getPinyxConfig().then(setPinyx).catch(() => setPinyxError("Failed to load PiNyx config"));
     getPinyxModels().then((res) => setPinyxModels(res.models)).catch(() => setPinyxModels([]));
-  }, [open, github.config?.clientId, github.config?.callbackUrl]);
+  }, [open]);
 
   if (!open) return null;
 
-  const canSave = clientId.trim().length > 0 && clientSecret.trim().length > 0 && callbackUrl.trim().length > 0;
-
-  async function handleSave() {
-    if (!canSave) return;
-    setSaving(true);
+  async function handleConnect() {
+    if (!token.trim()) return;
+    setConnecting(true);
     try {
-      await github.saveConfig({
-        clientId: clientId.trim(),
-        clientSecret: clientSecret.trim(),
-        callbackUrl: callbackUrl.trim(),
-      });
-      setClientSecret("");
+      await github.connect(token.trim());
+      setToken("");
     } finally {
-      setSaving(false);
+      setConnecting(false);
     }
   }
 
@@ -122,11 +111,11 @@ export function IntegrationsPanel({ open, github, onClose }: IntegrationsPanelPr
             <div>
               <h3 style={{ margin: 0, color: "var(--text-primary)", fontFamily: '"JetBrains Mono", monospace', fontSize: "12px", letterSpacing: "1px" }}>GitHub</h3>
               <p style={{ margin: "4px 0 0", color: "var(--text-muted)", fontSize: "11px" }}>
-                OAuth app credentials, repo access, and account connection.
+                Connect with a Personal Access Token.
               </p>
             </div>
-            <span style={{ color: github.connected ? "var(--success)" : github.configured ? "var(--warning)" : "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', fontSize: "10px" }}>
-              {github.connected ? "CONNECTED" : github.configured ? "CONFIGURED" : "OFFLINE"}
+            <span style={{ color: github.connected ? "var(--success)" : "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', fontSize: "10px" }}>
+              {github.connected ? "CONNECTED" : "OFFLINE"}
             </span>
           </div>
 
@@ -137,30 +126,33 @@ export function IntegrationsPanel({ open, github, onClose }: IntegrationsPanelPr
             </div>
           )}
 
-          <label style={labelStyle}>Client ID</label>
-          <input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="GitHub OAuth Client ID" style={inputStyle} />
-
-          <label style={labelStyle}>Client Secret</label>
-          <input value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} placeholder={github.config?.hasClientSecret ? "Saved — enter new secret to replace" : "GitHub OAuth Client Secret"} type="password" style={inputStyle} />
-
-          <label style={labelStyle}>Callback URL</label>
-          <input value={callbackUrl} onChange={(e) => setCallbackUrl(e.target.value)} style={inputStyle} />
-
-          {github.error && <p style={{ color: "var(--error)", fontSize: "12px" }}>{github.error}</p>}
-
-          <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
-            <button onClick={handleSave} disabled={!canSave || saving} style={buttonStyle(canSave && !saving)}>
-              {saving ? "Saving..." : "Save GitHub App"}
-            </button>
-            <button onClick={() => void github.connect()} disabled={!github.configured} style={outlineButtonStyle(github.configured)}>
-              Connect
-            </button>
-            {github.connected && (
-              <button onClick={() => void github.disconnect()} style={dangerButtonStyle}>
-                Disconnect
+          {!github.connected && (
+            <>
+              <label style={labelStyle}>Personal Access Token</label>
+              <input
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder="ghp_xxxxx... (requires 'repo' scope)"
+                type="password"
+                style={inputStyle}
+              />
+              <button
+                onClick={() => void handleConnect()}
+                disabled={!token.trim() || connecting}
+                style={buttonStyle(!!token.trim() && !connecting)}
+              >
+                {connecting ? "Connecting..." : "Connect"}
               </button>
-            )}
-          </div>
+            </>
+          )}
+
+          {github.error && <p style={{ color: "var(--error)", fontSize: "12px", marginTop: "8px" }}>{github.error}</p>}
+
+          {github.connected && (
+            <button onClick={() => void github.disconnect()} style={dangerButtonStyle}>
+              Disconnect
+            </button>
+          )}
         </div>
 
         <div style={{ border: "1px solid var(--border)", borderRadius: "6px", padding: "12px", background: "var(--bg-inset)", marginTop: "12px" }}>

@@ -93,12 +93,7 @@ async function main() {
   });
 
   // GitHub OAuth/config (env-backed or configured from UI into LaPis settings)
-  registerGitHubRoutes(app, {
-    lapis,
-    clientId: config.githubClientId,
-    clientSecret: config.githubClientSecret,
-    callbackUrl: config.githubCallbackUrl,
-  });
+  registerGitHubRoutes(app, { lapis });
 
   // Start
   try {

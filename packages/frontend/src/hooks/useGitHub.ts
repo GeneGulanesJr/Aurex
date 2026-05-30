@@ -1,38 +1,31 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   getGitHubStatus,
-  getGitHubConfig,
-  saveGitHubConfig,
-  getGitHubConnectUrl,
+  connectGitHub,
   getGitHubRepos,
   disconnectGitHub,
 } from "../api";
-import type { GitHubStatusResponse, GitHubRepoResponse, GitHubConfigResponse, SaveGitHubConfigRequest } from "../api";
+import type { GitHubStatusResponse, GitHubRepoResponse } from "../api";
 
 export interface GitHubState {
-  configured: boolean;
   connected: boolean;
   user: GitHubStatusResponse["user"];
   repos: GitHubRepoResponse[];
-  config: GitHubConfigResponse | null;
   loading: boolean;
   error: string | null;
 }
 
 export interface UseGitHubReturn extends GitHubState {
-  connect: () => Promise<void>;
+  connect: (token: string) => Promise<void>;
   disconnect: () => Promise<void>;
-  saveConfig: (config: SaveGitHubConfigRequest) => Promise<void>;
   refreshRepos: () => Promise<void>;
 }
 
 export function useGitHub(): UseGitHubReturn {
   const [state, setState] = useState<GitHubState>({
-    configured: false,
     connected: false,
     user: null,
     repos: [],
-    config: null,
     loading: true,
     error: null,
   });
@@ -48,16 +41,11 @@ export function useGitHub(): UseGitHubReturn {
 
   const refreshStatus = useCallback(async () => {
     try {
-      const [status, config] = await Promise.all([
-        getGitHubStatus(),
-        getGitHubConfig(),
-      ]);
+      const status = await getGitHubStatus();
       setState((prev) => ({
         ...prev,
-        configured: status.configured,
         connected: status.connected,
         user: status.user,
-        config,
         loading: false,
         error: null,
       }));
@@ -67,7 +55,6 @@ export function useGitHub(): UseGitHubReturn {
     } catch {
       setState((prev) => ({
         ...prev,
-        configured: false,
         connected: false,
         loading: false,
         error: "Failed to check GitHub status",
@@ -79,43 +66,28 @@ export function useGitHub(): UseGitHubReturn {
     void refreshStatus();
   }, [refreshStatus]);
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const githubError = params.get("github_error");
-    if (!githubError) return;
-
-    const messages: Record<string, string> = {
-      expired: "GitHub connection expired. Please try again.",
-      exchange_failed: "GitHub authorization failed. Please try again.",
-      user_fetch_failed: "Failed to fetch GitHub profile. Please try again.",
-      missing_params: "Invalid GitHub callback. Please try again.",
-    };
-    setState((prev) => ({
-      ...prev,
-      error: messages[githubError] ?? "GitHub connection error.",
-      loading: false,
-    }));
-    window.history.replaceState({}, "", "/");
-  }, []);
-
-  const connect = useCallback(async () => {
+  const connect = useCallback(async (token: string) => {
     try {
-      const { url } = await getGitHubConnectUrl();
-      window.location.assign(url);
+      const result = await connectGitHub(token);
+      setState((prev) => ({
+        ...prev,
+        connected: result.connected,
+        user: result.user,
+        error: null,
+      }));
+      await refreshRepos();
     } catch {
-      setState((prev) => ({ ...prev, error: "Failed to initiate GitHub connect" }));
+      setState((prev) => ({ ...prev, error: "Invalid GitHub token" }));
     }
-  }, []);
+  }, [refreshRepos]);
 
   const disconnect = useCallback(async () => {
     try {
       await disconnectGitHub();
       setState({
-        configured: true,
         connected: false,
         user: null,
         repos: [],
-        config: null,
         loading: false,
         error: null,
       });
@@ -124,21 +96,5 @@ export function useGitHub(): UseGitHubReturn {
     }
   }, []);
 
-  const saveConfig = useCallback(async (config: SaveGitHubConfigRequest) => {
-    try {
-      const saved = await saveGitHubConfig(config);
-      setState((prev) => ({
-        ...prev,
-        configured: saved.configured,
-        config: saved,
-        loading: false,
-        error: null,
-      }));
-      await refreshStatus();
-    } catch {
-      setState((prev) => ({ ...prev, error: "Failed to save GitHub settings" }));
-    }
-  }, [refreshStatus]);
-
-  return { ...state, connect, disconnect, saveConfig, refreshRepos };
+  return { ...state, connect, disconnect, refreshRepos };
 }
