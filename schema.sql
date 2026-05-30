@@ -584,3 +584,11 @@ CREATE INDEX IF NOT EXISTS idx_sr_binding ON scope_resolution(binding_id);
 CREATE INDEX IF NOT EXISTS idx_sr_symbol ON scope_resolution(resolved_symbol_id);
 CREATE INDEX IF NOT EXISTS idx_sr_status ON scope_resolution(status);
 CREATE INDEX IF NOT EXISTS idx_sr_pass ON scope_resolution(resolved_at_pass);
+
+-- ═══════════════════════════════════════════════════════════
+-- SETTINGS (KV store for integration tokens, config)
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);

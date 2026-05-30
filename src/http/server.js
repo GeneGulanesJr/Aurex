@@ -14,7 +14,7 @@ function createHttpServer(deps) {
     }
 
     let body = null;
-    if (req.method === 'POST' || req.method === 'PATCH') {
+    if (req.method === 'POST' || req.method === 'PATCH' || req.method === 'PUT') {
       body = await parseBody(req, res);
       if (body === undefined) {
         return;
@@ -69,6 +69,7 @@ function buildRoutes(deps) {
   const compression = require('./handlers/compression');
   const retry = require('./handlers/retry');
   const checkpoints = require('./handlers/checkpoints');
+  const settings = require('./handlers/settings');
 
   return [
     // Health
@@ -135,6 +136,11 @@ function buildRoutes(deps) {
     { method: 'GET', pattern: '/checkpoints/:id', handler: checkpoints.getCheckpoint(aurex) },
     { method: 'PATCH', pattern: '/checkpoints/:id', handler: checkpoints.resolveCheckpoint(aurex) },
     { method: 'GET', pattern: '/missions/:missionId/checkpoints', handler: checkpoints.getPendingCheckpoints(aurex) },
+
+    // Settings (KV store)
+    { method: 'GET', pattern: '/settings/:key', handler: settings.getSetting(deps.sqlJson) },
+    { method: 'PUT', pattern: '/settings/:key', handler: settings.setSetting(deps.sqlRun) },
+    { method: 'DELETE', pattern: '/settings/:key', handler: settings.deleteSetting(deps.sqlRun) },
   ];
 }
 
