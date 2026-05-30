@@ -1,3 +1,7 @@
+import { execFile } from "node:child_process";
+import { mkdir, stat } from "node:fs/promises";
+import path from "node:path";
+import { promisify } from "node:util";
 import type { CheckpointDecision, CheckpointTrigger, Milestone } from "@aurex/shared";
 import type { EscalationTrigger, EscalationContext, AgentType, AgentStatus, MilestoneStatus } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
@@ -7,6 +11,42 @@ import { createCheckpointManager } from "./checkpoint-manager.js";
 import { createMilestoneLoop } from "./milestone-loop.js";
 import { createPlanner } from "./planner.js";
 import { createCompressionService } from "./compression.js";
+
+const execFileAsync = promisify(execFile);
+
+function repoDirNameFromCloneUrl(cloneUrl: string): string {
+  const parsed = new URL(cloneUrl);
+  const parts = parsed.pathname.replace(/^\//, "").replace(/\.git$/, "").split("/");
+  if (parts.length < 2) throw new Error(`Invalid GitHub clone URL: ${cloneUrl}`);
+  return `${parts[0]}-${parts[1]}`.replace(/[^a-zA-Z0-9._-]/g, "-");
+}
+
+function withToken(cloneUrl: string, token?: string): string {
+  if (!token || !cloneUrl.startsWith("https://github.com/")) return cloneUrl;
+  return cloneUrl.replace("https://github.com/", `https://x-access-token:${encodeURIComponent(token)}@github.com/`);
+}
+
+async function pathExists(p: string): Promise<boolean> {
+  return stat(p).then(() => true, () => false);
+}
+
+async function prepareMissionRepo(lapis: LaPisClient, parentRepoRoot: string, cloneUrl?: string): Promise<string> {
+  if (!cloneUrl) return parentRepoRoot;
+
+  const reposRoot = path.join(parentRepoRoot, "repos");
+  const repoPath = path.join(reposRoot, repoDirNameFromCloneUrl(cloneUrl));
+  await mkdir(reposRoot, { recursive: true });
+
+  if (await pathExists(path.join(repoPath, ".git"))) {
+    await execFileAsync("git", ["fetch", "--all", "--prune"], { cwd: repoPath });
+    return repoPath;
+  }
+
+  const tokenData = await lapis.getSetting<{ access_token: string }>("github_token");
+  const authenticatedUrl = withToken(cloneUrl, tokenData?.access_token);
+  await execFileAsync("git", ["clone", authenticatedUrl, repoPath], { cwd: reposRoot });
+  return repoPath;
+}
 
 export interface RunnerStatus {
   state: "idle" | "planning" | "executing" | "waiting_checkpoint" | "completed" | "failed";
@@ -53,6 +93,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
     try {
       setStatus("planning", missionId);
       const mission = await lapis.getMission(missionId);
+      const missionRepoRoot = await prepareMissionRepo(lapis, repoRoot, mission.configJson.cloneUrl);
       const planner = createPlanner(lapis, pinyx, { model: mission.configJson.modelHints.orchestrator });
       const planResult = await planner.plan(mission.description, missionId);
 
@@ -80,7 +121,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
             }
           },
         },
-        { agentDir, repoRoot, gitMainBranch, onCompression: (mId, trigger) => compression.run(mId, trigger) },
+        { agentDir, repoRoot: missionRepoRoot, gitMainBranch, onCompression: (mId, trigger) => compression.run(mId, trigger) },
       );
 
       const plannedMilestones: Milestone[] = planResult.milestones.map((milestone, index) => ({
