@@ -1,30 +1,54 @@
+# Aurex — Full Stack
+# Usage:  docker compose up --build
+# Stops:  Ctrl+C  or  docker compose down
+
 services:
-  backend:
-    build:
-      context: .
-      dockerfile: packages/backend/Dockerfile
-    ports:
-      - "3000:3000"
-    env_file: .env
-    volumes:
-      - ${REPO_ROOT}:/workspace
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+  lapis:
+    build: { context: ., dockerfile: Dockerfile.lapis }
+    ports: ["9100:9100"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:9100/health').then(r=>r.json()).then(j=>{if(j.status!=='ok')process.exit(1)})"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
     restart: unless-stopped
+
+  backend:
+    build: { context: ., dockerfile: packages/backend/Dockerfile }
+    ports: ["3000:3000"]
+    environment:
+      LAPIS_ENDPOINT: http://lapis:9100
+      PINYX_ENDPOINT: http://pinyx-stub:7331
+      REPO_ROOT: /workspace
+      GIT_MAIN_BRANCH: main
+    volumes:
+      - ${REPO_ROOT:-/tmp}:/workspace
+    depends_on:
+      lapis: { condition: service_healthy }
+      pinyx-stub: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      interval: 5s
+      timeout: 3s
+      retries: 10
       start_period: 30s
+    restart: unless-stopped
+
+  pinyx-stub:
+    build: { context: ., dockerfile: Dockerfile.pinyx-stub }
+    ports: ["7331:7331"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:7331/health').then(r=>r.json()).then(j=>{if(j.status!=='ok')process.exit(1)})"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
 
   frontend:
-    build:
-      context: .
-      dockerfile: packages/frontend/Dockerfile
-    ports:
-      - "5173:5173"
+    build: { context: ., dockerfile: packages/frontend/Dockerfile }
+    ports: ["8080:80"]
     depends_on:
-      backend:
-        condition: service_healthy
+      backend: { condition: service_healthy }
     restart: unless-stopped

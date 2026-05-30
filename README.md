@@ -118,6 +118,29 @@ Aurex requires two external services:
 
 ## Quick Start
 
+### Docker (recommended)
+
+One command runs the full stack — LaPis, PiNyx stub, backend, frontend:
+
+```bash
+docker compose up --build
+```
+
+| Service | URL |
+|---|---|
+| Frontend | http://localhost:8080 |
+| Backend API | http://localhost:3000 |
+| LaPis (shared state) | http://localhost:9100 |
+| PiNyx stub | http://localhost:7331 |
+
+> **Note**: The bundled PiNyx is a stub that returns mock LLM responses. To use real agents, set `PINYX_ENDPOINT` to a real PiNyx instance and remove `pinyx-stub` from the compose file.
+>
+> **Note**: `REPO_ROOT` defaults to `/tmp` (no real repo). Mount a real git repo: `REPO_ROOT=/path/to/your/repo docker compose up --build`
+
+Stop with `Ctrl+C` or `docker compose down`.
+
+### Local development
+
 ```bash
 # Install dependencies
 pnpm install
@@ -140,9 +163,6 @@ pnpm --filter @aurex/frontend run dev
 
 # Run tests
 npx vitest
-
-# Docker
-docker compose up
 ```
 
 ## Configuration
