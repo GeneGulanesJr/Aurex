@@ -59,6 +59,7 @@ export interface OverlapResult {
 export function checkPreSpawnOverlap(
   newScope: ScopeDeclaration,
   existingUnits: WorkingUnit[],
+  excludeIds?: Set<string>,
 ): OverlapResult {
   const newPaths = newScope.declaredPaths;
   const newModules = newScope.declaredModules;
@@ -67,6 +68,7 @@ export function checkPreSpawnOverlap(
   const overlapping: string[] = [];
 
   for (const unit of existingUnits) {
+    if (excludeIds?.has(unit.id)) continue;
     if (unit.status !== "working" && unit.status !== "spawned") continue;
 
     const moduleOverlap = unit.declaredModules.some((m) => newModulesSet.has(m));
@@ -103,12 +105,14 @@ export function computePostCommitScope(
 export function detectOverlap(
   filePaths: string[],
   existingUnits: WorkingUnit[],
+  excludeIds?: Set<string>,
 ): OverlapResult {
   const overlapping: string[] = [];
   const filePathsAreConcrete = !hasAnyGlobs(filePaths);
   const filePathsSet = filePathsAreConcrete ? new Set(filePaths) : null;
 
   for (const unit of existingUnits) {
+    if (excludeIds?.has(unit.id)) continue;
     if (unit.status !== "working" && unit.status !== "spawned") continue;
 
     const unitPathsAreConcrete = !hasAnyGlobs(unit.declaredPaths);

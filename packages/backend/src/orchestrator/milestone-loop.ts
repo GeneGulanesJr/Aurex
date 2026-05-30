@@ -91,7 +91,7 @@ export function createMilestoneLoop(
           const validatorUnits: ValidatorUnitContext[] = [];
 
           // --- WORKER PHASE ---
-          const pendingUnits = units.filter((u: WorkingUnit) => u.status !== "completed");
+          const pendingUnits = units.filter((u: WorkingUnit) => u.status === "planned");
           const completedUnits = units.filter((u: WorkingUnit) => u.status === "completed");
           completedCount = completedUnits.length;
           integrationUnits.push(...completedUnits);

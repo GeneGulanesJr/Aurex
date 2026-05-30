@@ -106,7 +106,7 @@ packages/
 - **Language**: TypeScript 5.7
 - **Backend**: Fastify 5, @fastify/websocket, Pi SDK
 - **Frontend**: React 19, Vite 6, Tailwind CSS 4, anime.js 4
-- **Testing**: Vitest (193 tests across 41 files)
+- **Testing**: Vitest (251 tests across 48 files)
 - **Validation**: @sinclair/typebox
 
 ## Prerequisites
@@ -197,4 +197,4 @@ npx vitest              # run all tests
 npx vitest --reporter=verbose   # verbose output
 ```
 
-193 tests across 41 files covering shared types, backend logic (enforcement, orchestrator, routes), and frontend API client.
+251 tests across 48 files covering shared types, backend logic (enforcement, orchestrator, overlap detection, routes), and frontend API client.

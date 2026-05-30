@@ -398,7 +398,7 @@ function makeUnit(): WorkingUnit {
     description: "Add worker-updated marker to docs/validator-e2e.md",
     declaredPaths: ["docs/validator-e2e.md"],
     declaredModules: ["docs"],
-    status: "pending" as WorkingUnit["status"],
+    status: "planned",
     taskBranch: "",
     worktreePath: "",
     sessionId: "",
