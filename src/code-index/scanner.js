@@ -39,9 +39,22 @@ function loadIgnoreRules(repoPath, filename) {
   let current = path.resolve(repoPath);
   const rootsToTry = [];
 
+  // Walk up from repoPath, but stop at the Git repo boundary (directory containing .git/).
+  // Git itself never loads .gitignore from parent directories outside the repo root.
+  // Without this guard, a parent .gitignore with '*' (e.g. ~/.pi/agent/git/.gitignore)
+  // would cause the scanner to ignore every file in the repo.
   let limit = 20;
   while (limit-- > 0) {
     rootsToTry.push(current);
+    // Stop walking up if this directory is a Git repo root.
+    // This prevents parent .gitignore rules from leaking into the scan.
+    try {
+      if (fs.statSync(path.join(current, '.git')).isDirectory()) {
+        break;
+      }
+    } catch {
+      // .git doesn't exist here — keep walking up
+    }
     const parent = path.dirname(current);
     if (parent === current) {
       break;
