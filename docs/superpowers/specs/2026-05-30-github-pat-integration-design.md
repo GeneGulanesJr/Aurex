@@ -33,7 +33,7 @@ One token at a time. Pasting a new token replaces the old one.
 |---|---|---|
 | `/api/github/connect` | POST | Accepts `{ token }` in body. Validates by calling `getUser(token)`. Stores `{ access_token, created_at }` in LaPis setting `github_token` and user profile in `github_user`. Returns user profile. |
 | `/api/github/disconnect` | POST | Clears `github_token` and `github_user` from LaPis settings. Returns `{ success: true }`. |
-| `/api/github/status` | GET | Returns `{ connected: boolean, user: GitHubUserProfile | null }` based on stored token/user. |
+| `/api/github/status` | GET | Returns `{ connected: boolean, user: GitHubUserProfile | null }`. The `configured` field is removed — with PAT flow you're either connected or not. |
 | `/api/github/repos` | GET | Lists repos using stored token via `listRepos()` from github-client. |
 
 **Removed routes:** `GET /api/github/config`, `POST /api/github/config`, `GET /api/github/callback`
@@ -75,14 +75,16 @@ registerGitHubRoutes(app, { lapis })
 connectGitHub(token: string): Promise<GitHubStatusResponse>
 ```
 
-**Keep:** `getGitHubStatus()`, `getGitHubRepos()`, `disconnectGitHub()`, `GitHubStatusResponse`, `GitHubRepoResponse`
+**Keep:** `getGitHubStatus()`, `getGitHubRepos()`, `disconnectGitHub()`, `GitHubRepoResponse`
+
+**Change:** `GitHubStatusResponse` drops `configured` field — becomes `{ connected: boolean, user: ... }` only.
 
 ### `useGitHub.ts`
 
 **Remove from state:** `configured`, `config`
 **Remove from return:** `saveConfig`
 **Change:** `connect(token: string)` — now takes the PAT string, calls `connectGitHub(token)`, stores result
-**Simplify:** No more config/status dual-fetch on mount. Just fetch status.
+**Simplify:** No more config/status dual-fetch on mount. Just fetch status. Drop `configured` from state entirely.
 
 ### `IntegrationsPanel.tsx` — GitHub Section
 
