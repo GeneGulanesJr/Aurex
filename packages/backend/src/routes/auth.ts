@@ -7,7 +7,7 @@ export function createAuthHook(apiKey: string | null) {
   }
 
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    if (request.url === "/health" || request.url.startsWith("/ws")) return;
+    if (request.url === "/health" || request.url.startsWith("/ws") || request.url.startsWith("/api/github/callback")) return;
     const header = request.headers.authorization;
     if (!header || !header.startsWith("Bearer ")) {
       return reply.status(401).send({ error: "Missing or invalid Authorization header" });
