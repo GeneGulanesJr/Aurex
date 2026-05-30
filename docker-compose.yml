@@ -22,9 +22,6 @@ services:
       PINYX_ENDPOINT: http://pinyx-stub:7331
       REPO_ROOT: /workspace
       GIT_MAIN_BRANCH: main
-      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
-      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
-      GITHUB_CALLBACK_URL: ${GITHUB_CALLBACK_URL:-http://localhost:8080/api/github/callback}
     volumes:
       - ${REPO_ROOT:-/tmp}:/workspace
     depends_on:
