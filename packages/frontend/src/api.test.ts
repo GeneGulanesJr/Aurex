@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getCurrentMission, createMission } from "./api";
+import { getCurrentMission, createMission, getGitHubConfig, saveGitHubConfig } from "./api";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
@@ -51,6 +51,29 @@ describe("frontend api", () => {
         method: "POST",
         headers: expect.objectContaining({ "Content-Type": "application/json" }),
         body: JSON.stringify({ description: "Build a login page" }),
+      }),
+    );
+  });
+
+  it("getGitHubConfig reads frontend-safe GitHub OAuth config", async () => {
+    const payload = { configured: true, clientId: "cid", callbackUrl: "http://localhost:8080/api/github/callback", hasClientSecret: true };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => payload });
+
+    await expect(getGitHubConfig()).resolves.toEqual(payload);
+    expect(mockFetch).toHaveBeenCalledWith("/api/github/config", expect.objectContaining({ headers: expect.any(Object) }));
+  });
+
+  it("saveGitHubConfig posts client id, secret, and callback url", async () => {
+    const payload = { configured: true, clientId: "cid", callbackUrl: "http://localhost:8080/api/github/callback", hasClientSecret: true };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => payload });
+
+    await expect(saveGitHubConfig({ clientId: "cid", clientSecret: "secret", callbackUrl: "http://localhost:8080/api/github/callback" })).resolves.toEqual(payload);
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/github/config",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ clientId: "cid", clientSecret: "secret", callbackUrl: "http://localhost:8080/api/github/callback" }),
       }),
     );
   });

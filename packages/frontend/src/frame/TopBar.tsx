@@ -8,6 +8,7 @@ interface TopBarProps {
   theme: ThemeId;
   onThemeChange: (theme: ThemeId) => void;
   githubUser?: { login: string; avatar_url: string } | null;
+  onOpenIntegrations?: () => void;
 }
 
 function StatusDot({ color }: { color: string }) {
@@ -45,7 +46,7 @@ function StatusItem({ color, label }: { color: string; label: string }) {
   );
 }
 
-export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, githubUser }: TopBarProps) {
+export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, githubUser, onOpenIntegrations }: TopBarProps) {
   const dotColor = connected ? "var(--success)" : "var(--error)";
   return (
     <header
@@ -104,18 +105,36 @@ export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, 
       >
         <span>UPTIME <span style={{ color: "var(--accent)", fontWeight: 500 }}>{uptime}</span></span>
         <span>MISSIONS <span style={{ color: "var(--accent)", fontWeight: 500 }}>{missionCount}</span> ACTIVE</span>
-        {githubUser ? (
-          <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <img
-              src={githubUser.avatar_url}
-              alt={githubUser.login}
-              style={{ width: "18px", height: "18px", borderRadius: "50%" }}
-            />
-            <span style={{ color: "var(--text-secondary)" }}>{githubUser.login}</span>
-          </span>
-        ) : (
-          <span style={{ color: "var(--text-muted)" }}>GITHUB —</span>
-        )}
+        <button
+          onClick={onOpenIntegrations}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            background: "transparent",
+            border: "1px solid var(--border)",
+            borderRadius: "4px",
+            color: githubUser ? "var(--text-secondary)" : "var(--text-muted)",
+            cursor: "pointer",
+            padding: "3px 6px",
+            fontFamily: '"JetBrains Mono", monospace',
+            fontSize: "11px",
+          }}
+          title="Open integrations"
+        >
+          {githubUser ? (
+            <>
+              <img
+                src={githubUser.avatar_url}
+                alt={githubUser.login}
+                style={{ width: "18px", height: "18px", borderRadius: "50%" }}
+              />
+              <span>{githubUser.login}</span>
+            </>
+          ) : (
+            <span>GITHUB —</span>
+          )}
+        </button>
         <ThemePicker current={theme} onChange={onThemeChange} />
       </div>
     </header>

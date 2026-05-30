@@ -89,6 +89,35 @@ export interface GitHubRepoResponse {
   updated_at: string;
 }
 
+export interface GitHubConfigResponse {
+  configured: boolean;
+  clientId: string;
+  callbackUrl: string;
+  hasClientSecret: boolean;
+}
+
+export interface SaveGitHubConfigRequest {
+  clientId: string;
+  clientSecret: string;
+  callbackUrl: string;
+}
+
+export async function getGitHubConfig(): Promise<GitHubConfigResponse> {
+  const res = await apiFetch("/api/github/config");
+  if (!res.ok) throw new Error(`Failed to fetch GitHub config: ${res.status}`);
+  return res.json() as Promise<GitHubConfigResponse>;
+}
+
+export async function saveGitHubConfig(config: SaveGitHubConfigRequest): Promise<GitHubConfigResponse> {
+  const res = await apiFetch("/api/github/config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) throw new Error(`Failed to save GitHub config: ${res.status}`);
+  return res.json() as Promise<GitHubConfigResponse>;
+}
+
 export async function getGitHubStatus(): Promise<GitHubStatusResponse> {
   const res = await apiFetch("/api/github/status");
   if (!res.ok) throw new Error(`Failed to fetch GitHub status: ${res.status}`);

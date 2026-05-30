@@ -1,17 +1,20 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   getGitHubStatus,
+  getGitHubConfig,
+  saveGitHubConfig,
   getGitHubConnectUrl,
   getGitHubRepos,
   disconnectGitHub,
 } from "../api";
-import type { GitHubStatusResponse, GitHubRepoResponse } from "../api";
+import type { GitHubStatusResponse, GitHubRepoResponse, GitHubConfigResponse, SaveGitHubConfigRequest } from "../api";
 
 export interface GitHubState {
   configured: boolean;
   connected: boolean;
   user: GitHubStatusResponse["user"];
   repos: GitHubRepoResponse[];
+  config: GitHubConfigResponse | null;
   loading: boolean;
   error: string | null;
 }
@@ -19,6 +22,7 @@ export interface GitHubState {
 export interface UseGitHubReturn extends GitHubState {
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
+  saveConfig: (config: SaveGitHubConfigRequest) => Promise<void>;
   refreshRepos: () => Promise<void>;
 }
 
@@ -28,6 +32,7 @@ export function useGitHub(): UseGitHubReturn {
     connected: false,
     user: null,
     repos: [],
+    config: null,
     loading: true,
     error: null,
   });
@@ -43,12 +48,16 @@ export function useGitHub(): UseGitHubReturn {
 
   const refreshStatus = useCallback(async () => {
     try {
-      const status = await getGitHubStatus();
+      const [status, config] = await Promise.all([
+        getGitHubStatus(),
+        getGitHubConfig(),
+      ]);
       setState((prev) => ({
         ...prev,
         configured: status.configured,
         connected: status.connected,
         user: status.user,
+        config,
         loading: false,
         error: null,
       }));
@@ -106,6 +115,7 @@ export function useGitHub(): UseGitHubReturn {
         connected: false,
         user: null,
         repos: [],
+        config: null,
         loading: false,
         error: null,
       });
@@ -114,5 +124,21 @@ export function useGitHub(): UseGitHubReturn {
     }
   }, []);
 
-  return { ...state, connect, disconnect, refreshRepos };
+  const saveConfig = useCallback(async (config: SaveGitHubConfigRequest) => {
+    try {
+      const saved = await saveGitHubConfig(config);
+      setState((prev) => ({
+        ...prev,
+        configured: saved.configured,
+        config: saved,
+        loading: false,
+        error: null,
+      }));
+      await refreshStatus();
+    } catch {
+      setState((prev) => ({ ...prev, error: "Failed to save GitHub settings" }));
+    }
+  }, [refreshStatus]);
+
+  return { ...state, connect, disconnect, saveConfig, refreshRepos };
 }

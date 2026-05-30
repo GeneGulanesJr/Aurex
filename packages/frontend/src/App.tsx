@@ -7,6 +7,7 @@ import { useGitHub } from "./hooks/useGitHub";
 import { MissionSidebar } from "./active/MissionSidebar";
 import { StatusBoard } from "./passive/StatusBoard";
 import { EscalationOverlay } from "./active/EscalationOverlay";
+import { IntegrationsPanel } from "./active/IntegrationsPanel";
 import { TopBar } from "./frame/TopBar";
 import { TelemetryBar } from "./frame/TelemetryBar";
 import { submitCheckpoint, createMission } from "./api";
@@ -15,6 +16,7 @@ import type { WsClientEvent, CheckpointDecision } from "@aurex/shared";
 export function App() {
   const { theme, setTheme } = useTheme();
   const github = useGitHub();
+  const [integrationsOpen, setIntegrationsOpen] = useState(false);
   const { state: missionsState, selectMission, removeMission, addOptimisticMission, handleWsEvent: missionsWsHandler } = useMissions();
   const { state, dispatch, handleWsEvent: missionWsHandler } = useMission(missionsState.selectedMissionId);
   const eventsRef = useRef<WsClientEvent[]>([]);
@@ -100,6 +102,7 @@ export function App() {
         theme={theme}
         onThemeChange={setTheme}
         githubUser={github.user}
+        onOpenIntegrations={() => setIntegrationsOpen(true)}
       />
       <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gridTemplateRows: "1fr 36px", flex: 1, overflow: "hidden" }}>
         <MissionSidebar
@@ -127,6 +130,7 @@ export function App() {
           wsConnected={connected}
         />
       </div>
+      <IntegrationsPanel open={integrationsOpen} github={github} onClose={() => setIntegrationsOpen(false)} />
       {state.escalation?.type === "escalation" && (
         <EscalationOverlay
           event={state.escalation}

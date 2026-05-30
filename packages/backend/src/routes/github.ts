@@ -5,9 +5,22 @@ import { exchangeCode, getUser, listRepos, revokeToken } from "../clients/github
 
 interface GitHubRouteDeps {
   lapis: LaPisClient;
-  clientId: string;
-  clientSecret: string;
+  clientId?: string;
+  clientSecret?: string;
   callbackUrl: string;
+}
+
+interface GitHubConfigSetting {
+  clientId?: string;
+  clientSecret?: string;
+  callbackUrl?: string;
+}
+
+interface ResolvedGitHubConfig {
+  clientId?: string;
+  clientSecret?: string;
+  callbackUrl: string;
+  configured: boolean;
 }
 
 interface GitHubTokenSetting {
@@ -26,9 +39,42 @@ function cleanExpiredNonces() {
 }
 
 export function registerGitHubRoutes(app: FastifyInstance, deps: GitHubRouteDeps) {
-  const { lapis, clientId, clientSecret, callbackUrl } = deps;
+  const { lapis } = deps;
+
+  async function resolveConfig(): Promise<ResolvedGitHubConfig> {
+    const saved = await lapis.getSetting<GitHubConfigSetting>("github_config");
+    const clientId = saved?.clientId || deps.clientId;
+    const clientSecret = saved?.clientSecret || deps.clientSecret;
+    const callbackUrl = saved?.callbackUrl || deps.callbackUrl;
+    return { clientId, clientSecret, callbackUrl, configured: Boolean(clientId && clientSecret) };
+  }
+
+  function publicConfig(config: ResolvedGitHubConfig) {
+    return {
+      configured: config.configured,
+      clientId: config.clientId ?? "",
+      callbackUrl: config.callbackUrl,
+      hasClientSecret: Boolean(config.clientSecret),
+    };
+  }
+
+  app.get("/api/github/config", async () => publicConfig(await resolveConfig()));
+
+  app.post("/api/github/config", async (request, reply) => {
+    const { clientId, clientSecret, callbackUrl } = request.body as GitHubConfigSetting;
+    if (!clientId || !clientSecret) {
+      return reply.status(400).send({ error: "clientId and clientSecret are required" });
+    }
+    const config = { clientId, clientSecret, callbackUrl: callbackUrl || deps.callbackUrl };
+    await lapis.setSetting("github_config", config);
+    return publicConfig({ ...config, configured: true });
+  });
 
   app.get("/api/github/status", async () => {
+    const config = await resolveConfig();
+    if (!config.configured) {
+      return { configured: false, connected: false, user: null };
+    }
     const [tokenData, userData] = await Promise.all([
       lapis.getSetting<GitHubTokenSetting>("github_token"),
       lapis.getSetting("github_user"),
@@ -39,15 +85,19 @@ export function registerGitHubRoutes(app: FastifyInstance, deps: GitHubRouteDeps
     return { configured: true, connected: true, user: userData ?? null };
   });
 
-  app.get("/api/github/connect", async () => {
+  app.get("/api/github/connect", async (_request, reply) => {
+    const config = await resolveConfig();
+    if (!config.configured || !config.clientId) {
+      return reply.status(400).send({ error: "GitHub OAuth is not configured" });
+    }
     cleanExpiredNonces();
     const state = crypto.randomUUID();
     nonces.set(state, Date.now());
     const params = new URLSearchParams({
-      client_id: clientId,
+      client_id: config.clientId,
       scope: "repo",
       state,
-      redirect_uri: callbackUrl,
+      redirect_uri: config.callbackUrl,
     });
     return { url: `https://github.com/login/oauth/authorize?${params.toString()}` };
   });
@@ -65,7 +115,11 @@ export function registerGitHubRoutes(app: FastifyInstance, deps: GitHubRouteDeps
     }
 
     try {
-      const token = await exchangeCode(clientId, clientSecret, code, callbackUrl);
+      const config = await resolveConfig();
+      if (!config.configured || !config.clientId || !config.clientSecret) {
+        return reply.redirect("/?github_error=not_configured");
+      }
+      const token = await exchangeCode(config.clientId, config.clientSecret, code, config.callbackUrl);
       const user = await getUser(token);
       await Promise.all([
         lapis.setSetting("github_token", { access_token: token, created_at: new Date().toISOString() }),
@@ -97,7 +151,10 @@ export function registerGitHubRoutes(app: FastifyInstance, deps: GitHubRouteDeps
     const tokenData = await lapis.getSetting<GitHubTokenSetting>("github_token");
     if (tokenData?.access_token) {
       try {
-        await revokeToken(clientId, clientSecret, tokenData.access_token);
+        const config = await resolveConfig();
+        if (config.clientId && config.clientSecret) {
+          await revokeToken(config.clientId, config.clientSecret, tokenData.access_token);
+        }
       } catch (err) {
         console.error("[github] revoke error (continuing):", err);
       }

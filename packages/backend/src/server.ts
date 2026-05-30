@@ -84,17 +84,13 @@ async function main() {
   });
   await app.register(checkpointRoutes, { lapis });
 
-  // GitHub OAuth (optional — only if configured)
-  if (config.githubClientId && config.githubClientSecret) {
-    registerGitHubRoutes(app, {
-      lapis,
-      clientId: config.githubClientId,
-      clientSecret: config.githubClientSecret,
-      callbackUrl: config.githubCallbackUrl,
-    });
-  } else {
-    app.get("/api/github/status", async () => ({ configured: false, connected: false, user: null }));
-  }
+  // GitHub OAuth/config (env-backed or configured from UI into LaPis settings)
+  registerGitHubRoutes(app, {
+    lapis,
+    clientId: config.githubClientId,
+    clientSecret: config.githubClientSecret,
+    callbackUrl: config.githubCallbackUrl,
+  });
 
   // Start
   try {
