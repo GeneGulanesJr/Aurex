@@ -19,6 +19,8 @@ export interface MissionConfig {
   costCap: number;
   maxValidatorRetries: number;
   maxRescopes: number;
+  cloneUrl?: string;
+  repoRoot?: string;
 }
 
 export interface Milestone {
