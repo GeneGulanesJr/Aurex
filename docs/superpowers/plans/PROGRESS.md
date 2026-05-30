@@ -1,6 +1,6 @@
 # Aurex — Progress Tracker
 
-_Last updated: 2026-05-30 | HEAD: `89b1aa5` | 251 tests across 48 files_
+_Last updated: 2026-05-30 | GitHub integration branch | 283 tests across 51 files_
 
 ## Subsystem Status
 
@@ -25,6 +25,7 @@ _Last updated: 2026-05-30 | HEAD: `89b1aa5` | 251 tests across 48 files_
 | **Overlap detection** | ✅ Complete | — | 11 tests | Pre-spawn + post-commit overlap checks, `excludeIds` defense |
 | **Validation contracts** | ✅ Complete | — | ✅ | Append-only with versioning, supersede via rescope |
 | **Startup recovery** | ✅ Complete | — | — | Auto-resume paused missions |
+| **GitHub integration** | 🚧 In progress | — | 11 new tests | OAuth client/routes, repo picker, cloneUrl mission config |
 
 ## Remaining Gaps (from spec, functional not structural)
 
@@ -55,6 +56,7 @@ _Last updated: 2026-05-30 | HEAD: `89b1aa5` | 251 tests across 48 files_
 | 2026-05-28 | 168 | 41 | PR #9 merge — all major gaps closed |
 | 2026-05-28 | 246 | 47 | PR #25 merge — enforcement wiring |
 | 2026-05-30 | 251 | 48 | Overlap bug fix + new tests |
+| 2026-05-30 | 283 | 51 | GitHub client + frontend integration in progress |
 
 ## Key Decisions
 
@@ -64,3 +66,4 @@ _Last updated: 2026-05-30 | HEAD: `89b1aa5` | 251 tests across 48 files_
 - **Workers are ephemeral** — isolated Pi SDK sessions with restricted tool sets, own git worktree
 - **Validation contracts are immutable** — append-only with versioning, supersede requires rescope event
 - **Overlap check excludes by ID** — defense in depth against self-overlap on re-processing
+- **GitHub OAuth is backend-proxied** — token stored in LaPis settings and never exposed to frontend JS
