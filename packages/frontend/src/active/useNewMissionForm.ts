@@ -4,6 +4,8 @@ export interface FormState {
   open: boolean;
   description: string;
   submitting: boolean;
+  selectedCloneUrl?: string;
+  selectedRepoId?: number | null;
   error: string | null;
 }
 
@@ -11,6 +13,7 @@ export type FormAction =
   | { type: "OPEN" }
   | { type: "CLOSE" }
   | { type: "SET_DESCRIPTION"; value: string }
+  | { type: "SET_REPO"; cloneUrl: string; repoId: number }
   | { type: "SUBMIT_START" }
   | { type: "SUBMIT_SUCCESS" }
   | { type: "SUBMIT_ERROR"; error: string };
@@ -19,6 +22,8 @@ export const initialFormState: FormState = {
   open: false,
   description: "",
   submitting: false,
+  selectedCloneUrl: undefined,
+  selectedRepoId: null,
   error: null,
 };
 
@@ -30,6 +35,8 @@ export function formReducer(state: FormState, action: FormAction): FormState {
       return initialFormState;
     case "SET_DESCRIPTION":
       return { ...state, description: action.value };
+    case "SET_REPO":
+      return { ...state, selectedCloneUrl: action.cloneUrl, selectedRepoId: action.repoId };
     case "SUBMIT_START":
       return { ...state, submitting: true, error: null };
     case "SUBMIT_SUCCESS":
@@ -44,7 +51,7 @@ export function formReducer(state: FormState, action: FormAction): FormState {
 export async function submitIfValid(
   description: string,
   submitting: boolean,
-  onSubmit: (description: string) => Promise<void>,
+  onSubmit: (description: string, cloneUrl?: string) => Promise<void>,
   dispatch: React.Dispatch<FormAction>,
 ): Promise<void> {
   const trimmed = description.trim();
@@ -58,12 +65,13 @@ export async function submitIfValid(
   }
 }
 
-export function useNewMissionForm(onSubmit: (description: string) => Promise<void>) {
+export function useNewMissionForm(onSubmit: (description: string, cloneUrl?: string) => Promise<void>) {
   const [state, dispatch] = useReducer(formReducer, initialFormState);
 
   const handleSubmit = useCallback(() => {
-    submitIfValid(state.description, state.submitting, onSubmit, dispatch);
-  }, [state.description, state.submitting, onSubmit]);
+    const submit = (description: string) => onSubmit(description, state.selectedCloneUrl);
+    submitIfValid(state.description, state.submitting, submit, dispatch);
+  }, [state.description, state.submitting, state.selectedCloneUrl, onSubmit]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -78,12 +86,14 @@ export function useNewMissionForm(onSubmit: (description: string) => Promise<voi
   const open = useCallback(() => dispatch({ type: "OPEN" }), []);
   const close = useCallback(() => dispatch({ type: "CLOSE" }), []);
   const setDescription = useCallback((value: string) => dispatch({ type: "SET_DESCRIPTION", value }), []);
+  const setRepo = useCallback((cloneUrl: string, repoId: number) => dispatch({ type: "SET_REPO", cloneUrl, repoId }), []);
 
   return {
     state,
     open,
     close,
     setDescription,
+    setRepo,
     handleSubmit,
     handleKeyDown,
     canSubmit: state.description.trim().length > 0 && !state.submitting,
