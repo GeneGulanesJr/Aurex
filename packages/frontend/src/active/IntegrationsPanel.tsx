@@ -46,8 +46,9 @@ export function IntegrationsPanel({ open, github, onClose }: IntegrationsPanelPr
       setPinyx(saved);
       const models = await getPinyxModels().catch(() => ({ models: [] }));
       setPinyxModels(models.models);
-    } catch {
-      setPinyxError("Failed to save PiNyx config");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to save PiNyx config";
+      setPinyxError(msg.includes("502") || msg.includes("Failed") ? "PiNyx endpoint is unreachable" : msg);
     } finally {
       setPinyxSaving(false);
     }
