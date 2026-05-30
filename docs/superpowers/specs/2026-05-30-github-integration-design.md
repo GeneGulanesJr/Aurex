@@ -51,9 +51,9 @@ Thin wrapper around GitHub REST API using native `fetch` (Node 22 built-in).
 - `exchangeCode(clientId, clientSecret, code, redirectUri)` → `{ access_token }` — POST to `https://github.com/login/oauth/access_token`
 - `getUser(token)` → `{ login, avatar_url, name }` — GET `https://api.github.com/user`
 - `listRepos(token, opts?)` → `[{ id, full_name, clone_url, private, default_branch, updated_at }]` — GET `https://api.github.com/user/repos?sort=updated&per_page=100`
-- `revokeToken(clientId, clientSecret, token)` → void — DELETE `https://api.github.com/applications/{clientId}/token`
+- `revokeToken(clientId, clientSecret, token)` → void — DELETE `https://api.github.com/applications/{clientId}/token`. Requires HTTP Basic Auth with `clientId:clientSecret` as credentials.
 
-All functions set `Accept: application/vnd.github+json` header.
+All functions set `Accept: application/vnd.github+json` and `User-Agent: Aurex` headers.
 
 #### `packages/backend/src/routes/github.ts`
 
@@ -63,7 +63,7 @@ Fastify route plugin registered at `/api/github`.
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| `GET` | `/api/github/status` | API key (if configured) | Returns `{ connected: bool, user: { login, avatar_url } }` or `{ connected: false }` |
+| `GET` | `/api/github/status` | API key (if configured) | Returns `{ configured: bool, connected: bool, user: { login, avatar_url, name } }` or `{ configured: false, connected: false }` |
 | `GET` | `/api/github/repos` | API key (if configured) | Returns array of repos. Returns 401 if not connected. |
 | `GET` | `/api/github/callback` | None | OAuth callback. Validates `state` param, exchanges `code` for token, stores in LaPis, redirects to `/` |
 | `POST` | `/api/github/disconnect` | API key (if configured) | Revokes token on GitHub, deletes stored token from LaPis |
@@ -79,7 +79,12 @@ Fastify route plugin registered at `/api/github`.
 7. Backend stores `github_token` and `github_user` in LaPis
 8. Backend redirects (302) to frontend root `/`
 
-> **Note**: The `state` nonce is generated and validated entirely server-side. It is never sent to the frontend — CSRF protection comes from the server-side nonce matching, not client-side storage.
+**Error cases:**
+- Unknown/expired `state` → redirect to `/?github_error=expired`
+- `exchangeCode` fails (bad code, wrong secret) → redirect to `/?github_error=exchange_failed`
+- `getUser` fails (bad token) → redirect to `/?github_error=user_fetch_failed`
+
+> **Note**: The `state` nonce is generated and validated server-side. It passes through the browser URL during the GitHub redirect (standard OAuth behavior) but is never handled or stored by frontend JavaScript code.
 
 ### Token Storage (LaPis)
 
@@ -166,7 +171,7 @@ interface UseGitHubReturn extends GitHubState {
 
 - On mount: `GET /api/github/status` → sets `connected`, `configured`, `user`
 - If connected: auto-fetches `GET /api/github/repos`
-- `connect()` — calls `GET /api/github/connect`, stores state nonce, redirects
+- `connect()` — calls `GET /api/github/connect`, redirects browser to the returned `url`
 
 #### `packages/frontend/src/active/GitHubStatus.tsx`
 
@@ -198,7 +203,9 @@ Searchable dropdown component:
   - If `connected && repos.length > 0` → show RepoPicker
   - If `configured && !connected` → show "Connect GitHub" button
   - If `!configured` → show manual repo path input (current behavior)
-- On repo select: pre-fill `REPO_ROOT` or call `createMission(description, repo.clone_url)`
+- On repo select: the `clone_url` is passed as part of the mission creation payload. The backend's `POST /api/missions` endpoint needs a new optional `cloneUrl` field — if provided, the backend clones the repo into a workspace directory before creating the mission. The `REPO_ROOT` env var is used as the parent directory for cloned repos (e.g., `${REPO_ROOT}/repos/{owner}-{repo}`).
+
+> **Backend change required**: `POST /api/missions` must accept `cloneUrl` in the request body. When present, the mission runner clones the repo before starting the milestone loop. The `mission.configJson` should store the `cloneUrl` so the runner can reference it.
 
 #### `packages/frontend/src/frame/TopBar.tsx`
 
@@ -228,7 +235,7 @@ export interface GitHubStatus {
 
 ## Security
 
-1. **CSRF protection**: `state` nonce generated and stored server-side only (never sent to frontend), validated on callback
+1. **CSRF protection**: `state` nonce generated and stored server-side, validated on callback. Nonce passes through browser URL (standard OAuth) but is never handled by frontend JS.
 2. **Token never in frontend**: all GitHub API calls proxied through backend
 3. **Client secret server-only**: `GITHUB_CLIENT_SECRET` never leaves backend process
 4. **Token revocation on disconnect**: calls GitHub's token revocation endpoint before deleting
@@ -271,7 +278,8 @@ GITHUB_CALLBACK_URL=http://localhost:8080/api/github/callback
 7. Frontend `RepoPicker` component
 8. Frontend integration (NewMissionForm, TopBar, App)
 9. Docker/env config updates
-10. Tests (unit tests for github-client, route tests, LaPis settings handler)
+10. Backend mission route update — accept `cloneUrl`, clone repo into workspace
+11. Tests (unit tests for github-client, route tests, LaPis settings handler)
 
 ## Files Summary
 
@@ -295,6 +303,7 @@ GITHUB_CALLBACK_URL=http://localhost:8080/api/github/callback
 | `packages/frontend/src/active/GitHubStatus.tsx` | New |
 | `packages/frontend/src/active/RepoPicker.tsx` | New |
 | `packages/frontend/src/active/NewMissionForm.tsx` | Modify — add RepoPicker |
+| `packages/backend/src/routes/missions.ts` | Modify — accept optional `cloneUrl` in POST body, trigger clone |
 | `packages/frontend/src/active/MissionSidebar.tsx` | Modify — pass GitHub state |
 | `packages/frontend/src/frame/TopBar.tsx` | Modify — add status indicator |
 | `packages/frontend/src/App.tsx` | Modify — add useGitHub |
