@@ -40,6 +40,11 @@ export interface AppConfig {
   // Authentication
   apiKey: string | null;
 
+  // GitHub OAuth
+  githubClientId?: string;
+  githubClientSecret?: string;
+  githubCallbackUrl: string;
+
   // Multi-mission concurrency
   maxConcurrentMissions: number;
 }
@@ -70,6 +75,10 @@ export function loadConfig(): AppConfig {
     }
   }
 
+  const githubClientId = env("GITHUB_CLIENT_ID", "");
+  const githubClientSecret = env("GITHUB_CLIENT_SECRET", "");
+  const githubCallbackUrl = env("GITHUB_CALLBACK_URL", "http://localhost:8080/api/github/callback");
+
   return {
     lapisEndpoint: env("LAPIS_ENDPOINT"),
     pinyxEndpoint: env("PINYX_ENDPOINT"),
@@ -99,6 +108,9 @@ export function loadConfig(): AppConfig {
 
     port: envInt("PORT", 3000),
     apiKey: process.env.API_KEY || null,
+    githubClientId: githubClientId || undefined,
+    githubClientSecret: githubClientSecret || undefined,
+    githubCallbackUrl,
     maxConcurrentMissions: envInt("MAX_CONCURRENT_MISSIONS", 3),
   };
 }

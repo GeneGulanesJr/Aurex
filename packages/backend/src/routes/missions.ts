@@ -41,11 +41,12 @@ export async function missionRoutes(
     return { mission, milestones, activeWorkers, cost };
   }
   app.post("/api/missions", async (request, reply) => {
-    const { description } = request.body as { description: string };
+    const { description, cloneUrl } = request.body as { description: string; cloneUrl?: string };
     if (!description) {
       return reply.status(400).send({ error: "description is required" });
     }
-    const mission = await lapis.createMission(description, missionConfig);
+    const config = cloneUrl ? { ...missionConfig, cloneUrl } : missionConfig;
+    const mission = await lapis.createMission(description, config);
     pool.submit(mission.id);
     return reply.status(201).send({ missionId: mission.id, status: mission.status });
   });

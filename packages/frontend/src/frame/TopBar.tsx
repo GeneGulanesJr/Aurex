@@ -7,6 +7,7 @@ interface TopBarProps {
   uptime: string;
   theme: ThemeId;
   onThemeChange: (theme: ThemeId) => void;
+  githubUser?: { login: string; avatar_url: string } | null;
 }
 
 function StatusDot({ color }: { color: string }) {
@@ -44,7 +45,7 @@ function StatusItem({ color, label }: { color: string; label: string }) {
   );
 }
 
-export function TopBar({ connected, missionCount, uptime, theme, onThemeChange }: TopBarProps) {
+export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, githubUser }: TopBarProps) {
   const dotColor = connected ? "var(--success)" : "var(--error)";
   return (
     <header
@@ -103,6 +104,18 @@ export function TopBar({ connected, missionCount, uptime, theme, onThemeChange }
       >
         <span>UPTIME <span style={{ color: "var(--accent)", fontWeight: 500 }}>{uptime}</span></span>
         <span>MISSIONS <span style={{ color: "var(--accent)", fontWeight: 500 }}>{missionCount}</span> ACTIVE</span>
+        {githubUser ? (
+          <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <img
+              src={githubUser.avatar_url}
+              alt={githubUser.login}
+              style={{ width: "18px", height: "18px", borderRadius: "50%" }}
+            />
+            <span style={{ color: "var(--text-secondary)" }}>{githubUser.login}</span>
+          </span>
+        ) : (
+          <span style={{ color: "var(--text-muted)" }}>GITHUB —</span>
+        )}
         <ThemePicker current={theme} onChange={onThemeChange} />
       </div>
     </header>

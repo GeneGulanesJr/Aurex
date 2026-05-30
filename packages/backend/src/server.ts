@@ -9,6 +9,7 @@ import { createMissionRunnerPool } from "./orchestrator/mission-runner-pool.js";
 import { missionRoutes } from "./routes/missions.js";
 import { checkpointRoutes } from "./routes/checkpoints.js";
 import { registerGlobalAuth } from "./routes/auth.js";
+import { registerGitHubRoutes } from "./routes/github.js";
 
 async function main() {
   const config = loadConfig();
@@ -82,6 +83,18 @@ async function main() {
     },
   });
   await app.register(checkpointRoutes, { lapis });
+
+  // GitHub OAuth (optional — only if configured)
+  if (config.githubClientId && config.githubClientSecret) {
+    registerGitHubRoutes(app, {
+      lapis,
+      clientId: config.githubClientId,
+      clientSecret: config.githubClientSecret,
+      callbackUrl: config.githubCallbackUrl,
+    });
+  } else {
+    app.get("/api/github/status", async () => ({ configured: false, connected: false, user: null }));
+  }
 
   // Start
   try {

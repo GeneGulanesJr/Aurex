@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import type { MissionListItem } from "../hooks/useMissions";
+import type { UseGitHubReturn } from "../hooks/useGitHub";
 import { abortMission } from "../api";
 import { NewMissionForm } from "./NewMissionForm";
 
@@ -8,7 +9,8 @@ interface MissionSidebarProps {
   selectedMissionId: string | null;
   onSelect: (missionId: string) => void;
   onRemove: (missionId: string) => void;
-  onCreateMission: (description: string) => Promise<void>;
+  onCreateMission: (description: string, cloneUrl?: string) => Promise<void>;
+  github?: UseGitHubReturn;
 }
 
 function statusBadge(state: string): { label: string; style: React.CSSProperties } {
@@ -29,7 +31,7 @@ function statusBadge(state: string): { label: string; style: React.CSSProperties
   }
 }
 
-export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove, onCreateMission }: MissionSidebarProps) {
+export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove, onCreateMission, github }: MissionSidebarProps) {
   const handleAbort = useCallback(async (e: React.MouseEvent, missionId: string) => {
     e.stopPropagation();
     try {
@@ -44,7 +46,7 @@ export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove
         <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)" }}>
           <h2 style={{ fontSize: "11px", fontWeight: 500, color: "var(--text-secondary)", fontFamily: '"JetBrains Mono", monospace', textTransform: "uppercase", letterSpacing: "2px", margin: 0 }}>Missions</h2>
         </div>
-        <NewMissionForm onSubmit={onCreateMission} />
+        <NewMissionForm onSubmit={onCreateMission} github={github} />
         <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "8px" }}>
           <div style={{ width: "32px", height: "32px", border: "1px dashed var(--border)", borderRadius: "4px", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--border-bright)", fontSize: "16px" }}>◎</div>
           <span style={{ fontSize: "11px", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace' }}>NO ACTIVE MISSIONS</span>
@@ -63,7 +65,7 @@ export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove
       <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)" }}>
         <h2 style={{ fontSize: "11px", fontWeight: 500, color: "var(--text-secondary)", fontFamily: '"JetBrains Mono", monospace', textTransform: "uppercase", letterSpacing: "2px", margin: 0 }}>Missions</h2>
       </div>
-      <NewMissionForm onSubmit={onCreateMission} />
+      <NewMissionForm onSubmit={onCreateMission} github={github} />
       <div style={{ flex: 1, overflowY: "auto" }}>
         {missions.map((mission) => {
           const badge = statusBadge(mission.state);

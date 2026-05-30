@@ -19,6 +19,8 @@ export interface MissionConfig {
   costCap: number;
   maxValidatorRetries: number;
   maxRescopes: number;
+  cloneUrl?: string;
+  repoRoot?: string;
 }
 
 export interface Milestone {
@@ -241,4 +243,19 @@ export interface CheckpointRecord {
   reason?: string;
   createdAt: string;
   resolvedAt?: string;
+}
+
+export interface GitHubRepo {
+  id: number;
+  full_name: string;
+  clone_url: string;
+  private: boolean;
+  default_branch: string;
+  updated_at: string;
+}
+
+export interface GitHubStatus {
+  configured: boolean;
+  connected: boolean;
+  user: { login: string; avatar_url: string; name: string | null } | null;
 }

@@ -3,6 +3,7 @@ import { useWebSocket } from "./hooks/useWebSocket";
 import { useMissions } from "./hooks/useMissions";
 import { useMission } from "./hooks/useMission";
 import { useTheme } from "./hooks/useTheme";
+import { useGitHub } from "./hooks/useGitHub";
 import { MissionSidebar } from "./active/MissionSidebar";
 import { StatusBoard } from "./passive/StatusBoard";
 import { EscalationOverlay } from "./active/EscalationOverlay";
@@ -13,6 +14,7 @@ import type { WsClientEvent, CheckpointDecision } from "@aurex/shared";
 
 export function App() {
   const { theme, setTheme } = useTheme();
+  const github = useGitHub();
   const { state: missionsState, selectMission, removeMission, addOptimisticMission, handleWsEvent: missionsWsHandler } = useMissions();
   const { state, dispatch, handleWsEvent: missionWsHandler } = useMission(missionsState.selectedMissionId);
   const eventsRef = useRef<WsClientEvent[]>([]);
@@ -53,8 +55,8 @@ export function App() {
     dispatch({ type: "CLEAR_ESCALATION" });
   }, [state.mission, state.escalation, dispatch]);
 
-  const handleCreateMission = useCallback(async (description: string) => {
-    const { missionId } = await createMission(description);
+  const handleCreateMission = useCallback(async (description: string, cloneUrl?: string) => {
+    const { missionId } = await createMission(description, cloneUrl);
     addOptimisticMission(missionId, description);
   }, [addOptimisticMission]);
 
@@ -97,6 +99,7 @@ export function App() {
         uptime={uptime}
         theme={theme}
         onThemeChange={setTheme}
+        githubUser={github.user}
       />
       <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gridTemplateRows: "1fr 36px", flex: 1, overflow: "hidden" }}>
         <MissionSidebar
@@ -105,6 +108,7 @@ export function App() {
           onSelect={selectMission}
           onRemove={removeMission}
           onCreateMission={handleCreateMission}
+          github={github}
         />
         <main style={{ overflowY: "auto", background: "var(--bg-deep)" }}>
           <StatusBoard

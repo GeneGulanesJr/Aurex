@@ -1,11 +1,19 @@
 import { useNewMissionForm } from "./useNewMissionForm";
+import { RepoPicker } from "./RepoPicker";
+import type { UseGitHubReturn } from "../hooks/useGitHub";
+import type { GitHubRepoResponse } from "../api";
 
 interface NewMissionFormProps {
-  onSubmit: (description: string) => Promise<void>;
+  onSubmit: (description: string, cloneUrl?: string) => Promise<void>;
+  github?: UseGitHubReturn;
 }
 
-export function NewMissionForm({ onSubmit }: NewMissionFormProps) {
-  const { state, open, close, setDescription, handleSubmit, handleKeyDown, canSubmit } = useNewMissionForm(onSubmit);
+export function NewMissionForm({ onSubmit, github }: NewMissionFormProps) {
+  const { state, open, close, setDescription, setRepo, handleSubmit, handleKeyDown, canSubmit } = useNewMissionForm(onSubmit);
+
+  const handleRepoSelect = (repo: GitHubRepoResponse) => {
+    setRepo(repo.clone_url, repo.id);
+  };
 
   if (!state.open) {
     return (
@@ -34,7 +42,37 @@ export function NewMissionForm({ onSubmit }: NewMissionFormProps) {
   }
 
   return (
-    <div style={{ padding: "8px 16px", borderBottom: "1px solid var(--border)" }}>
+    <div style={{ padding: "8px 16px", borderBottom: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: "8px" }}>
+      {github?.configured && !github.connected && (
+        <button
+          onClick={() => void github.connect()}
+          style={{
+            padding: "6px 8px",
+            background: "transparent",
+            color: "var(--accent)",
+            border: "1px solid var(--accent-dim)",
+            borderRadius: "4px",
+            fontSize: "11px",
+            fontFamily: '"JetBrains Mono", monospace',
+            cursor: "pointer",
+            textTransform: "uppercase" as const,
+            letterSpacing: "1px",
+          }}
+        >
+          Connect GitHub
+        </button>
+      )}
+      {github?.connected && github.repos.length > 0 && (
+        <RepoPicker repos={github.repos} selectedRepoId={state.selectedRepoId} onSelect={handleRepoSelect} />
+      )}
+      {state.selectedCloneUrl && (
+        <div style={{ color: "var(--accent)", fontSize: "10px", fontFamily: '"JetBrains Mono", monospace' }}>
+          REPO SELECTED
+        </div>
+      )}
+      {github?.error && (
+        <p style={{ fontSize: "12px", color: "var(--error)", margin: 0 }}>{github.error}</p>
+      )}
       <textarea
         value={state.description}
         onChange={(e) => setDescription(e.target.value)}
@@ -56,7 +94,7 @@ export function NewMissionForm({ onSubmit }: NewMissionFormProps) {
         autoFocus
         disabled={state.submitting}
       />
-      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "8px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
         <button
           onClick={handleSubmit}
           disabled={!canSubmit}

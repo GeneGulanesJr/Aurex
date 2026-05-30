@@ -18,11 +18,13 @@ function apiFetch(url: string, opts?: RequestInit): Promise<Response> {
   return fetch(url, { ...opts, headers: { ...authHeaders(), ...opts?.headers } });
 }
 
-export async function createMission(description: string): Promise<CreateMissionResponse> {
+export async function createMission(description: string, cloneUrl?: string): Promise<CreateMissionResponse> {
+  const body: Record<string, string> = { description };
+  if (cloneUrl) body.cloneUrl = cloneUrl;
   const res = await apiFetch("/api/missions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ description }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`Failed to create mission: ${res.status}`);
   return res.json() as Promise<CreateMissionResponse>;
@@ -70,4 +72,43 @@ export async function submitCheckpoint(
 export async function getHealth(): Promise<HealthResponse> {
   const res = await apiFetch("/health");
   return res.json() as Promise<HealthResponse>;
+}
+
+export interface GitHubStatusResponse {
+  configured: boolean;
+  connected: boolean;
+  user: { login: string; avatar_url: string; name: string | null } | null;
+}
+
+export interface GitHubRepoResponse {
+  id: number;
+  full_name: string;
+  clone_url: string;
+  private: boolean;
+  default_branch: string;
+  updated_at: string;
+}
+
+export async function getGitHubStatus(): Promise<GitHubStatusResponse> {
+  const res = await apiFetch("/api/github/status");
+  if (!res.ok) throw new Error(`Failed to fetch GitHub status: ${res.status}`);
+  return res.json() as Promise<GitHubStatusResponse>;
+}
+
+export async function getGitHubConnectUrl(): Promise<{ url: string }> {
+  const res = await apiFetch("/api/github/connect");
+  if (!res.ok) throw new Error(`Failed to start GitHub OAuth: ${res.status}`);
+  return res.json() as Promise<{ url: string }>;
+}
+
+export async function getGitHubRepos(): Promise<GitHubRepoResponse[]> {
+  const res = await apiFetch("/api/github/repos");
+  if (!res.ok) throw new Error(`Failed to fetch GitHub repos: ${res.status}`);
+  return res.json() as Promise<GitHubRepoResponse[]>;
+}
+
+export async function disconnectGitHub(): Promise<{ success: boolean }> {
+  const res = await apiFetch("/api/github/disconnect", { method: "POST" });
+  if (!res.ok) throw new Error(`Failed to disconnect GitHub: ${res.status}`);
+  return res.json() as Promise<{ success: boolean }>;
 }
