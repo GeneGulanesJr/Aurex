@@ -41,6 +41,14 @@ describe('tool-guardrails: isTargetedSymbolLookup', () => {
     expect(isTargetedSymbolLookup('grep -rn --include="*.js" "rankObservations" src/')).toBe(true);
   });
 
+  test('allows grep with --include flag after the symbol', () => {
+    expect(
+      isTargetedSymbolLookup(
+        'grep -rn "rankObservations" /home/user/project/ --include="*.ts" --include="*.js" -l',
+      ),
+    ).toBe(true);
+  });
+
   test('blocks empty or missing pattern', () => {
     expect(isTargetedSymbolLookup('grep -rn src/')).toBe(false);
   });

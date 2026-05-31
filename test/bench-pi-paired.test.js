@@ -42,6 +42,7 @@ describe('bench pi paired parser', () => {
     expect(parsed.usage.cache_write_tokens).toBe(40);
     expect(parsed.usage.active_tokens).toBe(180);
     expect(parsed.usage.effective_tokens).toBe(215);
+    expect(parsed.usage.cache_discounted_tokens).toBe(184);
     expect(parsed.usage.total_tokens).toBe(215);
     expect(parsed.usage.answer_active_tokens).toBe(180);
     expect(parsed.usage.setup_active_tokens).toBe(0);
@@ -78,6 +79,7 @@ describe('bench pi paired parser', () => {
 
     expect(parsed.usage.active_tokens).toBe(1075);
     expect(parsed.usage.effective_tokens).toBe(1275);
+    expect(parsed.usage.cache_discounted_tokens).toBe(1095);
     expect(parsed.usage.answer_active_tokens).toBe(50);
     expect(parsed.usage.setup_active_tokens).toBe(1025);
     expect(parsed.behavior.tool_names).toEqual(['read']);
@@ -225,6 +227,7 @@ describe('bench pi paired parser', () => {
             active_tokens: 100,
             cache_read_tokens: 20,
             effective_tokens: 120,
+            cache_discounted_tokens: 102,
             answer_active_tokens: 80,
             setup_active_tokens: 20,
             cost_usd: 0.1,
@@ -244,6 +247,7 @@ describe('bench pi paired parser', () => {
             active_tokens: 50,
             cache_read_tokens: 30,
             effective_tokens: 80,
+            cache_discounted_tokens: 53,
             answer_active_tokens: 40,
             setup_active_tokens: 10,
             cost_usd: 0.06,
@@ -270,6 +274,8 @@ describe('bench pi paired parser', () => {
     expect(summary.memory_on_elapsed_ms).toBe(5);
     expect(summary.memory_off_effective_tokens).toBe(120);
     expect(summary.memory_on_effective_tokens).toBe(80);
+    expect(summary.memory_off_cache_discounted_tokens).toBe(102);
+    expect(summary.memory_on_cache_discounted_tokens).toBe(53);
     expect(summary.memory_off_answer_active_tokens).toBe(80);
     expect(summary.memory_on_answer_active_tokens).toBe(40);
     expect(summary.memory_off_setup_active_tokens).toBe(20);
@@ -277,16 +283,20 @@ describe('bench pi paired parser', () => {
     expect(summary.memory_off_cost_usd).toBe(0.1);
     expect(summary.memory_on_cost_usd).toBe(0.06);
     expect(summary.effective_token_savings_pct).toBe('33.3%');
+    expect(summary.cache_discounted_token_savings_pct).toBe('48.0%');
     expect(summary.answer_token_savings_pct).toBe('50.0%');
     expect(summary.cost_savings_pct).toBe('40.0%');
     expect(summary.categories[0]).toMatchObject({
       memory_off_effective_tokens: 120,
       memory_on_effective_tokens: 80,
+      memory_off_cache_discounted_tokens: 102,
+      memory_on_cache_discounted_tokens: 53,
       memory_off_answer_active_tokens: 80,
       memory_on_answer_active_tokens: 40,
       memory_off_setup_active_tokens: 20,
       memory_on_setup_active_tokens: 10,
       effective_token_savings_pct: '33.3%',
+      cache_discounted_token_savings_pct: '48.0%',
       answer_token_savings_pct: '50.0%',
     });
   });

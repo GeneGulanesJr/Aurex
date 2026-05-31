@@ -74,17 +74,21 @@ function isTargetedSymbolLookup(cmd) {
     return false;
   }
 
-  // Extract the LAST quoted search pattern (not flags like --include="*.js")
-  let lastMatch = null;
+  // Extract the first quoted search pattern that is not a glob option value.
+  // Some grep invocations put --include after the search pattern, so using the
+  // Last-quoted-string parsing misclassifies them.
+  let pattern = null;
   let m;
   while ((m = QUOTED_PATTERN_RE.exec(cmd)) !== null) {
-    lastMatch = m[1];
+    const candidate = m[1];
+    if (!/[*?]/.test(candidate)) {
+      pattern = candidate;
+      break;
+    }
   }
-  if (!lastMatch) {
+  if (!pattern) {
     return false;
   }
-
-  const pattern = lastMatch;
 
   // Pattern must be long enough to be targeted (not broad)
   if (pattern.length < MIN_SYMBOL_LENGTH) {

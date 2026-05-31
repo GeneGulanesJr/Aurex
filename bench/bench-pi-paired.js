@@ -18,6 +18,7 @@ const { spawn } = require('child_process');
 const DEFAULT_TASKS = path.join(__dirname, 'fixtures', 'pi-memory-tasks.json');
 const PI_CONFIG_FILES = ['models.json', 'settings.json', 'auth.json'];
 const MEMORY_OFF_EMPTY_SETTINGS = new Set(['packages']);
+const CACHE_READ_TOKEN_WEIGHT = 0.1;
 
 function parseArgs(argv) {
   const args = {
@@ -219,6 +220,7 @@ function parsePiOutput(raw) {
     active_tokens: 0,
     total_tokens: 0,
     effective_tokens: 0,
+    cache_discounted_tokens: 0,
     answer_active_tokens: 0,
     setup_active_tokens: 0,
     cost_usd: 0,
@@ -361,6 +363,7 @@ function parsePiOutput(raw) {
 
   usage.active_tokens = usage.input_tokens + usage.output_tokens;
   usage.effective_tokens = usage.active_tokens + usage.cache_read_tokens;
+  usage.cache_discounted_tokens = Math.round(usage.active_tokens + usage.cache_read_tokens * CACHE_READ_TOKEN_WEIGHT);
   usage.total_tokens = usage.effective_tokens;
   const answerParts =
     assistantByResponse.size > 0 ? [...assistantByResponse.values(), ...assistantParts] : assistantParts;
@@ -599,6 +602,8 @@ async function main() {
   benchLog(`  Memory-on cache:   ${summary.memory_on_cache_read_tokens}`);
   benchLog(`  Memory-off effect: ${summary.memory_off_effective_tokens}`);
   benchLog(`  Memory-on effect:  ${summary.memory_on_effective_tokens}`);
+  benchLog(`  Memory-off adj:    ${summary.memory_off_cache_discounted_tokens}`);
+  benchLog(`  Memory-on adj:     ${summary.memory_on_cache_discounted_tokens}`);
   benchLog(`  Memory-off answer: ${summary.memory_off_answer_active_tokens}`);
   benchLog(`  Memory-on answer:  ${summary.memory_on_answer_active_tokens}`);
   benchLog(`  Memory-off setup:  ${summary.memory_off_setup_active_tokens}`);
@@ -612,6 +617,7 @@ async function main() {
   benchLog(`  Memory-on turns:   ${summary.memory_on_assistant_turns}`);
   benchLog(`  Active delta:      ${summary.token_savings_pct}`);
   benchLog(`  Effective delta:   ${summary.effective_token_savings_pct}`);
+  benchLog(`  Adjusted delta:    ${summary.cache_discounted_token_savings_pct}`);
   benchLog(`  Answer delta:      ${summary.answer_token_savings_pct}`);
   benchLog(`  Cost delta:        ${summary.cost_savings_pct}`);
   benchLog('');
@@ -638,6 +644,8 @@ function buildSummary(results) {
       acc.onCache += result.memory_on.usage.cache_read_tokens || 0;
       acc.offEffectiveTokens += result.memory_off.usage.effective_tokens || result.memory_off.usage.total_tokens || 0;
       acc.onEffectiveTokens += result.memory_on.usage.effective_tokens || result.memory_on.usage.total_tokens || 0;
+      acc.offCacheDiscountedTokens += result.memory_off.usage.cache_discounted_tokens || 0;
+      acc.onCacheDiscountedTokens += result.memory_on.usage.cache_discounted_tokens || 0;
       acc.offAnswerTokens += result.memory_off.usage.answer_active_tokens || 0;
       acc.onAnswerTokens += result.memory_on.usage.answer_active_tokens || 0;
       acc.offSetupTokens += result.memory_off.usage.setup_active_tokens || 0;
@@ -670,6 +678,8 @@ function buildSummary(results) {
       onCache: 0,
       offEffectiveTokens: 0,
       onEffectiveTokens: 0,
+      offCacheDiscountedTokens: 0,
+      onCacheDiscountedTokens: 0,
       offAnswerTokens: 0,
       onAnswerTokens: 0,
       offSetupTokens: 0,
@@ -700,6 +710,8 @@ function buildSummary(results) {
     memory_on_cache_read_tokens: sum.onCache,
     memory_off_effective_tokens: sum.offEffectiveTokens,
     memory_on_effective_tokens: sum.onEffectiveTokens,
+    memory_off_cache_discounted_tokens: sum.offCacheDiscountedTokens,
+    memory_on_cache_discounted_tokens: sum.onCacheDiscountedTokens,
     memory_off_answer_active_tokens: sum.offAnswerTokens,
     memory_on_answer_active_tokens: sum.onAnswerTokens,
     memory_off_setup_active_tokens: sum.offSetupTokens,
@@ -721,6 +733,10 @@ function buildSummary(results) {
     token_savings_pct: sum.offTokens > 0 ? `${((1 - sum.onTokens / sum.offTokens) * 100).toFixed(1)}%` : 'n/a',
     effective_token_savings_pct:
       sum.offEffectiveTokens > 0 ? `${((1 - sum.onEffectiveTokens / sum.offEffectiveTokens) * 100).toFixed(1)}%` : 'n/a',
+    cache_discounted_token_savings_pct:
+      sum.offCacheDiscountedTokens > 0
+        ? `${((1 - sum.onCacheDiscountedTokens / sum.offCacheDiscountedTokens) * 100).toFixed(1)}%`
+        : 'n/a',
     answer_token_savings_pct:
       sum.offAnswerTokens > 0 ? `${((1 - sum.onAnswerTokens / sum.offAnswerTokens) * 100).toFixed(1)}%` : 'n/a',
     cost_savings_pct: sum.offCostUsd > 0 ? `${((1 - sum.onCostUsd / sum.offCostUsd) * 100).toFixed(1)}%` : 'n/a',
@@ -744,6 +760,8 @@ function buildCategorySummary(results) {
         onTokens: 0,
         offEffectiveTokens: 0,
         onEffectiveTokens: 0,
+        offCacheDiscountedTokens: 0,
+        onCacheDiscountedTokens: 0,
         offAnswerTokens: 0,
         onAnswerTokens: 0,
         offSetupTokens: 0,
@@ -760,6 +778,8 @@ function buildCategorySummary(results) {
     group.onTokens += result.memory_on.usage.active_tokens || 0;
     group.offEffectiveTokens += result.memory_off.usage.effective_tokens || result.memory_off.usage.total_tokens || 0;
     group.onEffectiveTokens += result.memory_on.usage.effective_tokens || result.memory_on.usage.total_tokens || 0;
+    group.offCacheDiscountedTokens += result.memory_off.usage.cache_discounted_tokens || 0;
+    group.onCacheDiscountedTokens += result.memory_on.usage.cache_discounted_tokens || 0;
     group.offAnswerTokens += result.memory_off.usage.answer_active_tokens || 0;
     group.onAnswerTokens += result.memory_on.usage.answer_active_tokens || 0;
     group.offSetupTokens += result.memory_off.usage.setup_active_tokens || 0;
@@ -775,6 +795,8 @@ function buildCategorySummary(results) {
     memory_on_active_tokens: group.onTokens,
     memory_off_effective_tokens: group.offEffectiveTokens,
     memory_on_effective_tokens: group.onEffectiveTokens,
+    memory_off_cache_discounted_tokens: group.offCacheDiscountedTokens,
+    memory_on_cache_discounted_tokens: group.onCacheDiscountedTokens,
     memory_off_answer_active_tokens: group.offAnswerTokens,
     memory_on_answer_active_tokens: group.onAnswerTokens,
     memory_off_setup_active_tokens: group.offSetupTokens,
@@ -783,6 +805,10 @@ function buildCategorySummary(results) {
     effective_token_savings_pct:
       group.offEffectiveTokens > 0
         ? `${((1 - group.onEffectiveTokens / group.offEffectiveTokens) * 100).toFixed(1)}%`
+        : 'n/a',
+    cache_discounted_token_savings_pct:
+      group.offCacheDiscountedTokens > 0
+        ? `${((1 - group.onCacheDiscountedTokens / group.offCacheDiscountedTokens) * 100).toFixed(1)}%`
         : 'n/a',
     answer_token_savings_pct:
       group.offAnswerTokens > 0 ? `${((1 - group.onAnswerTokens / group.offAnswerTokens) * 100).toFixed(1)}%` : 'n/a',
