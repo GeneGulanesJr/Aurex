@@ -143,7 +143,7 @@
       "id": "negative-control-rank-typeboost",
       "category": "negative-control",
       "intent": "Memory should not be necessary; current code inspection should answer this cheaply.",
-      "prompt": "In the current source, what does rankObservations multiply by typeBoost? Answer from the code and name the file. Keep the answer concise.",
+      "prompt": "In the current source, what composite score does rankObservations multiply by typeBoost? Include the composite's FTS, recency, trust, and recall components, and name the file. Keep the answer concise.",
       "expected_facts": [
         {
           "id": "composite-multiplied",
@@ -166,7 +166,7 @@
       "id": "negative-control-context-return-shape",
       "category": "negative-control",
       "intent": "Memory should not be necessary; the function return object in current source should answer this.",
-      "prompt": "In the current source, what top-level fields does the memory-domain context command return? Name the module. Keep the answer concise.",
+      "prompt": "In the current source, what top-level fields does the memory-domain context command return, and which stats fields are included? Name the module. Keep the answer concise.",
       "expected_facts": [
         {
           "id": "context-return-fields",

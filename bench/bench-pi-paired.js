@@ -218,12 +218,16 @@ function parsePiOutput(raw) {
     cache_write_tokens: 0,
     active_tokens: 0,
     total_tokens: 0,
+    effective_tokens: 0,
+    answer_active_tokens: 0,
+    setup_active_tokens: 0,
     cost_usd: 0,
   };
   const assistantParts = [];
   const assistantByResponse = new Map();
   const seenUsage = new Set();
   const toolCounts = new Map();
+  const toolNames = [];
   const behavior = {
     assistant_turns: 0,
     tool_calls: 0,
@@ -235,6 +239,7 @@ function parsePiOutput(raw) {
   function countTool(name) {
     if (name) {
       toolCounts.set(name, (toolCounts.get(name) || 0) + 1);
+      toolNames.push(name);
     }
   }
 
@@ -251,6 +256,20 @@ function parsePiOutput(raw) {
     if (event) {
       const type = event.type || '';
       const message = event.message || event.delta || event;
+      const content = message.content || event.content;
+      let assistantText = '';
+      if (message.role === 'assistant' && typeof content === 'string') {
+        assistantText = content;
+      } else if (message.role === 'assistant' && Array.isArray(content)) {
+        for (const part of content) {
+          if (part && part.type === 'text' && part.text) {
+            assistantText += assistantText ? `\n${part.text}` : part.text;
+          }
+        }
+      } else if ((type.includes('text') || type.includes('message')) && typeof event.text === 'string') {
+        assistantText = event.text;
+      }
+      const hasAssistantAnswerText = message.role === 'assistant' && assistantText.trim().length > 0;
       const eventUsage = message.usage || event.usage;
       if (eventUsage) {
         const normalizedUsage = {
@@ -284,23 +303,16 @@ function parsePiOutput(raw) {
           usage.output_tokens += normalizedUsage.output_tokens;
           usage.cache_read_tokens += normalizedUsage.cache_read_tokens;
           usage.cache_write_tokens += normalizedUsage.cache_write_tokens;
+          const activeTokens = normalizedUsage.input_tokens + normalizedUsage.output_tokens;
+          if (hasAssistantAnswerText) {
+            usage.answer_active_tokens += activeTokens;
+          } else {
+            usage.setup_active_tokens += activeTokens;
+          }
           usage.cost_usd += costUsd;
         }
       }
 
-      const content = message.content || event.content;
-      let assistantText = '';
-      if (message.role === 'assistant' && typeof content === 'string') {
-        assistantText = content;
-      } else if (message.role === 'assistant' && Array.isArray(content)) {
-        for (const part of content) {
-          if (part && part.type === 'text' && part.text) {
-            assistantText += assistantText ? `\n${part.text}` : part.text;
-          }
-        }
-      } else if ((type.includes('text') || type.includes('message')) && typeof event.text === 'string') {
-        assistantText = event.text;
-      }
       if (assistantText) {
         const responseId = message.responseId || event.responseId;
         if (responseId) {
@@ -336,14 +348,18 @@ function parsePiOutput(raw) {
   }
 
   usage.active_tokens = usage.input_tokens + usage.output_tokens;
-  usage.total_tokens = usage.active_tokens + usage.cache_read_tokens;
+  usage.effective_tokens = usage.active_tokens + usage.cache_read_tokens;
+  usage.total_tokens = usage.effective_tokens;
   const answerParts =
     assistantByResponse.size > 0 ? [...assistantByResponse.values(), ...assistantParts] : assistantParts;
   const result = {
     usage,
     answer: answerParts.join('\n').trim() || raw.trim(),
     tool_counts: Object.fromEntries(toolCounts.entries()),
-    behavior,
+    behavior: {
+      ...behavior,
+      tool_names: toolNames,
+    },
   };
   if (answerParts.length === 0 && assistantByResponse.size === 0 && seenUsage.size === 0 && raw.trim().length > 0) {
     result.parse_warning = 'No valid Pi events found in output';
@@ -418,7 +434,14 @@ function printTableHeader(taskColumnWidth) {
     'OnFacts'.padEnd(9),
     'OffActive'.padStart(10),
     'OnActive'.padStart(10),
-    'Savings'.padStart(8),
+    'ActSave'.padStart(8),
+    'OffEff'.padStart(10),
+    'OnEff'.padStart(10),
+    'EffSave'.padStart(8),
+    'OffAns'.padStart(8),
+    'OnAns'.padStart(8),
+    'AnsSave'.padStart(8),
+    'OnSetup'.padStart(8),
     'OffMs'.padStart(9),
     'OnMs'.padStart(9),
   ];
@@ -430,7 +453,14 @@ function printTableHeader(taskColumnWidth) {
 function printRow(taskId, off, on, taskColumnWidth) {
   const offTokens = off.usage.active_tokens || 0;
   const onTokens = on.usage.active_tokens || 0;
+  const offEffective = off.usage.effective_tokens || off.usage.total_tokens || 0;
+  const onEffective = on.usage.effective_tokens || on.usage.total_tokens || 0;
+  const offAnswer = off.usage.answer_active_tokens || 0;
+  const onAnswer = on.usage.answer_active_tokens || 0;
+  const onSetup = on.usage.setup_active_tokens || 0;
   const savings = offTokens > 0 ? `${Math.round((1 - onTokens / offTokens) * 100)}%` : 'n/a';
+  const effectiveSavings = offEffective > 0 ? `${Math.round((1 - onEffective / offEffective) * 100)}%` : 'n/a';
+  const answerSavings = offAnswer > 0 ? `${Math.round((1 - onAnswer / offAnswer) * 100)}%` : 'n/a';
   const offScore = `${off.grade.matched}/${off.grade.total}`;
   const onScore = `${on.grade.matched}/${on.grade.total}`;
   const statusSuffix =
@@ -445,6 +475,13 @@ function printRow(taskId, off, on, taskColumnWidth) {
       String(offTokens).padStart(10),
       String(onTokens).padStart(10),
       savings.padStart(8),
+      String(offEffective).padStart(10),
+      String(onEffective).padStart(10),
+      effectiveSavings.padStart(8),
+      String(offAnswer).padStart(8),
+      String(onAnswer).padStart(8),
+      answerSavings.padStart(8),
+      String(onSetup).padStart(8),
       String(off.elapsed_ms).padStart(9),
       String(on.elapsed_ms).padStart(9),
     ].join('  ') + statusSuffix,
@@ -527,17 +564,25 @@ async function main() {
   benchLog(`  Memory-on active:  ${summary.memory_on_active_tokens}`);
   benchLog(`  Memory-off cache:  ${summary.memory_off_cache_read_tokens}`);
   benchLog(`  Memory-on cache:   ${summary.memory_on_cache_read_tokens}`);
+  benchLog(`  Memory-off effect: ${summary.memory_off_effective_tokens}`);
+  benchLog(`  Memory-on effect:  ${summary.memory_on_effective_tokens}`);
+  benchLog(`  Memory-off answer: ${summary.memory_off_answer_active_tokens}`);
+  benchLog(`  Memory-on answer:  ${summary.memory_on_answer_active_tokens}`);
+  benchLog(`  Memory-off setup:  ${summary.memory_off_setup_active_tokens}`);
+  benchLog(`  Memory-on setup:   ${summary.memory_on_setup_active_tokens}`);
   benchLog(`  Memory-off tools:  ${summary.memory_off_tool_calls} (${summary.memory_off_failed_tool_calls} failed)`);
   benchLog(`  Memory-on tools:   ${summary.memory_on_tool_calls} (${summary.memory_on_failed_tool_calls} failed)`);
   benchLog(`  Memory-on memtools:${summary.memory_on_memory_tool_calls}`);
   benchLog(`  Memory-on codetools:${summary.memory_on_code_tool_calls}`);
   benchLog(`  Memory-on turns:   ${summary.memory_on_assistant_turns}`);
-  benchLog(`  Token delta:       ${summary.token_savings_pct}`);
+  benchLog(`  Active delta:      ${summary.token_savings_pct}`);
+  benchLog(`  Effective delta:   ${summary.effective_token_savings_pct}`);
+  benchLog(`  Answer delta:      ${summary.answer_token_savings_pct}`);
   benchLog('');
   benchLog('By category:');
   for (const category of summary.categories) {
     benchLog(
-      `  ${category.category}: facts ${category.memory_off_facts} -> ${category.memory_on_facts}, active ${category.memory_off_active_tokens} -> ${category.memory_on_active_tokens}, delta ${category.token_savings_pct}`,
+      `  ${category.category}: facts ${category.memory_off_facts} -> ${category.memory_on_facts}, active ${category.memory_off_active_tokens} -> ${category.memory_on_active_tokens} (${category.token_savings_pct}), effective ${category.memory_off_effective_tokens} -> ${category.memory_on_effective_tokens} (${category.effective_token_savings_pct}), answer ${category.memory_off_answer_active_tokens} -> ${category.memory_on_answer_active_tokens} (${category.answer_token_savings_pct}), on-setup ${category.memory_on_setup_active_tokens}`,
     );
   }
   benchLog(`  Report:            ${reportPath}`);
@@ -555,6 +600,12 @@ function buildSummary(results) {
       acc.onTokens += result.memory_on.usage.active_tokens || 0;
       acc.offCache += result.memory_off.usage.cache_read_tokens || 0;
       acc.onCache += result.memory_on.usage.cache_read_tokens || 0;
+      acc.offEffectiveTokens += result.memory_off.usage.effective_tokens || result.memory_off.usage.total_tokens || 0;
+      acc.onEffectiveTokens += result.memory_on.usage.effective_tokens || result.memory_on.usage.total_tokens || 0;
+      acc.offAnswerTokens += result.memory_off.usage.answer_active_tokens || 0;
+      acc.onAnswerTokens += result.memory_on.usage.answer_active_tokens || 0;
+      acc.offSetupTokens += result.memory_off.usage.setup_active_tokens || 0;
+      acc.onSetupTokens += result.memory_on.usage.setup_active_tokens || 0;
       acc.offElapsed += result.memory_off.elapsed_ms || 0;
       acc.onElapsed += result.memory_on.elapsed_ms || 0;
       acc.offToolCalls += result.memory_off.behavior?.tool_calls || 0;
@@ -579,6 +630,12 @@ function buildSummary(results) {
       onTokens: 0,
       offCache: 0,
       onCache: 0,
+      offEffectiveTokens: 0,
+      onEffectiveTokens: 0,
+      offAnswerTokens: 0,
+      onAnswerTokens: 0,
+      offSetupTokens: 0,
+      onSetupTokens: 0,
       offElapsed: 0,
       onElapsed: 0,
       offToolCalls: 0,
@@ -601,6 +658,12 @@ function buildSummary(results) {
     memory_on_active_tokens: sum.onTokens,
     memory_off_cache_read_tokens: sum.offCache,
     memory_on_cache_read_tokens: sum.onCache,
+    memory_off_effective_tokens: sum.offEffectiveTokens,
+    memory_on_effective_tokens: sum.onEffectiveTokens,
+    memory_off_answer_active_tokens: sum.offAnswerTokens,
+    memory_on_answer_active_tokens: sum.onAnswerTokens,
+    memory_off_setup_active_tokens: sum.offSetupTokens,
+    memory_on_setup_active_tokens: sum.onSetupTokens,
     memory_off_elapsed_ms: sum.offElapsed,
     memory_on_elapsed_ms: sum.onElapsed,
     memory_off_tool_calls: sum.offToolCalls,
@@ -614,6 +677,10 @@ function buildSummary(results) {
     memory_off_assistant_turns: sum.offAssistantTurns,
     memory_on_assistant_turns: sum.onAssistantTurns,
     token_savings_pct: sum.offTokens > 0 ? `${((1 - sum.onTokens / sum.offTokens) * 100).toFixed(1)}%` : 'n/a',
+    effective_token_savings_pct:
+      sum.offEffectiveTokens > 0 ? `${((1 - sum.onEffectiveTokens / sum.offEffectiveTokens) * 100).toFixed(1)}%` : 'n/a',
+    answer_token_savings_pct:
+      sum.offAnswerTokens > 0 ? `${((1 - sum.onAnswerTokens / sum.offAnswerTokens) * 100).toFixed(1)}%` : 'n/a',
     categories: buildCategorySummary(results),
   };
 }
@@ -632,6 +699,12 @@ function buildCategorySummary(results) {
         onTotal: 0,
         offTokens: 0,
         onTokens: 0,
+        offEffectiveTokens: 0,
+        onEffectiveTokens: 0,
+        offAnswerTokens: 0,
+        onAnswerTokens: 0,
+        offSetupTokens: 0,
+        onSetupTokens: 0,
       });
     }
     const group = groups.get(category);
@@ -642,6 +715,12 @@ function buildCategorySummary(results) {
     group.onTotal += result.memory_on.grade.total;
     group.offTokens += result.memory_off.usage.active_tokens || 0;
     group.onTokens += result.memory_on.usage.active_tokens || 0;
+    group.offEffectiveTokens += result.memory_off.usage.effective_tokens || result.memory_off.usage.total_tokens || 0;
+    group.onEffectiveTokens += result.memory_on.usage.effective_tokens || result.memory_on.usage.total_tokens || 0;
+    group.offAnswerTokens += result.memory_off.usage.answer_active_tokens || 0;
+    group.onAnswerTokens += result.memory_on.usage.answer_active_tokens || 0;
+    group.offSetupTokens += result.memory_off.usage.setup_active_tokens || 0;
+    group.onSetupTokens += result.memory_on.usage.setup_active_tokens || 0;
   }
 
   return [...groups.values()].map((group) => ({
@@ -651,7 +730,19 @@ function buildCategorySummary(results) {
     memory_on_facts: `${group.onMatched}/${group.onTotal}`,
     memory_off_active_tokens: group.offTokens,
     memory_on_active_tokens: group.onTokens,
+    memory_off_effective_tokens: group.offEffectiveTokens,
+    memory_on_effective_tokens: group.onEffectiveTokens,
+    memory_off_answer_active_tokens: group.offAnswerTokens,
+    memory_on_answer_active_tokens: group.onAnswerTokens,
+    memory_off_setup_active_tokens: group.offSetupTokens,
+    memory_on_setup_active_tokens: group.onSetupTokens,
     token_savings_pct: group.offTokens > 0 ? `${((1 - group.onTokens / group.offTokens) * 100).toFixed(1)}%` : 'n/a',
+    effective_token_savings_pct:
+      group.offEffectiveTokens > 0
+        ? `${((1 - group.onEffectiveTokens / group.offEffectiveTokens) * 100).toFixed(1)}%`
+        : 'n/a',
+    answer_token_savings_pct:
+      group.offAnswerTokens > 0 ? `${((1 - group.onAnswerTokens / group.offAnswerTokens) * 100).toFixed(1)}%` : 'n/a',
   }));
 }
 
