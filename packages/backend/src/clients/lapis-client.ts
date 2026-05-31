@@ -88,6 +88,9 @@ export interface LaPisClient {
   setSetting(key: string, value: unknown): Promise<void>;
   deleteSetting(key: string): Promise<void>;
 
+  // Code indexing
+  indexRepo(repoPath: string, repoName?: string): Promise<{ files: number; symbols: number; error?: string }>;
+
   // Connectivity
   ping(): Promise<void>;
 }
@@ -293,6 +296,11 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
     },
     deleteSetting(key) {
       return del(`/settings/${encodeURIComponent(key)}`);
+    },
+
+    // Code indexing
+    indexRepo(repoPath, repoName) {
+      return post("/code/index", { path: repoPath, name: repoName });
     },
 
     // Connectivity

@@ -65,6 +65,23 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
       const { repoPath: missionRepoRoot } = await prepareRepoForMission({ lapis, parentRepoRoot: repoRoot, cloneUrl: mission.configJson.cloneUrl });
       eventBus.emit({ type: "mission_log", missionId, phase: "planning", message: `Calling ${mission.configJson.modelHints.orchestrator} to plan milestones…` });
       const planner = createPlanner(lapis, pinyx, { model: mission.configJson.modelHints.orchestrator, eventBus, missionId });
+
+      // Index repo before planning so the planner has code context
+      try {
+        const path = require("path") as typeof import("path");
+        const repoName = path.basename(missionRepoRoot);
+        eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexing repo ${repoName} for code context…` });
+        const indexResult = await lapis.indexRepo(missionRepoRoot, repoName);
+        if (indexResult.error) {
+          eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexing warning: ${indexResult.error}` });
+        } else {
+          eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexed ${indexResult.files ?? 0} files, ${indexResult.symbols ?? 0} symbols` });
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexing skipped: ${msg}` });
+      }
+
       const planResult = await planner.plan(mission.description, missionId);
 
       await lapis.updateMissionStatus(missionId, "running");
