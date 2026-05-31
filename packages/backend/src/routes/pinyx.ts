@@ -149,6 +149,11 @@ export function registerPinyxRoutes(app: FastifyInstance, deps: PinyxRouteDeps) 
     if (!config) {
       return reply.status(400).send({ error: "PiNyx is not configured" });
     }
+    const hasProviderKey = config.providers.some((provider) => Boolean(provider.apiKey));
+    if (!hasProviderKey) {
+      return { models: [] };
+    }
+
     const endpoint = config.endpoint.replace(/\/$/, "");
     try {
       const res = await fetch(`${endpoint}/v1/models`, { method: "GET" });

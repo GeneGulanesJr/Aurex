@@ -155,17 +155,37 @@ describe("PiNyx integration routes", () => {
     expect(JSON.stringify(res.json())).not.toContain("secret");
   });
 
-  it("fetches models from configured PiNyx endpoint", async () => {
+  it("returns no models when no provider API key is configured", async () => {
     const app = Fastify();
     const lapis = createMockLapis({ pinyx_config: { endpoint: "http://pinyx.example", modelHints: defaultModelHints, providers: [] } });
     registerPinyxRoutes(app, { lapis });
-    const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ id: "gpt-4o-mini" }] }) });
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ id: "fake-stub-model" }] }) });
     vi.stubGlobal("fetch", mockFetch);
 
     const res = await app.inject({ method: "GET", url: "/api/pinyx/models" });
 
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ models: [{ id: "gpt-4o-mini" }] });
+    expect(res.json()).toEqual({ models: [] });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("fetches models from configured PiNyx endpoint when a provider key exists", async () => {
+    const app = Fastify();
+    const lapis = createMockLapis({
+      pinyx_config: {
+        endpoint: "http://pinyx.example",
+        modelHints: defaultModelHints,
+        providers: [{ id: "zai", name: "Z.AI Coding", baseUrl: "https://api.z.ai/api/coding/paas/v4", apiKey: "zai-key" }],
+      },
+    });
+    registerPinyxRoutes(app, { lapis });
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ id: "glm-4.7" }] }) });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const res = await app.inject({ method: "GET", url: "/api/pinyx/models" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ models: [{ id: "glm-4.7" }] });
     expect(mockFetch).toHaveBeenCalledWith("http://pinyx.example/v1/models", expect.objectContaining({ method: "GET" }));
   });
 
