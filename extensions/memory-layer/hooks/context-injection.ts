@@ -226,6 +226,7 @@ function buildSourceLookupGuidance(
     '',
     `Current-source prompt: skip memory facts and verify against code in indexed repo \`${cwdRepo.name}\`.`,
     'For exact symbol questions, prefer a targeted current-source lookup such as `rg -n "<symbol>" <narrow-path>` or a small `read` when the file is known.',
+    'For return-shape questions where the module name is evident, read that module directly before searching; for example, `memory-domain context` usually means `src/memory-domain/context.js`.',
     `Use \`memory-code search --repo ${cwdRepo.name} --query <query>\` only when the file or symbol is not already known, then do at most one small targeted \`read\` around the reported file/line.`,
     'Avoid broad shell code search and skip `memory-code outline` unless the task needs file structure.',
   ].join('\n');

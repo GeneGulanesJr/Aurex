@@ -5,11 +5,10 @@ const MIN_SYMBOL_LENGTH = 4;
 // Regex to extract the quoted search pattern from grep/rg commands
 // We want the LAST quoted string (the actual search pattern), not flags like --include="*.js"
 const QUOTED_PATTERN_RE = /(?:['"])([^'"]+)(?:['"])/g;
-// Pipes that are NOT just head/tail (which are fine for targeted lookups)
-// The \s* must be INSIDE the negative lookahead so it's part of the assertion
-const COMPLEX_PIPE_RE = /\|(?!\s*(?:head|tail)\b)/;
 const SEARCH_COMMAND_RE = /\b(grep|rg|ag|ack|find)\b/;
 const FILTER_COMMAND_RE = /^\s*(grep|rg|ag|ack)\b/;
+const SIMPLE_LIMIT_PIPE_RE = /^\s*(?:head|tail)\b/;
+const CODE_FILE_PATH_RE = /(?:^|\s)(?:\.{0,2}\/|\/)?[^\s'"]+\.(?:cjs|cts|js|jsx|mjs|mts|ts|tsx)(?:\s|$)/;
 
 function splitPipeline(cmd) {
   const stages = [];
@@ -69,23 +68,36 @@ function isTargetedSymbolLookup(cmd) {
     return false;
   }
 
-  // No complex pipe chains (allow | head, | tail)
-  if (COMPLEX_PIPE_RE.test(cmd)) {
+  // No complex pipe chains (allow | head, | tail). Use splitPipeline so quoted
+  // Regex pipes do not count as shell pipelines.
+  const stages = splitPipeline(cmd);
+  if (stages.length > 1 && stages.slice(1).some((stage) => !SIMPLE_LIMIT_PIPE_RE.test(stage))) {
     return false;
   }
 
   // Extract the first quoted search pattern that is not a glob option value.
-  // Some grep invocations put --include after the search pattern, so using the
+  // Some grep invocations put --include after the search pattern, so
   // Last-quoted-string parsing misclassifies them.
   let pattern = null;
+  let hasQuotedPattern = false;
   let m;
   while ((m = QUOTED_PATTERN_RE.exec(cmd)) !== null) {
     const candidate = m[1];
+    if (!/^[*?]/.test(candidate)) {
+      hasQuotedPattern = true;
+    }
     if (!/[*?]/.test(candidate)) {
       pattern = candidate;
       break;
     }
   }
+
+  // Searching within one explicit source file is bounded enough to allow even
+  // When the pattern is a small structural regex such as `return {`.
+  if (hasQuotedPattern && CODE_FILE_PATH_RE.test(cmd)) {
+    return true;
+  }
+
   if (!pattern) {
     return false;
   }
