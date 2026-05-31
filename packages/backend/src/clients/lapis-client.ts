@@ -89,7 +89,12 @@ export interface LaPisClient {
   deleteSetting(key: string): Promise<void>;
 
   // Code indexing
-  indexRepo(repoPath: string, repoName?: string): Promise<{ files: number; symbols: number; error?: string }>;
+  indexRepo(repoPath: string, repoName?: string): Promise<Record<string, unknown>>;
+
+  // Code context
+  getCodeSummary(repo: string): Promise<{ files: number; symbols: number; edges: number; modules: Array<{ name: string; fileCount: number }>; entryPoints: string[]; cycles: { count: number; paths: string[][] } }>;
+  getCodeGraph(repo: string): Promise<{ nodes: Array<{ id: string; module: string; symbols: number; importance: number }>; edges: Array<{ from: string; to: string; kind: string }>; cycles: string[][] }>;
+  getCodeHotspots(repo: string): Promise<{ files: Array<{ path: string; module: string; complexity: number; symbols: number }> }>;
 
   // Connectivity
   ping(): Promise<void>;
@@ -301,6 +306,17 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
     // Code indexing
     indexRepo(repoPath, repoName) {
       return post("/code/index", { path: repoPath, name: repoName });
+    },
+
+    // Code context
+    getCodeSummary(repo) {
+      return get(`/code/summary/${encodeURIComponent(repo)}`);
+    },
+    getCodeGraph(repo) {
+      return get(`/code/graph/${encodeURIComponent(repo)}`);
+    },
+    getCodeHotspots(repo) {
+      return get(`/code/hotspots/${encodeURIComponent(repo)}`);
     },
 
     // Connectivity

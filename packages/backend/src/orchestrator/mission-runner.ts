@@ -75,7 +75,9 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         if (indexResult.error) {
           eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexing warning: ${indexResult.error}` });
         } else {
-          eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexed ${indexResult.files ?? 0} files, ${indexResult.symbols ?? 0} symbols` });
+          eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexed ${indexResult.files ?? 0} files, ${indexResult.symbols ?? 0} symbols`, data: { indexingDone: true, files: indexResult.files ?? 0, symbols: indexResult.symbols ?? 0, edges: (indexResult as any).import_edges ?? 0 } });
+          // Store repo name for code context proxy
+          await lapis.setSetting(`mission:${missionId}:repoName`, repoName);
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

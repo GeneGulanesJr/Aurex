@@ -10,6 +10,7 @@ import { checkpointRoutes } from "./routes/checkpoints.js";
 import { registerGlobalAuth } from "./routes/auth.js";
 import { registerGitHubRoutes } from "./routes/github.js";
 import { registerPinyxRoutes } from "./routes/pinyx.js";
+import { registerCodeContextRoutes } from "./routes/code-context.js";
 
 async function main() {
   const config = loadConfig();
@@ -76,6 +77,9 @@ async function main() {
 
   // GitHub PAT (fully UI-configured, stored in LaPis settings)
   registerGitHubRoutes(app, { lapis, repoRoot: config.repoRoot });
+
+  // Code context proxy (summary, graph, hotspots)
+  registerCodeContextRoutes(app, { lapis });
 
   // Start
   try {

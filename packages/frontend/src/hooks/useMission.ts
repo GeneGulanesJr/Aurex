@@ -8,7 +8,7 @@ export interface MissionState {
   activeWorkers: WorkingUnit[];
   cost: CostSummary | null;
   escalation: WsClientEvent | null;
-  logs: Array<{ phase: string; message: string; timestamp: number }>;
+  logs: Array<{ phase: string; message: string; timestamp: number; data?: Record<string, unknown> }>;
 }
 
 type Action =
@@ -19,7 +19,7 @@ type Action =
   | { type: "MILESTONE_PROGRESS"; milestoneId: string; status: MilestoneStatus; completedUnits: number; totalUnits: number }
   | { type: "AGENT_STATUS"; agentId: string; agentType: AgentType; status: AgentStatus; milestoneId: string }
   | { type: "MISSION_COMPLETED"; finalState: string }
-  | { type: "MISSION_LOG"; phase: string; message: string }
+  | { type: "MISSION_LOG"; phase: string; message: string; data?: Record<string, unknown> }
   | { type: "RESET" };
 
 export const initialMissionState: MissionState = {
@@ -67,7 +67,7 @@ export function missionReducer(state: MissionState, action: Action): MissionStat
       return { ...state, mission: { ...state.mission, status } };
     }
     case "MISSION_LOG": {
-      const log = { phase: action.phase, message: action.message, timestamp: Date.now() };
+      const log = { phase: action.phase, message: action.message, timestamp: Date.now(), data: action.data };
       return { ...state, logs: [...state.logs.slice(-49), log] };
     }
     case "RESET":
@@ -122,7 +122,7 @@ export function useMission(missionId: string | null) {
         dispatch({ type: "MISSION_COMPLETED", finalState: event.finalState });
         break;
       case "mission_log":
-        dispatch({ type: "MISSION_LOG", phase: event.phase, message: event.message });
+        dispatch({ type: "MISSION_LOG", phase: event.phase, message: event.message, data: event.data });
         break;
       default:
         break;
