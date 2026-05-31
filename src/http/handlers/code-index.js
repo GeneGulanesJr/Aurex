@@ -1,4 +1,5 @@
 const { indexRepository, reindexRepository, getCodeRepoHealth } = require('../../code-index/incremental-indexer');
+const { getDb } = require('../../../db');
 
 function indexRepo(deps) {
   return async (req, res, { body }) => {
@@ -10,7 +11,7 @@ function indexRepo(deps) {
     const path = require('path');
     const repoName = name || path.basename(repoPath);
     const result = await indexRepository(
-      { db: require('../db').getDb(), args: {} },
+      { db: getDb(), args: {} },
       repoPath,
       repoName,
     );
@@ -27,7 +28,7 @@ function reindexRepo(deps) {
       return res.end(JSON.stringify({ error: 'repo is required' }));
     }
     const result = await reindexRepository(
-      { db: require('../db').getDb(), args: {} },
+      { db: getDb(), args: {} },
       repo,
       mode || 'incremental',
     );
@@ -44,7 +45,7 @@ function codeRepoHealthHandler(deps) {
       return res.end(JSON.stringify({ error: 'repo is required' }));
     }
     const result = await getCodeRepoHealth(
-      { db: require('../db').getDb(), args: {} },
+      { db: getDb(), args: {} },
       repo,
     );
     res.writeHead(200, { 'Content-Type': 'application/json' });
