@@ -119,7 +119,9 @@ export function PinyxModelsTab({ config, onConfigUpdate }: PinyxModelsTabProps) 
   function getCardModel(cardKey: string): string {
     const card = AGENT_CARDS.find((c) => c.key === cardKey);
     if (!card) return defaultModel;
-    return modelHints[card.types[0] as keyof typeof modelHints] ?? defaultModel;
+    const value = modelHints[card.types[0] as keyof typeof modelHints];
+    if (!value || value === "kilo/kilo-auto/free") return defaultModel;
+    return value;
   }
 
   const modelOptions = models.map((m) => m.id ?? m.name ?? "").filter(Boolean);
