@@ -131,6 +131,42 @@ describe("POST /api/missions", () => {
   });
 });
 
+describe("POST /api/missions/:id/restart", () => {
+  it("resets a failed mission to planning and submits it to the runner pool", async () => {
+    const app = Fastify();
+    const mockLapis = {
+      getMission: vi.fn().mockResolvedValue({ id: "m-failed", description: "Retry me", status: "failed", configJson: {}, createdAt: "now" }),
+      updateMissionStatus: vi.fn().mockResolvedValue(undefined),
+    } as unknown as LaPisClient;
+    const pool = createMockPool();
+
+    app.register(missionRoutes, { lapis: mockLapis, pool });
+
+    const response = await app.inject({ method: "POST", url: "/api/missions/m-failed/restart" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ restarted: true, missionId: "m-failed", status: "planning" });
+    expect(mockLapis.updateMissionStatus).toHaveBeenCalledWith("m-failed", "planning");
+    expect(pool.submit).toHaveBeenCalledWith("m-failed");
+  });
+
+  it("rejects restart while mission is already active", async () => {
+    const app = Fastify();
+    const mockLapis = {
+      getMission: vi.fn().mockResolvedValue({ id: "m-active", description: "Already running", status: "running", configJson: {}, createdAt: "now" }),
+      updateMissionStatus: vi.fn(),
+    } as unknown as LaPisClient;
+    const pool = createMockPool([{ missionId: "m-active", state: "executing" }]);
+
+    app.register(missionRoutes, { lapis: mockLapis, pool });
+
+    const response = await app.inject({ method: "POST", url: "/api/missions/m-active/restart" });
+
+    expect(response.statusCode).toBe(409);
+    expect(pool.submit).not.toHaveBeenCalled();
+  });
+});
+
 describe("GET /api/missions/current", () => {
   it("returns 404 when no active mission", async () => {
     const app = Fastify();

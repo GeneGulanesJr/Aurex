@@ -20,7 +20,7 @@ export function App() {
   const pinyxStatus = usePinyxStatus();
   const systemReady = github.connected && pinyxStatus.configured;
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
-  const { state: missionsState, selectMission, removeMission, addOptimisticMission, handleWsEvent: missionsWsHandler } = useMissions();
+  const { state: missionsState, selectMission, removeMission, addOptimisticMission, markMissionRestarted, handleWsEvent: missionsWsHandler } = useMissions();
   const { state, dispatch, handleWsEvent: missionWsHandler } = useMission(missionsState.selectedMissionId);
   const eventsRef = useRef<WsClientEvent[]>([]);
 
@@ -114,6 +114,7 @@ export function App() {
           selectedMissionId={missionsState.selectedMissionId}
           onSelect={selectMission}
           onRemove={removeMission}
+          onRestart={markMissionRestarted}
           onCreateMission={handleCreateMission}
           github={github}
           systemReady={systemReady}

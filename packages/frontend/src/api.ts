@@ -54,6 +54,12 @@ export async function abortMission(missionId: string) {
   return res.json() as Promise<{ aborted: boolean }>;
 }
 
+export async function restartMission(missionId: string): Promise<{ restarted: boolean; missionId: string; status: string }> {
+  const res = await apiFetch(`/api/missions/${missionId}/restart`, { method: "POST" });
+  if (!res.ok) throw new Error(`Failed to restart mission: ${res.status}`);
+  return res.json() as Promise<{ restarted: boolean; missionId: string; status: string }>;
+}
+
 export async function submitCheckpoint(
   missionId: string,
   checkpointId: string,

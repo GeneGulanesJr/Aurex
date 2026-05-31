@@ -77,6 +77,29 @@ export async function missionRoutes(
     return { aborted: true };
   });
 
+  app.post("/api/missions/:id/restart", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const activeStatus = pool.getStatus(id);
+    if (activeStatus && !["completed", "failed"].includes(activeStatus.state)) {
+      return reply.status(409).send({ error: "Mission is already active" });
+    }
+
+    let mission;
+    try {
+      mission = await lapis.getMission(id);
+    } catch {
+      return reply.status(404).send({ error: "Mission not found" });
+    }
+
+    if (!["failed", "aborted", "completed"].includes(mission.status)) {
+      return reply.status(409).send({ error: `Mission cannot be restarted from status ${mission.status}` });
+    }
+
+    await lapis.updateMissionStatus(id, "planning");
+    pool.submit(id);
+    return { restarted: true, missionId: id, status: "planning" };
+  });
+
   app.get("/api/missions/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     try {

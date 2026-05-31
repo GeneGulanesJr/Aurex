@@ -21,6 +21,7 @@ type Action =
   | { type: "WS_MISSION_QUEUED"; missionId: string; queuePosition: number }
   | { type: "WS_MISSION_STARTED"; missionId: string }
   | { type: "WS_MISSION_COMPLETED"; missionId: string; finalState: string }
+  | { type: "MISSION_RESTARTED"; missionId: string }
   | { type: "REMOVE"; missionId: string };
 
 export const initialMissionsState: MissionsState = {
@@ -73,6 +74,15 @@ export function missionsReducer(state: MissionsState, action: Action): MissionsS
         missions: state.missions.map((m) =>
           m.missionId === action.missionId ? { ...m, state: action.finalState, queuePosition: undefined } : m,
         ),
+      };
+    }
+    case "MISSION_RESTARTED": {
+      return {
+        ...state,
+        missions: state.missions.map((m) =>
+          m.missionId === action.missionId ? { ...m, state: "planning", queuePosition: undefined } : m,
+        ),
+        selectedMissionId: action.missionId,
       };
     }
     case "REMOVE": {
@@ -129,5 +139,9 @@ export function useMissions() {
     dispatch({ type: "MISSION_CREATED", missionId, description });
   }, []);
 
-  return { state, selectMission, removeMission, addOptimisticMission, handleWsEvent };
+  const markMissionRestarted = useCallback((missionId: string) => {
+    dispatch({ type: "MISSION_RESTARTED", missionId });
+  }, []);
+
+  return { state, selectMission, removeMission, addOptimisticMission, markMissionRestarted, handleWsEvent };
 }

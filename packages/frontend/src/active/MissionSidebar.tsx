@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import type { MissionListItem } from "../hooks/useMissions";
 import type { UseGitHubReturn } from "../hooks/useGitHub";
-import { abortMission } from "../api";
+import { abortMission, restartMission } from "../api";
 import { NewMissionForm } from "./NewMissionForm";
 
 interface MissionSidebarProps {
@@ -9,6 +9,7 @@ interface MissionSidebarProps {
   selectedMissionId: string | null;
   onSelect: (missionId: string) => void;
   onRemove: (missionId: string) => void;
+  onRestart: (missionId: string) => void;
   onCreateMission: (description: string, cloneUrl?: string) => Promise<void>;
   github?: UseGitHubReturn;
   systemReady?: boolean;
@@ -32,7 +33,7 @@ function statusBadge(state: string): { label: string; style: React.CSSProperties
   }
 }
 
-export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove, onCreateMission, github, systemReady }: MissionSidebarProps) {
+export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove, onRestart, onCreateMission, github, systemReady }: MissionSidebarProps) {
   const handleAbort = useCallback(async (e: React.MouseEvent, missionId: string) => {
     e.stopPropagation();
     try {
@@ -40,6 +41,14 @@ export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove
       onRemove(missionId);
     } catch {}
   }, [onRemove]);
+
+  const handleRestart = useCallback(async (e: React.MouseEvent, missionId: string) => {
+    e.stopPropagation();
+    try {
+      await restartMission(missionId);
+      onRestart(missionId);
+    } catch {}
+  }, [onRestart]);
 
   if (missions.length === 0) {
     return (
@@ -109,17 +118,28 @@ export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove
                   {mission.description ?? mission.missionId}
                 </div>
               </div>
-              {(mission.state === "queued" || mission.state === "planning" || mission.state === "executing" || mission.state === "waiting_checkpoint") && (
-                <button
-                  onClick={(e) => handleAbort(e, mission.missionId)}
-                  style={{ marginLeft: "8px", color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", fontSize: "12px", opacity: 0, transition: "opacity 0.15s", padding: "4px" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; e.currentTarget.style.color = "var(--error)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.opacity = "0"; e.currentTarget.style.color = "var(--text-muted)"; }}
-                  title="Abort mission"
-                >
-                  ✕
-                </button>
-              )}
+              <div style={{ display: "flex", alignItems: "center", gap: "4px", marginLeft: "8px" }}>
+                {mission.state === "failed" && (
+                  <button
+                    onClick={(e) => handleRestart(e, mission.missionId)}
+                    style={{ color: "var(--accent)", background: "none", border: "1px solid var(--accent-dim)", borderRadius: "3px", cursor: "pointer", fontSize: "10px", opacity: 1, padding: "3px 6px", fontFamily: '\"JetBrains Mono\", monospace', textTransform: "uppercase", letterSpacing: "1px" }}
+                    title="Restart mission"
+                  >
+                    Restart
+                  </button>
+                )}
+                {(mission.state === "queued" || mission.state === "planning" || mission.state === "executing" || mission.state === "waiting_checkpoint") && (
+                  <button
+                    onClick={(e) => handleAbort(e, mission.missionId)}
+                    style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", fontSize: "12px", opacity: 0, transition: "opacity 0.15s", padding: "4px" }}
+                    onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; e.currentTarget.style.color = "var(--error)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.opacity = "0"; e.currentTarget.style.color = "var(--text-muted)"; }}
+                    title="Abort mission"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
             </div>
           );
         })}
