@@ -81,6 +81,7 @@ Response:
 ```json
 {
   "repoPath": "/workspace/repos/owner-repo",
+  "fullName": "owner/repo",
   "repoStatus": "cloned",
   "indexed": false,
   "indexingStatus": "unavailable"
@@ -94,6 +95,7 @@ When LaPis later exposes repo indexing over HTTP, this route can call it and ret
 ```json
 {
   "repoPath": "/workspace/repos/owner-repo",
+  "fullName": "owner/repo",
   "repoStatus": "updated",
   "indexed": true,
   "indexingStatus": "completed"
@@ -117,10 +119,24 @@ Responsibilities:
 - If repo already exists, run `git fetch --all --prune`
 - If repo does not exist, clone it
 - Use saved GitHub OAuth token when cloning GitHub HTTPS URLs
-- Return local repo path and repo status (`cloned`, `updated`, or `existing`)
+- Return local repo path and repo status (`cloned` or `updated`)
 - Be idempotent: if the mission runner later prepares the same repo again, it only fetches updates instead of recloning
 
 Both the new prepare route and the mission runner should use the same helper to avoid duplicate clone logic. It is expected that the mission runner may call this helper again when the mission starts. That is safe because the helper is idempotent: existing repos are fetched, not recloned.
+
+Helper signature:
+
+```ts
+prepareRepoForMission({
+  lapis,
+  parentRepoRoot,
+  cloneUrl,
+}: {
+  lapis: LaPisClient;
+  parentRepoRoot: string;
+  cloneUrl?: string;
+}): Promise<{ repoPath: string; repoStatus: "cloned" | "updated" }>;
+```
 
 ---
 
@@ -152,8 +168,9 @@ Add to `packages/frontend/src/api.ts`:
 
 ```ts
 export async function prepareGitHubRepo(cloneUrl: string): Promise<{
+  fullName: string;
   repoPath: string;
-  repoStatus: "cloned" | "updated" | "existing";
+  repoStatus: "cloned" | "updated";
   indexed: boolean;
   indexingStatus: "completed" | "unavailable" | "failed";
 }>;
@@ -171,11 +188,17 @@ New behavior:
 
 ```ts
 RepoPicker onSelect -> set pending repo -> open RepoPrepareModal
-Use This Repo -> POST /api/github/repos/prepare -> setRepo(repo.clone_url, repo.id)
+Use This Repo -> POST /api/github/repos/prepare -> setRepo(repo.clone_url, repo.id, repo.full_name)
 Cancel -> clear pending repo
 ```
 
 `RepoPicker` itself stays simple. It only emits selected repo. `NewMissionForm` owns the confirmation/preparation flow.
+
+`useNewMissionForm` must add `selectedRepoFullName?: string` to form state and update `setRepo` to accept `(cloneUrl: string, repoId: number, fullName: string)`. After successful preparation, the form displays:
+
+```txt
+REPO READY · owner/repo
+```
 
 ---
 
@@ -190,6 +213,21 @@ https://github.com/<owner>/<repo>.git
 ```
 
 Equivalent GitHub HTTPS URLs without the `.git` suffix may be normalized internally, but arbitrary hosts are rejected with `400`.
+
+### Repo not in authorized GitHub repos
+
+The backend must validate that the requested `cloneUrl` came from the connected user's GitHub repository list:
+
+1. Read saved `github_token`
+2. Call `listRepos(token.access_token)`
+3. Find a repo whose `clone_url` matches the submitted `cloneUrl`
+4. Use that repo's `full_name` in the response
+
+If no matching repo is found, return `403` with:
+
+```json
+{ "error": "Repository is not available to this GitHub connection" }
+```
 
 ### GitHub not connected
 
@@ -229,9 +267,11 @@ Add or update tests for:
 2. Repo prep helper fetches an existing repository instead of recloning.
 3. Repo prep helper rejects non-GitHub clone URLs.
 4. `POST /api/github/repos/prepare` rejects when GitHub is not connected.
-5. `POST /api/github/repos/prepare` returns `repoStatus` and `indexingStatus` on success.
-6. `NewMissionForm` opens `RepoPrepareModal` when a repo is selected.
-7. `NewMissionForm` only calls `setRepo` after prepare succeeds.
+5. `POST /api/github/repos/prepare` validates clone URL against `listRepos(token)`.
+6. `POST /api/github/repos/prepare` returns `fullName`, `repoStatus`, and `indexingStatus` on success.
+7. `NewMissionForm` opens `RepoPrepareModal` when a repo is selected.
+8. `NewMissionForm` only calls `setRepo` after prepare succeeds.
+9. `NewMissionForm` displays prepared repo as `REPO READY · owner/repo`.
 
 ---
 
@@ -245,7 +285,7 @@ Add or update tests for:
 6. Clone/fetch errors appear in the modal.
 7. Mission creation still receives the selected repo clone URL.
 8. Mission runner uses the shared repo preparation helper instead of duplicate clone logic.
-9. Route response explicitly reports repo status and indexing status.
+9. Route response explicitly reports repo identity, repo status, and indexing status.
 10. Prepare route rejects invalid/non-GitHub clone URLs.
 11. Prepare route rejects requests when GitHub is not connected.
 12. Existing tests continue to pass.
