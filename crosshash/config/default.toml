@@ -1,9 +1,9 @@
 [ai]
 enabled = true
 auto_gate = true
-provider = "ollama"
-model = "llama3.1"
-api_key_env = "OPENAI_API_KEY"
+provider = "openai-compatible"
+model = "glm-5.1"
+api_key_env = "ZAI_API_KEY"
 temperature = 0.0
 max_tokens = 2048
 confidence_auto_accept = 0.95
