@@ -55,7 +55,7 @@ describe("PiNyx integration routes", () => {
     expect(res.json()).toEqual({ configured: false, endpoint: null });
   });
 
-  it("migrates a saved stub endpoint to real host PiNyx when available", async () => {
+  it("migrates a legacy saved stub endpoint to real host PiNyx when available", async () => {
     const mockFetch = vi.fn(async (url: string) => {
       if (url === "http://host.docker.internal:7331/health") return { ok: true };
       return { ok: false };

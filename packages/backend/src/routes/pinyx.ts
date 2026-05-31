@@ -62,7 +62,6 @@ const DEFAULT_PINYX_ENDPOINTS = [
   "http://host.docker.internal:7331", // Real PiNyx running on the host
   "http://pinyx:7331",                // Real PiNyx when provided as a compose service
   "http://localhost:7331",            // Local dev outside Docker
-  "http://pinyx-stub:7331",           // Last-resort test stub
 ];
 
 function isStubEndpoint(endpoint: string): boolean {
@@ -104,9 +103,8 @@ async function syncConfigToPinyx(config: PinyxConfigSetting): Promise<void> {
   });
 }
 
-async function detectPinyxEndpoint(options: { allowStub?: boolean } = {}): Promise<string> {
+async function detectPinyxEndpoint(): Promise<string> {
   for (const url of DEFAULT_PINYX_ENDPOINTS) {
-    if (!options.allowStub && isStubEndpoint(url)) continue;
     try {
       const res = await fetch(`${url}/health`, { method: "GET", signal: AbortSignal.timeout(2000) });
       if (res.ok) return url;
@@ -126,7 +124,7 @@ export async function resolvePinyxConfig(lapis: LaPisClient): Promise<PinyxConfi
   };
 
   if (isStubEndpoint(config.endpoint)) {
-    const realEndpoint = await detectPinyxEndpoint({ allowStub: false });
+    const realEndpoint = await detectPinyxEndpoint();
     if (realEndpoint) {
       const migrated = { ...config, endpoint: realEndpoint };
       await lapis.setSetting("pinyx_config", migrated);
@@ -149,7 +147,7 @@ export function registerPinyxRoutes(app: FastifyInstance, deps: PinyxRouteDeps) 
     const config = await resolvePinyxConfig(lapis);
     if (!config) {
       // Auto-detect PiNyx endpoint for first-time setup
-      const detected = await detectPinyxEndpoint({ allowStub: true });
+      const detected = await detectPinyxEndpoint();
       return {
         endpoint: detected,
         modelHints: defaultModelHints,
