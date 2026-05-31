@@ -116,6 +116,41 @@ describe("POST /api/missions", () => {
     );
   });
 
+  it("falls back to stub model when PiNyx is unreachable", async () => {
+    const app = Fastify();
+    const mockLapis = {
+      getSetting: vi.fn().mockResolvedValue({
+        endpoint: "http://unreachable:7331",
+        modelHints: {
+          orchestrator: "kilo/kilo-auto/free",
+          worker: "kilo/kilo-auto/free",
+          validator_scrutiny: "kilo/kilo-auto/free",
+          validator_user_testing: "kilo/kilo-auto/free",
+          research: "kilo/kilo-auto/free",
+        },
+      }),
+      createMission: vi.fn().mockResolvedValue({ id: "m-1", status: "planning" }),
+    } as unknown as LaPisClient;
+    const pool = createMockPool();
+
+    app.register(missionRoutes, { lapis: mockLapis, pool });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/missions",
+      payload: { description: "Build auth system" },
+    });
+
+    // When PiNyx is unreachable, falls back to stub but still creates the mission
+    expect(response.statusCode).toBe(201);
+    expect(mockLapis.createMission).toHaveBeenCalledWith(
+      "Build auth system",
+      expect.objectContaining({
+        modelHints: expect.objectContaining({ orchestrator: "kilo/kilo-auto/free" }),
+      }),
+    );
+  });
+
   it("rejects missing description", async () => {
     const app = Fastify();
     const mockLapis = {} as unknown as LaPisClient;

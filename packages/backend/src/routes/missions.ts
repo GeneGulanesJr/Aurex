@@ -20,28 +20,57 @@ export async function missionRoutes(
   },
 ) {
   async function hydrateMissionPayload(missionId: string) {
-    const [mission, milestones, cost] = await Promise.all([
-      lapis.getMission(missionId),
-      lapis.getMilestonesForMission(missionId),
-      lapis.getMissionCost(missionId),
+    const mission = await lapis.getMission(missionId);
+    const [milestones, cost] = await Promise.all([
+      lapis.getMilestonesForMission(missionId).catch(() => [] as import("@aurex/shared").Milestone[]),
+      lapis.getMissionCost(missionId).catch(() => ({ totalCost: 0, totalTokens: 0, entries: 0 })),
     ]);
     const unitsByMilestone = await Promise.all(
-      milestones.map((milestone) => lapis.getWorkingUnitsForMilestone(milestone.id)),
+      milestones.map((milestone) => lapis.getWorkingUnitsForMilestone(milestone.id).catch(() => [])),
     );
     const activeWorkers = unitsByMilestone
       .flat()
       .filter((unit) => !["completed", "failed", "timed_out"].includes(unit.status));
     return { mission, milestones, activeWorkers, cost };
   }
+  const STUB_MODEL = "kilo/kilo-auto/free";
+
+  async function resolveDefaultModel(pinyxConfig: { endpoint?: string } | null): Promise<string> {
+    const endpoint = pinyxConfig?.endpoint?.replace(/\/$/, "");
+    if (!endpoint) return STUB_MODEL;
+    try {
+      const res = await fetch(`${endpoint}/v1/models`, { method: "GET", signal: AbortSignal.timeout(3000) });
+      if (!res.ok) return STUB_MODEL;
+      const body = await res.json() as { data?: { id: string }[] };
+      const models = body.data ?? [];
+      // Prefer a non-free model for reliability, fall back to first available
+      const real = models.find((m) => !m.id.includes("/free"));
+      return real?.id ?? models[0]?.id ?? STUB_MODEL;
+    } catch {
+      return STUB_MODEL;
+    }
+  }
+
   app.post("/api/missions", async (request, reply) => {
     const { description, cloneUrl } = request.body as { description: string; cloneUrl?: string };
     if (!description) {
       return reply.status(400).send({ error: "description is required" });
     }
-    const pinyxConfig = await lapis.getSetting<{ modelHints?: Partial<MissionConfig["modelHints"]> }>("pinyx_config");
+    const pinyxConfig = await lapis.getSetting<{ modelHints?: Partial<MissionConfig["modelHints"]>; endpoint?: string }>("pinyx_config");
+    const savedHints = pinyxConfig?.modelHints ?? {};
+    const allStub = Object.values(savedHints).every((v) => !v || v === STUB_MODEL);
+    const defaultModel = allStub ? await resolveDefaultModel(pinyxConfig) : STUB_MODEL;
+    const modelHints = {
+      orchestrator: defaultModel,
+      worker: defaultModel,
+      validator_scrutiny: defaultModel,
+      validator_user_testing: defaultModel,
+      research: defaultModel,
+      ...savedHints,
+    };
     const config: MissionConfig = {
       ...missionConfig,
-      modelHints: { orchestrator: "kilo/kilo-auto/free", worker: "kilo/kilo-auto/free", validator_scrutiny: "kilo/kilo-auto/free", validator_user_testing: "kilo/kilo-auto/free", research: "kilo/kilo-auto/free", ...pinyxConfig?.modelHints },
+      modelHints,
       ...(cloneUrl && { cloneUrl }),
     };
     const mission = await lapis.createMission(description, config);
