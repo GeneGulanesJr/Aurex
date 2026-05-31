@@ -21,7 +21,7 @@ export function PinyxConnectionTab({ config, onConfigUpdate }: PinyxConnectionTa
   const [error, setError] = useState<string | null>(null);
   const [modelsExpanded, setModelsExpanded] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
-  const flashTimer = useRef<ReturnType<typeof setTimeout>>();
+  const flashTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
     setEndpoint(config.endpoint);
