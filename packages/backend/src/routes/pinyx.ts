@@ -64,6 +64,41 @@ const DEFAULT_PINYX_ENDPOINTS = [
   "http://localhost:7331",    // Local dev
 ];
 
+function providerApi(providerId: string): string {
+  switch (providerId) {
+    case "anthropic":
+      return "anthropic-messages";
+    case "google":
+    case "gemini":
+      return "google-generative-ai";
+    default:
+      return "openai-completions";
+  }
+}
+
+async function syncConfigToPinyx(config: PinyxConfigSetting): Promise<void> {
+  const endpoint = config.endpoint.replace(/\/$/, "");
+  const providers = Object.fromEntries(
+    config.providers
+      .filter((provider) => provider.apiKey)
+      .map((provider) => [provider.id, {
+        api: providerApi(provider.id),
+        baseUrl: provider.baseUrl,
+        apiKey: provider.apiKey,
+        models: [],
+      }]),
+  );
+
+  await fetch(`${endpoint}/api/config`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      gateway: { host: "0.0.0.0", port: 7331 },
+      providers,
+    }),
+  });
+}
+
 async function detectPinyxEndpoint(): Promise<string> {
   for (const url of DEFAULT_PINYX_ENDPOINTS) {
     try {
@@ -141,6 +176,12 @@ export function registerPinyxRoutes(app: FastifyInstance, deps: PinyxRouteDeps) 
       providers,
     };
     await lapis.setSetting("pinyx_config", config);
+    try {
+      await syncConfigToPinyx(config);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "unknown";
+      console.warn("[pinyx] could not sync config to PiNyx:", message);
+    }
     return publicPinyxConfig(config);
   });
 

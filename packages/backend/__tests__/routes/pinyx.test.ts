@@ -88,6 +88,36 @@ describe("PiNyx integration routes", () => {
     expect(lapis.setSetting).toHaveBeenCalledWith("pinyx_config", payload);
   });
 
+  it("syncs keyed providers to PiNyx config after saving", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [] }) });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const app = Fastify();
+    const lapis = createMockLapis();
+    registerPinyxRoutes(app, { lapis });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/pinyx/config",
+      payload: {
+        endpoint: "http://pinyx.example",
+        modelHints: defaultModelHints,
+        providers: [{ id: "zai", name: "Z.AI Coding", baseUrl: "https://api.z.ai/api/coding/paas/v4", apiKey: "zai-key" }],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(mockFetch).toHaveBeenCalledWith("http://pinyx.example/api/config", expect.objectContaining({
+      method: "PUT",
+      body: JSON.stringify({
+        gateway: { host: "0.0.0.0", port: 7331 },
+        providers: {
+          zai: { api: "openai-completions", baseUrl: "https://api.z.ai/api/coding/paas/v4", apiKey: "zai-key", models: [] },
+        },
+      }),
+    }));
+  });
+
   it("rejects save when endpoint is unreachable", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")));
 
