@@ -43,11 +43,11 @@ Entry points: server.ts, App.tsx
 Cycles: 2 detected (clients → routes → clients)
 ```
 
-**Data source:** LaPis `POST /code/index` result already returns `files_indexed`, `symbols_extracted`, `import_edges`, `call_edges`. We add a new lightweight endpoint `GET /code/summary/:repo` that returns:
+**Data source:** New `GET /code/summary/:repo` endpoint returns:
 - `files`, `symbols`, `edges` counts
-- `modules` — directory grouping of files under `src/` or top-level packages
-- `entryPoints` — files with high afferent coupling (many importers)
-- `cycles` — count + top cycle path
+- `modules` — directory grouping of files (monorepo-aware: uses `packages/` children, or `src/` children, or top-level dirs)
+- `entryPoints` — files with highest afferent coupling (most imported-by count)
+- `cycles` — count + top cycle path (shortest cycle found)
 
 ### 2. Dependency Graph
 
@@ -90,7 +90,7 @@ Animated SVG rendered with anime.js. Read-only — no drag, zoom, or click.
 }
 ```
 
-**Scale limit:** Cap at 50 nodes (top by importance). Files beyond the cap are grouped into a single "other" node per module.
+**Scale limit:** Cap at 50 nodes (top by importance). Files beyond the cap are grouped into a single "other" node per module (e.g. "23 more files"). Edges to/from aggregated files are **dropped** — the "other" node is a dead-end indicator, not a connected node.
 
 ### 3. Hotspot Heatmap
 
@@ -179,7 +179,12 @@ The mission runner already emits `mission_log` events during indexing. The front
 { type: "mission_log", missionId, phase: "indexing", message: "Indexed 125 files, 1820 symbols", data: { indexingDone: true, files: 125, symbols: 1820, edges: 713 } }
 ```
 
-The `data.indexingDone: true` field is the signal — when the frontend sees this, it triggers the panel entrance animation and populates Architecture Summary from the counts. Dependency Graph and Hotspot Heatmap are fetched via REST (`GET /api/missions/:missionId/code/graph` and `/hotspots`) after the panel appears.
+The `data.indexingDone: true` field is the signal — when the frontend sees this, it sets `showContextPanel = true` to mount the panel. The panel's `useEffect` then fires three REST calls in parallel:
+- `GET /api/missions/:missionId/code/summary` → Architecture Summary
+- `GET /api/missions/:missionId/code/graph` → Dependency Graph
+- `GET /api/missions/:missionId/code/hotspots` → Hotspot Heatmap
+
+All three sections show loading skeletons until their data arrives. The WS `data` counts are **not used** for rendering — the REST endpoint is the single source of truth. The WS event is purely a trigger.
 
 **Indexing failed:** No `indexingDone` field. Panel does not render. The log entry is the only indication.
 
