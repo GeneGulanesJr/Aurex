@@ -6,6 +6,7 @@ __pycache__/
 .worktrees/
 /crosshash/target/
 /crosshash/.crosshash/
+.crosshash/
 jobs/
 bench/results/
 bench/realworld/results/
