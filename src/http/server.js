@@ -70,6 +70,7 @@ function buildRoutes(deps) {
   const retry = require('./handlers/retry');
   const checkpoints = require('./handlers/checkpoints');
   const settings = require('./handlers/settings');
+  const codeIndex = require('./handlers/code-index');
 
   return [
     // Health
@@ -141,6 +142,11 @@ function buildRoutes(deps) {
     { method: 'GET', pattern: '/settings/:key', handler: settings.getSetting(deps.sqlJson) },
     { method: 'PUT', pattern: '/settings/:key', handler: settings.setSetting(deps.sqlRun) },
     { method: 'DELETE', pattern: '/settings/:key', handler: settings.deleteSetting(deps.sqlRun) },
+
+    // Code indexing
+    { method: 'POST', pattern: '/code/index', handler: codeIndex.indexRepo(deps) },
+    { method: 'POST', pattern: '/code/reindex', handler: codeIndex.reindexRepo(deps) },
+    { method: 'GET', pattern: '/code/health/:repo', handler: codeIndex.codeRepoHealthHandler(deps) },
   ];
 }
 
