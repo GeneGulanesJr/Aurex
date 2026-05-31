@@ -126,6 +126,7 @@ export function App() {
             workers={state.activeWorkers}
             cost={state.cost}
             events={eventsRef.current}
+            logs={state.logs}
             blurred={!!state.escalation}
           />
         </main>

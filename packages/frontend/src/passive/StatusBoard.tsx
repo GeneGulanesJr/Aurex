@@ -10,10 +10,11 @@ interface StatusBoardProps {
   workers: WorkingUnit[];
   cost: CostSummary | null;
   events: WsClientEvent[];
+  logs: Array<{ phase: string; message: string; timestamp: number }>;
   blurred: boolean;
 }
 
-export function StatusBoard({ mission, milestones, workers, cost, events, blurred }: StatusBoardProps) {
+export function StatusBoard({ mission, milestones, workers, cost, events, logs, blurred }: StatusBoardProps) {
   const boardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -42,6 +43,7 @@ export function StatusBoard({ mission, milestones, workers, cost, events, blurre
         workers={workers}
         cost={cost}
         events={events}
+        logs={logs}
       />
     </div>
   );

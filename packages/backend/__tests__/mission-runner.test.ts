@@ -47,6 +47,17 @@ vi.mock("../src/clients/pinyx-client.js", () => ({
       finishReason: "stop",
       usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
     }),
+    chatStream: vi.fn().mockImplementation(async (_req: unknown, onChunk: (text: string) => void) => {
+      const content = JSON.stringify({
+        milestones: [{ title: "M1", description: "First", units: [], criteria: [], testCommands: [] }],
+      });
+      onChunk(content);
+      return {
+        content,
+        finishReason: "stop",
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      };
+    }),
     ping: vi.fn().mockResolvedValue(undefined),
   }),
 }));
@@ -204,7 +215,10 @@ describe("MissionRunner", () => {
     runner.start("m-1");
     await done;
 
-    expect(mockPinyx.chat).toHaveBeenCalledWith(expect.objectContaining({ model: "kilo/kilo-auto/free" }));
+    expect(mockPinyx.chatStream).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "kilo/kilo-auto/free" }),
+      expect.any(Function),
+    );
   });
 
   it("resolves milestone_complete checkpoint and continues to next milestone", async () => {

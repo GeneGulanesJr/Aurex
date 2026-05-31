@@ -9,6 +9,7 @@ interface MissionPipelineProps {
   workers: WorkingUnit[];
   cost: { totalCost: number; totalTokens: number } | null;
   events: WsClientEvent[];
+  logs: Array<{ phase: string; message: string; timestamp: number }>;
 }
 
 const statusConfig: Record<string, { color: string; label: string; icon: string }> = {
@@ -28,7 +29,7 @@ const workerStatusColor: Record<string, string> = {
   failed: "var(--error)",
 };
 
-export function MissionPipeline({ mission, milestones, workers, cost, events }: MissionPipelineProps) {
+export function MissionPipeline({ mission, milestones, workers, cost, events, logs }: MissionPipelineProps) {
   const pipelineRef = useRef<HTMLDivElement>(null);
   const prevMilestoneCountRef = useRef(0);
 
@@ -191,6 +192,11 @@ export function MissionPipeline({ mission, milestones, workers, cost, events }: 
         })}
       </div>
 
+      {/* Planning log — shown when mission is in planning phase or has planning logs */}
+      {(mission.status === "planning" || logs.length > 0) && (
+        <PlanningLog logs={logs} active={mission.status === "planning" || mission.status === "running"} />
+      )}
+
       {/* Live event stream */}
       <EventStream events={events} />
     </div>
@@ -277,6 +283,59 @@ function WorkerChip({ worker }: { worker: WorkingUnit }) {
       <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "9px", letterSpacing: "1px", textTransform: "uppercase", color: workerStatusColor[worker.status] || "var(--text-muted)" }}>
         {worker.status.replace("_", " ")}
       </span>
+    </div>
+  );
+}
+
+function PlanningLog({ logs, active }: { logs: Array<{ phase: string; message: string; timestamp: number }>; active: boolean }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [logs.length]);
+
+  if (logs.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: "20px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
+        <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", letterSpacing: "2px", textTransform: "uppercase", color: "var(--text-muted)" }}>
+          Mission Log
+        </span>
+        {active && (
+          <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--accent)", animation: "pulse 1.5s infinite" }} />
+        )}
+      </div>
+      <div
+        ref={containerRef}
+        style={{
+          background: "var(--bg-inset)",
+          border: "1px solid var(--border)",
+          borderRadius: "6px",
+          padding: "12px 16px",
+          maxHeight: "300px",
+          overflowY: "auto",
+          fontFamily: '"JetBrains Mono", monospace',
+          fontSize: "12px",
+          lineHeight: 1.6,
+        }}
+      >
+        {logs.map((log, i) => (
+          <div key={i} style={{ display: "flex", gap: "8px", padding: "2px 0", color: "var(--text-secondary)", wordBreak: "break-word" }}>
+            <span style={{ color: "var(--text-muted)", flexShrink: 0, fontSize: "10px", paddingTop: "3px" }}>
+              {new Date(log.timestamp).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+            </span>
+            <span>
+              <span style={{ color: "var(--accent)", fontSize: "9px", textTransform: "uppercase", letterSpacing: "1px", marginRight: "4px" }}>
+                {log.phase}
+              </span>
+              {log.message}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

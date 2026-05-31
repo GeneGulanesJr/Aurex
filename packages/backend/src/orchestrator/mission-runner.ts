@@ -61,8 +61,10 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
       setStatus("planning", missionId);
       const pinyx = await resolvePinyx();
       const mission = await lapis.getMission(missionId);
+      eventBus.emit({ type: "mission_log", missionId, phase: "setup", message: `Resolving repo for mission: ${mission.description.slice(0, 80)}…` });
       const { repoPath: missionRepoRoot } = await prepareRepoForMission({ lapis, parentRepoRoot: repoRoot, cloneUrl: mission.configJson.cloneUrl });
-      const planner = createPlanner(lapis, pinyx, { model: mission.configJson.modelHints.orchestrator });
+      eventBus.emit({ type: "mission_log", missionId, phase: "planning", message: `Calling ${mission.configJson.modelHints.orchestrator} to plan milestones…` });
+      const planner = createPlanner(lapis, pinyx, { model: mission.configJson.modelHints.orchestrator, eventBus, missionId });
       const planResult = await planner.plan(mission.description, missionId);
 
       await lapis.updateMissionStatus(missionId, "running");

@@ -23,6 +23,7 @@ export interface ChatResponse {
 
 export interface PinyxClient {
   chat(request: ChatRequest): Promise<ChatResponse>;
+  chatStream(request: ChatRequest, onChunk: (text: string) => void): Promise<ChatResponse>;
   ping(): Promise<void>;
 }
 
@@ -64,6 +65,72 @@ export function createPinyxClient(config: PinyxClientConfig): PinyxClient {
           totalTokens: res.usage?.total_tokens ?? 0,
         },
       };
+    },
+
+    async chatStream(req, onChunk) {
+      const body = {
+        model: req.model,
+        messages: req.messages,
+        stream: true,
+        ...(req.temperature !== undefined && { temperature: req.temperature }),
+        ...(req.max_tokens !== undefined && { max_tokens: req.max_tokens }),
+      };
+      const res = await fetch(`${base}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "unknown error");
+        throw new Error(`PiNyx ${res.status}: /v1/chat/completions — ${text}`);
+      }
+      if (!res.body) {
+        // No streaming support — fall back to full response
+        const json = await res.json() as { id: string; choices: Array<{ message: { content: string }; finish_reason: string }>; usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } };
+        onChunk(json.choices[0]?.message?.content ?? "");
+        return {
+          content: json.choices[0]?.message?.content ?? "",
+          finishReason: json.choices[0]?.finish_reason ?? "stop",
+          usage: { promptTokens: json.usage?.prompt_tokens ?? 0, completionTokens: json.usage?.completion_tokens ?? 0, totalTokens: json.usage?.total_tokens ?? 0 },
+        };
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let content = "";
+      let finishReason = "stop";
+      let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+      let buf = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop()!;
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data: ")) continue;
+          const data = trimmed.slice(6);
+          if (data === "[DONE]") continue;
+          try {
+            const chunk = JSON.parse(data) as {
+              choices?: Array<{ delta?: { content?: string }; finish_reason?: string }>;
+              usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+            };
+            const delta = chunk.choices?.[0]?.delta?.content ?? "";
+            if (delta) {
+              content += delta;
+              onChunk(delta);
+            }
+            if (chunk.choices?.[0]?.finish_reason) {
+              finishReason = chunk.choices[0].finish_reason;
+            }
+            if (chunk.usage) {
+              usage = { promptTokens: chunk.usage.prompt_tokens, completionTokens: chunk.usage.completion_tokens, totalTokens: chunk.usage.total_tokens };
+            }
+          } catch { /* skip malformed chunks */ }
+        }
+      }
+      return { content, finishReason, usage };
     },
 
     async ping() {

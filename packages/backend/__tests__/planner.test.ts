@@ -2,6 +2,24 @@ import { describe, it, expect, vi } from "vitest";
 import { createPlanner } from "../src/orchestrator/planner";
 import type { LaPisClient } from "../src/clients/lapis-client";
 
+function createMockPinyx(responseContent: string) {
+  return {
+    chat: vi.fn().mockResolvedValue({
+      content: responseContent,
+      usage: { promptTokens: 100, completionTokens: 200, totalTokens: 300 },
+    }),
+    chatStream: vi.fn().mockImplementation(async (_req: unknown, onChunk: (text: string) => void) => {
+      // Simulate streaming by delivering the full content at once
+      onChunk(responseContent);
+      return {
+        content: responseContent,
+        finishReason: "stop",
+        usage: { promptTokens: 100, completionTokens: 200, totalTokens: 300 },
+      };
+    }),
+  };
+}
+
 describe("planner", () => {
   it("plans milestones from mission description via PiNyx", async () => {
     const mockLapis = {
@@ -12,22 +30,17 @@ describe("planner", () => {
       getContractHistory: vi.fn().mockResolvedValue([]),
     } as unknown as LaPisClient;
 
-    const mockPinyx = {
-      chat: vi.fn().mockResolvedValue({
-        content: JSON.stringify({
-          milestones: [
-            {
-              title: "Auth module",
-              description: "Implement JWT authentication",
-              units: [{ description: "Login endpoint", declaredPaths: ["src/auth/**"], declaredModules: ["auth"] }],
-              criteria: ["All tests pass", "JWT tokens valid"],
-              testCommands: ["npm test -- src/auth"],
-            },
-          ],
-        }),
-        usage: { promptTokens: 100, completionTokens: 200, totalTokens: 300 },
-      }),
-    };
+    const mockPinyx = createMockPinyx(JSON.stringify({
+      milestones: [
+        {
+          title: "Auth module",
+          description: "Implement JWT authentication",
+          units: [{ description: "Login endpoint", declaredPaths: ["src/auth/**"], declaredModules: ["auth"] }],
+          criteria: ["All tests pass", "JWT tokens valid"],
+          testCommands: ["npm test -- src/auth"],
+        },
+      ],
+    }));
 
     const planner = createPlanner(mockLapis, mockPinyx as never);
     const result = await planner.plan("Build authentication system", "m-1");
@@ -47,18 +60,16 @@ describe("planner", () => {
       getContractHistory: vi.fn().mockResolvedValue([]),
     } as unknown as LaPisClient;
 
-    const mockPinyx = {
-      chat: vi.fn().mockResolvedValue({
-        content: JSON.stringify({
-          milestones: [{ title: "Smoke", description: "No-op", units: [], criteria: [], testCommands: [] }],
-        }),
-        usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
-      }),
-    };
+    const mockPinyx = createMockPinyx(JSON.stringify({
+      milestones: [{ title: "Smoke", description: "No-op", units: [], criteria: [], testCommands: [] }],
+    }));
 
     const planner = createPlanner(mockLapis, mockPinyx as never, { model: "kilo/kilo-auto/free" });
     await planner.plan("Smoke mission", "m-1");
 
-    expect(mockPinyx.chat).toHaveBeenCalledWith(expect.objectContaining({ model: "kilo/kilo-auto/free" }));
+    expect(mockPinyx.chatStream).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "kilo/kilo-auto/free" }),
+      expect.any(Function),
+    );
   });
 });

@@ -9,7 +9,13 @@ export type WsClientEvent =
   | { type: "escalation"; missionId: string; checkpointId: string; trigger: EscalationTrigger; context: EscalationContext }
   | { type: "mission_queued"; missionId: string; queuePosition: number }
   | { type: "mission_started"; missionId: string }
-  | { type: "mission_completed"; missionId: string; finalState: string };
+  | { type: "mission_completed"; missionId: string; finalState: string }
+  | { type: "mission_log"; missionId: string; phase: string; message: string };
+
+export type StreamingChunk = {
+  delta: string;
+  done: boolean;
+};
 
 export type WsEvent = WsClientEvent;
 
