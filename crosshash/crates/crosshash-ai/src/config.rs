@@ -21,9 +21,9 @@ impl Default for AiConfig {
         Self {
             enabled: true,
             auto_gate: true,
-            provider: "ollama".into(),
-            model: "llama3.1".into(),
-            api_key_env: "OPENAI_API_KEY".into(),
+            provider: "openai-compatible".into(),
+            model: "glm-5.1".into(),
+            api_key_env: "ZAI_API_KEY".into(),
             temperature: 0.0,
             max_tokens: 2048,
             confidence_auto_accept: 0.95,
@@ -67,7 +67,7 @@ impl AiConfig {
         match self.provider.to_lowercase().as_str() {
             "openai" => LlmProvider::OpenAi,
             "anthropic" | "claude" => LlmProvider::Anthropic,
-            "openai-compatible" => LlmProvider::OpenAiCompatible,
+            "openai-compatible" | "zai" | "zhipu" => LlmProvider::OpenAiCompatible,
             _ => LlmProvider::Ollama,
         }
     }
@@ -77,12 +77,40 @@ impl AiConfig {
             LlmProvider::OpenAi => "https://api.openai.com/v1/chat/completions".into(),
             LlmProvider::Anthropic => "https://api.anthropic.com/v1/messages".into(),
             LlmProvider::Ollama => "http://localhost:11434/api/chat".into(),
-            LlmProvider::OpenAiCompatible => "http://localhost:8080/v1/chat/completions".into(),
+            LlmProvider::OpenAiCompatible => {
+                let custom = std::env::var("CROSSHASH_AI_ENDPOINT").ok();
+                custom.unwrap_or_else(|| {
+                    "https://api.z.ai/api/coding/paas/v4/chat/completions".into()
+                })
+            }
         }
     }
 
     pub fn api_key(&self) -> Option<String> {
         std::env::var(&self.api_key_env).ok()
+    }
+
+    /// Build config from environment variables, falling back to defaults.
+    /// Reads: CROSSHASH_AI_PROVIDER, CROSSHASH_AI_MODEL, CROSSHASH_AI_API_KEY_ENV,
+    /// CROSSHASH_AI_TEMPERATURE, CROSSHASH_AI_MAX_TOKENS
+    pub fn load_from_env() -> Result<Self> {
+        let mut config = Self::default();
+        if let Ok(v) = std::env::var("CROSSHASH_AI_PROVIDER") {
+            config.provider = v;
+        }
+        if let Ok(v) = std::env::var("CROSSHASH_AI_MODEL") {
+            config.model = v;
+        }
+        if let Ok(v) = std::env::var("CROSSHASH_AI_API_KEY_ENV") {
+            config.api_key_env = v;
+        }
+        if let Ok(v) = std::env::var("CROSSHASH_AI_TEMPERATURE") {
+            if let Ok(t) = v.parse() { config.temperature = t; }
+        }
+        if let Ok(v) = std::env::var("CROSSHASH_AI_MAX_TOKENS") {
+            if let Ok(t) = v.parse() { config.max_tokens = t; }
+        }
+        Ok(config)
     }
 }
 
@@ -95,8 +123,8 @@ mod tests {
         let config = AiConfig::default();
         assert!(config.enabled);
         assert!(config.auto_gate);
-        assert_eq!(config.provider(), LlmProvider::Ollama);
-        assert!(config.endpoint().contains("localhost"));
+        assert_eq!(config.provider(), LlmProvider::OpenAiCompatible);
+        assert!(config.endpoint().contains("z.ai"));
     }
 
     #[test]
