@@ -25,7 +25,7 @@ The panel stays as a slide-out drawer (consistent with the GitHub integration UX
 └──────────────────────────────┘
 ```
 
-All styling uses DESIGN.md tokens via CSS custom properties. No inline style objects — all styles move to `src/styles.css` as CSS classes. This is a hard requirement for consistency.
+All styling uses DESIGN.md tokens via CSS custom properties. The 3 new PiNyx tab components use CSS classes in `src/styles.css`. The existing GitHub section remains as-is with inline styles — it can be migrated separately later. This scopes the styling work tightly.
 
 ---
 
@@ -43,7 +43,7 @@ All styling uses DESIGN.md tokens via CSS custom properties. No inline style obj
 │  │ http://127.0.0.1:7331    ││
 │  └───────────────────────────┘│
 │                               │
-│  [  Test Connection  ]        │
+│  [ Test & Save ]              │
 │                               │
 │  ┌─ Status ─────────────────┐│
 │  │ ● Connected  12ms        ││
@@ -52,32 +52,31 @@ All styling uses DESIGN.md tokens via CSS custom properties. No inline style obj
 │  │ kilo/kilo-auto/pro       ││
 │  │ kilo/kilo-auto/enterprise││
 │  └───────────────────────────┘│
-│                               │
-│  [ Save Endpoint ]            │
 └──────────────────────────────┘
 ```
 
 ### Behavior
 
 1. **Endpoint input** — pre-filled from saved config. Monospace font, full width.
-2. **Test Connection button** — calls `GET {endpoint}/v1/models` with a 5-second timeout. Shows three states:
-   - Idle: default btn-outline style
-   - Testing: spinner animation, button disabled
-   - Success: green accent, shows latency in ms and model count
-   - Failure: red error, shows error message (timeout, 502, DNS failure)
+2. **Test & Save button** — single combined action. Calls `GET /api/pinyx/models` (backend proxy) to verify connectivity, then `POST /api/pinyx/config` to save. Uses backend proxy to avoid CORS issues. States:
+   - Idle: `btn-outline`, label "Test & Save"
+   - Testing: spinner, disabled, label "Testing..."
+   - Success: brief green accent flash, shows "Saved ✓ {latency}ms" confirmation that fades after 2s
+   - Failure: `--error` colored status text below the button (unreachable, 502, etc.)
+
+   This matches the existing backend behavior where `POST /api/pinyx/config` already validates reachability before saving.
 3. **Status card** — only visible after a successful test. Shows:
    - Green status dot with glow animation
    - Latency badge (e.g., `12ms`)
    - Model count with expandable list (collapsed by default, click to expand)
-4. **Save Endpoint** — saves endpoint to LaPis settings. Disabled until a test succeeds. On save, shows a brief "Saved ✓" confirmation that fades after 2s.
 
 ### Design tokens
 
 - Endpoint input: `--bg-inset` background, `--border` border, `--text-primary` text
 - Status dot: `--success` color with `box-shadow: 0 0 6px` glow
 - Latency badge: `--text-secondary` color, `mono-value` typography
-- Test Connection success: `--accent` colored button briefly, then outline again
-- Test Connection failure: `--error` colored status text
+- Test & Save success: `--accent` colored button briefly, then outline again
+- Test & Save failure: `--error` colored status text
 
 ---
 
@@ -125,28 +124,30 @@ All styling uses DESIGN.md tokens via CSS custom properties. No inline style obj
 
 ### Behavior
 
-1. **Default Model** — top card. Select dropdown populated from PiNyx models (fetched on Connection tab test, or cached from last fetch). When this changes, all agent cards that say "Uses default model" update silently.
+1. **Default Model** — top card. Select dropdown populated from PiNyx models (fetched from `/api/pinyx/models`). When this changes, all agent cards that say "Uses default model" update silently.
 
-2. **Agent cards** (Orchestrator, Worker, Validator, Research) — each shows:
+2. **Agent cards** (4 cards — Orchestrator, Worker, Validator, Research) — each shows:
    - Agent role name (heading-sm typography)
    - One-line description of what this agent does
    - Current model assignment — either "Uses default model" (dimmed text, inherits default) or an explicit override (accent-colored)
    - Click to expand: shows a model dropdown to override. Has a "Reset to default" link to clear the override.
 
-3. **Collapsed state** — each card is compact (one line: role name + model). Click to expand into the full card with description and override dropdown.
+3. **Validator card combines both validator types.** The `AgentType` enum has `validator_scrutiny` and `validator_user_testing`, but they rarely need different models. The UI shows one "Validator" card. Setting it sets both model hints to the same value.
 
-4. **Override logic** — if an agent has an explicit model set, show it in accent color. If using default, show in muted text. The data model stays the same (`modelHints: Record<AgentType, string>`) — the "default" value is simply whatever the default model dropdown is set to. Agents without explicit overrides store the default value.
+4. **Collapsed state** — each card is compact (one line: role name + model). Click to expand into the full card with description and override dropdown.
 
-5. **Save Model Routing** — saves the full modelHints object. Disabled if no changes from loaded state.
+5. **Override logic** — if an agent has an explicit model set, show it in accent color. If using default, show in muted text. The data model stays the same (`modelHints: Record<AgentType, string>`) — the "default" value is simply whatever the default model dropdown is set to. Agents without explicit overrides store the default value.
+
+6. **Save Model Routing** — saves the full modelHints object. Disabled if no changes from loaded state.
 
 ### Agent descriptions
 
-| Agent | Description |
-|-------|-------------|
-| Orchestrator | Plans missions and decomposes goals into milestones |
-| Worker | Writes code and implements working units |
-| Validator | Reviews code quality and runs test suites |
-| Research | Gathers context and investigates solutions |
+| Card | AgentType(s) | Description |
+|------|-------------|-------------|
+| Orchestrator | `orchestrator` | Plans missions and decomposes goals into milestones |
+| Worker | `worker` | Writes code and implements working units |
+| Validator | `validator_scrutiny`, `validator_user_testing` | Reviews code quality and runs test suites |
+| Research | `research` | Gathers context and investigates solutions |
 
 ### Design tokens
 
@@ -212,9 +213,9 @@ All styling uses DESIGN.md tokens via CSS custom properties. No inline style obj
 
 3. **Edit provider** — clicking `✎` expands that row into the edit form (same form as add, pre-filled). Replaces the table row temporarily.
 
-4. **Test button** (in edit form) — sends a test request to the provider's base URL to verify connectivity. Shows success/failure inline.
+4. **API Key field** — if a key is saved (`hasApiKey: true`), show masked (`••••••••`) with placeholder text "Enter new key to replace". Empty if no key saved.
 
-5. **API Key field** — if a key is saved (`hasApiKey: true`), show masked (`••••••••`) with placeholder text "Enter new key to replace". Empty if no key saved.
+   Note: Per-provider "Test" buttons are out of scope. PiNyx doesn't expose a per-provider health endpoint. The Connection tab's Test & Save validates the gateway as a whole.
 
 ### Design tokens
 
@@ -255,30 +256,35 @@ Errors appear as a slim bar above the save button:
 
 ---
 
-## TopBar Integration
+## TopBar Modification
 
-Add a PiNyx status indicator to the TopBar/telemetry bar:
+The TopBar already has a `PINYX CONNECTED` / `PINYX OFFLINE` StatusItem. The modification makes it **clickable** — clicking the existing PiNyx status opens the Integrations panel.
 
-- Small dot (6px) with the PiNyx label
-- Green dot = connected (pinged successfully in last 60s)
-- Red dot = unreachable
-- Dimmed dot = not configured
-- Clicking the dot opens the Integrations panel to the Connection tab
+Changes to `TopBar.tsx`:
+- Add `onClick` handler to the PiNyx StatusItem that calls `onOpenIntegrations`
+- Add cursor pointer style on hover
+- No new visual elements — reuse the existing StatusDot + label
+
+---
+
+## Backend Fix: Sync Default Model Hints
+
+`packages/backend/src/routes/pinyx.ts` has its own `defaultModelHints` with stale placeholder names (`reasoning-strong`, `code-fast`, etc.). These get merged into saved configs via `resolvePinyxConfig()`, which would override the `kilo/kilo-auto/free` defaults we just set in `missions.ts`. This must be fixed to use real Kilo model IDs.
+
+This is a one-line change — no new routes, no new types.
 
 ---
 
 ## Data Flow
 
-### Existing API (no backend changes needed)
-
-The redesign uses the existing API endpoints:
+### Existing API (minimal backend fix needed)
 
 | Endpoint | Method | Used In |
 |----------|--------|---------|
 | `/api/pinyx/config` | GET | Load config on panel open |
 | `/api/pinyx/config` | POST | Save config from any tab |
 | `/api/pinyx/models` | GET | Populate model dropdowns |
-| `/api/pinyx/status` | GET | TopBar status dot |
+| `/api/pinyx/status` | GET | TopBar status dot (already exists) |
 
 The `PinyxConfigResponse` shape stays the same:
 ```typescript
@@ -295,13 +301,13 @@ The `PinyxConfigResponse` shape stays the same:
 }
 ```
 
-### New: Connection Test
+### Connection Test
 
-The "Test Connection" button calls PiNyx directly from the browser:
-```
-GET {endpoint}/v1/models
-```
-With a 5-second `AbortController` timeout. No backend endpoint needed — this is a direct browser fetch to the PiNyx gateway (which is typically on localhost anyway).
+The "Test & Save" button uses the **existing** `/api/pinyx/models` backend endpoint (which already proxies to PiNyx). This avoids CORS issues — PiNyx is a local gateway that doesn't serve CORS headers, so direct browser fetch would fail.
+
+Flow: click "Test & Save" → `GET /api/pinyx/models` (measures client-side latency) → if success, `POST /api/pinyx/config` (backend validates reachability again + saves) → show latency + confirmation.
+
+With a 5-second `AbortController` timeout on the fetch call.
 
 ---
 
@@ -321,14 +327,16 @@ With a 5-second `AbortController` timeout. No backend endpoint needed — this i
 | File | Change |
 |------|--------|
 | `packages/frontend/src/active/IntegrationsPanel.tsx` | Rebuild: add TabBar, import 3 PiNyx tabs, keep GitHub section as-is |
-| `packages/frontend/src/styles.css` | Add all new CSS classes for the panel redesign |
+| `packages/frontend/src/styles.css` | Add all new CSS classes for the 3 PiNyx tabs |
+| `packages/frontend/src/frame/TopBar.tsx` | Make existing PiNyx StatusItem clickable (calls `onOpenIntegrations`) |
+| `packages/backend/src/routes/pinyx.ts` | Update `defaultModelHints` to use real Kilo model IDs |
 
 ### Files Unchanged
 
 | File | Reason |
 |------|--------|
 | `packages/frontend/src/api.ts` | All existing endpoints cover our needs |
-| `packages/backend/src/routes/*` | No backend changes |
+| `packages/backend/src/routes/missions.ts` | Already updated in prior commit |
 | `packages/shared/src/types.ts` | No type changes |
 
 ---
@@ -336,10 +344,10 @@ With a 5-second `AbortController` timeout. No backend endpoint needed — this i
 ## Acceptance Criteria
 
 1. Panel opens as slide-out drawer, shows tabbed navigation
-2. Connection tab: endpoint input, Test Connection with latency display, status card with model list
+2. Connection tab: endpoint input, Test & Save button with latency display, status card with model list
 3. Models tab: default model dropdown, collapsible agent cards with role descriptions, override per agent
 4. Keys tab: provider table with key status badges, inline edit/add forms
-5. All styling uses DESIGN.md tokens via CSS classes (no inline style objects)
-6. TopBar shows PiNyx status dot that opens the panel on click
+5. All PiNyx tab styling uses DESIGN.md tokens via CSS classes
+6. TopBar PiNyx status is clickable and opens the integrations panel
 7. All existing tests pass unchanged
 8. Save flows work identically to current (same API, same data shapes)
