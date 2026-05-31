@@ -1,0 +1,19 @@
+FROM rust:1-slim AS builder
+
+RUN apt-get update && apt-get install -y git pkg-config libssl-dev ca-certificates && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+RUN git clone --depth 1 https://github.com/GeneGulanesJr/PiNyx.git .
+WORKDIR /src/pinyx
+RUN cargo build --release
+
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y ca-certificates curl && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /src/pinyx/target/release/pinyx /usr/local/bin/pinyx
+
+RUN mkdir -p /data && printf '{"gateway":{"host":"0.0.0.0","port":7331},"providers":{}}\n' > /data/pinyx.json
+
+EXPOSE 7331
+CMD ["pinyx", "--config", "/data/pinyx.json", "--host", "0.0.0.0"]

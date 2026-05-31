@@ -14,6 +14,19 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  pinyx:
+    build: { context: ., dockerfile: Dockerfile.pinyx }
+    ports: ["7331:7331"]
+    volumes:
+      - pinyx-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7331/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
   backend:
     build: { context: ., dockerfile: packages/backend/Dockerfile }
     ports: ["3000:3000"]
@@ -31,6 +44,7 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       lapis: { condition: service_healthy }
+      pinyx: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 5s
@@ -45,3 +59,6 @@ services:
     depends_on:
       backend: { condition: service_healthy }
     restart: unless-stopped
+
+volumes:
+  pinyx-data:
