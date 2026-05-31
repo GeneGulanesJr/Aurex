@@ -54,20 +54,25 @@ function buildApp(settings: Record<string, unknown> = {}) {
 describe("GitHub App integration routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.GITHUB_CLIENT_SECRET;
+    delete process.env.GITHUB_CLIENT_ID;
+    delete process.env.GITHUB_CALLBACK_URL;
+    delete process.env.GITHUB_FRONTEND_URL;
   });
 
   describe("GET /api/github/config", () => {
-    it("returns unconfigured when no app config stored", async () => {
+    it("returns configured from environment using the Aurex GitHub App defaults", async () => {
+      process.env.GITHUB_CLIENT_SECRET = "env-secret";
       const { app } = buildApp();
 
       const res = await app.inject({ method: "GET", url: "/api/github/config" });
 
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual({
-        configured: false,
-        client_id: null,
-        callback_url: null,
-        has_client_secret: false,
+        configured: true,
+        client_id: "Iv23lijYF4sZMcU62MjT",
+        callback_url: "http://localhost:3000/api/github/callback",
+        has_client_secret: true,
         has_private_key: false,
       });
     });
@@ -169,13 +174,17 @@ describe("GitHub App integration routes", () => {
       expect(body.url).toContain("redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fapi%2Fgithub%2Fcallback");
     });
 
-    it("returns 400 when app is not configured", async () => {
+    it("uses the environment configured Aurex GitHub App when no saved config exists", async () => {
+      process.env.GITHUB_CLIENT_SECRET = "env-secret";
       const { app } = buildApp();
 
       const res = await app.inject({ method: "GET", url: "/api/github/connect" });
 
-      expect(res.statusCode).toBe(400);
-      expect(res.json()).toEqual({ error: "GitHub App not configured" });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.url).toContain("https://github.com/login/oauth/authorize");
+      expect(body.url).toContain("client_id=Iv23lijYF4sZMcU62MjT");
+      expect(body.url).toContain("redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fapi%2Fgithub%2Fcallback");
     });
   });
 

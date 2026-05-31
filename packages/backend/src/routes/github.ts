@@ -32,6 +32,29 @@ interface GitHubUserSetting {
   name: string | null;
 }
 
+const DEFAULT_GITHUB_APP_ID = "3919010";
+const DEFAULT_GITHUB_CLIENT_ID = "Iv23lijYF4sZMcU62MjT";
+const DEFAULT_GITHUB_CALLBACK_URL = "http://localhost:3000/api/github/callback";
+const DEFAULT_GITHUB_FRONTEND_URL = "http://localhost:8080";
+
+async function resolveGitHubAppConfig(lapis: LaPisClient): Promise<GitHubAppConfig | null> {
+  const stored = await lapis.getSetting<GitHubAppConfig>("github_app_config");
+  if (stored) return stored;
+
+  const clientSecret = process.env.GITHUB_CLIENT_SECRET;
+  if (!clientSecret) return null;
+
+  return {
+    app_id: process.env.GITHUB_APP_ID ?? DEFAULT_GITHUB_APP_ID,
+    client_id: process.env.GITHUB_CLIENT_ID ?? DEFAULT_GITHUB_CLIENT_ID,
+    client_secret: clientSecret,
+    private_key: process.env.GITHUB_PRIVATE_KEY ?? "",
+    callback_url: process.env.GITHUB_CALLBACK_URL ?? DEFAULT_GITHUB_CALLBACK_URL,
+    frontend_url: process.env.GITHUB_FRONTEND_URL ?? DEFAULT_GITHUB_FRONTEND_URL,
+    created_at: "environment",
+  };
+}
+
 // CSRF state nonces — in-memory, 10-minute TTL
 const NONCE_TTL = 10 * 60 * 1000;
 const nonces = new Map<string, { createdAt: number }>();
@@ -49,12 +72,12 @@ export function registerGitHubRoutes(app: FastifyInstance, deps: GitHubRouteDeps
   // --- Config CRUD ---
 
   app.get("/api/github/config", async () => {
-    const config = await lapis.getSetting<GitHubAppConfig>("github_app_config");
+    const config = await resolveGitHubAppConfig(lapis);
     if (!config) {
       return {
         configured: false,
-        client_id: null,
-        callback_url: null,
+        client_id: DEFAULT_GITHUB_CLIENT_ID,
+        callback_url: DEFAULT_GITHUB_CALLBACK_URL,
         has_client_secret: false,
         has_private_key: false,
       };
@@ -92,9 +115,9 @@ export function registerGitHubRoutes(app: FastifyInstance, deps: GitHubRouteDeps
   // --- OAuth Flow ---
 
   app.get("/api/github/connect", async (_request, reply) => {
-    const config = await lapis.getSetting<GitHubAppConfig>("github_app_config");
+    const config = await resolveGitHubAppConfig(lapis);
     if (!config) {
-      return reply.status(400).send({ error: "GitHub App not configured" });
+      return reply.status(400).send({ error: "GitHub App not configured. Set GITHUB_CLIENT_SECRET." });
     }
 
     cleanExpiredNonces();
@@ -116,8 +139,8 @@ export function registerGitHubRoutes(app: FastifyInstance, deps: GitHubRouteDeps
     const { code, state } = query;
 
     // Get config for secrets + frontend URL
-    const config = await lapis.getSetting<GitHubAppConfig>("github_app_config");
-    const frontendUrl = config?.frontend_url ?? "http://localhost:5173";
+    const config = await resolveGitHubAppConfig(lapis);
+    const frontendUrl = config?.frontend_url ?? DEFAULT_GITHUB_FRONTEND_URL;
 
     // Validate CSRF nonce
     cleanExpiredNonces();

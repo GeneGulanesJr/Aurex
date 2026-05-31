@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { UseGitHubReturn } from "../hooks/useGitHub";
-import { saveGitHubConfig, getPinyxConfig } from "../api";
+import { getPinyxConfig } from "../api";
 import type { PinyxConfigResponse } from "../api";
 import { TabBar } from "./TabBar";
 import { PinyxConnectionTab } from "./PinyxConnectionTab";
@@ -20,14 +20,7 @@ const PINYX_TABS = [
 ];
 
 export function IntegrationsPanel({ open, github, onClose }: IntegrationsPanelProps) {
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [appId, setAppId] = useState("3919010");
-  const [clientId, setClientId] = useState("Iv23lijYF4sZMcU62MjT");
-  const [clientSecret, setClientSecret] = useState("");
-  const [callbackUrl, setCallbackUrl] = useState("http://localhost:3000/api/github/callback");
-  const [frontendUrl, setFrontendUrl] = useState("http://localhost:8080");
-
+  const [connecting, setConnecting] = useState(false);
   const [pinyxTab, setPinyxTab] = useState("connection");
   const [pinyx, setPinyx] = useState<PinyxConfigResponse | null>(null);
   const [pinyxError, setPinyxError] = useState<string | null>(null);
@@ -38,38 +31,19 @@ export function IntegrationsPanel({ open, github, onClose }: IntegrationsPanelPr
   }, [open]);
 
   useEffect(() => {
-    if (open) { setEditing(false); setPinyxTab("connection"); }
+    if (open) setPinyxTab("connection");
   }, [open]);
 
   if (!open) return null;
 
-  async function handleSaveConfig() {
-    if (!appId.trim() || !clientId.trim() || !clientSecret.trim() || !callbackUrl.trim() || !frontendUrl.trim()) return;
-    setSaving(true);
+  async function handleConnect() {
+    setConnecting(true);
     try {
-      await saveGitHubConfig({
-        appId: appId.trim(),
-        clientId: clientId.trim(),
-        clientSecret: clientSecret.trim(),
-        privateKey: "",
-        callbackUrl: callbackUrl.trim(),
-        frontendUrl: frontendUrl.trim(),
-      });
-      setEditing(false);
-      window.location.reload();
-    } catch {
-      // Error surfaces via config state
+      await github.connect();
     } finally {
-      setSaving(false);
+      setConnecting(false);
     }
   }
-
-  async function handleConnect() {
-    await github.connect();
-  }
-
-  const configured = github.config?.configured ?? false;
-  const showConfigForm = !configured || editing;
 
   return (
     <div className="integrations-drawer" onClick={onClose}>
@@ -87,18 +61,14 @@ export function IntegrationsPanel({ open, github, onClose }: IntegrationsPanelPr
           <div className="pinyx-section-header">
             <div>
               <h3 className="pinyx-section-title">GitHub</h3>
-              <p className="pinyx-section-desc">
-                {showConfigForm
-                  ? "Use your Aurex GitHub App, then sign in with GitHub."
-                  : "Sign in through the configured Aurex GitHub App."}
-              </p>
+              <p className="pinyx-section-desc">Sign in with the Aurex GitHub App.</p>
             </div>
             <span style={{
-              color: github.connected ? "var(--success)" : configured ? "var(--accent)" : "var(--text-muted)",
+              color: github.connected ? "var(--success)" : "var(--text-muted)",
               fontFamily: '"JetBrains Mono", monospace',
               fontSize: "10px",
             }}>
-              {github.connected ? "CONNECTED" : configured ? "CONFIGURED" : "OFFLINE"}
+              {github.connected ? "CONNECTED" : "OFFLINE"}
             </span>
           </div>
 
@@ -109,68 +79,23 @@ export function IntegrationsPanel({ open, github, onClose }: IntegrationsPanelPr
             </div>
           )}
 
-          {showConfigForm && (
-            <>
-              <label className="pinyx-label">App ID</label>
-              <input value={appId} onChange={(e) => setAppId(e.target.value)} placeholder="3919010" className="pinyx-input" />
-
-              <label className="pinyx-label">Client ID</label>
-              <input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="Iv23..." className="pinyx-input" />
-
-              <label className="pinyx-label">Client Secret</label>
-              <input value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} placeholder="Paste GitHub App client secret" type="password" className="pinyx-input" />
-
-              <details style={{ marginTop: "8px" }}>
-                <summary style={{ color: "var(--text-secondary)", cursor: "pointer", fontSize: "11px", fontFamily: '\"JetBrains Mono\", monospace', textTransform: "uppercase", letterSpacing: "1px" }}>
-                  Advanced URLs
-                </summary>
-                <div style={{ marginTop: "8px" }}>
-                  <label className="pinyx-label">Callback URL</label>
-                  <input value={callbackUrl} onChange={(e) => setCallbackUrl(e.target.value)} placeholder="http://localhost:3000/api/github/callback" className="pinyx-input" />
-
-                  <label className="pinyx-label">Frontend URL</label>
-                  <input value={frontendUrl} onChange={(e) => setFrontendUrl(e.target.value)} placeholder="http://localhost:8080" className="pinyx-input" />
-                </div>
-              </details>
-
-              <button
-                onClick={() => void handleSaveConfig()}
-                disabled={saving || !appId.trim() || !clientId.trim() || !clientSecret.trim() || !callbackUrl.trim() || !frontendUrl.trim()}
-                className="pinyx-btn-primary"
-                style={{ marginTop: "8px" }}
-              >
-                {saving ? "Saving..." : editing ? "Update Configuration" : "Save Configuration"}
-              </button>
-            </>
-          )}
-
-          {configured && !showConfigForm && (
-            <>
-              <div style={{ padding: "8px", background: "var(--bg-elevated)", borderRadius: "4px", marginBottom: "12px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-                  <span style={{ color: "var(--text-muted)", fontSize: "10px", fontFamily: '"JetBrains Mono", monospace' }}>Client ID</span>
-                  <span style={{ color: "var(--text-secondary)", fontSize: "11px", fontFamily: '"JetBrains Mono", monospace' }}>{github.config?.client_id}</span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-                  <span style={{ color: "var(--text-muted)", fontSize: "10px", fontFamily: '"JetBrains Mono", monospace' }}>Callback</span>
-                  <span style={{ color: "var(--text-secondary)", fontSize: "11px", fontFamily: '"JetBrains Mono", monospace' }}>{github.config?.callback_url}</span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "var(--text-muted)", fontSize: "10px", fontFamily: '"JetBrains Mono", monospace' }}>Secrets</span>
-                  <span style={{ color: "var(--success)", fontSize: "11px" }}>✓ Saved</span>
-                </div>
-              </div>
-
-              {!github.connected && (
-                <div className="pinyx-btn-group">
-                  <button className="pinyx-btn-outline" onClick={() => setEditing(true)}>Edit</button>
-                  <button className="pinyx-btn-primary" onClick={() => void handleConnect()}>Connect</button>
-                </div>
-              )}
-            </>
+          {!github.connected && (
+            <button
+              className="pinyx-btn-primary"
+              onClick={() => void handleConnect()}
+              disabled={connecting}
+            >
+              {connecting ? "Opening GitHub..." : "Login with GitHub"}
+            </button>
           )}
 
           {github.error && <p style={{ color: "var(--error)", fontSize: "12px", marginTop: "8px" }}>{github.error}</p>}
+
+          {github.config && !github.config.has_client_secret && (
+            <p style={{ color: "var(--warning)", fontSize: "12px", marginTop: "8px" }}>
+              Server needs GITHUB_CLIENT_SECRET set for the Aurex GitHub App.
+            </p>
+          )}
 
           {github.connected && (
             <button className="pinyx-btn-danger" style={{ marginTop: "8px" }} onClick={() => void github.disconnect()}>
