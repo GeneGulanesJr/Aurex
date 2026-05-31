@@ -46,9 +46,28 @@ export function PinyxModelsTab({ config, onConfigUpdate }: PinyxModelsTabProps) 
       return;
     }
     getPinyxModels()
-      .then((res) => setModels(res.models))
+      .then((res) => {
+        setModels(res.models);
+        const options = res.models.map((m) => m.id ?? m.name ?? "").filter(Boolean);
+        if (!options.length) return;
+
+        const current = config.modelHints.orchestrator;
+        const shouldAutoSelect = !current || current === "kilo/kilo-auto/free" || !options.includes(current);
+        if (!shouldAutoSelect) return;
+
+        const nextDefault = options[0];
+        setDefaultModel(nextDefault);
+        const updated = { ...config.modelHints };
+        for (const card of AGENT_CARDS) {
+          for (const t of card.types) {
+            (updated as Record<string, string>)[t] = nextDefault;
+          }
+        }
+        setModelHints(updated);
+        setOverrides(Object.fromEntries(AGENT_CARDS.map((card) => [card.key, null])));
+      })
       .catch(() => setModels([]));
-  }, [hasKeys]);
+  }, [hasKeys, config.modelHints]);
 
   useEffect(() => {
     setModelHints(config.modelHints);
@@ -130,6 +149,7 @@ export function PinyxModelsTab({ config, onConfigUpdate }: PinyxModelsTabProps) 
         </p>
 
         {modelOptions.length > 0 ? (
+          <>
           <div className="pinyx-model-default">
             <div className="pinyx-model-default-label">Default Model</div>
             <select
@@ -141,6 +161,12 @@ export function PinyxModelsTab({ config, onConfigUpdate }: PinyxModelsTabProps) 
               ))}
             </select>
           </div>
+          {dirty && (
+            <p style={{ color: "var(--warning)", fontSize: "11px", margin: "8px 0 0" }}>
+              Discovered models from PiNyx. Save model routing to use {defaultModel} for new missions.
+            </p>
+          )}
+          </>
         ) : (
           <div className="pinyx-model-default">
             <div className="pinyx-model-default-label">Default Model</div>

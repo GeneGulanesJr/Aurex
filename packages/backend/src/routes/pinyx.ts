@@ -197,6 +197,12 @@ export function registerPinyxRoutes(app: FastifyInstance, deps: PinyxRouteDeps) 
 
     const endpoint = config.endpoint.replace(/\/$/, "");
     try {
+      await syncConfigToPinyx(config);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "unknown";
+      console.warn("[pinyx] could not sync config to PiNyx before fetching models:", message);
+    }
+    try {
       const res = await fetch(`${endpoint}/v1/models`, { method: "GET" });
       if (!res.ok) return reply.status(502).send({ error: `PiNyx returned ${res.status}` });
       const body = await res.json() as { data?: unknown[] };

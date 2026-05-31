@@ -216,6 +216,7 @@ describe("PiNyx integration routes", () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ models: [{ id: "glm-4.7" }] });
+    expect(mockFetch).toHaveBeenCalledWith("http://pinyx.example/api/config", expect.objectContaining({ method: "PUT" }));
     expect(mockFetch).toHaveBeenCalledWith("http://pinyx.example/v1/models", expect.objectContaining({ method: "GET" }));
   });
 
