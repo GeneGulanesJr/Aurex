@@ -54,10 +54,10 @@ Cycles: 2 detected (clients → routes → clients)
 Animated SVG rendered with anime.js. Read-only — no drag, zoom, or click.
 
 **Layout algorithm:** Simple layered layout computed at render time:
-1. Group files by top-level directory (module)
-2. Arrange modules as columns
-3. Place files as nodes within columns (sorted by importance)
-4. Draw edges as curved SVG paths between nodes
+1. Detect module grouping — if monorepo (has `packages/`, `apps/`, `libs/`), use second-level directory name (e.g. `packages/backend` → `backend`). Otherwise use top-level `src/` children.
+2. Arrange modules as columns (120px wide, 40px gap between columns)
+3. Place files as nodes within columns (sorted by importance descending, 40px vertical gap per node)
+4. Draw edges as quadratic bezier SVG paths between node centers. Curve offset = ±20px to reduce overlap; direction alternates to spread parallel edges.
 
 **Node encoding:**
 - Size: proportional to symbol count (small/medium/large)
@@ -150,9 +150,11 @@ Each queries the existing LaPis SQLite tables (`code_repos`, `code_files`, `code
 ### Aurex Backend Proxy
 
 New route in `packages/backend/src/routes/lapis.ts`:
-- `GET /api/code/summary` — proxies to LaPis, passes repo name from mission context
-- `GET /api/code/graph` — same
-- `GET /api/code/hotspots` — same
+- `GET /api/missions/:missionId/code/summary` — looks up repo name from mission's indexed repo record, proxies to LaPis
+- `GET /api/missions/:missionId/code/graph` — same
+- `GET /api/missions/:missionId/code/hotspots` — same
+
+The mission runner stores the indexed repo name in the mission's `configJson.repoName` field after indexing completes. The proxy route reads this to know which LaPis repo to query.
 
 ### Aurex Frontend
 
@@ -163,14 +165,23 @@ New route in `packages/backend/src/routes/lapis.ts`:
   - `HotspotHeatmap`
 - `MissionPipeline.tsx` — integrates CodeContextPanel, passes indexing result and collapse trigger
 
-### WS Event
+### WS Events
 
-Extend `mission_log` to include indexing result data:
+The mission runner already emits `mission_log` events during indexing. The frontend uses these to know when indexing is complete:
+
+**Indexing started:**
 ```
-{ type: "mission_log", missionId, phase: "indexing", message: "Indexed 125 files, 1820 symbols", data: { files: 125, symbols: 1820 } }
+{ type: "mission_log", missionId, phase: "indexing", message: "Indexing repo Aurex for code context…" }
 ```
 
-Frontend captures the `data` field to populate Architecture Summary immediately without a second API call.
+**Indexing complete:**
+```
+{ type: "mission_log", missionId, phase: "indexing", message: "Indexed 125 files, 1820 symbols", data: { indexingDone: true, files: 125, symbols: 1820, edges: 713 } }
+```
+
+The `data.indexingDone: true` field is the signal — when the frontend sees this, it triggers the panel entrance animation and populates Architecture Summary from the counts. Dependency Graph and Hotspot Heatmap are fetched via REST (`GET /api/missions/:missionId/code/graph` and `/hotspots`) after the panel appears.
+
+**Indexing failed:** No `indexingDone` field. Panel does not render. The log entry is the only indication.
 
 ## Animation Tokens
 
@@ -196,10 +207,17 @@ All animations use anime.js v4 and respect the DESIGN.md motion guidelines:
 | `LaPis/src/http/server.js` | Register 3 new routes |
 | `Aurex/packages/backend/src/routes/lapis.ts` | New proxy routes |
 | `Aurex/packages/backend/src/server.ts` | Register lapis routes |
+| `Aurex/packages/backend/src/orchestrator/mission-runner.ts` | Store repo name in mission configJson after indexing |
 | `Aurex/packages/frontend/src/api.ts` | 3 new fetch calls |
 | `Aurex/packages/frontend/src/passive/CodeContextPanel.tsx` | New component |
 | `Aurex/packages/frontend/src/passive/MissionPipeline.tsx` | Integrate panel |
-| `Aurex/packages/shared/src/events.ts` | Extend mission_log data |
+| `Aurex/packages/shared/src/events.ts` | Extend mission_log data field |
+
+## Error States
+
+- **Indexing fails** (LaPis down, path error): Panel does not render. Log shows the error message. Mission continues to planning without code context.
+- **Graph/hotspot fetch fails**: Section shows "Unavailable" in `--text-muted`. Other sections still render.
+- **Empty repo** (0 code files): Panel renders with "No code files found" message instead of graph/heatmap. Architecture summary shows all zeros.
 
 ## Out of Scope
 
