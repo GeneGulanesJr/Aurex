@@ -276,6 +276,8 @@ describe('bench pi paired parser', () => {
     expect(summary.memory_on_effective_tokens).toBe(80);
     expect(summary.memory_off_cache_discounted_tokens).toBe(102);
     expect(summary.memory_on_cache_discounted_tokens).toBe(53);
+    expect(summary.cache_hit_gain_tokens).toBe(10);
+    expect(summary.cache_hit_gain_pct).toBe('+50.0%');
     expect(summary.memory_off_answer_active_tokens).toBe(80);
     expect(summary.memory_on_answer_active_tokens).toBe(40);
     expect(summary.memory_off_setup_active_tokens).toBe(20);
@@ -291,6 +293,8 @@ describe('bench pi paired parser', () => {
       memory_on_effective_tokens: 80,
       memory_off_cache_discounted_tokens: 102,
       memory_on_cache_discounted_tokens: 53,
+      cache_hit_gain_tokens: 10,
+      cache_hit_gain_pct: '+50.0%',
       memory_off_answer_active_tokens: 80,
       memory_on_answer_active_tokens: 40,
       memory_off_setup_active_tokens: 20,
