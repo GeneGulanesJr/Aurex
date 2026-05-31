@@ -147,6 +147,9 @@ function buildRoutes(deps) {
     { method: 'POST', pattern: '/code/index', handler: codeIndex.indexRepo(deps) },
     { method: 'POST', pattern: '/code/reindex', handler: codeIndex.reindexRepo(deps) },
     { method: 'GET', pattern: '/code/health/:repo', handler: codeIndex.codeRepoHealthHandler(deps) },
+    { method: 'GET', pattern: '/code/summary/:repo', handler: codeIndex.codeRepoSummary(deps) },
+    { method: 'GET', pattern: '/code/graph/:repo', handler: codeIndex.codeRepoGraph(deps) },
+    { method: 'GET', pattern: '/code/hotspots/:repo', handler: codeIndex.codeRepoHotspots(deps) },
   ];
 }
 
