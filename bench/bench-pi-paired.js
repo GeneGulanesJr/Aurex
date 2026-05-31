@@ -424,17 +424,6 @@ function gradeAnswer(answer, expectedFacts) {
   };
 }
 
-function formatCacheHitGainPct(offCache, onCache) {
-  if (offCache > 0) {
-    const pct = ((onCache - offCache) / offCache) * 100;
-    return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
-  }
-  if (onCache > 0) {
-    return '+∞';
-  }
-  return '0.0%';
-}
-
 async function runSide(side, commandTemplate, task, repo, outDir, cwd, timeoutMs) {
   const outFile = path.join(outDir, `${task.id}.${side}.jsonl`);
   const command = renderCommand(commandTemplate, task, repo, outFile);
@@ -482,6 +471,9 @@ function printTableHeader(taskColumnWidth) {
     'OffActive'.padStart(10),
     'OnActive'.padStart(10),
     'ActSave'.padStart(8),
+    'OffAdj'.padStart(10),
+    'OnAdj'.padStart(10),
+    'AdjSave'.padStart(8),
     'OffEff'.padStart(10),
     'OnEff'.padStart(10),
     'EffSave'.padStart(8),
@@ -489,7 +481,6 @@ function printTableHeader(taskColumnWidth) {
     'OnAns'.padStart(8),
     'AnsSave'.padStart(8),
     'OnSetup'.padStart(8),
-    'HitGain'.padStart(9),
     'OffMs'.padStart(9),
     'OnMs'.padStart(9),
   ];
@@ -501,13 +492,15 @@ function printTableHeader(taskColumnWidth) {
 function printRow(taskId, off, on, taskColumnWidth) {
   const offTokens = off.usage.active_tokens || 0;
   const onTokens = on.usage.active_tokens || 0;
+  const offAdjusted = off.usage.cache_discounted_tokens || 0;
+  const onAdjusted = on.usage.cache_discounted_tokens || 0;
   const offEffective = off.usage.effective_tokens || off.usage.total_tokens || 0;
   const onEffective = on.usage.effective_tokens || on.usage.total_tokens || 0;
   const offAnswer = off.usage.answer_active_tokens || 0;
   const onAnswer = on.usage.answer_active_tokens || 0;
   const onSetup = on.usage.setup_active_tokens || 0;
-  const cacheHitGain = (on.usage.cache_read_tokens || 0) - (off.usage.cache_read_tokens || 0);
   const savings = offTokens > 0 ? `${Math.round((1 - onTokens / offTokens) * 100)}%` : 'n/a';
+  const adjustedSavings = offAdjusted > 0 ? `${Math.round((1 - onAdjusted / offAdjusted) * 100)}%` : 'n/a';
   const effectiveSavings = offEffective > 0 ? `${Math.round((1 - onEffective / offEffective) * 100)}%` : 'n/a';
   const answerSavings = offAnswer > 0 ? `${Math.round((1 - onAnswer / offAnswer) * 100)}%` : 'n/a';
   const offScore = `${off.grade.matched}/${off.grade.total}`;
@@ -524,6 +517,9 @@ function printRow(taskId, off, on, taskColumnWidth) {
       String(offTokens).padStart(10),
       String(onTokens).padStart(10),
       savings.padStart(8),
+      String(offAdjusted).padStart(10),
+      String(onAdjusted).padStart(10),
+      adjustedSavings.padStart(8),
       String(offEffective).padStart(10),
       String(onEffective).padStart(10),
       effectiveSavings.padStart(8),
@@ -531,7 +527,6 @@ function printRow(taskId, off, on, taskColumnWidth) {
       String(onAnswer).padStart(8),
       answerSavings.padStart(8),
       String(onSetup).padStart(8),
-      `${cacheHitGain >= 0 ? '+' : ''}${cacheHitGain}`.padStart(9),
       String(off.elapsed_ms).padStart(9),
       String(on.elapsed_ms).padStart(9),
     ].join('  ') + statusSuffix,
@@ -614,7 +609,6 @@ async function main() {
   benchLog(`  Memory-on active:  ${summary.memory_on_active_tokens}`);
   benchLog(`  Memory-off cache:  ${summary.memory_off_cache_read_tokens}`);
   benchLog(`  Memory-on cache:   ${summary.memory_on_cache_read_tokens}`);
-  benchLog(`  Cache hit gain:    ${summary.cache_hit_gain_tokens >= 0 ? '+' : ''}${summary.cache_hit_gain_tokens}`);
   benchLog(`  Memory-off effect: ${summary.memory_off_effective_tokens}`);
   benchLog(`  Memory-on effect:  ${summary.memory_on_effective_tokens}`);
   benchLog(`  Memory-off adj:    ${summary.memory_off_cache_discounted_tokens}`);
@@ -631,16 +625,15 @@ async function main() {
   benchLog(`  Memory-on codetools:${summary.memory_on_code_tool_calls}`);
   benchLog(`  Memory-on turns:   ${summary.memory_on_assistant_turns}`);
   benchLog(`  Active delta:      ${summary.token_savings_pct}`);
-  benchLog(`  Cache delta:       ${summary.cache_hit_gain_pct}`);
-  benchLog(`  Effective delta:   ${summary.effective_token_savings_pct}`);
   benchLog(`  Adjusted delta:    ${summary.cache_discounted_token_savings_pct}`);
+  benchLog(`  Effective delta:   ${summary.effective_token_savings_pct}`);
   benchLog(`  Answer delta:      ${summary.answer_token_savings_pct}`);
   benchLog(`  Cost delta:        ${summary.cost_savings_pct}`);
   benchLog('');
   benchLog('By category:');
   for (const category of summary.categories) {
     benchLog(
-      `  ${category.category}: facts ${category.memory_off_facts} -> ${category.memory_on_facts}, active ${category.memory_off_active_tokens} -> ${category.memory_on_active_tokens} (${category.token_savings_pct}), cache-hit gain ${category.cache_hit_gain_tokens >= 0 ? '+' : ''}${category.cache_hit_gain_tokens} (${category.cache_hit_gain_pct}), effective ${category.memory_off_effective_tokens} -> ${category.memory_on_effective_tokens} (${category.effective_token_savings_pct}), answer ${category.memory_off_answer_active_tokens} -> ${category.memory_on_answer_active_tokens} (${category.answer_token_savings_pct}), on-setup ${category.memory_on_setup_active_tokens}`,
+      `  ${category.category}: facts ${category.memory_off_facts} -> ${category.memory_on_facts}, active ${category.memory_off_active_tokens} -> ${category.memory_on_active_tokens} (${category.token_savings_pct}), adjusted ${category.memory_off_cache_discounted_tokens} -> ${category.memory_on_cache_discounted_tokens} (${category.cache_discounted_token_savings_pct}), effective ${category.memory_off_effective_tokens} -> ${category.memory_on_effective_tokens} (${category.effective_token_savings_pct}), answer ${category.memory_off_answer_active_tokens} -> ${category.memory_on_answer_active_tokens} (${category.answer_token_savings_pct}), on-setup ${category.memory_on_setup_active_tokens}`,
     );
   }
   benchLog(`  Report:            ${reportPath}`);
@@ -724,7 +717,6 @@ function buildSummary(results) {
     memory_on_active_tokens: sum.onTokens,
     memory_off_cache_read_tokens: sum.offCache,
     memory_on_cache_read_tokens: sum.onCache,
-    cache_hit_gain_tokens: sum.onCache - sum.offCache,
     memory_off_effective_tokens: sum.offEffectiveTokens,
     memory_on_effective_tokens: sum.onEffectiveTokens,
     memory_off_cache_discounted_tokens: sum.offCacheDiscountedTokens,
@@ -748,7 +740,6 @@ function buildSummary(results) {
     memory_off_assistant_turns: sum.offAssistantTurns,
     memory_on_assistant_turns: sum.onAssistantTurns,
     token_savings_pct: sum.offTokens > 0 ? `${((1 - sum.onTokens / sum.offTokens) * 100).toFixed(1)}%` : 'n/a',
-    cache_hit_gain_pct: formatCacheHitGainPct(sum.offCache, sum.onCache),
     effective_token_savings_pct:
       sum.offEffectiveTokens > 0 ? `${((1 - sum.onEffectiveTokens / sum.offEffectiveTokens) * 100).toFixed(1)}%` : 'n/a',
     cache_discounted_token_savings_pct:
@@ -817,7 +808,6 @@ function buildCategorySummary(results) {
     memory_on_active_tokens: group.onTokens,
     memory_off_cache_read_tokens: group.offCache,
     memory_on_cache_read_tokens: group.onCache,
-    cache_hit_gain_tokens: group.onCache - group.offCache,
     memory_off_effective_tokens: group.offEffectiveTokens,
     memory_on_effective_tokens: group.onEffectiveTokens,
     memory_off_cache_discounted_tokens: group.offCacheDiscountedTokens,
@@ -827,7 +817,6 @@ function buildCategorySummary(results) {
     memory_off_setup_active_tokens: group.offSetupTokens,
     memory_on_setup_active_tokens: group.onSetupTokens,
     token_savings_pct: group.offTokens > 0 ? `${((1 - group.onTokens / group.offTokens) * 100).toFixed(1)}%` : 'n/a',
-    cache_hit_gain_pct: formatCacheHitGainPct(group.offCache, group.onCache),
     effective_token_savings_pct:
       group.offEffectiveTokens > 0
         ? `${((1 - group.onEffectiveTokens / group.offEffectiveTokens) * 100).toFixed(1)}%`
