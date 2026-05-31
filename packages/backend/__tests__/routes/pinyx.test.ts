@@ -11,11 +11,11 @@ function createMockLapis(settings: Record<string, unknown> = {}) {
 }
 
 const defaultModelHints = {
-  orchestrator: "reasoning-strong",
-  worker: "code-fast",
-  validator_scrutiny: "reasoning",
-  validator_user_testing: "computer-use",
-  research: "fast-cheap",
+  orchestrator: "kilo/kilo-auto/free",
+  worker: "kilo/kilo-auto/free",
+  validator_scrutiny: "kilo/kilo-auto/free",
+  validator_user_testing: "kilo/kilo-auto/free",
+  research: "kilo/kilo-auto/free",
 };
 
 describe("PiNyx integration routes", () => {
@@ -28,14 +28,20 @@ describe("PiNyx integration routes", () => {
   });
 
   it("returns empty config when no saved config exists", async () => {
+    // Mock fetch to prevent auto-detection from hitting real endpoints
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => { throw new Error("mocked"); });
+
     const app = Fastify();
     const lapis = createMockLapis();
     registerPinyxRoutes(app, { lapis });
 
     const res = await app.inject({ method: "GET", url: "/api/pinyx/config" });
 
+    globalThis.fetch = originalFetch;
+
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ endpoint: "", modelHints: defaultModelHints, providers: [] });
+    expect(res.json()).toEqual({ endpoint: "", modelHints: defaultModelHints, providers: [], autoDetected: false });
   });
 
   it("returns unconfigured status when no saved config", async () => {
@@ -149,17 +155,37 @@ describe("PiNyx integration routes", () => {
     expect(JSON.stringify(res.json())).not.toContain("secret");
   });
 
-  it("fetches models from configured PiNyx endpoint", async () => {
+  it("returns no models when no provider API key is configured", async () => {
     const app = Fastify();
     const lapis = createMockLapis({ pinyx_config: { endpoint: "http://pinyx.example", modelHints: defaultModelHints, providers: [] } });
     registerPinyxRoutes(app, { lapis });
-    const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ id: "gpt-4o-mini" }] }) });
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ id: "fake-stub-model" }] }) });
     vi.stubGlobal("fetch", mockFetch);
 
     const res = await app.inject({ method: "GET", url: "/api/pinyx/models" });
 
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ models: [{ id: "gpt-4o-mini" }] });
+    expect(res.json()).toEqual({ models: [] });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("fetches models from configured PiNyx endpoint when a provider key exists", async () => {
+    const app = Fastify();
+    const lapis = createMockLapis({
+      pinyx_config: {
+        endpoint: "http://pinyx.example",
+        modelHints: defaultModelHints,
+        providers: [{ id: "zai", name: "Z.AI Coding", baseUrl: "https://api.z.ai/api/coding/paas/v4", apiKey: "zai-key" }],
+      },
+    });
+    registerPinyxRoutes(app, { lapis });
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ id: "glm-4.7" }] }) });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const res = await app.inject({ method: "GET", url: "/api/pinyx/models" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ models: [{ id: "glm-4.7" }] });
     expect(mockFetch).toHaveBeenCalledWith("http://pinyx.example/v1/models", expect.objectContaining({ method: "GET" }));
   });
 

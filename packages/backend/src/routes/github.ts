@@ -2,9 +2,11 @@ import crypto from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import { getUser, listRepos, exchangeCode } from "../clients/github-client.js";
+import { normalizeGitHubCloneUrl, prepareRepoForMission } from "../orchestrator/repo-prep.js";
 
 interface GitHubRouteDeps {
   lapis: LaPisClient;
+  repoRoot: string;
 }
 
 interface GitHubAppConfig {
@@ -42,7 +44,7 @@ function cleanExpiredNonces() {
 }
 
 export function registerGitHubRoutes(app: FastifyInstance, deps: GitHubRouteDeps) {
-  const { lapis } = deps;
+  const { lapis, repoRoot } = deps;
 
   // --- Config CRUD ---
 
@@ -187,6 +189,54 @@ export function registerGitHubRoutes(app: FastifyInstance, deps: GitHubRouteDeps
       const message = err instanceof Error ? err.message : "unknown";
       console.error("[github] listRepos error:", message);
       return reply.status(502).send({ error: "Failed to fetch repos from GitHub" });
+    }
+  });
+
+  app.post("/api/github/repos/prepare", async (request, reply) => {
+    const tokenData = await lapis.getSetting<GitHubTokenSetting>("github_token");
+    if (!tokenData?.access_token) {
+      return reply.status(401).send({ error: "GitHub is not connected" });
+    }
+
+    const body = request.body as { cloneUrl?: string };
+    if (!body.cloneUrl) {
+      return reply.status(400).send({ error: "cloneUrl is required" });
+    }
+
+    let normalizedCloneUrl: string;
+    try {
+      normalizedCloneUrl = normalizeGitHubCloneUrl(body.cloneUrl);
+    } catch {
+      return reply.status(400).send({ error: "Invalid GitHub clone URL" });
+    }
+
+    let repos;
+    try {
+      repos = await listRepos(tokenData.access_token);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "unknown";
+      console.error("[github] listRepos error:", message);
+      return reply.status(502).send({ error: "Failed to fetch repos from GitHub" });
+    }
+
+    const repo = repos.find((candidate) => normalizeGitHubCloneUrl(candidate.clone_url) === normalizedCloneUrl);
+    if (!repo) {
+      return reply.status(403).send({ error: "Repository is not available to this GitHub connection" });
+    }
+
+    try {
+      const prepared = await prepareRepoForMission({ lapis, parentRepoRoot: repoRoot, cloneUrl: normalizedCloneUrl });
+      return {
+        fullName: repo.full_name,
+        repoPath: prepared.repoPath,
+        repoStatus: prepared.repoStatus,
+        indexed: false,
+        indexingStatus: "unavailable" as const,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "unknown";
+      console.error("[github] prepare repo error:", message);
+      return reply.status(502).send({ error: "Could not prepare repository" });
     }
   });
 }

@@ -51,12 +51,28 @@ export function publicPinyxConfig(config: PinyxConfigSetting): PublicPinyxConfig
 }
 
 const defaultModelHints: Record<AgentType, string> = {
-  orchestrator: "reasoning-strong",
-  worker: "code-fast",
-  validator_scrutiny: "reasoning",
-  validator_user_testing: "computer-use",
-  research: "fast-cheap",
+  orchestrator: "kilo/kilo-auto/free",
+  worker: "kilo/kilo-auto/free",
+  validator_scrutiny: "kilo/kilo-auto/free",
+  validator_user_testing: "kilo/kilo-auto/free",
+  research: "kilo/kilo-auto/free",
 };
+
+const DEFAULT_PINYX_ENDPOINTS = [
+  "http://pinyx-stub:7331",   // Docker internal hostname
+  "http://pinyx:7331",        // Alternative Docker hostname
+  "http://localhost:7331",    // Local dev
+];
+
+async function detectPinyxEndpoint(): Promise<string> {
+  for (const url of DEFAULT_PINYX_ENDPOINTS) {
+    try {
+      const res = await fetch(`${url}/health`, { method: "GET", signal: AbortSignal.timeout(2000) });
+      if (res.ok) return url;
+    } catch { /* try next */ }
+  }
+  return ""; // Not found — user will need to configure manually
+}
 
 export async function resolvePinyxConfig(lapis: LaPisClient): Promise<PinyxConfigSetting | null> {
   const saved = await lapis.getSetting<PinyxConfigSetting>("pinyx_config");
@@ -79,7 +95,14 @@ export function registerPinyxRoutes(app: FastifyInstance, deps: PinyxRouteDeps) 
   app.get("/api/pinyx/config", async () => {
     const config = await resolvePinyxConfig(lapis);
     if (!config) {
-      return { endpoint: "", modelHints: defaultModelHints, providers: [] };
+      // Auto-detect PiNyx endpoint for first-time setup
+      const detected = await detectPinyxEndpoint();
+      return {
+        endpoint: detected,
+        modelHints: defaultModelHints,
+        providers: [],
+        autoDetected: detected !== "",
+      };
     }
     return publicPinyxConfig(config);
   });
@@ -126,6 +149,11 @@ export function registerPinyxRoutes(app: FastifyInstance, deps: PinyxRouteDeps) 
     if (!config) {
       return reply.status(400).send({ error: "PiNyx is not configured" });
     }
+    const hasProviderKey = config.providers.some((provider) => Boolean(provider.apiKey));
+    if (!hasProviderKey) {
+      return { models: [] };
+    }
+
     const endpoint = config.endpoint.replace(/\/$/, "");
     try {
       const res = await fetch(`${endpoint}/v1/models`, { method: "GET" });

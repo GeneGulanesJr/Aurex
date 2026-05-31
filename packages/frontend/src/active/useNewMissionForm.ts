@@ -6,6 +6,7 @@ export interface FormState {
   submitting: boolean;
   selectedCloneUrl?: string;
   selectedRepoId?: number | null;
+  selectedRepoFullName?: string;
   error: string | null;
 }
 
@@ -13,7 +14,7 @@ export type FormAction =
   | { type: "OPEN" }
   | { type: "CLOSE" }
   | { type: "SET_DESCRIPTION"; value: string }
-  | { type: "SET_REPO"; cloneUrl: string; repoId: number }
+  | { type: "SET_REPO"; cloneUrl: string; repoId: number; fullName: string }
   | { type: "SUBMIT_START" }
   | { type: "SUBMIT_SUCCESS" }
   | { type: "SUBMIT_ERROR"; error: string };
@@ -24,6 +25,7 @@ export const initialFormState: FormState = {
   submitting: false,
   selectedCloneUrl: undefined,
   selectedRepoId: null,
+  selectedRepoFullName: undefined,
   error: null,
 };
 
@@ -36,7 +38,7 @@ export function formReducer(state: FormState, action: FormAction): FormState {
     case "SET_DESCRIPTION":
       return { ...state, description: action.value };
     case "SET_REPO":
-      return { ...state, selectedCloneUrl: action.cloneUrl, selectedRepoId: action.repoId };
+      return { ...state, selectedCloneUrl: action.cloneUrl, selectedRepoId: action.repoId, selectedRepoFullName: action.fullName };
     case "SUBMIT_START":
       return { ...state, submitting: true, error: null };
     case "SUBMIT_SUCCESS":
@@ -86,7 +88,7 @@ export function useNewMissionForm(onSubmit: (description: string, cloneUrl?: str
   const open = useCallback(() => dispatch({ type: "OPEN" }), []);
   const close = useCallback(() => dispatch({ type: "CLOSE" }), []);
   const setDescription = useCallback((value: string) => dispatch({ type: "SET_DESCRIPTION", value }), []);
-  const setRepo = useCallback((cloneUrl: string, repoId: number) => dispatch({ type: "SET_REPO", cloneUrl, repoId }), []);
+  const setRepo = useCallback((cloneUrl: string, repoId: number, fullName: string) => dispatch({ type: "SET_REPO", cloneUrl, repoId, fullName }), []);
 
   return {
     state,

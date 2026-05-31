@@ -30,7 +30,7 @@ export function createPlanner(
   pinyx: PinyxClient,
   opts?: { model?: string },
 ) {
-  const model = opts?.model ?? "reasoning-strong";
+  const model = opts?.model ?? "kilo/kilo-auto/free";
 
   return {
     async plan(missionDescription: string, missionId: string): Promise<PlanResult> {

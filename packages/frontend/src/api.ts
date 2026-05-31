@@ -139,6 +139,24 @@ export async function getGitHubRepos(): Promise<GitHubRepoResponse[]> {
   return res.json() as Promise<GitHubRepoResponse[]>;
 }
 
+export interface PrepareGitHubRepoResponse {
+  fullName: string;
+  repoPath: string;
+  repoStatus: "cloned" | "updated";
+  indexed: boolean;
+  indexingStatus: "completed" | "unavailable" | "failed";
+}
+
+export async function prepareGitHubRepo(cloneUrl: string): Promise<PrepareGitHubRepoResponse> {
+  const res = await apiFetch("/api/github/repos/prepare", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cloneUrl }),
+  });
+  if (!res.ok) throw new Error(`Failed to prepare GitHub repo: ${res.status}`);
+  return res.json() as Promise<PrepareGitHubRepoResponse>;
+}
+
 export async function disconnectGitHub(): Promise<{ success: boolean }> {
   const res = await apiFetch("/api/github/disconnect", { method: "POST" });
   if (!res.ok) throw new Error(`Failed to disconnect GitHub: ${res.status}`);

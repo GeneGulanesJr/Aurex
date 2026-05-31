@@ -43,7 +43,7 @@ function makeMission(): Mission {
   return {
     id: "m-1", description: "Build app", status: "running",
     configJson: {
-      modelHints: { orchestrator: "reasoning-strong", worker: "code-fast", validator_scrutiny: "reasoning", validator_user_testing: "computer-use", research: "fast-cheap" },
+      modelHints: { orchestrator: "kilo/kilo-auto/free", worker: "kilo/kilo-auto/free", validator_scrutiny: "kilo/kilo-auto/free", validator_user_testing: "kilo/kilo-auto/free", research: "kilo/kilo-auto/free" },
       workerTimeouts: { simple: 120_000, build: 300_000, testHeavy: 600_000 },
       costCap: 50, maxValidatorRetries: 2, maxRescopes: 5,
     },

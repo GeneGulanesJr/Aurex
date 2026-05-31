@@ -10,11 +10,21 @@ vi.mock("../../src/clients/github-client.js", () => ({
   exchangeCode: vi.fn(),
 }));
 
+vi.mock("../../src/orchestrator/repo-prep.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/orchestrator/repo-prep.js")>();
+  return {
+    ...actual,
+    prepareRepoForMission: vi.fn(),
+  };
+});
+
 import { getUser, listRepos, exchangeCode } from "../../src/clients/github-client.js";
+import { prepareRepoForMission } from "../../src/orchestrator/repo-prep.js";
 
 const mockGetUser = getUser as ReturnType<typeof vi.fn>;
 const mockListRepos = listRepos as ReturnType<typeof vi.fn>;
 const mockExchangeCode = exchangeCode as ReturnType<typeof vi.fn>;
+const mockPrepareRepoForMission = prepareRepoForMission as ReturnType<typeof vi.fn>;
 
 interface GitHubAppConfig {
   app_id: string;
@@ -37,7 +47,7 @@ function createMockLapis(settings: Record<string, unknown> = {}) {
 function buildApp(settings: Record<string, unknown> = {}) {
   const lapis = createMockLapis(settings);
   const app = Fastify();
-  registerGitHubRoutes(app, { lapis });
+  registerGitHubRoutes(app, { lapis, repoRoot: "/workspace" });
   return { app, lapis, settings };
 }
 
@@ -333,6 +343,84 @@ describe("GitHub App integration routes", () => {
 
       expect(res.statusCode).toBe(502);
       expect(res.json()).toEqual({ error: "Failed to fetch repos from GitHub" });
+    });
+  });
+
+  describe("POST /api/github/repos/prepare", () => {
+    const repos = [
+      { id: 1, full_name: "octocat/hello-world", clone_url: "https://github.com/octocat/hello-world.git", private: false, default_branch: "main", updated_at: "2026-01-01T00:00:00Z" },
+    ];
+
+    it("returns 401 when GitHub is not connected", async () => {
+      const { app } = buildApp();
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/github/repos/prepare",
+        payload: { cloneUrl: "https://github.com/octocat/hello-world.git" },
+      });
+
+      expect(res.statusCode).toBe(401);
+      expect(res.json()).toEqual({ error: "GitHub is not connected" });
+    });
+
+    it("rejects invalid clone URLs", async () => {
+      const { app } = buildApp({
+        github_token: { access_token: "ghu_abc123", token_type: "bearer", scope: "repo", created_at: "2026-01-01T00:00:00Z" },
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/github/repos/prepare",
+        payload: { cloneUrl: "https://evil.example/octocat/hello-world.git" },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error: "Invalid GitHub clone URL" });
+    });
+
+    it("rejects repos not available to the GitHub connection", async () => {
+      mockListRepos.mockResolvedValueOnce(repos);
+      const { app } = buildApp({
+        github_token: { access_token: "ghu_abc123", token_type: "bearer", scope: "repo", created_at: "2026-01-01T00:00:00Z" },
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/github/repos/prepare",
+        payload: { cloneUrl: "https://github.com/other/repo.git" },
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toEqual({ error: "Repository is not available to this GitHub connection" });
+    });
+
+    it("prepares a repo and returns repo + indexing status", async () => {
+      mockListRepos.mockResolvedValueOnce(repos);
+      mockPrepareRepoForMission.mockResolvedValueOnce({ repoPath: "/workspace/repos/octocat-hello-world", repoStatus: "cloned" });
+      const { app } = buildApp({
+        github_token: { access_token: "ghu_abc123", token_type: "bearer", scope: "repo", created_at: "2026-01-01T00:00:00Z" },
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/github/repos/prepare",
+        payload: { cloneUrl: "https://github.com/octocat/hello-world.git" },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({
+        fullName: "octocat/hello-world",
+        repoPath: "/workspace/repos/octocat-hello-world",
+        repoStatus: "cloned",
+        indexed: false,
+        indexingStatus: "unavailable",
+      });
+      expect(mockPrepareRepoForMission).toHaveBeenCalledWith({
+        lapis: expect.any(Object),
+        parentRepoRoot: "/workspace",
+        cloneUrl: "https://github.com/octocat/hello-world.git",
+      });
     });
   });
 });
