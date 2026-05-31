@@ -14,8 +14,14 @@ interface TestResult {
   models: Array<{ id?: string; name?: string }>;
 }
 
+const MANAGED_PINYX_ENDPOINTS = new Set([
+  "http://pinyx-stub:7331",
+  "http://pinyx:7331",
+]);
+
 export function PinyxConnectionTab({ config, onConfigUpdate }: PinyxConnectionTabProps) {
-  const isAutoDetected = (config as any).autoDetected === true && config.endpoint !== "";
+  const isManagedEndpoint = MANAGED_PINYX_ENDPOINTS.has(config.endpoint);
+  const isAutoDetected = ((config as any).autoDetected === true || isManagedEndpoint) && config.endpoint !== "";
   const [endpoint, setEndpoint] = useState(config.endpoint);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
