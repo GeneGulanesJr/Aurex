@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getCurrentMission, createMission, connectGitHub, getPinyxConfig, savePinyxConfig, getPinyxModels, getPinyxStatus } from "./api";
+import { getCurrentMission, createMission, getGitHubConnectUrl, saveGitHubConfig, getGitHubConfig, getPinyxConfig, savePinyxConfig, getPinyxModels, getPinyxStatus } from "./api";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
@@ -55,24 +55,34 @@ describe("frontend api", () => {
     );
   });
 
-  it("connectGitHub posts PAT token", async () => {
-    const user = { login: "octocat", avatar_url: "https://avatars.githubusercontent.com/u/1", name: "Octocat" };
-    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ success: true, user }) });
+  it("getGitHubConnectUrl returns OAuth authorize URL", async () => {
+    const payload = { url: "https://github.com/login/oauth/authorize?client_id=Iv1.abc&scope=repo&state=nonce123" };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => payload });
 
-    await expect(connectGitHub("ghp_abc123")).resolves.toEqual({ success: true, user });
+    await expect(getGitHubConnectUrl()).resolves.toEqual(payload);
+    expect(mockFetch).toHaveBeenCalledWith("/api/github/connect", expect.objectContaining({ headers: expect.any(Object) }));
+  });
+
+  it("saveGitHubConfig posts app credentials", async () => {
+    const payload = { appId: "123", clientId: "Iv1.abc", clientSecret: "shh", privateKey: "", callbackUrl: "http://localhost:3000/api/github/callback", frontendUrl: "http://localhost:5173" };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ success: true }) });
+
+    await expect(saveGitHubConfig(payload)).resolves.toEqual({ success: true });
     expect(mockFetch).toHaveBeenCalledWith(
-      "/api/github/connect",
+      "/api/github/config",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ token: "ghp_abc123" }),
+        body: JSON.stringify(payload),
       }),
     );
   });
 
-  it("connectGitHub throws on invalid token", async () => {
-    mockFetch.mockResolvedValue({ ok: false, status: 401, json: async () => ({ error: "Invalid GitHub token" }) });
+  it("getGitHubConfig returns config status", async () => {
+    const payload = { configured: true, client_id: "Iv1.abc", callback_url: "http://localhost:3000/callback", has_client_secret: true, has_private_key: false };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => payload });
 
-    await expect(connectGitHub("bad-token")).rejects.toThrow("Invalid GitHub token");
+    await expect(getGitHubConfig()).resolves.toEqual(payload);
+    expect(mockFetch).toHaveBeenCalledWith("/api/github/config", expect.objectContaining({ headers: expect.any(Object) }));
   });
 
   it("reads PiNyx integration config", async () => {

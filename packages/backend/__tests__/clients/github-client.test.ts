@@ -5,59 +5,56 @@ const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
 // Import after mock
-const { getUser, listRepos } = await import("../../src/clients/github-client.js");
+const { exchangeCode } = await import("../../src/clients/github-client.js");
 
 describe("github-client", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  describe("getUser", () => {
-    it("returns user profile from valid token", async () => {
+  describe("exchangeCode", () => {
+    it("exchanges an OAuth code for an access token", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ login: "testuser", avatar_url: "https://avatar.url", name: "Test User" }),
+        json: async () => ({ access_token: "ghu_abc123", token_type: "bearer", scope: "repo" }),
       });
 
-      const user = await getUser("ghp_abc123");
-      expect(user).toEqual({ login: "testuser", avatar_url: "https://avatar.url", name: "Test User" });
+      const result = await exchangeCode("Iv1.clientid", "shh-secret", "code123", "http://localhost:3000/api/github/callback");
+
+      expect(result).toEqual({
+        access_token: "ghu_abc123",
+        token_type: "bearer",
+        scope: "repo",
+      });
       expect(mockFetch).toHaveBeenCalledWith(
-        "https://api.github.com/user",
+        "https://github.com/login/oauth/access_token",
         expect.objectContaining({
+          method: "POST",
           headers: expect.objectContaining({
-            Authorization: "Bearer ghp_abc123",
+            Accept: "application/json",
+            "Content-Type": "application/json",
           }),
         }),
       );
-    });
-
-    it("throws on failure", async () => {
-      mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
-      await expect(getUser("bad")).rejects.toThrow("GitHub getUser failed: 401");
-    });
-  });
-
-  describe("listRepos", () => {
-    it("returns mapped repos", async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve([{
-          id: 1,
-          full_name: "owner/repo",
-          clone_url: "https://github.com/owner/repo.git",
-          private: true,
-          default_branch: "main",
-          updated_at: "2026-01-01T00:00:00Z",
-        }]),
+      const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string);
+      expect(body).toEqual({
+        client_id: "Iv1.clientid",
+        client_secret: "shh-secret",
+        code: "code123",
+        redirect_uri: "http://localhost:3000/api/github/callback",
       });
-      const repos = await listRepos("token");
-      expect(repos).toHaveLength(1);
-      expect(repos[0].full_name).toBe("owner/repo");
     });
 
-    it("throws on failure", async () => {
-      mockFetch.mockResolvedValueOnce({ ok: false, status: 403 });
-      await expect(listRepos("bad")).rejects.toThrow("GitHub listRepos failed: 403");
+    it("throws on non-ok response", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        json: async () => ({ error: "bad_verification_code" }),
+      });
+
+      await expect(
+        exchangeCode("id", "secret", "bad-code", "http://localhost:3000/api/github/callback"),
+      ).rejects.toThrow("GitHub exchangeCode failed: 403");
     });
   });
 });

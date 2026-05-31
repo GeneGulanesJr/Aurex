@@ -88,17 +88,43 @@ export interface GitHubRepoResponse {
   updated_at: string;
 }
 
-export async function connectGitHub(token: string): Promise<{ success: boolean; user: { login: string; avatar_url: string; name: string | null } }> {
-  const res = await apiFetch("/api/github/connect", {
+export interface GitHubConfigResponse {
+  configured: boolean;
+  client_id: string | null;
+  callback_url: string | null;
+  has_client_secret: boolean;
+  has_private_key: boolean;
+}
+
+export interface GitHubConfigPayload {
+  appId: string;
+  clientId: string;
+  clientSecret: string;
+  privateKey: string;
+  callbackUrl: string;
+  frontendUrl: string;
+}
+
+export async function getGitHubConfig(): Promise<GitHubConfigResponse> {
+  const res = await apiFetch("/api/github/config");
+  if (!res.ok) throw new Error(`Failed to fetch GitHub config: ${res.status}`);
+  return res.json() as Promise<GitHubConfigResponse>;
+}
+
+export async function saveGitHubConfig(payload: GitHubConfigPayload): Promise<{ success: boolean }> {
+  const res = await apiFetch("/api/github/config", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token }),
+    body: JSON.stringify(payload),
   });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error ?? `Failed to connect GitHub: ${res.status}`);
-  }
-  return res.json() as Promise<{ success: boolean; user: { login: string; avatar_url: string; name: string | null } }>;
+  if (!res.ok) throw new Error(`Failed to save GitHub config: ${res.status}`);
+  return res.json() as Promise<{ success: boolean }>;
+}
+
+export async function getGitHubConnectUrl(): Promise<{ url: string }> {
+  const res = await apiFetch("/api/github/connect");
+  if (!res.ok) throw new Error(`Failed to start GitHub OAuth: ${res.status}`);
+  return res.json() as Promise<{ url: string }>;
 }
 
 export async function getGitHubStatus(): Promise<GitHubStatusResponse> {

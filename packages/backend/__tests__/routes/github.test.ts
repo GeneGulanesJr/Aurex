@@ -7,6 +7,7 @@ import type { LaPisClient } from "../../src/clients/lapis-client";
 vi.mock("../../src/clients/github-client.js", () => ({
   getUser: vi.fn(),
   listRepos: vi.fn(),
+  exchangeCode: vi.fn(),
 }));
 
 vi.mock("../../src/orchestrator/repo-prep.js", async (importOriginal) => {
@@ -17,12 +18,23 @@ vi.mock("../../src/orchestrator/repo-prep.js", async (importOriginal) => {
   };
 });
 
-import { getUser, listRepos } from "../../src/clients/github-client.js";
+import { getUser, listRepos, exchangeCode } from "../../src/clients/github-client.js";
 import { prepareRepoForMission } from "../../src/orchestrator/repo-prep.js";
 
 const mockGetUser = getUser as ReturnType<typeof vi.fn>;
 const mockListRepos = listRepos as ReturnType<typeof vi.fn>;
+const mockExchangeCode = exchangeCode as ReturnType<typeof vi.fn>;
 const mockPrepareRepoForMission = prepareRepoForMission as ReturnType<typeof vi.fn>;
+
+interface GitHubAppConfig {
+  app_id: string;
+  client_id: string;
+  client_secret: string;
+  private_key: string;
+  callback_url: string;
+  frontend_url: string;
+  created_at: string;
+}
 
 function createMockLapis(settings: Record<string, unknown> = {}) {
   return {
@@ -39,74 +51,208 @@ function buildApp(settings: Record<string, unknown> = {}) {
   return { app, lapis, settings };
 }
 
-describe("GitHub PAT integration routes", () => {
+describe("GitHub App integration routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  describe("POST /api/github/connect", () => {
-    it("validates token, stores token and user", async () => {
-      const user = { login: "octocat", avatar_url: "https://avatars.githubusercontent.com/u/1", name: "Octocat" };
-      mockGetUser.mockResolvedValueOnce(user);
+  describe("GET /api/github/config", () => {
+    it("returns unconfigured when no app config stored", async () => {
+      const { app } = buildApp();
 
+      const res = await app.inject({ method: "GET", url: "/api/github/config" });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({
+        configured: false,
+        client_id: null,
+        callback_url: null,
+        has_client_secret: false,
+        has_private_key: false,
+      });
+    });
+
+    it("returns configured status without secrets", async () => {
+      const config: GitHubAppConfig = {
+        app_id: "12345",
+        client_id: "Iv1.abc",
+        client_secret: "shh-secret",
+        private_key: "-----BEGIN RSA-----\n...\n-----END RSA-----",
+        callback_url: "http://localhost:3000/api/github/callback",
+        frontend_url: "http://localhost:5173",
+        created_at: "2026-01-01T00:00:00Z",
+      };
+      const { app } = buildApp({ github_app_config: config });
+
+      const res = await app.inject({ method: "GET", url: "/api/github/config" });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body).toEqual({
+        configured: true,
+        client_id: "Iv1.abc",
+        callback_url: "http://localhost:3000/api/github/callback",
+        has_client_secret: true,
+        has_private_key: true,
+      });
+      // Ensure no secrets leaked
+      expect(JSON.stringify(body)).not.toContain("shh-secret");
+      expect(JSON.stringify(body)).not.toContain("BEGIN RSA");
+    });
+  });
+
+  describe("POST /api/github/config", () => {
+    it("saves app config to LaPis settings", async () => {
       const { app, settings } = buildApp();
 
       const res = await app.inject({
         method: "POST",
-        url: "/api/github/connect",
-        payload: { token: "ghp_abc123" },
+        url: "/api/github/config",
+        payload: {
+          appId: "12345",
+          clientId: "Iv1.abc",
+          clientSecret: "shh-secret",
+          privateKey: "-----BEGIN RSA-----\n...\n-----END RSA-----",
+          callbackUrl: "http://localhost:3000/api/github/callback",
+          frontendUrl: "http://localhost:5173",
+        },
       });
 
       expect(res.statusCode).toBe(200);
-      expect(res.json()).toEqual({ success: true, user });
-      expect(mockGetUser).toHaveBeenCalledWith("ghp_abc123");
+      expect(res.json()).toEqual({ success: true });
+      expect(settings.github_app_config).toEqual({
+        app_id: "12345",
+        client_id: "Iv1.abc",
+        client_secret: "shh-secret",
+        private_key: "-----BEGIN RSA-----\n...\n-----END RSA-----",
+        callback_url: "http://localhost:3000/api/github/callback",
+        frontend_url: "http://localhost:5173",
+        created_at: expect.any(String),
+      });
+    });
+
+    it("rejects missing required fields", async () => {
+      const { app } = buildApp();
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/github/config",
+        payload: { appId: "12345" },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error: "appId, clientId, clientSecret, callbackUrl, and frontendUrl are required" });
+    });
+  });
+
+  describe("GET /api/github/connect", () => {
+    it("returns GitHub authorize URL with state nonce", async () => {
+      const config: GitHubAppConfig = {
+        app_id: "12345",
+        client_id: "Iv1.abc",
+        client_secret: "shh-secret",
+        private_key: "",
+        callback_url: "http://localhost:3000/api/github/callback",
+        frontend_url: "http://localhost:5173",
+        created_at: "2026-01-01T00:00:00Z",
+      };
+      const { app } = buildApp({ github_app_config: config });
+
+      const res = await app.inject({ method: "GET", url: "/api/github/connect" });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.url).toContain("https://github.com/login/oauth/authorize");
+      expect(body.url).toContain("client_id=Iv1.abc");
+      expect(body.url).toContain("scope=repo");
+      expect(body.url).toContain("state=");
+      expect(body.url).toContain("redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fapi%2Fgithub%2Fcallback");
+    });
+
+    it("returns 400 when app is not configured", async () => {
+      const { app } = buildApp();
+
+      const res = await app.inject({ method: "GET", url: "/api/github/connect" });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error: "GitHub App not configured" });
+    });
+  });
+
+  describe("GET /api/github/callback", () => {
+    const config: GitHubAppConfig = {
+      app_id: "12345",
+      client_id: "Iv1.abc",
+      client_secret: "shh-secret",
+      private_key: "",
+      callback_url: "http://localhost:3000/api/github/callback",
+      frontend_url: "http://localhost:5173",
+      created_at: "2026-01-01T00:00:00Z",
+    };
+
+    it("exchanges code, stores token and user, redirects to frontend", async () => {
+      const user = { login: "octocat", avatar_url: "https://avatars.githubusercontent.com/u/1", name: "Octocat" };
+      mockExchangeCode.mockResolvedValueOnce({
+        access_token: "ghu_token123",
+        token_type: "bearer",
+        scope: "repo",
+      });
+      mockGetUser.mockResolvedValueOnce(user);
+
+      const { app, settings } = buildApp({ github_app_config: config });
+
+      // First, get a valid state nonce by calling connect
+      const connectRes = await app.inject({ method: "GET", url: "/api/github/connect" });
+      const connectUrl = new URL(connectRes.json().url);
+      const state = connectUrl.searchParams.get("state")!;
+
+      // Now call callback with the same state
+      const res = await app.inject({
+        method: "GET",
+        url: `/api/github/callback?code=code123&state=${state}`,
+      });
+
+      expect(res.statusCode).toBe(302);
+      expect(res.headers.location).toBe("http://localhost:5173/?github=connected");
+      expect(mockExchangeCode).toHaveBeenCalledWith("Iv1.abc", "shh-secret", "code123", "http://localhost:3000/api/github/callback");
+      expect(mockGetUser).toHaveBeenCalledWith("ghu_token123");
       expect(settings.github_token).toEqual({
-        access_token: "ghp_abc123",
+        access_token: "ghu_token123",
+        token_type: "bearer",
+        scope: "repo",
         created_at: expect.any(String),
       });
       expect(settings.github_user).toEqual(user);
     });
 
-    it("rejects missing token", async () => {
-      const { app } = buildApp();
+    it("rejects invalid state nonce", async () => {
+      const { app } = buildApp({ github_app_config: config });
 
       const res = await app.inject({
-        method: "POST",
-        url: "/api/github/connect",
-        payload: {},
+        method: "GET",
+        url: "/api/github/callback?code=code123&state=invalid-nonce",
       });
 
-      expect(res.statusCode).toBe(400);
-      expect(res.json()).toEqual({ error: "Token is required" });
+      expect(res.statusCode).toBe(302);
+      expect(res.headers.location).toContain("github=error");
     });
 
-    it("rejects empty token", async () => {
-      const { app } = buildApp();
+    it("redirects to frontend on exchange failure", async () => {
+      mockExchangeCode.mockRejectedValueOnce(new Error("exchange failed"));
+
+      const { app } = buildApp({ github_app_config: config });
+
+      // Get valid state
+      const connectRes = await app.inject({ method: "GET", url: "/api/github/connect" });
+      const state = new URL(connectRes.json().url).searchParams.get("state")!;
 
       const res = await app.inject({
-        method: "POST",
-        url: "/api/github/connect",
-        payload: { token: "   " },
+        method: "GET",
+        url: `/api/github/callback?code=bad-code&state=${state}`,
       });
 
-      expect(res.statusCode).toBe(400);
-      expect(res.json()).toEqual({ error: "Token is required" });
-    });
-
-    it("returns 401 for invalid token", async () => {
-      mockGetUser.mockRejectedValueOnce(new Error("GitHub getUser failed: 401"));
-
-      const { app, settings } = buildApp();
-
-      const res = await app.inject({
-        method: "POST",
-        url: "/api/github/connect",
-        payload: { token: "bad-token" },
-      });
-
-      expect(res.statusCode).toBe(401);
-      expect(res.json()).toEqual({ error: "Invalid GitHub token: GitHub getUser failed: 401" });
-      expect(settings.github_token).toBeUndefined();
+      expect(res.statusCode).toBe(302);
+      expect(res.headers.location).toContain("github=error");
     });
   });
 
@@ -123,7 +269,7 @@ describe("GitHub PAT integration routes", () => {
     it("returns connected with user when token exists", async () => {
       const user = { login: "octocat", avatar_url: "https://avatars.githubusercontent.com/u/1", name: "Octocat" };
       const { app } = buildApp({
-        github_token: { access_token: "ghp_abc123", created_at: "2026-01-01T00:00:00Z" },
+        github_token: { access_token: "ghu_abc123", token_type: "bearer", scope: "repo", created_at: "2026-01-01T00:00:00Z" },
         github_user: user,
       });
 
@@ -135,9 +281,19 @@ describe("GitHub PAT integration routes", () => {
   });
 
   describe("POST /api/github/disconnect", () => {
-    it("clears stored token and user", async () => {
+    it("clears stored token and user but keeps app config", async () => {
+      const config: GitHubAppConfig = {
+        app_id: "12345",
+        client_id: "Iv1.abc",
+        client_secret: "shh",
+        private_key: "",
+        callback_url: "http://localhost:3000/api/github/callback",
+        frontend_url: "http://localhost:5173",
+        created_at: "2026-01-01T00:00:00Z",
+      };
       const { app, lapis, settings } = buildApp({
-        github_token: { access_token: "ghp_abc123", created_at: "2026-01-01T00:00:00Z" },
+        github_app_config: config,
+        github_token: { access_token: "ghu_abc123", token_type: "bearer", scope: "repo", created_at: "2026-01-01T00:00:00Z" },
         github_user: { login: "octocat", avatar_url: "https://avatars.githubusercontent.com/u/1", name: null },
       });
 
@@ -147,6 +303,7 @@ describe("GitHub PAT integration routes", () => {
       expect(res.json()).toEqual({ success: true });
       expect(lapis.deleteSetting).toHaveBeenCalledWith("github_token");
       expect(lapis.deleteSetting).toHaveBeenCalledWith("github_user");
+      expect(settings.github_app_config).toBeDefined();
     });
   });
 
@@ -156,14 +313,14 @@ describe("GitHub PAT integration routes", () => {
       mockListRepos.mockResolvedValueOnce(repos);
 
       const { app } = buildApp({
-        github_token: { access_token: "ghp_abc123", created_at: "2026-01-01T00:00:00Z" },
+        github_token: { access_token: "ghu_abc123", token_type: "bearer", scope: "repo", created_at: "2026-01-01T00:00:00Z" },
       });
 
       const res = await app.inject({ method: "GET", url: "/api/github/repos" });
 
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual(repos);
-      expect(mockListRepos).toHaveBeenCalledWith("ghp_abc123");
+      expect(mockListRepos).toHaveBeenCalledWith("ghu_abc123");
     });
 
     it("returns 401 when not connected", async () => {
@@ -179,7 +336,7 @@ describe("GitHub PAT integration routes", () => {
       mockListRepos.mockRejectedValueOnce(new Error("GitHub listRepos failed: 500"));
 
       const { app } = buildApp({
-        github_token: { access_token: "ghp_abc123", created_at: "2026-01-01T00:00:00Z" },
+        github_token: { access_token: "ghu_abc123", token_type: "bearer", scope: "repo", created_at: "2026-01-01T00:00:00Z" },
       });
 
       const res = await app.inject({ method: "GET", url: "/api/github/repos" });
@@ -209,7 +366,7 @@ describe("GitHub PAT integration routes", () => {
 
     it("rejects invalid clone URLs", async () => {
       const { app } = buildApp({
-        github_token: { access_token: "ghp_abc123", created_at: "2026-01-01T00:00:00Z" },
+        github_token: { access_token: "ghu_abc123", token_type: "bearer", scope: "repo", created_at: "2026-01-01T00:00:00Z" },
       });
 
       const res = await app.inject({
@@ -225,7 +382,7 @@ describe("GitHub PAT integration routes", () => {
     it("rejects repos not available to the GitHub connection", async () => {
       mockListRepos.mockResolvedValueOnce(repos);
       const { app } = buildApp({
-        github_token: { access_token: "ghp_abc123", created_at: "2026-01-01T00:00:00Z" },
+        github_token: { access_token: "ghu_abc123", token_type: "bearer", scope: "repo", created_at: "2026-01-01T00:00:00Z" },
       });
 
       const res = await app.inject({
@@ -242,7 +399,7 @@ describe("GitHub PAT integration routes", () => {
       mockListRepos.mockResolvedValueOnce(repos);
       mockPrepareRepoForMission.mockResolvedValueOnce({ repoPath: "/workspace/repos/octocat-hello-world", repoStatus: "cloned" });
       const { app } = buildApp({
-        github_token: { access_token: "ghp_abc123", created_at: "2026-01-01T00:00:00Z" },
+        github_token: { access_token: "ghu_abc123", token_type: "bearer", scope: "repo", created_at: "2026-01-01T00:00:00Z" },
       });
 
       const res = await app.inject({
