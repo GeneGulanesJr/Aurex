@@ -27,6 +27,8 @@ services:
       GITHUB_FRONTEND_URL: ${GITHUB_FRONTEND_URL:-http://localhost:8080}
     volumes:
       - ${REPO_ROOT:-/tmp}:/workspace
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       lapis: { condition: service_healthy }
       pinyx-stub: { condition: service_healthy }

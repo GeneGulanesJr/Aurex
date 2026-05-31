@@ -55,6 +55,26 @@ describe("PiNyx integration routes", () => {
     expect(res.json()).toEqual({ configured: false, endpoint: null });
   });
 
+  it("migrates a saved stub endpoint to real host PiNyx when available", async () => {
+    const mockFetch = vi.fn(async (url: string) => {
+      if (url === "http://host.docker.internal:7331/health") return { ok: true };
+      return { ok: false };
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const app = Fastify();
+    const lapis = createMockLapis({
+      pinyx_config: { endpoint: "http://pinyx-stub:7331", modelHints: defaultModelHints, providers: [] },
+    });
+    registerPinyxRoutes(app, { lapis });
+
+    const res = await app.inject({ method: "GET", url: "/api/pinyx/config" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ endpoint: "http://host.docker.internal:7331" });
+    expect(lapis.setSetting).toHaveBeenCalledWith("pinyx_config", expect.objectContaining({ endpoint: "http://host.docker.internal:7331" }));
+  });
+
   it("returns configured status when config exists", async () => {
     const app = Fastify();
     const lapis = createMockLapis({

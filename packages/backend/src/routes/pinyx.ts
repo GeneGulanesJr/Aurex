@@ -59,10 +59,15 @@ const defaultModelHints: Record<AgentType, string> = {
 };
 
 const DEFAULT_PINYX_ENDPOINTS = [
-  "http://pinyx-stub:7331",   // Docker internal hostname
-  "http://pinyx:7331",        // Alternative Docker hostname
-  "http://localhost:7331",    // Local dev
+  "http://host.docker.internal:7331", // Real PiNyx running on the host
+  "http://pinyx:7331",                // Real PiNyx when provided as a compose service
+  "http://localhost:7331",            // Local dev outside Docker
+  "http://pinyx-stub:7331",           // Last-resort test stub
 ];
+
+function isStubEndpoint(endpoint: string): boolean {
+  return endpoint.includes("pinyx-stub");
+}
 
 function providerApi(providerId: string): string {
   switch (providerId) {
@@ -99,8 +104,9 @@ async function syncConfigToPinyx(config: PinyxConfigSetting): Promise<void> {
   });
 }
 
-async function detectPinyxEndpoint(): Promise<string> {
+async function detectPinyxEndpoint(options: { allowStub?: boolean } = {}): Promise<string> {
   for (const url of DEFAULT_PINYX_ENDPOINTS) {
+    if (!options.allowStub && isStubEndpoint(url)) continue;
     try {
       const res = await fetch(`${url}/health`, { method: "GET", signal: AbortSignal.timeout(2000) });
       if (res.ok) return url;
@@ -112,11 +118,23 @@ async function detectPinyxEndpoint(): Promise<string> {
 export async function resolvePinyxConfig(lapis: LaPisClient): Promise<PinyxConfigSetting | null> {
   const saved = await lapis.getSetting<PinyxConfigSetting>("pinyx_config");
   if (!saved?.endpoint) return null;
-  return {
+
+  const config = {
     endpoint: saved.endpoint,
     modelHints: { ...defaultModelHints, ...(saved.modelHints ?? {}) },
     providers: saved.providers ?? [],
   };
+
+  if (isStubEndpoint(config.endpoint)) {
+    const realEndpoint = await detectPinyxEndpoint({ allowStub: false });
+    if (realEndpoint) {
+      const migrated = { ...config, endpoint: realEndpoint };
+      await lapis.setSetting("pinyx_config", migrated);
+      return migrated;
+    }
+  }
+
+  return config;
 }
 
 export function registerPinyxRoutes(app: FastifyInstance, deps: PinyxRouteDeps) {
@@ -131,7 +149,7 @@ export function registerPinyxRoutes(app: FastifyInstance, deps: PinyxRouteDeps) 
     const config = await resolvePinyxConfig(lapis);
     if (!config) {
       // Auto-detect PiNyx endpoint for first-time setup
-      const detected = await detectPinyxEndpoint();
+      const detected = await detectPinyxEndpoint({ allowStub: true });
       return {
         endpoint: detected,
         modelHints: defaultModelHints,
