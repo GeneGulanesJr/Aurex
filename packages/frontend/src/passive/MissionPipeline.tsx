@@ -2,6 +2,7 @@ import { useEffect, useRef, useMemo } from "react";
 import { animate, stagger } from "animejs";
 import { createPulse, createSpin, createIdle } from "../animations/agent-animations";
 import type { Milestone, WorkingUnit, WsClientEvent, MilestoneStatus } from "@aurex/shared";
+import { CodeContextPanel } from "./CodeContextPanel";
 
 interface MissionPipelineProps {
   mission: { id: string; description: string; status: string };
@@ -9,7 +10,7 @@ interface MissionPipelineProps {
   workers: WorkingUnit[];
   cost: { totalCost: number; totalTokens: number } | null;
   events: WsClientEvent[];
-  logs: Array<{ phase: string; message: string; timestamp: number }>;
+  logs: Array<{ phase: string; message: string; timestamp: number; data?: Record<string, unknown> }>;
 }
 
 const statusConfig: Record<string, { color: string; label: string; icon: string }> = {
@@ -95,6 +96,13 @@ export function MissionPipeline({ mission, milestones, workers, cost, events, lo
           {mission.description}
         </div>
       </div>
+
+      {/* Code Context Panel */}
+      <CodeContextPanel
+        missionId={mission.id}
+        logs={logs}
+        milestones={milestones}
+      />
 
       {/* Milestone pipeline */}
       <div ref={pipelineRef} style={{ display: "flex", flexDirection: "column", gap: "0" }}>
