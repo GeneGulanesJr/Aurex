@@ -41,7 +41,7 @@ export async function missionRoutes(
     const pinyxConfig = await lapis.getSetting<{ modelHints?: Partial<MissionConfig["modelHints"]> }>("pinyx_config");
     const config: MissionConfig = {
       ...missionConfig,
-      modelHints: { orchestrator: "reasoning-strong", worker: "code-fast", validator_scrutiny: "reasoning", validator_user_testing: "computer-use", research: "fast-cheap", ...pinyxConfig?.modelHints },
+      modelHints: { orchestrator: "kilo/kilo-auto/free", worker: "kilo/kilo-auto/free", validator_scrutiny: "kilo/kilo-auto/free", validator_user_testing: "kilo/kilo-auto/free", research: "kilo/kilo-auto/free", ...pinyxConfig?.modelHints },
       ...(cloneUrl && { cloneUrl }),
     };
     const mission = await lapis.createMission(description, config);
