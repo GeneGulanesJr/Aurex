@@ -28,14 +28,20 @@ describe("PiNyx integration routes", () => {
   });
 
   it("returns empty config when no saved config exists", async () => {
+    // Mock fetch to prevent auto-detection from hitting real endpoints
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => { throw new Error("mocked"); });
+
     const app = Fastify();
     const lapis = createMockLapis();
     registerPinyxRoutes(app, { lapis });
 
     const res = await app.inject({ method: "GET", url: "/api/pinyx/config" });
 
+    globalThis.fetch = originalFetch;
+
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ endpoint: "", modelHints: defaultModelHints, providers: [] });
+    expect(res.json()).toEqual({ endpoint: "", modelHints: defaultModelHints, providers: [], autoDetected: false });
   });
 
   it("returns unconfigured status when no saved config", async () => {

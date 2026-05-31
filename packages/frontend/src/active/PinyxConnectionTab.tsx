@@ -3,7 +3,7 @@ import { getPinyxModels, savePinyxConfig } from "../api";
 import type { PinyxConfigResponse } from "../api";
 
 interface PinyxConnectionTabProps {
-  config: PinyxConfigResponse;
+  config: PinyxConfigResponse & { autoDetected?: boolean };
   onConfigUpdate: (config: PinyxConfigResponse) => void;
 }
 
@@ -15,12 +15,14 @@ interface TestResult {
 }
 
 export function PinyxConnectionTab({ config, onConfigUpdate }: PinyxConnectionTabProps) {
+  const isAutoDetected = (config as any).autoDetected === true && config.endpoint !== "";
   const [endpoint, setEndpoint] = useState(config.endpoint);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [modelsExpanded, setModelsExpanded] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [showEndpointInput, setShowEndpointInput] = useState(!isAutoDetected);
   const flashTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
@@ -73,17 +75,43 @@ export function PinyxConnectionTab({ config, onConfigUpdate }: PinyxConnectionTa
         <div className="pinyx-section-header">
           <div>
             <h3 className="pinyx-section-title">PiNyx Gateway</h3>
-            <p className="pinyx-section-desc">LLM orchestration layer</p>
+            <p className="pinyx-section-desc">
+              {isAutoDetected
+                ? "Auto-detected from your Docker environment."
+                : "LLM orchestration layer"}
+            </p>
           </div>
         </div>
 
-        <label className="pinyx-label">Endpoint</label>
-        <input
-          className="pinyx-input"
-          value={endpoint}
-          onChange={(e) => setEndpoint(e.target.value)}
-          placeholder="http://127.0.0.1:7331"
-        />
+        {isAutoDetected && !showEndpointInput && (
+          <div style={{ marginBottom: "12px" }}>
+            <div className="pinyx-status-row">
+              <span className="pinyx-status-dot pinyx-status-dot--success" />
+              <span style={{ color: "var(--text-secondary)", fontFamily: '"JetBrains Mono", monospace', fontSize: "11px" }}>
+                {endpoint}
+              </span>
+              <button
+                className="pinyx-status-models-toggle"
+                onClick={() => setShowEndpointInput(true)}
+                style={{ marginLeft: "8px" }}
+              >
+                change
+              </button>
+            </div>
+          </div>
+        )}
+
+        {(showEndpointInput || !isAutoDetected) && (
+          <>
+            <label className="pinyx-label">Endpoint</label>
+            <input
+              className="pinyx-input"
+              value={endpoint}
+              onChange={(e) => setEndpoint(e.target.value)}
+              placeholder="http://127.0.0.1:7331"
+            />
+          </>
+        )}
 
         <div className="pinyx-btn-group">
           <button
