@@ -15,10 +15,14 @@ const AGENT_CARDS = [
 ];
 
 export function PinyxModelsTab({ config, onConfigUpdate }: PinyxModelsTabProps) {
+  const hasKeys = config.providers.some((p) => p.hasApiKey);
+
   const [modelHints, setModelHints] = useState(config.modelHints);
-  const [defaultModel, setDefaultModel] = useState(
-    config.modelHints.orchestrator ?? "kilo/kilo-auto/free",
-  );
+  const [defaultModel, setDefaultModel] = useState(() => {
+    // Use first model hint value if available, otherwise empty
+    const first = config.modelHints.orchestrator;
+    return first && first !== "kilo/kilo-auto/free" ? first : "";
+  });
   const [models, setModels] = useState<Array<{ id?: string; name?: string }>>([]);
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -29,7 +33,7 @@ export function PinyxModelsTab({ config, onConfigUpdate }: PinyxModelsTabProps) 
     const result: Record<string, string | null> = {};
     for (const card of AGENT_CARDS) {
       const agentModel = config.modelHints[card.types[0] as keyof typeof config.modelHints];
-      result[card.key] = agentModel === defaultModel ? null : agentModel;
+      result[card.key] = (!agentModel || agentModel === defaultModel) ? null : agentModel;
     }
     return result;
   });
@@ -37,14 +41,19 @@ export function PinyxModelsTab({ config, onConfigUpdate }: PinyxModelsTabProps) 
   const dirty = JSON.stringify(modelHints) !== JSON.stringify(config.modelHints);
 
   useEffect(() => {
+    if (!hasKeys) {
+      setModels([]);
+      return;
+    }
     getPinyxModels()
       .then((res) => setModels(res.models))
       .catch(() => setModels([]));
-  }, []);
+  }, [hasKeys]);
 
   useEffect(() => {
     setModelHints(config.modelHints);
-    setDefaultModel(config.modelHints.orchestrator ?? "kilo/kilo-auto/free");
+    const first = config.modelHints.orchestrator;
+    setDefaultModel(first && first !== "kilo/kilo-auto/free" ? first : "");
   }, [config.modelHints]);
 
   function handleDefaultChange(newDefault: string) {
@@ -96,6 +105,23 @@ export function PinyxModelsTab({ config, onConfigUpdate }: PinyxModelsTabProps) 
 
   const modelOptions = models.map((m) => m.id ?? m.name ?? "").filter(Boolean);
 
+  if (!hasKeys) {
+    return (
+      <div>
+        <div className="pinyx-section">
+          <div style={{ textAlign: "center", padding: "24px 16px" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: "12px", margin: "0 0 8px" }}>
+              No providers configured yet.
+            </p>
+            <p style={{ color: "var(--text-secondary)", fontSize: "13px", margin: 0 }}>
+              Add an API key for Kilo Code or Z.AI in the <strong>Keys</strong> tab first, then models will appear here.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="pinyx-section">
@@ -103,21 +129,26 @@ export function PinyxModelsTab({ config, onConfigUpdate }: PinyxModelsTabProps) 
           Model routing — auto-detect with per-agent overrides.
         </p>
 
-        <div className="pinyx-model-default">
-          <div className="pinyx-model-default-label">Default Model</div>
-          <select
-            value={defaultModel}
-            onChange={(e) => handleDefaultChange(e.target.value)}
-          >
-            {modelOptions.length > 0 ? (
-              modelOptions.map((m) => (
+        {modelOptions.length > 0 ? (
+          <div className="pinyx-model-default">
+            <div className="pinyx-model-default-label">Default Model</div>
+            <select
+              value={defaultModel}
+              onChange={(e) => handleDefaultChange(e.target.value)}
+            >
+              {modelOptions.map((m) => (
                 <option key={m} value={m}>{m}</option>
-              ))
-            ) : (
-              <option value={defaultModel}>{defaultModel}</option>
-            )}
-          </select>
-        </div>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div className="pinyx-model-default">
+            <div className="pinyx-model-default-label">Default Model</div>
+            <p style={{ color: "var(--text-muted)", fontSize: "11px", margin: "4px 0 0" }}>
+              Connect to PiNyx in the Connection tab to discover available models.
+            </p>
+          </div>
+        )}
 
         {AGENT_CARDS.map((card) => {
           const model = getCardModel(card.key);
@@ -133,34 +164,36 @@ export function PinyxModelsTab({ config, onConfigUpdate }: PinyxModelsTabProps) 
               <div className="pinyx-agent-card-header">
                 <span className="pinyx-agent-name">{card.name}</span>
                 <span className={`pinyx-agent-model${hasOverride ? " pinyx-agent-model--override" : " pinyx-agent-model--default"}`}>
-                  {model}
+                  {model || "unset"}
                 </span>
               </div>
 
               {isExpanded && (
                 <>
                   <p className="pinyx-agent-desc">{card.description}</p>
-                  <div className="pinyx-agent-override" onClick={(e) => e.stopPropagation()}>
-                    <select
-                      value={hasOverride ? overrides[card.key]! : ""}
-                      onChange={(e) => {
-                        handleOverride(card.key, e.target.value === "" ? null : e.target.value);
-                      }}
-                    >
-                      <option value="">Use default ({defaultModel})</option>
-                      {modelOptions.map((m) => (
-                        <option key={m} value={m}>{m}</option>
-                      ))}
-                    </select>
-                    {hasOverride && (
-                      <button
-                        className="pinyx-agent-reset"
-                        onClick={() => handleOverride(card.key, null)}
+                  {modelOptions.length > 0 && (
+                    <div className="pinyx-agent-override" onClick={(e) => e.stopPropagation()}>
+                      <select
+                        value={hasOverride ? overrides[card.key]! : ""}
+                        onChange={(e) => {
+                          handleOverride(card.key, e.target.value === "" ? null : e.target.value);
+                        }}
                       >
-                        Reset
-                      </button>
-                    )}
-                  </div>
+                        <option value="">Use default ({defaultModel})</option>
+                        {modelOptions.map((m) => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </select>
+                      {hasOverride && (
+                        <button
+                          className="pinyx-agent-reset"
+                          onClick={() => handleOverride(card.key, null)}
+                        >
+                          Reset
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -170,7 +203,7 @@ export function PinyxModelsTab({ config, onConfigUpdate }: PinyxModelsTabProps) 
         <div className="pinyx-btn-group">
           <button
             className="pinyx-btn-primary"
-            disabled={!dirty || saving}
+            disabled={!dirty || saving || !defaultModel}
             onClick={() => void handleSave()}
           >
             {saving ? "Saving..." : "Save Model Routing"}
