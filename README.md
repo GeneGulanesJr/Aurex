@@ -4,7 +4,7 @@ A multi-agent orchestration runtime that coordinates AI coding agents (workers, 
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                        AUREX RUNTIME                            │
 │                                                                 │
@@ -56,6 +56,8 @@ A multi-agent orchestration runtime that coordinates AI coding agents (workers, 
 4. **Each worker gets its own git worktree** — filesystem isolation by default
 5. **Logic in skill files, boundaries in runtime** — agent behavior defined in markdown skills, enforcement in TypeScript
 
+For a deeper dive into the design rationale, see [DESIGN.md](./DESIGN.md).
+
 ## Key Concepts
 
 - **Missions** → **Milestones** → **Working Units**: hierarchical task decomposition planned by the orchestrator via LLM
@@ -68,7 +70,7 @@ A multi-agent orchestration runtime that coordinates AI coding agents (workers, 
 
 ## Monorepo Structure
 
-```
+```plaintext
 packages/
 ├── shared/              # @aurex/shared — types, enums, REST/WS definitions
 │   └── src/
@@ -217,4 +219,4 @@ npx vitest              # run all tests
 npx vitest --reporter=verbose   # verbose output
 ```
 
-251 tests across 48 files covering shared types, backend logic (enforcement, orchestrator, overlap detection, routes), and frontend API client.
+The test suite includes 251 tests across 48 files, covering shared types, backend logic (enforcement, orchestrator, overlap detection, routes), and the frontend API client.
