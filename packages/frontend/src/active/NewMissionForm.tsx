@@ -1,6 +1,9 @@
+import { useState } from "react";
 import { useNewMissionForm } from "./useNewMissionForm";
 import { RepoPicker } from "./RepoPicker";
+import { RepoPrepareModal } from "./RepoPrepareModal";
 import type { UseGitHubReturn } from "../hooks/useGitHub";
+import { prepareGitHubRepo } from "../api";
 import type { GitHubRepoResponse } from "../api";
 
 interface NewMissionFormProps {
@@ -10,10 +13,29 @@ interface NewMissionFormProps {
 
 export function NewMissionForm({ onSubmit, github }: NewMissionFormProps) {
   const { state, open, close, setDescription, setRepo, handleSubmit, handleKeyDown, canSubmit } = useNewMissionForm(onSubmit);
+  const [pendingRepo, setPendingRepo] = useState<GitHubRepoResponse | null>(null);
+  const [preparingRepo, setPreparingRepo] = useState(false);
+  const [prepareError, setPrepareError] = useState<string | null>(null);
 
   const handleRepoSelect = (repo: GitHubRepoResponse) => {
-    setRepo(repo.clone_url, repo.id);
+    setPrepareError(null);
+    setPendingRepo(repo);
   };
+
+  async function handleConfirmRepo() {
+    if (!pendingRepo) return;
+    setPreparingRepo(true);
+    setPrepareError(null);
+    try {
+      const prepared = await prepareGitHubRepo(pendingRepo.clone_url);
+      setRepo(pendingRepo.clone_url, pendingRepo.id, prepared.fullName);
+      setPendingRepo(null);
+    } catch {
+      setPrepareError("Could not prepare repository. Check GitHub permissions and try again.");
+    } finally {
+      setPreparingRepo(false);
+    }
+  }
 
   if (!state.open) {
     return (
@@ -46,9 +68,9 @@ export function NewMissionForm({ onSubmit, github }: NewMissionFormProps) {
       {github?.connected && github.repos.length > 0 && (
         <RepoPicker repos={github.repos} selectedRepoId={state.selectedRepoId} onSelect={handleRepoSelect} />
       )}
-      {state.selectedCloneUrl && (
+      {state.selectedRepoFullName && (
         <div style={{ color: "var(--accent)", fontSize: "10px", fontFamily: '"JetBrains Mono", monospace' }}>
-          REPO SELECTED
+          REPO READY · {state.selectedRepoFullName}
         </div>
       )}
       {github?.error && (
@@ -108,6 +130,20 @@ export function NewMissionForm({ onSubmit, github }: NewMissionFormProps) {
         </button>
       </div>
       {state.error && <p style={{ fontSize: "12px", color: "var(--error)", marginTop: "4px" }}>{state.error}</p>}
+      {pendingRepo && (
+        <RepoPrepareModal
+          repo={pendingRepo}
+          preparing={preparingRepo}
+          error={prepareError}
+          onCancel={() => {
+            if (!preparingRepo) {
+              setPendingRepo(null);
+              setPrepareError(null);
+            }
+          }}
+          onConfirm={() => void handleConfirmRepo()}
+        />
+      )}
     </div>
   );
 }
