@@ -11,11 +11,11 @@ function createMockLapis(settings: Record<string, unknown> = {}) {
 }
 
 const defaultModelHints = {
-  orchestrator: "reasoning-strong",
-  worker: "code-fast",
-  validator_scrutiny: "reasoning",
-  validator_user_testing: "computer-use",
-  research: "fast-cheap",
+  orchestrator: "kilo/kilo-auto/free",
+  worker: "kilo/kilo-auto/free",
+  validator_scrutiny: "kilo/kilo-auto/free",
+  validator_user_testing: "kilo/kilo-auto/free",
+  research: "kilo/kilo-auto/free",
 };
 
 describe("PiNyx integration routes", () => {

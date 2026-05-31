@@ -51,11 +51,11 @@ export function publicPinyxConfig(config: PinyxConfigSetting): PublicPinyxConfig
 }
 
 const defaultModelHints: Record<AgentType, string> = {
-  orchestrator: "reasoning-strong",
-  worker: "code-fast",
-  validator_scrutiny: "reasoning",
-  validator_user_testing: "computer-use",
-  research: "fast-cheap",
+  orchestrator: "kilo/kilo-auto/free",
+  worker: "kilo/kilo-auto/free",
+  validator_scrutiny: "kilo/kilo-auto/free",
+  validator_user_testing: "kilo/kilo-auto/free",
+  research: "kilo/kilo-auto/free",
 };
 
 export async function resolvePinyxConfig(lapis: LaPisClient): Promise<PinyxConfigSetting | null> {
