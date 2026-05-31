@@ -1,4 +1,6 @@
 .worktrees/
+.env
 node_modules/
 dist/
 packages/*/dist/
+.aurex-workspace/
