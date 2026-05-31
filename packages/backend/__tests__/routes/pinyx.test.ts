@@ -138,6 +138,30 @@ describe("PiNyx integration routes", () => {
     }));
   });
 
+  it("auto-detects endpoint when saving config with no endpoint", async () => {
+    const mockFetch = vi.fn(async (url: string) => {
+      if (url === "http://host.docker.internal:7331/health") return { ok: true };
+      if (url === "http://host.docker.internal:7331/v1/models") return { ok: true, json: async () => ({ data: [] }) };
+      if (url === "http://host.docker.internal:7331/api/config") return { ok: true, json: async () => ({ ok: true }) };
+      return { ok: false };
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const app = Fastify();
+    const lapis = createMockLapis();
+    registerPinyxRoutes(app, { lapis });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/pinyx/config",
+      payload: { endpoint: "", modelHints: defaultModelHints, providers: [] },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ endpoint: "http://host.docker.internal:7331" });
+    expect(lapis.setSetting).toHaveBeenCalledWith("pinyx_config", expect.objectContaining({ endpoint: "http://host.docker.internal:7331" }));
+  });
+
   it("rejects save when endpoint is unreachable", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")));
 

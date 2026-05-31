@@ -160,12 +160,13 @@ export function registerPinyxRoutes(app: FastifyInstance, deps: PinyxRouteDeps) 
 
   app.post("/api/pinyx/config", async (request, reply) => {
     const body = request.body as Partial<PinyxConfigSetting>;
-    if (!body.endpoint) {
-      return reply.status(400).send({ error: "endpoint is required" });
+    const requestedEndpoint = body.endpoint?.trim() || await detectPinyxEndpoint();
+    if (!requestedEndpoint) {
+      return reply.status(400).send({ error: "PiNyx endpoint not detected. Start PiNyx on port 7331." });
     }
 
     // Validate endpoint is reachable
-    const endpoint = body.endpoint.replace(/\/$/, "");
+    const endpoint = requestedEndpoint.replace(/\/$/, "");
     try {
       const res = await fetch(`${endpoint}/v1/models`, { method: "GET" });
       if (!res.ok) {
@@ -187,7 +188,7 @@ export function registerPinyxRoutes(app: FastifyInstance, deps: PinyxRouteDeps) 
       };
     });
     const config: PinyxConfigSetting = {
-      endpoint: body.endpoint,
+      endpoint: requestedEndpoint,
       modelHints: { ...defaultModelHints, ...(body.modelHints ?? {}) },
       providers,
     };
