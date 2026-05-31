@@ -22,12 +22,11 @@ const PINYX_TABS = [
 export function IntegrationsPanel({ open, github, onClose }: IntegrationsPanelProps) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [appId, setAppId] = useState("");
-  const [clientId, setClientId] = useState("");
+  const [appId, setAppId] = useState("3919010");
+  const [clientId, setClientId] = useState("Iv23lijYF4sZMcU62MjT");
   const [clientSecret, setClientSecret] = useState("");
-  const [privateKey, setPrivateKey] = useState("");
-  const [callbackUrl, setCallbackUrl] = useState("");
-  const [frontendUrl, setFrontendUrl] = useState("http://localhost:5173");
+  const [callbackUrl, setCallbackUrl] = useState("http://localhost:3000/api/github/callback");
+  const [frontendUrl, setFrontendUrl] = useState("http://localhost:8080");
 
   const [pinyxTab, setPinyxTab] = useState("connection");
   const [pinyx, setPinyx] = useState<PinyxConfigResponse | null>(null);
@@ -52,7 +51,7 @@ export function IntegrationsPanel({ open, github, onClose }: IntegrationsPanelPr
         appId: appId.trim(),
         clientId: clientId.trim(),
         clientSecret: clientSecret.trim(),
-        privateKey: privateKey.trim(),
+        privateKey: "",
         callbackUrl: callbackUrl.trim(),
         frontendUrl: frontendUrl.trim(),
       });
@@ -90,8 +89,8 @@ export function IntegrationsPanel({ open, github, onClose }: IntegrationsPanelPr
               <h3 className="pinyx-section-title">GitHub</h3>
               <p className="pinyx-section-desc">
                 {showConfigForm
-                  ? "Register a GitHub App at github.com/settings/developers"
-                  : "Connect via GitHub App OAuth."}
+                  ? "Use your Aurex GitHub App, then sign in with GitHub."
+                  : "Sign in through the configured Aurex GitHub App."}
               </p>
             </div>
             <span style={{
@@ -113,28 +112,26 @@ export function IntegrationsPanel({ open, github, onClose }: IntegrationsPanelPr
           {showConfigForm && (
             <>
               <label className="pinyx-label">App ID</label>
-              <input value={appId} onChange={(e) => setAppId(e.target.value)} placeholder="123456" className="pinyx-input" />
+              <input value={appId} onChange={(e) => setAppId(e.target.value)} placeholder="3919010" className="pinyx-input" />
 
               <label className="pinyx-label">Client ID</label>
-              <input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="Iv1.xxxxx" className="pinyx-input" />
+              <input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="Iv23..." className="pinyx-input" />
 
               <label className="pinyx-label">Client Secret</label>
-              <input value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} placeholder="GitHub App client secret" type="password" className="pinyx-input" />
+              <input value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} placeholder="Paste GitHub App client secret" type="password" className="pinyx-input" />
 
-              <label className="pinyx-label">Private Key (.pem)</label>
-              <textarea
-                value={privateKey}
-                onChange={(e) => setPrivateKey(e.target.value)}
-                placeholder={"-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"}
-                className="pinyx-input"
-                style={{ minHeight: "80px", resize: "vertical" }}
-              />
+              <details style={{ marginTop: "8px" }}>
+                <summary style={{ color: "var(--text-secondary)", cursor: "pointer", fontSize: "11px", fontFamily: '\"JetBrains Mono\", monospace', textTransform: "uppercase", letterSpacing: "1px" }}>
+                  Advanced URLs
+                </summary>
+                <div style={{ marginTop: "8px" }}>
+                  <label className="pinyx-label">Callback URL</label>
+                  <input value={callbackUrl} onChange={(e) => setCallbackUrl(e.target.value)} placeholder="http://localhost:3000/api/github/callback" className="pinyx-input" />
 
-              <label className="pinyx-label">Callback URL</label>
-              <input value={callbackUrl} onChange={(e) => setCallbackUrl(e.target.value)} placeholder="http://localhost:3000/api/github/callback" className="pinyx-input" />
-
-              <label className="pinyx-label">Frontend URL</label>
-              <input value={frontendUrl} onChange={(e) => setFrontendUrl(e.target.value)} placeholder="http://localhost:5173" className="pinyx-input" />
+                  <label className="pinyx-label">Frontend URL</label>
+                  <input value={frontendUrl} onChange={(e) => setFrontendUrl(e.target.value)} placeholder="http://localhost:8080" className="pinyx-input" />
+                </div>
+              </details>
 
               <button
                 onClick={() => void handleSaveConfig()}
