@@ -484,6 +484,19 @@ body {
   color: var(--accent);
 }
 
+.pinyx-provider-built-in-badge {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 8px;
+  color: var(--accent);
+  border: 1px solid var(--accent-dim);
+  border-radius: 3px;
+  padding: 1px 4px;
+  margin-left: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  vertical-align: middle;
+}
+
 /* Provider edit form */
 .pinyx-provider-form {
   border: 1px solid var(--border-bright);
