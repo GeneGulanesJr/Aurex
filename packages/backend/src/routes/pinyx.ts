@@ -58,6 +58,8 @@ const defaultModelHints: Record<AgentType, string> = {
   research: "kilo/kilo-auto/free",
 };
 
+const STUB_MODEL = "kilo/kilo-auto/free";
+
 const DEFAULT_PINYX_ENDPOINTS = [
   "http://host.docker.internal:7331", // Real PiNyx running on the host
   "http://pinyx:7331",                // Real PiNyx when provided as a compose service
@@ -165,13 +167,16 @@ export function registerPinyxRoutes(app: FastifyInstance, deps: PinyxRouteDeps) 
       return reply.status(400).send({ error: "PiNyx endpoint not detected. Start PiNyx on port 7331." });
     }
 
-    // Validate endpoint is reachable
+    // Validate endpoint is reachable and discover models
     const endpoint = requestedEndpoint.replace(/\/$/, "");
+    let discoveredModels: { id: string }[] = [];
     try {
       const res = await fetch(`${endpoint}/v1/models`, { method: "GET" });
       if (!res.ok) {
         return reply.status(502).send({ error: `PiNyx endpoint returned ${res.status}` });
       }
+      const modelsBody = await res.json() as { data?: { id: string }[] };
+      discoveredModels = modelsBody.data ?? [];
     } catch {
       return reply.status(502).send({ error: "Cannot reach PiNyx endpoint" });
     }
@@ -187,9 +192,25 @@ export function registerPinyxRoutes(app: FastifyInstance, deps: PinyxRouteDeps) 
         apiKey: provider.apiKey || existingProvider?.apiKey,
       };
     });
+
+    // Resolve model hints: if still stub defaults, auto-fill from discovered models
+    const savedHints = { ...defaultModelHints, ...(body.modelHints ?? {}) };
+    const allStub = Object.values(savedHints).every((v) => !v || v === STUB_MODEL);
+    let modelHints = savedHints;
+    if (allStub && discoveredModels.length > 0) {
+      const bestModel = discoveredModels.find((m) => !m.id.includes("/free"))?.id ?? discoveredModels[0].id;
+      modelHints = {
+        orchestrator: bestModel,
+        worker: bestModel,
+        validator_scrutiny: bestModel,
+        validator_user_testing: bestModel,
+        research: bestModel,
+      };
+    }
+
     const config: PinyxConfigSetting = {
       endpoint: requestedEndpoint,
-      modelHints: { ...defaultModelHints, ...(body.modelHints ?? {}) },
+      modelHints,
       providers,
     };
     await lapis.setSetting("pinyx_config", config);
