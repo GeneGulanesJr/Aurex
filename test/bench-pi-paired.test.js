@@ -84,6 +84,92 @@ describe('bench pi paired parser', () => {
     expect(parsed.answer).toBe('Final answer.');
   });
 
+  it('classifies usage as answer tokens when text arrives in streamed updates before usage', () => {
+    const raw = [
+      JSON.stringify({
+        type: 'message_start',
+        message: {
+          role: 'assistant',
+          responseId: 'resp_answer',
+        },
+      }),
+      JSON.stringify({
+        type: 'message_update',
+        message: {
+          role: 'assistant',
+          responseId: 'resp_answer',
+          content: [{ type: 'text', text: 'Streamed final answer.' }],
+        },
+      }),
+      JSON.stringify({
+        type: 'message_end',
+        message: {
+          role: 'assistant',
+          responseId: 'resp_answer',
+          usage: { input: 100, output: 25 },
+          content: [],
+        },
+      }),
+    ].join('\n');
+
+    const parsed = parsePiOutput(raw);
+
+    expect(parsed.usage.answer_active_tokens).toBe(125);
+    expect(parsed.usage.setup_active_tokens).toBe(0);
+    expect(parsed.answer).toBe('Streamed final answer.');
+    expect(parsed.behavior.missing_answer_usage_responses).toBe(0);
+  });
+
+  it('flags streamed final answers that do not have matching usage events', () => {
+    const raw = JSON.stringify({
+      type: 'message_update',
+      message: {
+        role: 'assistant',
+        responseId: 'resp_answer',
+        content: [{ type: 'text', text: 'Final answer without usage.' }],
+      },
+    });
+
+    const parsed = parsePiOutput(raw);
+
+    expect(parsed.usage.answer_active_tokens).toBe(0);
+    expect(parsed.behavior.missing_answer_usage_responses).toBe(1);
+    expect(parsed.answer).toBe('Final answer without usage.');
+  });
+
+  it('does not grade structured Pi error transcripts as answers', () => {
+    const raw = [
+      JSON.stringify({
+        type: 'message_start',
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: 'Question mentioning rankObservations and typeBoost.' }],
+        },
+      }),
+      JSON.stringify({
+        type: 'message_end',
+        message: {
+          role: 'assistant',
+          content: [],
+          stopReason: 'error',
+          errorMessage: 'Connection error.',
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        },
+      }),
+      JSON.stringify({
+        type: 'auto_retry_end',
+        success: false,
+        finalError: 'Connection error.',
+      }),
+    ].join('\n');
+
+    const parsed = parsePiOutput(raw);
+
+    expect(parsed.answer).toBe('');
+    expect(parsed.behavior.error_events).toBe(2);
+    expect(parsed.parse_warning).toBe('Pi events contained errors and no assistant answer');
+  });
+
   it('counts executed tools from Pi tool execution events', () => {
     const raw = [
       JSON.stringify({
@@ -135,7 +221,14 @@ describe('bench pi paired parser', () => {
       {
         memory_off: {
           elapsed_ms: 10,
-          usage: { active_tokens: 100, cache_read_tokens: 20, effective_tokens: 120, answer_active_tokens: 80, setup_active_tokens: 20 },
+          usage: {
+            active_tokens: 100,
+            cache_read_tokens: 20,
+            effective_tokens: 120,
+            answer_active_tokens: 80,
+            setup_active_tokens: 20,
+            cost_usd: 0.1,
+          },
           grade: { matched: 1, total: 1 },
           behavior: {
             tool_calls: 2,
@@ -147,7 +240,14 @@ describe('bench pi paired parser', () => {
         },
         memory_on: {
           elapsed_ms: 5,
-          usage: { active_tokens: 50, cache_read_tokens: 30, effective_tokens: 80, answer_active_tokens: 40, setup_active_tokens: 10 },
+          usage: {
+            active_tokens: 50,
+            cache_read_tokens: 30,
+            effective_tokens: 80,
+            answer_active_tokens: 40,
+            setup_active_tokens: 10,
+            cost_usd: 0.06,
+          },
           grade: { matched: 1, total: 1 },
           behavior: {
             tool_calls: 1,
@@ -174,8 +274,11 @@ describe('bench pi paired parser', () => {
     expect(summary.memory_on_answer_active_tokens).toBe(40);
     expect(summary.memory_off_setup_active_tokens).toBe(20);
     expect(summary.memory_on_setup_active_tokens).toBe(10);
+    expect(summary.memory_off_cost_usd).toBe(0.1);
+    expect(summary.memory_on_cost_usd).toBe(0.06);
     expect(summary.effective_token_savings_pct).toBe('33.3%');
     expect(summary.answer_token_savings_pct).toBe('50.0%');
+    expect(summary.cost_savings_pct).toBe('40.0%');
     expect(summary.categories[0]).toMatchObject({
       memory_off_effective_tokens: 120,
       memory_on_effective_tokens: 80,

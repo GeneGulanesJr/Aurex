@@ -80,6 +80,8 @@ describe('context injection prompt extraction', () => {
     expect(deps.mem).not.toHaveBeenCalled();
     expect(deps.state.hasInjectedContext).toBe(false);
     expect(result.message.content).toContain('## Code Lookup Guidance');
+    expect(result.message.content).toContain('targeted current-source lookup');
+    expect(result.message.content).toContain('rg -n "<symbol>" <narrow-path>');
     expect(result.message.content).toContain('memory-code search --repo PiMemoryExtension');
     expect(result.message.content).toContain('small targeted `read`');
     expect(result.message.content).toContain('skip `memory-code outline`');

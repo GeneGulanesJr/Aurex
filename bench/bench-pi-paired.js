@@ -226,6 +226,7 @@ function parsePiOutput(raw) {
   const assistantParts = [];
   const assistantByResponse = new Map();
   const seenUsage = new Set();
+  const usageClassifications = [];
   const toolCounts = new Map();
   const toolNames = [];
   const behavior = {
@@ -234,7 +235,10 @@ function parsePiOutput(raw) {
     failed_tool_calls: 0,
     memory_tool_calls: 0,
     code_tool_calls: 0,
+    missing_answer_usage_responses: 0,
+    error_events: 0,
   };
+  let parsedEvents = 0;
 
   function countTool(name) {
     if (name) {
@@ -254,6 +258,7 @@ function parsePiOutput(raw) {
       }
     }
     if (event) {
+      parsedEvents++;
       const type = event.type || '';
       const message = event.message || event.delta || event;
       const content = message.content || event.content;
@@ -303,12 +308,11 @@ function parsePiOutput(raw) {
           usage.output_tokens += normalizedUsage.output_tokens;
           usage.cache_read_tokens += normalizedUsage.cache_read_tokens;
           usage.cache_write_tokens += normalizedUsage.cache_write_tokens;
-          const activeTokens = normalizedUsage.input_tokens + normalizedUsage.output_tokens;
-          if (hasAssistantAnswerText) {
-            usage.answer_active_tokens += activeTokens;
-          } else {
-            usage.setup_active_tokens += activeTokens;
-          }
+          usageClassifications.push({
+            responseId: message.responseId || event.responseId || null,
+            activeTokens: normalizedUsage.input_tokens + normalizedUsage.output_tokens,
+            hasAssistantAnswerText,
+          });
           usage.cost_usd += costUsd;
         }
       }
@@ -344,6 +348,14 @@ function parsePiOutput(raw) {
           behavior.failed_tool_calls++;
         }
       }
+
+      if (
+        message.stopReason === 'error' ||
+        message.errorMessage ||
+        (type === 'auto_retry_end' && event.success === false)
+      ) {
+        behavior.error_events++;
+      }
     }
   }
 
@@ -352,16 +364,37 @@ function parsePiOutput(raw) {
   usage.total_tokens = usage.effective_tokens;
   const answerParts =
     assistantByResponse.size > 0 ? [...assistantByResponse.values(), ...assistantParts] : assistantParts;
+  const answerResponseIds = new Set(
+    [...assistantByResponse.entries()].filter(([, text]) => text.trim().length > 0).map(([responseId]) => responseId),
+  );
+  const usageResponseIds = new Set(
+    usageClassifications.map((usageClassification) => usageClassification.responseId).filter(Boolean),
+  );
+  behavior.missing_answer_usage_responses = [...answerResponseIds].filter(
+    (responseId) => !usageResponseIds.has(responseId),
+  ).length;
+  for (const usageClassification of usageClassifications) {
+    const isAnswerUsage = usageClassification.responseId
+      ? answerResponseIds.has(usageClassification.responseId)
+      : usageClassification.hasAssistantAnswerText;
+    if (isAnswerUsage) {
+      usage.answer_active_tokens += usageClassification.activeTokens;
+    } else {
+      usage.setup_active_tokens += usageClassification.activeTokens;
+    }
+  }
   const result = {
     usage,
-    answer: answerParts.join('\n').trim() || raw.trim(),
+    answer: answerParts.join('\n').trim() || (parsedEvents === 0 ? raw.trim() : ''),
     tool_counts: Object.fromEntries(toolCounts.entries()),
     behavior: {
       ...behavior,
       tool_names: toolNames,
     },
   };
-  if (answerParts.length === 0 && assistantByResponse.size === 0 && seenUsage.size === 0 && raw.trim().length > 0) {
+  if (parsedEvents > 0 && answerParts.length === 0 && assistantByResponse.size === 0 && behavior.error_events > 0) {
+    result.parse_warning = 'Pi events contained errors and no assistant answer';
+  } else if (answerParts.length === 0 && assistantByResponse.size === 0 && seenUsage.size === 0 && raw.trim().length > 0) {
     result.parse_warning = 'No valid Pi events found in output';
   }
   return result;
@@ -570,6 +603,8 @@ async function main() {
   benchLog(`  Memory-on answer:  ${summary.memory_on_answer_active_tokens}`);
   benchLog(`  Memory-off setup:  ${summary.memory_off_setup_active_tokens}`);
   benchLog(`  Memory-on setup:   ${summary.memory_on_setup_active_tokens}`);
+  benchLog(`  Memory-off cost:   ${summary.memory_off_cost_usd.toFixed(6)}`);
+  benchLog(`  Memory-on cost:    ${summary.memory_on_cost_usd.toFixed(6)}`);
   benchLog(`  Memory-off tools:  ${summary.memory_off_tool_calls} (${summary.memory_off_failed_tool_calls} failed)`);
   benchLog(`  Memory-on tools:   ${summary.memory_on_tool_calls} (${summary.memory_on_failed_tool_calls} failed)`);
   benchLog(`  Memory-on memtools:${summary.memory_on_memory_tool_calls}`);
@@ -578,6 +613,7 @@ async function main() {
   benchLog(`  Active delta:      ${summary.token_savings_pct}`);
   benchLog(`  Effective delta:   ${summary.effective_token_savings_pct}`);
   benchLog(`  Answer delta:      ${summary.answer_token_savings_pct}`);
+  benchLog(`  Cost delta:        ${summary.cost_savings_pct}`);
   benchLog('');
   benchLog('By category:');
   for (const category of summary.categories) {
@@ -606,6 +642,8 @@ function buildSummary(results) {
       acc.onAnswerTokens += result.memory_on.usage.answer_active_tokens || 0;
       acc.offSetupTokens += result.memory_off.usage.setup_active_tokens || 0;
       acc.onSetupTokens += result.memory_on.usage.setup_active_tokens || 0;
+      acc.offCostUsd += result.memory_off.usage.cost_usd || 0;
+      acc.onCostUsd += result.memory_on.usage.cost_usd || 0;
       acc.offElapsed += result.memory_off.elapsed_ms || 0;
       acc.onElapsed += result.memory_on.elapsed_ms || 0;
       acc.offToolCalls += result.memory_off.behavior?.tool_calls || 0;
@@ -636,6 +674,8 @@ function buildSummary(results) {
       onAnswerTokens: 0,
       offSetupTokens: 0,
       onSetupTokens: 0,
+      offCostUsd: 0,
+      onCostUsd: 0,
       offElapsed: 0,
       onElapsed: 0,
       offToolCalls: 0,
@@ -664,6 +704,8 @@ function buildSummary(results) {
     memory_on_answer_active_tokens: sum.onAnswerTokens,
     memory_off_setup_active_tokens: sum.offSetupTokens,
     memory_on_setup_active_tokens: sum.onSetupTokens,
+    memory_off_cost_usd: sum.offCostUsd,
+    memory_on_cost_usd: sum.onCostUsd,
     memory_off_elapsed_ms: sum.offElapsed,
     memory_on_elapsed_ms: sum.onElapsed,
     memory_off_tool_calls: sum.offToolCalls,
@@ -681,6 +723,7 @@ function buildSummary(results) {
       sum.offEffectiveTokens > 0 ? `${((1 - sum.onEffectiveTokens / sum.offEffectiveTokens) * 100).toFixed(1)}%` : 'n/a',
     answer_token_savings_pct:
       sum.offAnswerTokens > 0 ? `${((1 - sum.onAnswerTokens / sum.offAnswerTokens) * 100).toFixed(1)}%` : 'n/a',
+    cost_savings_pct: sum.offCostUsd > 0 ? `${((1 - sum.onCostUsd / sum.offCostUsd) * 100).toFixed(1)}%` : 'n/a',
     categories: buildCategorySummary(results),
   };
 }
