@@ -117,12 +117,15 @@ const CONTEXT = {
   TOPIC_MATCH_BOOST: 5,
   EXCLUDED_TYPES: ['progress', 'accomplished', 'session_summary'],
   DEFAULT_LIMIT: 10,
-  PROMPT_RELEVANT_LIMIT: 5,
+  PROMPT_RELEVANT_LIMIT: 3,
   PROJECT_SUMMARY_LIMIT: 1,
-  PROMPT_INJECT_LIMIT: 3,
+  PROMPT_INJECT_LIMIT: 1,
+  NAVIGATION_PROMPT_INJECT_LIMIT: 2,
   PERSONAL_INJECT_LIMIT: 0,
   MIN_OBSERVATION_TRUST: 0.8,
-  PROMPT_MEMORY_SNIPPET_LENGTH: 280,
+  PROMPT_MEMORY_SNIPPET_LENGTH: 180,
+  PROJECT_SUMMARY_LENGTH: 180,
+  MAX_INJECTED_CONTEXT_CHARS: 1800,
   STALE_GUIDANCE:
     '📝 **Stale code index:** indexed code may not match current source files. Run `memory-code reindex-repo --repo {repo}` to update. Verify current source before relying on code-index results.',
 };

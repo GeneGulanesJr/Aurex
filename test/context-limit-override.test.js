@@ -5,7 +5,7 @@ import { registerBeforeAgentStart } from '../extensions/memory-layer/hooks/conte
  *
  * When `getSettings().contextLimit` is provided as a positive number, the hook
  * should use it instead of the built-in defaults
- * (CONTEXT.PROMPT_RELEVANT_LIMIT = 5 or CONTEXT.PROJECT_SUMMARY_LIMIT = 1).
+ * (CONTEXT.PROMPT_RELEVANT_LIMIT = 3 or CONTEXT.PROJECT_SUMMARY_LIMIT = 1).
  */
 
 function buildDeps(overrides = {}) {
@@ -35,7 +35,7 @@ function extractHandler(deps) {
 }
 
 describe('contextLimit extension setting', () => {
-  test('uses contextLimit from getSettings instead of default PROMPT_RELEVANT_LIMIT (5)', async () => {
+  test('uses contextLimit from getSettings instead of default PROMPT_RELEVANT_LIMIT (3)', async () => {
     const deps = buildDeps({
       getSettings: () => ({ contextLimit: 20 }),
     });
@@ -58,7 +58,7 @@ describe('contextLimit extension setting', () => {
     expect(deps.mem).toHaveBeenCalledWith('context', expect.objectContaining({ limit: '15' }));
   });
 
-  test('falls back to PROMPT_RELEVANT_LIMIT (5) when getSettings returns no contextLimit', async () => {
+  test('falls back to PROMPT_RELEVANT_LIMIT (3) when getSettings returns no contextLimit', async () => {
     const deps = buildDeps({
       getSettings: () => ({}),
     });
@@ -66,7 +66,7 @@ describe('contextLimit extension setting', () => {
 
     await handler({ prompt: 'some query' }, { cwd: process.cwd() });
 
-    expect(deps.mem).toHaveBeenCalledWith('context', expect.objectContaining({ limit: '5' }));
+    expect(deps.mem).toHaveBeenCalledWith('context', expect.objectContaining({ limit: '3' }));
   });
 
   test('falls back to PROJECT_SUMMARY_LIMIT (1) when getSettings is not provided', async () => {
@@ -86,8 +86,8 @@ describe('contextLimit extension setting', () => {
 
     await handler({ prompt: 'some query' }, { cwd: process.cwd() });
 
-    // contextLimit=0 is not a valid override → falls back to PROMPT_RELEVANT_LIMIT (5)
-    expect(deps.mem).toHaveBeenCalledWith('context', expect.objectContaining({ limit: '5' }));
+    // ContextLimit=0 is not a valid override → falls back to PROMPT_RELEVANT_LIMIT (3)
+    expect(deps.mem).toHaveBeenCalledWith('context', expect.objectContaining({ limit: '3' }));
   });
 
   test('ignores negative contextLimit and uses default', async () => {
@@ -98,7 +98,7 @@ describe('contextLimit extension setting', () => {
 
     await handler({}, { cwd: process.cwd() });
 
-    // negative contextLimit → falls back to PROJECT_SUMMARY_LIMIT (1)
+    // Negative contextLimit → falls back to PROJECT_SUMMARY_LIMIT (1)
     expect(deps.mem).toHaveBeenCalledWith('context', expect.objectContaining({ limit: '1' }));
   });
 });

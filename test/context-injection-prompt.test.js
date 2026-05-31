@@ -174,7 +174,7 @@ describe('context injection prompt extraction', () => {
 
     expect(deps.mem).toHaveBeenCalledWith(
       'context',
-      expect.objectContaining({ project: 'PiMemoryExtension', limit: '5', query: prompt }),
+      expect.objectContaining({ project: 'PiMemoryExtension', limit: '3', query: prompt }),
     );
     // Policy/advice prompts should stay compact: inject only the best memory and no Related file paths.
     expect(content).toContain('### Prompt-Matched Memory');
@@ -186,7 +186,7 @@ describe('context injection prompt extraction', () => {
     expect(content).not.toContain('Should not be injected');
   });
 
-  test('navigation prompt injects up to three memories and includes Related paths', async () => {
+  test('navigation prompt injects up to two memories and includes Related paths', async () => {
     let handler;
     const pi = {
       on: vi.fn((_eventName, callback) => {
@@ -231,10 +231,10 @@ describe('context injection prompt extraction', () => {
 
     expect(content).toContain('Matched decision 1');
     expect(content).toContain('Matched bugfix 2');
-    expect(content).toContain('Matched pattern 3');
+    expect(content).not.toContain('Matched pattern 3');
     expect(content).toContain('Related: `src/search.js`');
     expect(content).toContain('Related: `src/config.js`');
-    expect(content).toContain('Related: `src/pattern.js`');
+    expect(content).not.toContain('Related: `src/pattern.js`');
   });
 
   test('historical prompt suppresses stale code verification warning', async () => {

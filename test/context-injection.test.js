@@ -1,4 +1,7 @@
-import { registerBeforeAgentStart } from '../extensions/memory-layer/hooks/context-injection.ts';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { extractFilePaths, registerBeforeAgentStart } from '../extensions/memory-layer/hooks/context-injection.ts';
 
 /**
  * Extract the handler registered by registerBeforeAgentStart
@@ -226,9 +229,89 @@ describe('rich context injection', () => {
     expect(content).not.toContain('### Personal Preferences');
     expect(content).not.toContain('Use tabs not spaces');
   });
-});
 
-import { extractFilePaths } from '../extensions/memory-layer/hooks/context-injection.ts';
+  test('caps injected context size while preserving essential memory details', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lapis-context-cap-'));
+    fs.writeFileSync(
+      path.join(tempDir, 'package.json'),
+      JSON.stringify({ description: `LaPis ${'very long project summary '.repeat(200)}` }),
+    );
+    const deps = buildDeps({
+      mem: vi.fn().mockResolvedValue({
+        observations: [
+          {
+            type: 'decision',
+            title: 'Use SQLite FTS5',
+            trust_score: 0.95,
+            content: `**What**: Use FTS5 ${'extra detail '.repeat(100)}\n**Why**: No external deps ${'extra detail '.repeat(100)}\n**Where**: src/memory-domain/search.js`,
+          },
+        ],
+        personal: [],
+        stats: { total_memories: 10, total_personal: 0, active_workflows: 0 },
+        topic: 'fts5',
+      }),
+      getKnownRepos: vi.fn().mockResolvedValue([
+        {
+          name: 'TestRepo',
+          path: tempDir,
+          file_count: 100,
+          symbol_count: 500,
+          indexed_at: '2026-05-29T00:00:00Z',
+        },
+      ]),
+    });
+    const handler = extractHandler(deps);
+
+    const result = await handler({ prompt: 'why fts5' }, { cwd: tempDir });
+    const content = result.message.content;
+
+    expect(content.length).toBeLessThanOrEqual(1800);
+    expect(content).toContain('Project: **TestProject**');
+    expect(content).toContain('[decision] Use SQLite FTS5');
+    expect(content).toContain('What: Use FTS5');
+  });
+
+  test('navigation prompts can include two related memories but no more', async () => {
+    const deps = buildDeps({
+      mem: vi.fn().mockResolvedValue({
+        observations: [
+          {
+            type: 'architecture',
+            title: 'Context hook module',
+            trust_score: 0.95,
+            content: '**Where**: extensions/memory-layer/hooks/context-injection.ts wires startup context',
+          },
+          {
+            type: 'architecture',
+            title: 'Extension composition module',
+            trust_score: 0.95,
+            content: '**Where**: extensions/memory-layer/index.ts registers the hooks',
+          },
+          {
+            type: 'architecture',
+            title: 'Extra unrelated memory',
+            trust_score: 0.95,
+            content: '**Where**: src/extra.js should not be injected',
+          },
+        ],
+        personal: [],
+        stats: { total_memories: 10, total_personal: 0, active_workflows: 0 },
+        topic: 'context hook',
+      }),
+    });
+    const handler = extractHandler(deps);
+
+    const result = await handler(
+      { prompt: 'Where is automatic project memory context wired?' },
+      { cwd: process.cwd() },
+    );
+    const content = result.message.content;
+
+    expect(content).toContain('[architecture] Context hook module');
+    expect(content).toContain('[architecture] Extension composition module');
+    expect(content).not.toContain('Extra unrelated memory');
+  });
+});
 
 describe('extractFilePaths', () => {
   it('should extract file paths from memory content', () => {

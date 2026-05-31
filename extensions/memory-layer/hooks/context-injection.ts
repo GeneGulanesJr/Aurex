@@ -114,7 +114,7 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
     const topicNote = topic ? ` | topic: ${topic}` : '';
     const lines: string[] = ['## Memory Context (auto-loaded)', ''];
     const projectDir = cwdRepo?.path || ctx.cwd;
-    const projectSummary = getProjectSummary(projectDir);
+    const projectSummary = truncateText(getProjectSummary(projectDir), CONTEXT.PROJECT_SUMMARY_LENGTH || 180);
 
     if (isNewProject) {
       lines.push(
@@ -149,7 +149,9 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
 
     if (effectiveObservations.length > 0) {
       const navigationPrompt = isNavigationPrompt(promptQuery);
-      const injectLimit = navigationPrompt ? CONTEXT.PROMPT_INJECT_LIMIT : 1;
+      const injectLimit = navigationPrompt
+        ? CONTEXT.NAVIGATION_PROMPT_INJECT_LIMIT || 2
+        : CONTEXT.PROMPT_INJECT_LIMIT || 1;
       lines.push('### Prompt-Matched Memory');
       for (const o of effectiveObservations.slice(0, injectLimit)) {
         let trust = '';
@@ -166,7 +168,7 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
         if (navigationPrompt) {
           const filePaths = extractFilePaths(o.content);
           if (filePaths.length > 0) {
-            lines.push(`  Related: ${filePaths.map((p) => '`' + p + '`').join(', ')}`);
+            lines.push(`  Related: ${filePaths.map((p) => `\`${p}\``).join(', ')}`);
           }
         }
       }
@@ -198,7 +200,7 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
     return {
       message: {
         customType: 'memory-context',
-        content: lines.join('\n'),
+        content: capInjectedContext(lines.join('\n')),
         display: false,
       },
     };
@@ -299,6 +301,22 @@ export function isNavigationPrompt(prompt: string | null): boolean {
   );
 }
 
+function capInjectedContext(content: string): string {
+  const limit = CONTEXT.MAX_INJECTED_CONTEXT_CHARS || 1800;
+  if (content.length <= limit) {
+    return content;
+  }
+
+  return `${content.slice(0, limit - 1).trimEnd()}…`;
+}
+
+function truncateText(text: string, limit: number): string {
+  if (text.length <= limit) {
+    return text;
+  }
+  return `${text.slice(0, limit - 1).trimEnd()}…`;
+}
+
 function summarizeMemoryContent(content: unknown): string | null {
   if (typeof content !== 'string') {
     return null;
@@ -386,8 +404,7 @@ export function extractFilePaths(content: string): string[] {
     return [];
   }
 
-  const pathRe =
-    /(?:^|\s|`)([\w/.-]+\.(?:js|ts|tsx|jsx|mjs|cjs|py|go|rs|sql))(?:`|\s|,|\.|$)/gm;
+  const pathRe = /(?:^|\s|`)([\w/.-]+\.(?:js|ts|tsx|jsx|mjs|cjs|py|go|rs|sql))(?:`|\s|,|\.|$)/gm;
   const matches: string[] = [];
   let match;
   while ((match = pathRe.exec(content)) !== null) {
