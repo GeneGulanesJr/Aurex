@@ -1,15 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   getGitHubStatus,
-  getGitHubConfig,
-  getGitHubConnectUrl,
+  connectGitHub,
   getGitHubRepos,
   disconnectGitHub,
 } from "../api";
-import type { GitHubStatusResponse, GitHubRepoResponse, GitHubConfigResponse } from "../api";
+import type { GitHubStatusResponse, GitHubRepoResponse } from "../api";
 
 export interface GitHubState {
-  config: GitHubConfigResponse | null;
   connected: boolean;
   user: GitHubStatusResponse["user"];
   repos: GitHubRepoResponse[];
@@ -18,14 +16,13 @@ export interface GitHubState {
 }
 
 export interface UseGitHubReturn extends GitHubState {
-  connect: () => Promise<void>;
+  connect: (token: string) => Promise<void>;
   disconnect: () => Promise<void>;
   refreshRepos: () => Promise<void>;
 }
 
 export function useGitHub(): UseGitHubReturn {
   const [state, setState] = useState<GitHubState>({
-    config: null,
     connected: false,
     user: null,
     repos: [],
@@ -44,13 +41,9 @@ export function useGitHub(): UseGitHubReturn {
 
   const refreshStatus = useCallback(async () => {
     try {
-      const [status, config] = await Promise.all([
-        getGitHubStatus(),
-        getGitHubConfig(),
-      ]);
+      const status = await getGitHubStatus();
       setState((prev) => ({
         ...prev,
-        config,
         connected: status.connected,
         user: status.user,
         loading: false,
@@ -69,50 +62,39 @@ export function useGitHub(): UseGitHubReturn {
     }
   }, [refreshRepos]);
 
-  // Initial load + URL param handling
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const githubParam = params.get("github");
-
-    if (githubParam) {
-      // Clean URL params
-      const url = new URL(window.location.href);
-      url.searchParams.delete("github");
-      url.searchParams.delete("message");
-      window.history.replaceState({}, "", url.toString());
-
-      if (githubParam === "error") {
-        const message = params.get("message") || "OAuth failed";
-        setState((prev) => ({ ...prev, loading: false, error: message }));
-      }
-    }
-
     void refreshStatus();
   }, [refreshStatus]);
 
-  const connect = useCallback(async () => {
+  const connect = useCallback(async (token: string) => {
     try {
-      const { url } = await getGitHubConnectUrl();
-      window.location.href = url;
-    } catch {
-      setState((prev) => ({ ...prev, error: "Failed to start GitHub OAuth" }));
+      const result = await connectGitHub(token);
+      setState((prev) => ({
+        ...prev,
+        connected: true,
+        user: result.user,
+        error: null,
+      }));
+      await refreshRepos();
+    } catch (err) {
+      setState((prev) => ({
+        ...prev,
+        error: err instanceof Error ? err.message : "Failed to connect GitHub",
+      }));
+      throw err;
     }
-  }, []);
+  }, [refreshRepos]);
 
   const disconnect = useCallback(async () => {
     try {
       await disconnectGitHub();
       setState({
-        config: null,
         connected: false,
         user: null,
         repos: [],
         loading: false,
         error: null,
       });
-      // Reload config since we only disconnected, not de-configured
-      const config = await getGitHubConfig();
-      setState((prev) => ({ ...prev, config }));
     } catch {
       setState((prev) => ({ ...prev, error: "Failed to disconnect GitHub" }));
     }
