@@ -89,7 +89,13 @@ export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, 
       {/* Center: Connection status */}
       <div style={{ display: "flex", gap: "20px" }}>
         <StatusItem color={connected ? "var(--success)" : "var(--error)"} label="LAPIS CONNECTED" />
-        <StatusItem color={pinyxConfigured ? "var(--success)" : "var(--warning)"} label={pinyxConfigured ? "PINYX CONNECTED" : "PINYX OFFLINE"} />
+        <button
+          onClick={onOpenIntegrations}
+          style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center" }}
+          title="Open PiNyx settings"
+        >
+          <StatusItem color={pinyxConfigured ? "var(--success)" : "var(--warning)"} label={pinyxConfigured ? "PINYX CONNECTED" : "PINYX OFFLINE"} />
+        </button>
         <StatusItem color={connected ? "var(--success)" : "var(--warning)"} label="SYSTEMS NOMINAL" />
       </div>
 
