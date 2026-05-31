@@ -75,7 +75,7 @@ async function main() {
   registerPinyxRoutes(app, { lapis });
 
   // GitHub PAT (fully UI-configured, stored in LaPis settings)
-  registerGitHubRoutes(app, { lapis });
+  registerGitHubRoutes(app, { lapis, repoRoot: config.repoRoot });
 
   // Start
   try {
