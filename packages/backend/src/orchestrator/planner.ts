@@ -50,6 +50,7 @@ export function createPlanner(
 
       // 2. Ask PiNyx to decompose into milestones (streaming)
       let streamedContent = "";
+      let lastEmittedTitle = "";
       const response = await pinyx.chatStream(
         {
           model,
@@ -66,22 +67,71 @@ export function createPlanner(
         },
         (delta) => {
           streamedContent += delta;
-          // Emit chunk logs every ~200 chars so we don't flood WS
-          if (streamedContent.length % 200 < delta.length) {
-            const preview = streamedContent.slice(-120).replace(/\n/g, " ");
-            emitLog("planning", preview);
+          // Extract milestone titles as they stream in
+          const titleMatch = streamedContent.match(/"title"\s*:\s*"([^"]+)"/g);
+          if (titleMatch && titleMatch.length > 0) {
+            const latestTitle = titleMatch[titleMatch.length - 1].match(/"title"\s*:\s*"([^"]+)"/)?.[1];
+            if (latestTitle && latestTitle !== lastEmittedTitle) {
+              lastEmittedTitle = latestTitle;
+              emitLog("planning", `Milestone ${titleMatch.length}: ${latestTitle}`);
+            }
           }
         },
       );
 
       emitLog("planning", "Parsing plan response…");
-      const plan = JSON.parse(response.content) as { milestones: PlannedMilestoneRaw[] };
-      emitLog("planning", `Plan received: ${plan.milestones.length} milestones. Creating in LaPis…`);
 
-      // 3. Create milestones, units, and contracts in LaPis
+      // 3. Parse — resilient to varying LLM output formats
+      let raw: any;
+      try {
+        // Strip markdown code fences if present
+        const cleaned = response.content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/s, "").trim();
+        raw = JSON.parse(cleaned);
+      } catch {
+        // Try to extract first JSON object from the response
+        const firstBrace = response.content.indexOf("{");
+        const lastBrace = response.content.lastIndexOf("}");
+        if (firstBrace >= 0 && lastBrace > firstBrace) {
+          raw = JSON.parse(response.content.slice(firstBrace, lastBrace + 1));
+        } else {
+          throw new Error(`Planner returned invalid JSON: ${response.content.slice(0, 200)}`);
+        }
+      }
+
+      // Normalize: handle both { milestones: [...] } and bare arrays and single-object formats
+      let milestoneList: any[];
+      if (Array.isArray(raw)) {
+        milestoneList = raw;
+      } else if (raw.milestones && Array.isArray(raw.milestones)) {
+        milestoneList = raw.milestones;
+      } else if (raw.title) {
+        // Single milestone object
+        milestoneList = [raw];
+      } else {
+        // Try to find any array-valued property as the milestone list
+        const arrProp = Object.values(raw).find((v) => Array.isArray(v));
+        milestoneList = arrProp ?? [];
+      }
+
+      // Normalize field names: LLMs use various conventions
+      const plan = milestoneList.map((ms: any) => ({
+        title: ms.title || ms.name || ms.milestone || `Milestone`,
+        description: ms.description || ms.summary || ms.title || "",
+        units: (ms.units || ms.working_units || ms.tasks || []).map((u: any) => ({
+          description: u.description || u.name || u.title || u.task || "",
+          declaredPaths: u.declaredPaths || u.paths || (u.path ? [u.path] : []),
+          declaredModules: u.declaredModules || u.modules || [],
+        })),
+        criteria: ms.criteria || ms.validation_criteria || ms.validation || [],
+        testCommands: ms.testCommands || ms.test_commands || ms.tests || [],
+      }));
+
+      emitLog("planning", `Plan received: ${plan.length} milestones. Creating in LaPis…`);
+
+      // 4. Create milestones, units, and contracts in LaPis
       const result: PlanResult["milestones"] = [];
-      for (let i = 0; i < plan.milestones.length; i++) {
-        const ms = plan.milestones[i];
+      for (let i = 0; i < plan.length; i++) {
+        const ms = plan[i];
         const milestone = await lapis.createMilestone(missionId, {
           title: ms.title,
           description: ms.description,

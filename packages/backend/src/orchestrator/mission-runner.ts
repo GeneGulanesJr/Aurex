@@ -9,6 +9,7 @@ import { createMilestoneLoop } from "./milestone-loop.js";
 import { createPlanner } from "./planner.js";
 import { createCompressionService } from "./compression.js";
 import { prepareRepoForMission } from "./repo-prep.js";
+import path from "path";
 
 export interface RunnerStatus {
   state: "idle" | "planning" | "executing" | "waiting_checkpoint" | "completed" | "failed";
@@ -68,7 +69,6 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
 
       // Index repo before planning so the planner has code context
       try {
-        const path = require("path") as typeof import("path");
         const repoName = path.basename(missionRepoRoot);
         eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexing repo ${repoName} for code context…` });
         const indexResult = await lapis.indexRepo(missionRepoRoot, repoName);
