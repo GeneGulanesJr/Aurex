@@ -1,4 +1,4 @@
-const { indexRepository, reindexRepository, getCodeRepoHealth } = require('../src/code-index/incremental-indexer');
+const { indexRepository, reindexRepository, getCodeRepoHealth } = require('../../code-index/incremental-indexer');
 
 function indexRepo(deps) {
   return async (req, res, { body }) => {
