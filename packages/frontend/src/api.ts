@@ -215,3 +215,41 @@ export async function getPinyxModels(): Promise<{ models: Array<{ id?: string; n
   if (!res.ok) throw new Error(`Failed to fetch PiNyx models: ${res.status}`);
   return res.json() as Promise<{ models: Array<{ id?: string; name?: string }> }>;
 }
+
+// Code Context
+export interface CodeSummaryResponse {
+  files: number;
+  symbols: number;
+  edges: number;
+  modules: Array<{ name: string; fileCount: number }>;
+  entryPoints: string[];
+  cycles: { count: number; paths: string[][] };
+}
+
+export interface CodeGraphResponse {
+  nodes: Array<{ id: string; module: string; symbols: number; importance: number }>;
+  edges: Array<{ from: string; to: string; kind: string }>;
+  cycles: string[][];
+}
+
+export interface CodeHotspotsResponse {
+  files: Array<{ path: string; module: string; complexity: number; symbols: number }>;
+}
+
+export async function getCodeSummary(missionId: string): Promise<CodeSummaryResponse> {
+  const res = await apiFetch(`/api/missions/${missionId}/code/summary`);
+  if (!res.ok) throw new Error(`Failed to fetch code summary: ${res.status}`);
+  return res.json() as Promise<CodeSummaryResponse>;
+}
+
+export async function getCodeGraph(missionId: string): Promise<CodeGraphResponse> {
+  const res = await apiFetch(`/api/missions/${missionId}/code/graph`);
+  if (!res.ok) throw new Error(`Failed to fetch code graph: ${res.status}`);
+  return res.json() as Promise<CodeGraphResponse>;
+}
+
+export async function getCodeHotspots(missionId: string): Promise<CodeHotspotsResponse> {
+  const res = await apiFetch(`/api/missions/${missionId}/code/hotspots`);
+  if (!res.ok) throw new Error(`Failed to fetch code hotspots: ${res.status}`);
+  return res.json() as Promise<CodeHotspotsResponse>;
+}
