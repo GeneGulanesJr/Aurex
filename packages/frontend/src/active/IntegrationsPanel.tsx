@@ -11,6 +11,7 @@ interface IntegrationsPanelProps {
   open: boolean;
   github: UseGitHubReturn;
   onClose: () => void;
+  onPinyxConfigUpdate?: () => void;
 }
 
 const PINYX_TABS = [
@@ -19,7 +20,7 @@ const PINYX_TABS = [
   { id: "keys", label: "Keys" },
 ];
 
-export function IntegrationsPanel({ open, github, onClose }: IntegrationsPanelProps) {
+export function IntegrationsPanel({ open, github, onClose, onPinyxConfigUpdate }: IntegrationsPanelProps) {
   const [connecting, setConnecting] = useState(false);
   const [pinyxTab, setPinyxTab] = useState("connection");
   const [pinyx, setPinyx] = useState<PinyxConfigResponse | null>(null);
@@ -35,6 +36,11 @@ export function IntegrationsPanel({ open, github, onClose }: IntegrationsPanelPr
   }, [open]);
 
   if (!open) return null;
+
+  function handlePinyxConfigUpdate(config: PinyxConfigResponse) {
+    setPinyx(config);
+    onPinyxConfigUpdate?.();
+  }
 
   async function handleConnect() {
     setConnecting(true);
@@ -116,13 +122,13 @@ export function IntegrationsPanel({ open, github, onClose }: IntegrationsPanelPr
           )}
 
           {pinyx && pinyxTab === "connection" && (
-            <PinyxConnectionTab config={pinyx} onConfigUpdate={setPinyx} />
+            <PinyxConnectionTab config={pinyx} onConfigUpdate={handlePinyxConfigUpdate} />
           )}
           {pinyx && pinyxTab === "models" && (
-            <PinyxModelsTab config={pinyx} onConfigUpdate={setPinyx} />
+            <PinyxModelsTab config={pinyx} onConfigUpdate={handlePinyxConfigUpdate} />
           )}
           {pinyx && pinyxTab === "keys" && (
-            <PinyxKeysTab config={pinyx} onConfigUpdate={setPinyx} />
+            <PinyxKeysTab config={pinyx} onConfigUpdate={handlePinyxConfigUpdate} />
           )}
         </div>
       </section>

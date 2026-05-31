@@ -6,10 +6,11 @@ export interface PinyxStatusState {
   configured: boolean;
   endpoint: string | null;
   loading: boolean;
+  refresh: () => Promise<void>;
 }
 
 export function usePinyxStatus(): PinyxStatusState {
-  const [state, setState] = useState<PinyxStatusState>({
+  const [state, setState] = useState<Omit<PinyxStatusState, "refresh">>({
     configured: false,
     endpoint: null,
     loading: true,
@@ -28,5 +29,5 @@ export function usePinyxStatus(): PinyxStatusState {
     void refresh();
   }, [refresh]);
 
-  return state;
+  return { ...state, refresh };
 }

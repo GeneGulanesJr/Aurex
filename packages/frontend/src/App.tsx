@@ -135,7 +135,7 @@ export function App() {
           wsConnected={connected}
         />
       </div>
-      <IntegrationsPanel open={integrationsOpen} github={github} onClose={() => setIntegrationsOpen(false)} />
+      <IntegrationsPanel open={integrationsOpen} github={github} onClose={() => setIntegrationsOpen(false)} onPinyxConfigUpdate={() => void pinyxStatus.refresh()} />
       {state.escalation?.type === "escalation" && (
         <EscalationOverlay
           event={state.escalation}
