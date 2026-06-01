@@ -1,6 +1,7 @@
 import { AUTO_DECISION_COOLDOWN, CHECKPOINT_INTERVAL, state } from '../state';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { mem } from '../host/memory-client';
+import { shouldAutoCapture } from './pattern-matcher';
 import path from 'node:path';
 
 interface PassiveCaptureDeps {
@@ -8,34 +9,6 @@ interface PassiveCaptureDeps {
   mem: typeof mem;
 }
 
-const DECISION_PATTERNS: Array<{ regex: RegExp; type: string; label: string }> = [
-  {
-    regex:
-      /\b(I['']ll use|let's use|we should use|going with|switching to|using .* instead of)\b.*\b(because|since|reason|to avoid|for better)\b/i,
-    type: 'decision',
-    label: 'Design decision',
-  },
-  {
-    regex: /\b(approach|strategy|architecture|pattern|design):\s.*\b(implement|chose|selected|decided)\b/i,
-    type: 'decision',
-    label: 'Architecture choice',
-  },
-  {
-    regex: /\b(root cause|the bug was|issue is that|fixed by|workaround is to)\b/i,
-    type: 'bugfix',
-    label: 'Bug fix',
-  },
-  {
-    regex: /\b(I discovered that|turns out the reason|found that .* because|note that .* limitation)\b/i,
-    type: 'discovery',
-    label: 'Discovery',
-  },
-  {
-    regex: /\b(cannot .* because|constraint is|requirement is that|limitation:)\b/i,
-    type: 'architecture',
-    label: 'Constraint identified',
-  },
-];
 
 function extractMessageText(msg: any): string {
   if (!msg) {
@@ -90,27 +63,24 @@ export function registerPassiveCapture(pi: ExtensionAPI, deps: PassiveCaptureDep
       return;
     }
 
-    for (const pattern of DECISION_PATTERNS) {
-      if (pattern.regex.test(text)) {
-        deps.state.lastAutoDecisionSave = Date.now();
+    const capture = shouldAutoCapture(text);
+    if (capture.match && capture.confidence !== 'low' && capture.pattern) {
+      deps.state.lastAutoDecisionSave = Date.now();
 
-        const firstLine = text.split('\n')[0].slice(0, 120);
-        const title = `${pattern.label}: ${firstLine.slice(0, 80)}`;
+      const lastLine = text.split('\n').filter((l) => l.trim()).pop()?.slice(0, 120) || text.slice(0, 120);
+      const title = `${capture.pattern.label}: ${lastLine.slice(0, 80)}`;
 
-        // oxlint-disable-next-line no-await-in-loop
-        await deps.mem('save', {
-          title,
-          type: pattern.type,
-          project: deps.state.currentProject || 'unknown',
-          scope: 'project',
-          content: [
-            `**What**: Auto-detected ${pattern.label.toLowerCase()}`,
-            `**Where**: Session ${deps.state.sessionId || 'unknown'}`,
-            `**Learned**: ${text.slice(0, 300)}`,
-          ].join('\n'),
-        });
-        break;
-      }
+      await deps.mem('save', {
+        title,
+        type: capture.pattern.type,
+        project: deps.state.currentProject || 'unknown',
+        scope: 'project',
+        content: [
+          `**What**: Auto-detected ${capture.pattern.label.toLowerCase()} (confidence: ${capture.confidence})`,
+          `**Where**: Session ${deps.state.sessionId || 'unknown'}`,
+          `**Learned**: ${text.slice(0, 300)}`,
+        ].join('\n'),
+      });
     }
   });
 
