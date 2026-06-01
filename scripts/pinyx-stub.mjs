@@ -7,6 +7,8 @@ function json(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+const STUB_RESPONSE = '{"milestones":[{"title":"M1","description":"Setup","units":[],"criteria":[],"testCommands":[]}]}';
+
 const server = createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
@@ -27,15 +29,62 @@ const server = createServer((req, res) => {
     let body = "";
     req.on("data", (chunk) => { body += chunk; });
     req.on("end", () => {
+      let parsed = {};
+      try { parsed = JSON.parse(body); } catch {}
+
+      // Streaming response
+      if (parsed.stream) {
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        });
+
+        const id = "chatcmpl-stub";
+        const created = Math.floor(Date.now() / 1000);
+
+        // Send content delta
+        res.write(`data: ${JSON.stringify({
+          id,
+          object: "chat.completion.chunk",
+          created,
+          model: parsed.model || "test-model",
+          choices: [{
+            index: 0,
+            delta: { role: "assistant", content: STUB_RESPONSE },
+            finish_reason: null,
+          }],
+        })}\n\n`);
+
+        // Send finish chunk
+        res.write(`data: ${JSON.stringify({
+          id,
+          object: "chat.completion.chunk",
+          created,
+          model: parsed.model || "test-model",
+          choices: [{
+            index: 0,
+            delta: {},
+            finish_reason: "stop",
+          }],
+          usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
+        })}\n\n`);
+
+        res.write("data: [DONE]\n\n");
+        res.end();
+        return;
+      }
+
+      // Non-streaming response
       json(res, 200, {
         id: "chatcmpl-stub",
         object: "chat.completion",
         created: Math.floor(Date.now() / 1000),
-        model: "test-model",
+        model: parsed.model || "test-model",
         choices: [
           {
             index: 0,
-            message: { role: "assistant", content: '{"milestones":[{"title":"M1","description":"Setup","units":[],"criteria":[],"testCommands":[]}]}' },
+            message: { role: "assistant", content: STUB_RESPONSE },
             finish_reason: "stop",
           },
         ],
@@ -45,16 +94,26 @@ const server = createServer((req, res) => {
     return;
   }
 
+  if (req.method === "PUT" && url.pathname === "/api/config") {
+    // Accept config sync — read and discard body
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", () => {
+      json(res, 200, { ok: true });
+    });
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/config") {
     return json(res, 200, {
-      gateway: { port: PORT },
-      providers: { stub: { type: "stub" } },
+      gateway: { host: "0.0.0.0", port: PORT },
+      providers: {},
     });
   }
 
   if (req.method === "GET" && url.pathname === "/api/keys") {
     return json(res, 200, {
-      providers: { stub: { status: "active", masked: "sk-***stub***" } },
+      providers: {},
     });
   }
 
