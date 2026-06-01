@@ -55,6 +55,21 @@ function getRecallCountForMemory(deps, memoryId) {
 
 function updateObservation(deps, { id, title, content, type, project, scope, topicKey }) {
   const { sqlJson, sqlRun } = deps;
+  const parsedId = parseInt(id, 10);
+  const current = sqlJson('SELECT title, content, type, scope FROM observations WHERE id = ?', [parsedId]);
+  if (!current || current.length === 0) {
+    return null;
+  }
+
+  const before = current[0];
+  const fields = { title, content, type, scope };
+  const versionEntries = [];
+  for (const [field, newVal] of Object.entries(fields)) {
+    if (newVal !== undefined && newVal !== null && String(newVal) !== String(before[field] || '')) {
+      versionEntries.push([parsedId, field, String(before[field] || ''), String(newVal)]);
+    }
+  }
+
   const sets = [];
   const params = [];
   if (title) {
@@ -84,12 +99,15 @@ function updateObservation(deps, { id, title, content, type, project, scope, top
   if (sets.length === 0) {
     return null;
   }
-  params.push(parseInt(id, 10));
+  params.push(parsedId);
   sqlRun(`UPDATE observations SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = ?`, params);
+  for (const entry of versionEntries) {
+    sqlRun('INSERT INTO observation_versions (memory_id, field, old_value, new_value) VALUES (?, ?, ?, ?)', entry);
+  }
   return sqlJson(
     `SELECT id, title, content, type, project, scope, topic_key, created_at, updated_at
      FROM observations WHERE id = ?`,
-    [parseInt(id, 10)],
+    [parsedId],
   );
 }
 

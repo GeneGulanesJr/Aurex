@@ -2,6 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const db = require('../db');
+const { insertObservation, updateObservation } = require('../data-access/observations');
 
 describe('observation_versions table', () => {
   let deps;
@@ -45,5 +46,86 @@ describe('observation_versions table', () => {
     expect(rows[0].field).toBe('content');
     expect(rows[0].old_value).toBe('old text');
     expect(rows[0].new_value).toBe('new text');
+  });
+});
+
+describe('updateObservation versioning', () => {
+  let deps;
+  let tempDir;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lapis-observation-versions-'));
+    db.resetDb();
+    db.createDb({ db_path: path.join(tempDir, 'memory.db') });
+    deps = {
+      sqlJson: db.sqlJson,
+      sqlRun: db.sqlRun,
+    };
+  });
+
+  afterEach(() => {
+    db.resetDb();
+    if (tempDir) {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('records version entry when title is updated', () => {
+    const inserted = insertObservation(deps, {
+      sessionId: '1',
+      type: 'decision',
+      title: 'Old title',
+      content: 'content',
+      project: 'test',
+      scope: 'project',
+      topicKey: null,
+    });
+    const id = inserted[0].id;
+
+    updateObservation(deps, { id, title: 'New title' });
+
+    const versions = deps.sqlJson('SELECT field, old_value, new_value FROM observation_versions WHERE memory_id = ?', [id]);
+    expect(versions).toHaveLength(1);
+    expect(versions[0].field).toBe('title');
+    expect(versions[0].old_value).toBe('Old title');
+    expect(versions[0].new_value).toBe('New title');
+  });
+
+  it('records version entries for multiple changed fields', () => {
+    const inserted = insertObservation(deps, {
+      sessionId: '1',
+      type: 'decision',
+      title: 'Old',
+      content: 'old content',
+      project: 'test',
+      scope: 'project',
+      topicKey: null,
+    });
+    const id = inserted[0].id;
+
+    updateObservation(deps, { id, title: 'New', content: 'new content' });
+
+    const versions = deps.sqlJson('SELECT field FROM observation_versions WHERE memory_id = ? ORDER BY field', [id]);
+    expect(versions).toHaveLength(2);
+    expect(versions.map((v) => v.field)).toEqual(['content', 'title']);
+  });
+
+  it('does not record version when nothing changes', () => {
+    const inserted = insertObservation(deps, {
+      sessionId: '1',
+      type: 'decision',
+      title: 'Title',
+      content: 'content',
+      project: 'test',
+      scope: 'project',
+      topicKey: null,
+    });
+    const id = inserted[0].id;
+
+    const result = updateObservation(deps, { id });
+    expect(result).toBeNull();
+
+    const versions = deps.sqlJson('SELECT * FROM observation_versions WHERE memory_id = ?', [id]);
+    expect(versions).toHaveLength(0);
   });
 });
