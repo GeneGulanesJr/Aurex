@@ -60,8 +60,8 @@ function get(deps, args) {
   }
   const recallResult = memoryRepository.getRecallCountForMemory(id);
   obs.recall_count = recallResult[0].cnt;
-  obs.versions = memoryRepository.getObservationVersions(id);
-  obs.relations = memoryRepository.getObservationRelations(id);
+  obs.versions = memoryRepository.getObservationVersions ? memoryRepository.getObservationVersions(id) : [];
+  obs.relations = memoryRepository.getObservationRelations ? memoryRepository.getObservationRelations(id) : [];
   return obs;
 }
 

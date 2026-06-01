@@ -24,6 +24,12 @@ function createMemoryRepository(deps) {
     getRecallCountForMemory(memoryId) {
       return observations.getRecallCountForMemory(deps, memoryId);
     },
+    getObservationVersions(id) {
+      return observations.getObservationVersions(deps, id);
+    },
+    getObservationRelations(id) {
+      return observations.getObservationRelations(deps, id);
+    },
     updateObservation(params) {
       return observations.updateObservation(deps, params);
     },
