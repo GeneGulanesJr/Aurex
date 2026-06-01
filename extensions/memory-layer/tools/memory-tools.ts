@@ -141,6 +141,14 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
         }
 
         const results = (result.results as any[]) || [];
+        if (deps.state.pendingRecallFeedback) {
+          for (const r of results) {
+            deps.state.pendingRecallFeedback.set(r.id, {
+              sessionId: deps.state.sessionId || 0,
+              query: params.query as string,
+            });
+          }
+        }
         if (results.length === 0) {
           return { content: [{ type: 'text', text: 'No memories found.' }], details: result ?? {} };
         }
@@ -184,6 +192,10 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
         const result = await deps.mem('get', { id: String(params.id) });
         if (!result || result.error) {
           return { content: [{ type: 'text', text: `Memory #${params.id} not found.` }], details: {}, isError: true };
+        }
+        const id = parseInt(String(params.id), 10);
+        if (deps.state.pendingRecallFeedback?.has(id)) {
+          deps.state.pendingRecallFeedback.delete(id);
         }
         if (
           deps.state.currentProject &&

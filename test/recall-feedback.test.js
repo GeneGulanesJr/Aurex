@@ -4,6 +4,7 @@ const path = require('path');
 const db = require('../db');
 const { insertRecallLog, getRecallCount, recallScore } = require('../src/memory-domain/recall');
 const { insertRecallLog: insertRecallLogDA } = require('../data-access/observations');
+const { logNegativeRecall } = require('../commands/observation');
 
 describe('recall feedback', () => {
   let deps;
@@ -75,6 +76,15 @@ describe('recall feedback', () => {
       { memoryId: 20, sessionId: 1, query: 'test', wasUseful: false },
     ]);
     const rows = deps.sqlJson('SELECT was_useful FROM recall_log WHERE memory_id = 20');
+    expect(rows[0].was_useful).toBe(0);
+  });
+
+  it('logNegativeRecall command records ignored memories as not useful', () => {
+    const result = logNegativeRecall(deps, {
+      entries: JSON.stringify([{ memoryId: 42, sessionId: 1, query: 'auth' }]),
+    });
+    expect(result.logged).toBe(1);
+    const rows = deps.sqlJson('SELECT was_useful FROM recall_log WHERE memory_id = 42');
     expect(rows[0].was_useful).toBe(0);
   });
 });

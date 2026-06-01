@@ -147,4 +147,32 @@ function getStats(deps) {
   return memoryRepository.getObservationStats();
 }
 
-module.exports = { save, get, update, del, timeline, suggestTopicKey, savePrompt, capturePassive, getStats };
+function logNegativeRecall(deps, args) {
+  const entries = JSON.parse(args.entries || '[]');
+  if (!entries.length) {
+    return { logged: 0 };
+  }
+  obsDA.insertRecallLog(
+    deps,
+    entries.map((e) => ({
+      memoryId: e.memoryId,
+      sessionId: e.sessionId,
+      query: e.query,
+      wasUseful: false,
+    })),
+  );
+  return { logged: entries.length };
+}
+
+module.exports = {
+  save,
+  get,
+  update,
+  del,
+  timeline,
+  suggestTopicKey,
+  savePrompt,
+  capturePassive,
+  getStats,
+  logNegativeRecall,
+};

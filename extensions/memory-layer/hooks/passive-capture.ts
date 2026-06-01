@@ -116,6 +116,20 @@ export function registerPassiveCapture(pi: ExtensionAPI, deps: PassiveCaptureDep
 
   pi.on('turn_end', async (_event, _ctx) => {
     deps.state.turnCount++;
+
+    if (deps.state.pendingRecallFeedback.size > 0) {
+      const entries = [...deps.state.pendingRecallFeedback.entries()].map(([memoryId, meta]) => ({
+        memoryId,
+        sessionId: meta.sessionId,
+        query: meta.query,
+        wasUseful: false,
+      }));
+      await deps.mem('log-negative-recall', {
+        entries: JSON.stringify(entries),
+      });
+      deps.state.pendingRecallFeedback.clear();
+    }
+
     if (deps.state.turnCount % CHECKPOINT_INTERVAL !== 0 || deps.state.turnCount === 0) {
       return;
     }
