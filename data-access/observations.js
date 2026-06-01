@@ -88,31 +88,21 @@ function updateObservation(deps, { id, title, content, type, project, scope, top
     }
   }
 
+  const setFields = [
+    { name: 'title', value: title },
+    { name: 'content', value: content },
+    { name: 'type', value: type },
+    { name: 'project', value: project },
+    { name: 'scope', value: scope },
+    { name: 'topic_key', value: topicKey },
+  ];
   const sets = [];
   const params = [];
-  if (title) {
-    sets.push('title = ?');
-    params.push(title);
-  }
-  if (content) {
-    sets.push('content = ?');
-    params.push(content);
-  }
-  if (type) {
-    sets.push('type = ?');
-    params.push(type);
-  }
-  if (project) {
-    sets.push('project = ?');
-    params.push(project);
-  }
-  if (scope) {
-    sets.push('scope = ?');
-    params.push(scope);
-  }
-  if (topicKey) {
-    sets.push('topic_key = ?');
-    params.push(topicKey);
+  for (const f of setFields) {
+    if (f.value !== undefined && f.value !== null) {
+      sets.push(`${f.name} = ?`);
+      params.push(f.value);
+    }
   }
   if (sets.length === 0) {
     return null;
