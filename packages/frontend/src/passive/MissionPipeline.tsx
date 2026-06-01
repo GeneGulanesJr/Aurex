@@ -209,6 +209,11 @@ export function MissionPipeline({ mission, milestones, workers, cost, events, lo
                       ))}
                     </div>
                   )}
+
+                  {/* Progress bar for active/in-progress milestones */}
+                  {(isActive || milestone.status === "validating") && (
+                    <MilestoneProgressBar milestone={milestone} workers={workers} />
+                  )}
                 </div>
               </div>
             </div>
@@ -257,6 +262,49 @@ function MilestoneDot({ status, active }: { status: MilestoneStatus; active: boo
         transition: "background 0.3s",
       }}
     />
+  );
+}
+
+function MilestoneProgressBar({ milestone, workers }: { milestone: Milestone; workers: WorkingUnit[] }) {
+  const barRef = useRef<HTMLDivElement>(null);
+  const prevPercentRef = useRef(0);
+
+  const msWorkers = workers.filter((w) => w.milestoneId === milestone.id);
+  const total = msWorkers.length;
+  const completed = msWorkers.filter((w) => w.status === "completed").length;
+  const percent = total > 0 ? (completed / total) * 100 : 0;
+
+  useEffect(() => {
+    if (barRef.current && prevPercentRef.current !== percent) {
+      animateProgress(barRef.current, prevPercentRef.current, percent);
+      prevPercentRef.current = percent;
+    }
+  }, [percent]);
+
+  if (total === 0) return null;
+
+  return (
+    <div
+      style={{
+        width: "100%",
+        height: "3px",
+        background: "var(--border)",
+        borderRadius: "2px",
+        marginTop: "8px",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        ref={barRef}
+        style={{
+          height: "100%",
+          width: `${percent}%`,
+          background: "var(--accent)",
+          borderRadius: "2px",
+          transition: "background 0.3s",
+        }}
+      />
+    </div>
   );
 }
 
