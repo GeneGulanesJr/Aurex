@@ -8,7 +8,6 @@ describe('state', () => {
     expect(state).toHaveProperty('sessionId');
     expect(state).toHaveProperty('currentProject');
     expect(state).toHaveProperty('memoriesSavedThisSession');
-    expect(state).toHaveProperty('nudgeCountThisSession');
     expect(state).toHaveProperty('exploredFiles');
     expect(state).toHaveProperty('turnCount');
     expect(state).toHaveProperty('lastMemoryToolCall');

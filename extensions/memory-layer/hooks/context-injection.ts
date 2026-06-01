@@ -188,7 +188,7 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
     if (!cwdRepo) {
       lines.push('');
       lines.push(
-        `⚠️ **Code not indexed:** Project "${deps.state.currentProject}" has no code index yet. Run \`memory-code index-repo --path ${ctx.cwd} --name ${deps.state.currentProject}\` to enable memory-code analysis.`,
+        `⚠️ **Code not indexed:** Project "${deps.state.currentProject}" has no code index yet. Index it first: \`memory-code index-repo --path ${ctx.cwd} --name ${deps.state.currentProject}\``,
       );
     } else if (isStale && !isHistoricalMemoryPrompt(promptQuery) && effectiveObservations.length === 0) {
       lines.push('');

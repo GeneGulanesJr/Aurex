@@ -2,7 +2,8 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { isCodeFile, state } from '../state';
 import { isPipedOutputFilter, isTargetedSymbolLookup } from './guardrail-utils';
-import { getKnownRepos } from '../host/project-detector';
+import { getKnownRepos, invalidateRepoCache } from '../host/project-detector';
+import { memStreaming } from '../host/memory-client';
 import path from 'node:path';
 
 const CONFIG_FILENAMES = new Set([
@@ -55,10 +56,47 @@ interface GuardrailsDeps {
   state: typeof state;
   getKnownRepos: typeof getKnownRepos;
   isCodeFile: typeof isCodeFile;
+  memStreaming: typeof memStreaming;
+  invalidateRepoCache: typeof invalidateRepoCache;
+}
+
+interface IndexResult {
+  ok: boolean;
+  summary: string;
+}
+
+const activeIndexing = new Map<string, Promise<IndexResult | null>>();
+
+function ensureIndexed(deps: GuardrailsDeps, resolvedCwd: string, projectName: string): Promise<IndexResult | null> {
+  const key = resolvedCwd;
+  const pending = activeIndexing.get(key);
+  if (pending) {
+    return pending;
+  }
+  const promise = (async (): Promise<IndexResult | null> => {
+    try {
+      const result = await deps.memStreaming('code', { mode: 'index-repo', path: resolvedCwd, name: projectName });
+      if (!result) {
+        return null;
+      }
+      if (result.error) {
+        return { ok: false, summary: `Indexing error: ${result.error}` };
+      }
+      deps.invalidateRepoCache();
+      const summary = (result as any).summary || '';
+      return { ok: true, summary };
+    } catch (e) {
+      return { ok: false, summary: `Indexing failed: ${e instanceof Error ? e.message : String(e)}` };
+    } finally {
+      activeIndexing.delete(key);
+    }
+  })();
+  activeIndexing.set(key, promise);
+  return promise;
 }
 
 export function registerToolGuardrails(pi: ExtensionAPI, deps: GuardrailsDeps) {
-  pi.on('tool_call', async (event, ctx) => {
+  pi.on('tool_call', async (event, _ctx) => {
     const toolName = event.toolName;
     const input = event.input as Record<string, unknown>;
 
@@ -110,14 +148,27 @@ export function registerToolGuardrails(pi: ExtensionAPI, deps: GuardrailsDeps) {
               `• \`memory-code importance --repo ${matchedRepo.name}\` — hotspots & churn`,
           };
         }
-        if (deps.state.nudgeCountThisSession < deps.state.MAX_NUDGES_PER_SESSION) {
-          deps.state.nudgeCountThisSession++;
-          ctx.ui.notify(
-            `💡 Use \`memory-code\` for structured analysis. Index this repo first: \`memory-code index-repo\``,
-            'info',
-          );
+        const projectName = deps.state.currentProject || path.basename(resolvedCwd);
+        const searchHint = CODE_PATH_HINT_RE.test(cmd) ? 'Code search' : 'Raw repository search';
+        const indexResult = await ensureIndexed(deps, resolvedCwd, projectName);
+        if (indexResult?.ok) {
+          return {
+            block: true,
+            reason:
+              `${searchHint} in an unindexed project. The repo has been auto-indexed (${indexResult.summary}).\n` +
+              `Use \`memory-code\` instead of raw grep/find:\n` +
+              `• \`memory-code search --repo ${projectName} --query <query>\`\n` +
+              `• \`memory-code outline --repo ${projectName} --file <path>\`\n` +
+              `• \`memory-code callers --repo ${projectName} --symbol <name>\`\n` +
+              `• \`memory-code deps --repo ${projectName}\``,
+          };
         }
-        return;
+        return {
+          block: true,
+          reason:
+            `${searchHint} in an unindexed project. Auto-indexing failed: ${indexResult?.summary || 'unknown error'}.\n` +
+            `Try indexing manually: \`memory-code index-repo --path ${resolvedCwd} --name ${projectName}\``,
+        };
       }
     }
 
@@ -151,11 +202,28 @@ export function registerToolGuardrails(pi: ExtensionAPI, deps: GuardrailsDeps) {
       );
 
       if (!matchedRepo) {
-        if (deps.state.nudgeCountThisSession < deps.state.MAX_NUDGES_PER_SESSION) {
-          deps.state.nudgeCountThisSession++;
-          ctx.ui.notify(`💡 This code file isn't in an indexed repo. Index it: \`memory-code index-repo\``, 'info');
+        const cwd = process.cwd();
+        // Prefer cwd (project root) to match the bash guardrail behavior.
+        // Fall back to the file's directory only when the file lives outside cwd.
+        const projectDir = absPath.startsWith(cwd) ? cwd : path.dirname(absPath);
+        const projectName = deps.state.currentProject || path.basename(projectDir);
+        const indexResult = await ensureIndexed(deps, projectDir, projectName);
+        if (indexResult?.ok) {
+          return {
+            block: true,
+            reason:
+              `Cannot read "${path.basename(filePath)}" — project was not indexed. It has been auto-indexed (${indexResult.summary}).\n` +
+              `Use \`memory-code\` to understand the file first:\n` +
+              `• \`memory-code outline --repo ${projectName} --file ${path.relative(projectDir, absPath)}\`\n` +
+              `After reviewing the outline, use \`read\` with \`offset\`/\`limit\` for targeted editing.`,
+          };
         }
-        return;
+        return {
+          block: true,
+          reason:
+            `Cannot read "${path.basename(filePath)}" — project auto-indexing failed: ${indexResult?.summary || 'unknown error'}.\n` +
+            `Try indexing manually: \`memory-code index-repo --path ${projectDir} --name ${projectName}\``,
+        };
       }
 
       const fileBase = path.basename(filePath).toLowerCase();
