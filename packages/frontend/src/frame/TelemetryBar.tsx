@@ -1,9 +1,11 @@
+import { useEffect, useRef } from "react";
+import { animateCounter } from "../animations/counters";
+
 interface TelemetryBarProps {
   tokens: number;
   cost: number;
   agentCount: number;
   wsConnected: boolean;
-  memory?: string;
 }
 
 const monoLabel: React.CSSProperties = {
@@ -13,7 +15,26 @@ const monoLabel: React.CSSProperties = {
   color: "var(--text-muted)",
 };
 
-export function TelemetryBar({ tokens, cost, agentCount, wsConnected, memory }: TelemetryBarProps) {
+export function TelemetryBar({ tokens, cost, agentCount, wsConnected }: TelemetryBarProps) {
+  const costRef = useRef<HTMLSpanElement>(null);
+  const tokensRef = useRef<HTMLSpanElement>(null);
+  const prevCostRef = useRef(cost);
+  const prevTokensRef = useRef(tokens);
+
+  useEffect(() => {
+    if (costRef.current && prevCostRef.current !== cost) {
+      animateCounter(costRef.current, prevCostRef.current, cost);
+      prevCostRef.current = cost;
+    }
+  }, [cost]);
+
+  useEffect(() => {
+    if (tokensRef.current && prevTokensRef.current !== tokens) {
+      animateCounter(tokensRef.current, prevTokensRef.current, tokens, "tokens");
+      prevTokensRef.current = tokens;
+    }
+  }, [tokens]);
+
   return (
     <footer
       style={{
@@ -28,10 +49,10 @@ export function TelemetryBar({ tokens, cost, agentCount, wsConnected, memory }: 
     >
       <div style={{ display: "flex", gap: "20px" }}>
         <span style={monoLabel}>
-          TOKENS <span style={{ color: "var(--text-secondary)" }}>{tokens.toLocaleString()}</span>
+          TOKENS <span ref={tokensRef} style={{ color: "var(--text-secondary)" }}>{tokens.toLocaleString()}</span>
         </span>
         <span style={monoLabel}>
-          COST <span style={{ color: "var(--accent)", fontWeight: 500 }}>${cost.toFixed(2)}</span>
+          COST <span ref={costRef} style={{ color: "var(--accent)", fontWeight: 500 }}>${cost.toFixed(2)}</span>
         </span>
         <span style={monoLabel}>
           AGENTS <span style={{ color: "var(--text-secondary)" }}>{agentCount}</span>
@@ -50,11 +71,6 @@ export function TelemetryBar({ tokens, cost, agentCount, wsConnected, memory }: 
           />
           WS
         </span>
-        {memory && (
-          <span style={monoLabel}>
-            MEM <span style={{ color: "var(--text-secondary)" }}>{memory}</span>
-          </span>
-        )}
       </div>
     </footer>
   );

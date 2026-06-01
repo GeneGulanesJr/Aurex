@@ -12,9 +12,10 @@ interface StatusBoardProps {
   events: WsClientEvent[];
   logs: Array<{ phase: string; message: string; timestamp: number }>;
   blurred: boolean;
+  onExampleClick?: (text: string) => void;
 }
 
-export function StatusBoard({ mission, milestones, workers, cost, events, logs, blurred }: StatusBoardProps) {
+export function StatusBoard({ mission, milestones, workers, cost, events, logs, blurred, onExampleClick }: StatusBoardProps) {
   const boardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -30,7 +31,7 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
   if (!mission) {
     return (
       <div style={{ display: "flex", height: "100%" }}>
-        <EmptyState />
+        <EmptyState onExampleClick={onExampleClick} />
       </div>
     );
   }

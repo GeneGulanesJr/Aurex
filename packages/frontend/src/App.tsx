@@ -128,6 +128,7 @@ export function App() {
             events={eventsRef.current}
             logs={state.logs}
             blurred={!!state.escalation}
+            onExampleClick={handleCreateMission}
           />
         </main>
         <TelemetryBar
