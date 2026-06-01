@@ -58,6 +58,9 @@
   --warning: #facc15;
   --error: #ef4444;
   --info: #818cf8;
+  --badge-info-bg: rgba(129, 140, 248, 0.2);
+  --badge-success-bg: rgba(74, 222, 128, 0.2);
+  --badge-error-bg: rgba(239, 68, 68, 0.2);
 }
 
 /* Base resets */

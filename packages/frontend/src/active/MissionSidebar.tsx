@@ -23,11 +23,11 @@ function statusBadge(state: string): { label: string; style: React.CSSProperties
     case "executing":
       return { label: "Running", style: { background: "var(--info)", color: "var(--bg-deep)", fontSize: "10px", padding: "1px 6px", borderRadius: "3px" } };
     case "waiting_checkpoint":
-      return { label: "Checkpoint", style: { background: "rgba(129, 140, 248, 0.2)", color: "var(--info)", fontSize: "10px", padding: "1px 6px", borderRadius: "3px" } };
+      return { label: "Checkpoint", style: { background: "var(--badge-info-bg)", color: "var(--info)", fontSize: "10px", padding: "1px 6px", borderRadius: "3px" } };
     case "completed":
-      return { label: "Done", style: { background: "rgba(74, 222, 128, 0.2)", color: "var(--success)", fontSize: "10px", padding: "1px 6px", borderRadius: "3px" } };
+      return { label: "Done", style: { background: "var(--badge-success-bg)", color: "var(--success)", fontSize: "10px", padding: "1px 6px", borderRadius: "3px" } };
     case "failed":
-      return { label: "Failed", style: { background: "rgba(239, 68, 68, 0.2)", color: "var(--error)", fontSize: "10px", padding: "1px 6px", borderRadius: "3px" } };
+      return { label: "Failed", style: { background: "var(--badge-error-bg)", color: "var(--error)", fontSize: "10px", padding: "1px 6px", borderRadius: "3px" } };
     default:
       return { label: state, style: { background: "var(--bg-elevated)", color: "var(--text-muted)", fontSize: "10px", padding: "1px 6px", borderRadius: "3px" } };
   }
