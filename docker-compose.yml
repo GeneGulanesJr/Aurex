@@ -6,6 +6,8 @@ services:
   lapis:
     build: { context: ., dockerfile: Dockerfile.lapis }
     ports: ["9100:9100"]
+    volumes:
+      - ${REPO_ROOT:-/tmp}:/workspace
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:9100/health').then(r=>r.json()).then(j=>{if(j.status!=='ok')process.exit(1)})"]
       interval: 5s
@@ -17,8 +19,11 @@ services:
   pinyx:
     build: { context: ., dockerfile: Dockerfile.pinyx }
     ports: ["7331:7331"]
+    environment:
+      REPOS_DIR: /workspace/repos
     volumes:
       - pinyx-data:/data
+      - ${REPO_ROOT:-/tmp}:/workspace
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7331/health"]
       interval: 5s
