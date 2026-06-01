@@ -1,4 +1,4 @@
-import { useReducer, useCallback } from "react";
+import { useReducer, useCallback, useEffect } from "react";
 
 export interface FormState {
   open: boolean;
@@ -67,8 +67,15 @@ export async function submitIfValid(
   }
 }
 
-export function useNewMissionForm(onSubmit: (description: string, cloneUrl?: string) => Promise<void>) {
+export function useNewMissionForm(onSubmit: (description: string, cloneUrl?: string) => Promise<void>, suggestedDescription?: string) {
   const [state, dispatch] = useReducer(formReducer, initialFormState);
+
+  useEffect(() => {
+    if (suggestedDescription && !state.open) {
+      dispatch({ type: "OPEN" });
+      dispatch({ type: "SET_DESCRIPTION", value: suggestedDescription });
+    }
+  }, [suggestedDescription]);
 
   const handleSubmit = useCallback(() => {
     const submit = (description: string) => onSubmit(description, state.selectedCloneUrl);

@@ -107,8 +107,11 @@ function createMockLapis(): LaPisClient {
     updateMilestoneStatus: vi.fn().mockResolvedValue(undefined),
     updateWorkingUnitStatus: vi.fn().mockResolvedValue(undefined),
     getWorkingUnitsForMilestone: vi.fn().mockResolvedValue([]),
+    getMilestonesForMission: vi.fn().mockResolvedValue([
+      { id: "ms-1", missionId: "m-1", title: "M1", description: "First", orderIndex: 0, status: "planned", validationContractId: "" },
+    ]),
     getContractHistory: vi.fn().mockResolvedValue([
-      { id: "c-1", content: { criteria: [], testCommands: [], acceptanceBehavior: "" } },
+      { id: "c-1", version: 1, supersededBy: null, supersedes: null, rescopeEventId: null, content: { criteria: [], testCommands: [], acceptanceBehavior: "" } },
     ]),
     getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
     getVerdicts: vi.fn().mockResolvedValue([

@@ -66,10 +66,6 @@ export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove
             <span style={{ fontSize: "10px", color: "var(--border-bright)" }}>Create a mission to begin</span>
           )}
         </div>
-        <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", fontFamily: '"JetBrains Mono", monospace', fontSize: "11px", color: "var(--text-muted)" }}>
-          <span>TOTAL SPENT</span>
-          <span style={{ color: "var(--accent)", fontWeight: 500 }}>$0.00</span>
-        </div>
       </aside>
     );
   }

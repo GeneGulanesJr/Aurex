@@ -280,6 +280,7 @@ function WorkerChip({ worker }: { worker: WorkingUnit }) {
   return (
     <div
       ref={chipRef}
+      className="worker-chip"
       style={{
         display: "flex",
         alignItems: "center",

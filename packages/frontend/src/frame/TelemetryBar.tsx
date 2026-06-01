@@ -6,7 +6,6 @@ interface TelemetryBarProps {
   cost: number;
   agentCount: number;
   wsConnected: boolean;
-  memory?: string;
 }
 
 const monoLabel: React.CSSProperties = {
@@ -16,7 +15,7 @@ const monoLabel: React.CSSProperties = {
   color: "var(--text-muted)",
 };
 
-export function TelemetryBar({ tokens, cost, agentCount, wsConnected, memory }: TelemetryBarProps) {
+export function TelemetryBar({ tokens, cost, agentCount, wsConnected }: TelemetryBarProps) {
   const costRef = useRef<HTMLSpanElement>(null);
   const tokensRef = useRef<HTMLSpanElement>(null);
   const prevCostRef = useRef(cost);
@@ -72,11 +71,6 @@ export function TelemetryBar({ tokens, cost, agentCount, wsConnected, memory }: 
           />
           WS
         </span>
-        {memory && (
-          <span style={monoLabel}>
-            MEM <span style={{ color: "var(--text-secondary)" }}>{memory}</span>
-          </span>
-        )}
       </div>
     </footer>
   );
