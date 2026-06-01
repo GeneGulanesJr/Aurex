@@ -224,11 +224,26 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
             isError: true,
           };
         }
+        const lines = [
+          `## #${result.id} — ${result.title}`,
+          `Type: ${result.type} | Scope: ${result.scope} | Project: ${result.project}`,
+          '',
+          result.content,
+        ];
+        const versions = (result.versions as any[]) || [];
+        if (versions.length > 0) {
+          lines.push('', '## Edit History');
+          for (const v of versions) {
+            lines.push(`- **${v.field}** changed (${v.created_at}):`);
+            lines.push(`  from: ${String(v.old_value).slice(0, 100)}`);
+            lines.push(`  to:   ${String(v.new_value).slice(0, 100)}`);
+          }
+        }
         return {
           content: [
             {
               type: 'text',
-              text: `## #${result.id} — ${result.title}\nType: ${result.type} | Scope: ${result.scope} | Project: ${result.project}\n\n${result.content}`,
+              text: lines.join('\n'),
             },
           ],
           details: result ?? {},

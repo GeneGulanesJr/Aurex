@@ -3,6 +3,7 @@ const os = require('os');
 const path = require('path');
 const db = require('../db');
 const { insertObservation, updateObservation } = require('../data-access/observations');
+const { get } = require('../commands/observation');
 
 describe('observation_versions table', () => {
   let deps;
@@ -127,5 +128,64 @@ describe('updateObservation versioning', () => {
 
     const versions = deps.sqlJson('SELECT * FROM observation_versions WHERE memory_id = ?', [id]);
     expect(versions).toHaveLength(0);
+  });
+});
+
+describe('memory-get includes version history', () => {
+  let deps;
+  let tempDir;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lapis-observation-versions-'));
+    db.resetDb();
+    db.createDb({ db_path: path.join(tempDir, 'memory.db') });
+    deps = {
+      sqlJson: db.sqlJson,
+      sqlRun: db.sqlRun,
+      jsonErrNoExit: (msg) => ({ error: msg }),
+    };
+  });
+
+  afterEach(() => {
+    db.resetDb();
+    if (tempDir) {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns empty versions array for memory with no edits', () => {
+    const inserted = insertObservation(deps, {
+      sessionId: '1',
+      type: 'decision',
+      title: 'Test',
+      content: 'content',
+      project: 'test',
+      scope: 'project',
+      topicKey: null,
+    });
+    const id = inserted[0].id;
+
+    const result = get(deps, { id: String(id) });
+    expect(result.versions).toEqual([]);
+  });
+
+  it('returns version entries after an update', () => {
+    const inserted = insertObservation(deps, {
+      sessionId: '1',
+      type: 'decision',
+      title: 'V1',
+      content: 'content',
+      project: 'test',
+      scope: 'project',
+      topicKey: null,
+    });
+    const id = inserted[0].id;
+
+    updateObservation(deps, { id, title: 'V2' });
+    const result = get(deps, { id: String(id) });
+    expect(result.versions).toHaveLength(1);
+    expect(result.versions[0].field).toBe('title');
+    expect(result.versions[0].old_value).toBe('V1');
+    expect(result.versions[0].new_value).toBe('V2');
   });
 });

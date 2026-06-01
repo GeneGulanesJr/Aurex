@@ -53,6 +53,24 @@ function getRecallCountForMemory(deps, memoryId) {
   return sqlJson('SELECT COUNT(*) as cnt FROM recall_log WHERE memory_id = ?', [parseInt(memoryId, 10)]);
 }
 
+function getObservationVersions(deps, id) {
+  const { sqlJson } = deps;
+  return sqlJson(
+    'SELECT field, old_value, new_value, created_at FROM observation_versions WHERE memory_id = ? ORDER BY created_at DESC',
+    [parseInt(id, 10)],
+  );
+}
+
+function getObservationRelations(deps, id) {
+  const { sqlJson } = deps;
+  return sqlJson(
+    `SELECT source_id, target_id, relation, confidence
+     FROM observation_relations
+     WHERE source_id = ? OR target_id = ?`,
+    [parseInt(id, 10), parseInt(id, 10)],
+  );
+}
+
 function updateObservation(deps, { id, title, content, type, project, scope, topicKey }) {
   const { sqlJson, sqlRun } = deps;
   const parsedId = parseInt(id, 10);
@@ -190,6 +208,8 @@ module.exports = {
   getObservation,
   getSymbolLinksForMemory,
   getRecallCountForMemory,
+  getObservationVersions,
+  getObservationRelations,
   updateObservation,
   getTimeline,
   insertUserPrompt,

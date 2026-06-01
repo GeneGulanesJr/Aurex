@@ -15,6 +15,8 @@ function getMemoryRepository(deps) {
     getObservation: (id) => obsDA.getObservation(deps, id),
     getSymbolLinksForMemory: (memoryId) => obsDA.getSymbolLinksForMemory(deps, memoryId),
     getRecallCountForMemory: (memoryId) => obsDA.getRecallCountForMemory(deps, memoryId),
+    getObservationVersions: (id) => obsDA.getObservationVersions(deps, id),
+    getObservationRelations: (id) => obsDA.getObservationRelations(deps, id),
     updateObservation: (params) => obsDA.updateObservation(deps, params),
     getTimeline: (params) => obsDA.getTimeline(deps, params),
     insertUserPrompt: (params) => obsDA.insertUserPrompt(deps, params),
@@ -58,6 +60,8 @@ function get(deps, args) {
   }
   const recallResult = memoryRepository.getRecallCountForMemory(id);
   obs.recall_count = recallResult[0].cnt;
+  obs.versions = memoryRepository.getObservationVersions(id);
+  obs.relations = memoryRepository.getObservationRelations(id);
   return obs;
 }
 
