@@ -156,7 +156,9 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
         const lines = results.map((r: any) => {
           const score = r._score ? ` (${r._score.toFixed(2)})` : '';
           const trust = r.trust_score != null && r.trust_score < 0.5 ? ' ⚠️' : '';
-          return `- [#${r.id}] [${r.type}] ${r.title}${score}${trust}${r.snippet ? `\n  ${r.snippet}` : ''}`;
+          const supersedes = (r._relations || []).filter((rel: any) => rel.relation === 'supersedes');
+          const relationNote = supersedes.length > 0 ? ` ⚡ superseded by #${supersedes[0].source_id}` : '';
+          return `- [#${r.id}] [${r.type}] ${r.title}${score}${trust}${relationNote}${r.snippet ? `\n  ${r.snippet}` : ''}`;
         });
 
         return normalizeToolResult({
@@ -237,6 +239,15 @@ export function registerMemoryTools(pi: ExtensionAPI, deps: MemoryDeps) {
             lines.push(`- **${v.field}** changed (${v.created_at}):`);
             lines.push(`  from: ${String(v.old_value).slice(0, 100)}`);
             lines.push(`  to:   ${String(v.new_value).slice(0, 100)}`);
+          }
+        }
+        const relations = (result.relations as any[]) || [];
+        if (relations.length > 0) {
+          lines.push('', '## Relations');
+          for (const rel of relations) {
+            const otherId = rel.source_id === parseInt(String(params.id), 10) ? rel.target_id : rel.source_id;
+            const icon = rel.relation === 'supersedes' ? '⚡' : rel.relation === 'duplicate' ? '📋' : '🔗';
+            lines.push(`- ${icon} ${rel.relation} → #${otherId} (confidence: ${(rel.confidence * 100).toFixed(0)}%)`);
           }
         }
         return {
