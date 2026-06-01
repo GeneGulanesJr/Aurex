@@ -56,7 +56,21 @@ async function main() {
   // Health endpoint
   app.get("/health", async () => {
     const lapisOk = await lapis.ping().then(() => true, () => false);
-    return { status: lapisOk ? "ok" : "degraded", lapis: lapisOk };
+    let pinyxOk = false;
+    try {
+      const pinyxConfig = await lapis.getSetting<{ endpoint: string }>("pinyx_config");
+      if (pinyxConfig?.endpoint) {
+        const res = await fetch(`${pinyxConfig.endpoint.replace(/\/$/, "")}/v1/models`, {
+          method: "GET",
+          signal: AbortSignal.timeout(3000),
+        });
+        pinyxOk = res.ok;
+      }
+    } catch {
+      pinyxOk = false;
+    }
+    const ok = lapisOk && pinyxOk;
+    return { status: ok ? "ok" : "degraded", lapis: lapisOk, pinyx: pinyxOk };
   });
 
   // REST routes
