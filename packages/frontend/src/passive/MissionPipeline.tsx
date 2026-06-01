@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo } from "react";
+import { useEffect, useRef, useMemo, useState } from "react";
 import { animate, stagger } from "animejs";
 import { createPulse, createSpin, createIdle } from "../animations/agent-animations";
 import { staggerEntrance } from "../animations/stagger";
@@ -362,6 +362,23 @@ function WorkerChip({ worker }: { worker: WorkingUnit }) {
 
 function PlanningLog({ logs, active }: { logs: Array<{ phase: string; message: string; timestamp: number }>; active: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [elapsed, setElapsed] = useState("");
+
+  // Elapsed timer — counts from first log timestamp
+  useEffect(() => {
+    if (!active || logs.length === 0) { setElapsed(""); return; }
+    const start = logs[0].timestamp;
+    const tick = () => {
+      const diff = Date.now() - start;
+      const s = Math.floor(diff / 1000);
+      const m = Math.floor(s / 60);
+      const h = Math.floor(m / 60);
+      setElapsed(h > 0 ? `${h}h ${m % 60}m ${s % 60}s` : m > 0 ? `${m}m ${s % 60}s` : `${s}s`);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [active, logs.length]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -371,6 +388,11 @@ function PlanningLog({ logs, active }: { logs: Array<{ phase: string; message: s
 
   if (logs.length === 0) return null;
 
+  const lastIdx = logs.length - 1;
+  const lastTimestamp = logs[lastIdx].timestamp;
+  const timeSinceLast = Math.floor((Date.now() - lastTimestamp) / 1000);
+  const lastRelative = timeSinceLast < 5 ? "just now" : timeSinceLast < 60 ? `${timeSinceLast}s ago` : `${Math.floor(timeSinceLast / 60)}m ago`;
+
   return (
     <div style={{ marginTop: "20px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
@@ -378,8 +400,16 @@ function PlanningLog({ logs, active }: { logs: Array<{ phase: string; message: s
           Mission Log
         </span>
         {active && (
-          <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--accent)", animation: "pulse 1.5s infinite" }} />
+          <>
+            <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--accent)", animation: "pulse 1.5s infinite" }} />
+            <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", color: "var(--accent)", letterSpacing: "1px" }}>
+              {elapsed}
+            </span>
+          </>
         )}
+        <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "9px", color: "var(--text-muted)", marginLeft: "auto" }}>
+          last: {active ? lastRelative : new Date(lastTimestamp).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+        </span>
       </div>
       <div
         ref={containerRef}
@@ -395,19 +425,35 @@ function PlanningLog({ logs, active }: { logs: Array<{ phase: string; message: s
           lineHeight: 1.6,
         }}
       >
-        {logs.map((log, i) => (
-          <div key={i} style={{ display: "flex", gap: "8px", padding: "2px 0", color: "var(--text-secondary)", wordBreak: "break-word" }}>
-            <span style={{ color: "var(--text-muted)", flexShrink: 0, fontSize: "10px", paddingTop: "3px" }}>
-              {new Date(log.timestamp).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-            </span>
-            <span>
-              <span style={{ color: "var(--accent)", fontSize: "9px", textTransform: "uppercase", letterSpacing: "1px", marginRight: "4px" }}>
-                {log.phase}
+        {logs.map((log, i) => {
+          const isLatest = i === lastIdx;
+          return (
+            <div key={i} style={{
+              display: "flex",
+              gap: "8px",
+              padding: isLatest ? "6px 8px" : "2px 0",
+              borderRadius: "3px",
+              background: isLatest ? "var(--bg-elevated)" : "transparent",
+              border: isLatest ? "1px solid var(--border)" : "1px solid transparent",
+              color: isLatest ? "var(--text-primary)" : "var(--text-secondary)",
+              wordBreak: "break-word",
+              transition: "background 0.2s, border-color 0.2s",
+            }}>
+              <span style={{ color: "var(--text-muted)", flexShrink: 0, fontSize: "10px", paddingTop: "3px" }}>
+                {new Date(log.timestamp).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
               </span>
-              {log.message}
-            </span>
-          </div>
-        ))}
+              <span>
+                <span style={{ color: "var(--accent)", fontSize: "9px", textTransform: "uppercase", letterSpacing: "1px", marginRight: "4px" }}>
+                  {log.phase}
+                </span>
+                {log.message}
+                {isLatest && active && (
+                  <span style={{ color: "var(--accent)", fontSize: "9px", marginLeft: "8px", letterSpacing: "1px" }}>● LATEST</span>
+                )}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
