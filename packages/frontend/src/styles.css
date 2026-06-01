@@ -69,6 +69,7 @@ body {
   background: var(--bg-deep);
   color: var(--text-primary);
   font-family: "Inter", -apple-system, sans-serif;
+  font-feature-settings: "cv01", "ss03";
   -webkit-font-smoothing: antialiased;
 }
 
