@@ -1,4 +1,4 @@
-import { REPO_CACHE_TTL, RepoInfo, state } from '../state';
+import { REPO_CACHE_TTL, type RepoInfo, state } from '../state';
 import { mem, memCmd } from './memory-client';
 import path from 'node:path';
 
