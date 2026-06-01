@@ -31,8 +31,8 @@ export function EscalationOverlay({ event, onDecision, onDismiss }: EscalationOv
   };
 
   return (
-    <div ref={overlayRef} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
-      <div style={{ background: "var(--bg-surface)", borderRadius: "12px", padding: "32px", maxWidth: "672px", width: "100%", margin: "0 16px", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)" }}>
+    <div ref={overlayRef} style={{ position: "fixed", inset: 0, background: "var(--bg-inset)", opacity: 0.85, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
+      <div style={{ background: "var(--bg-surface)", borderRadius: "6px", padding: "32px", maxWidth: "672px", width: "100%", margin: "0 16px", boxShadow: "0 25px 50px -12px var(--accent-glow)", border: "1px solid var(--border)" }}>
         <CheckpointPanel trigger={event.trigger} />
         <DecisionActions onDecision={onDecision} trigger={event.trigger} />
         <button
