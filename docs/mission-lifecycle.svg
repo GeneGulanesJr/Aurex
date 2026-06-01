@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 520" width="960" height="520">
+  <style>
+    text { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+  </style>
+  <defs>
+    <marker id="a-blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/>
+    </marker>
+    <marker id="a-green" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#16a34a"/>
+    </marker>
+    <marker id="a-red" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#dc2626"/>
+    </marker>
+    <marker id="a-amber" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#d97706"/>
+    </marker>
+    <marker id="a-gray" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <rect width="960" height="520" fill="#ffffff"/>
+
+  <text x="480" y="30" text-anchor="middle" fill="#111827" font-size="16" font-weight="600">Mission Lifecycle</text>
+
+  <rect x="55" y="56" width="160" height="52" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="135" y="78" text-anchor="middle" fill="#1e40af" font-size="13" font-weight="600">Create Mission</text>
+  <text x="135" y="94" text-anchor="middle" fill="#6b7280" font-size="10">Define your goal</text>
+
+  <path d="M 215 82 L 278 82" stroke="#2563eb" stroke-width="1.5" fill="none" marker-end="url(#a-blue)"/>
+
+  <rect x="284" y="56" width="160" height="52" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="364" y="78" text-anchor="middle" fill="#1e40af" font-size="13" font-weight="600">AI Plans</text>
+  <text x="364" y="94" text-anchor="middle" fill="#6b7280" font-size="10">Breaks into milestones</text>
+
+  <path d="M 444 82 L 507 82" stroke="#2563eb" stroke-width="1.5" fill="none" marker-end="url(#a-blue)"/>
+
+  <rect x="513" y="56" width="175" height="52" rx="8" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1.5"/>
+  <text x="600" y="78" text-anchor="middle" fill="#166534" font-size="13" font-weight="600">Assign Workers</text>
+  <text x="600" y="94" text-anchor="middle" fill="#6b7280" font-size="10">Each gets a worktree</text>
+
+  <path d="M 688 82 L 748 82" stroke="#2563eb" stroke-width="1.5" fill="none" marker-end="url(#a-blue)"/>
+
+  <rect x="754" y="56" width="150" height="52" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="829" y="78" text-anchor="middle" fill="#111827" font-size="13" font-weight="600">Build</text>
+  <text x="829" y="94" text-anchor="middle" fill="#6b7280" font-size="10">Agents write code</text>
+
+  <path d="M 829 108 L 829 132 L 590 132 L 590 152" stroke="#2563eb" stroke-width="1.5" fill="none" marker-end="url(#a-blue)"/>
+
+  <rect x="430" y="152" width="320" height="52" rx="8" fill="#faf5ff" stroke="#e9d5ff" stroke-width="1.5"/>
+  <text x="590" y="174" text-anchor="middle" fill="#6b21a8" font-size="13" font-weight="600">Validate</text>
+  <text x="590" y="190" text-anchor="middle" fill="#6b7280" font-size="10">Paired agents review work against acceptance criteria</text>
+
+  <path d="M 590 204 L 590 224" stroke="#2563eb" stroke-width="1.5" fill="none" marker-end="url(#a-blue)"/>
+
+  <polygon points="590,224 650,264 590,304 530,264 " fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
+  <text x="590" y="268" text-anchor="middle" fill="#92400e" font-size="12" font-weight="600">Pass?</text>
+
+  <path d="M 530 264 L 280 264" stroke="#16a34a" stroke-width="1.5" fill="none" marker-end="url(#a-green)"/>
+  <rect x="380" y="250" width="44" height="18" rx="4" fill="#dcfce7"/>
+  <text x="402" y="263" text-anchor="middle" fill="#166534" font-size="10" font-weight="600">Pass</text>
+
+  <rect x="110" y="242" width="160" height="46" rx="8" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1.5"/>
+  <text x="190" y="262" text-anchor="middle" fill="#166534" font-size="13" font-weight="600">Next Milestone</text>
+  <text x="190" y="278" text-anchor="middle" fill="#6b7280" font-size="10">Or mission complete ✓</text>
+
+  <path d="M 110 265 L 40 265 L 40 82 L 49 82" stroke="#94a3b8" stroke-width="1" fill="none" stroke-dasharray="5,3" marker-end="url(#a-gray)"/>
+
+  <path d="M 650 264 L 706 264" stroke="#dc2626" stroke-width="1.5" fill="none" marker-end="url(#a-red)"/>
+  <rect x="672" y="250" width="38" height="18" rx="4" fill="#fee2e2"/>
+  <text x="691" y="263" text-anchor="middle" fill="#991b1b" font-size="10" font-weight="600">Fail</text>
+
+  <rect x="710" y="242" width="200" height="46" rx="8" fill="#fef2f2" stroke="#fecaca" stroke-width="1.5"/>
+  <text x="810" y="260" text-anchor="middle" fill="#991b1b" font-size="12" font-weight="600">Retry or Escalate</text>
+  <text x="810" y="276" text-anchor="middle" fill="#6b7280" font-size="10">Up to 2 retries, then asks you</text>
+
+  <path d="M 910 252 L 920 252 L 920 82 L 910 82" stroke="#dc2626" stroke-width="1" fill="none" stroke-dasharray="5,3" marker-end="url(#a-red)"/>
+  <text x="922" y="167" fill="#6b7280" font-size="9" transform="rotate(-90,922,167)">retry</text>
+
+  <path d="M 810 288 L 810 308" stroke="#d97706" stroke-width="1.5" fill="none" marker-end="url(#a-amber)"/>
+
+  <polygon points="810,308 848,332 810,356 772,332" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
+  <text x="810" y="336" text-anchor="middle" fill="#92400e" font-size="11" font-weight="600">Your call</text>
+
+  <path d="M 848 332 L 930 332 L 930 108 L 920 108" stroke="#16a34a" stroke-width="1" fill="none" stroke-dasharray="5,3" marker-end="url(#a-green)"/>
+
+  <rect x="280" y="338" width="250" height="46" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
+  <text x="405" y="358" text-anchor="middle" fill="#166534" font-size="14" font-weight="600">Mission Complete ✓</text>
+  <text x="405" y="374" text-anchor="middle" fill="#6b7280" font-size="10">Merged code · Audit trail · Cost report</text>
+
+  <path d="M 190 288 L 190 361 L 274 361" stroke="#16a34a" stroke-width="1.2" fill="none" stroke-dasharray="5,3" marker-end="url(#a-green)"/>
+
+  <rect x="30" y="496" width="900" height="1" fill="#e5e7eb"/>
+  <line x1="50" y1="512" x2="80" y2="512" stroke="#2563eb" stroke-width="1.5" marker-end="url(#a-blue)"/>
+  <text x="88" y="516" fill="#6b7280" font-size="11">Progress</text>
+  <line x1="170" y1="512" x2="200" y2="512" stroke="#16a34a" stroke-width="1.5" marker-end="url(#a-green)"/>
+  <text x="208" y="516" fill="#6b7280" font-size="11">Pass</text>
+  <line x1="260" y1="512" x2="290" y2="512" stroke="#dc2626" stroke-width="1.5" marker-end="url(#a-red)"/>
+  <text x="298" y="516" fill="#6b7280" font-size="11">Fail</text>
+  <line x1="340" y1="512" x2="370" y2="512" stroke="#d97706" stroke-width="1.5" marker-end="url(#a-amber)"/>
+  <text x="378" y="516" fill="#6b7280" font-size="11">Needs you</text>
+
+</svg>

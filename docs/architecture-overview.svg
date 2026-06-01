@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 580" width="960" height="580">
+  <style>
+    text { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+  </style>
+  <defs>
+    <marker id="a-blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/>
+    </marker>
+    <marker id="a-gray" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8"/>
+    </marker>
+    <marker id="a-green" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#16a34a"/>
+    </marker>
+    <marker id="a-purple" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#9333ea"/>
+    </marker>
+    <marker id="a-orange" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#ea580c"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="960" height="580" fill="#ffffff"/>
+
+  <text x="480" y="32" text-anchor="middle" fill="#111827" font-size="16" font-weight="600">How Aurex Works</text>
+
+  <!-- You -->
+  <rect x="400" y="50" width="160" height="44" rx="8" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5"/>
+  <text x="480" y="77" text-anchor="middle" fill="#1e40af" font-size="14" font-weight="600">You</text>
+
+  <path d="M 480 94 L 480 124" stroke="#2563eb" stroke-width="1.5" fill="none" marker-end="url(#a-blue)"/>
+
+  <!-- Mission Control Dashboard -->
+  <rect x="320" y="130" width="320" height="50" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="480" y="153" text-anchor="middle" fill="#111827" font-size="14" font-weight="600">Mission Control Dashboard</text>
+  <text x="480" y="170" text-anchor="middle" fill="#6b7280" font-size="11">React · Tailwind · Real-time</text>
+
+  <path d="M 480 180 L 480 214" stroke="#2563eb" stroke-width="1.5" fill="none" marker-end="url(#a-blue)"/>
+  <text x="520" y="202" text-anchor="start" fill="#94a3b8" font-size="10">REST + WebSocket</text>
+
+  <!-- Orchestrator -->
+  <rect x="320" y="220" width="320" height="50" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="480" y="243" text-anchor="middle" fill="#1e40af" font-size="14" font-weight="600">Orchestrator</text>
+  <text x="480" y="260" text-anchor="middle" fill="#6b7280" font-size="11">Plans · Negotiates · Enforces rules</text>
+
+  <path d="M 390 270 L 200 336" stroke="#2563eb" stroke-width="1.5" fill="none" marker-end="url(#a-blue)"/>
+  <path d="M 480 270 L 480 336" stroke="#2563eb" stroke-width="1.5" fill="none" marker-end="url(#a-blue)"/>
+  <path d="M 570 270 L 760 336" stroke="#2563eb" stroke-width="1.5" fill="none" marker-end="url(#a-blue)"/>
+
+  <rect x="100" y="342" width="190" height="64" rx="8" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1.5"/>
+  <text x="195" y="368" text-anchor="middle" fill="#166534" font-size="13" font-weight="600">Workers</text>
+  <text x="195" y="384" text-anchor="middle" fill="#6b7280" font-size="11">Write code in isolated</text>
+  <text x="195" y="398" text-anchor="middle" fill="#6b7280" font-size="11">git worktrees</text>
+
+  <rect x="385" y="342" width="190" height="64" rx="8" fill="#faf5ff" stroke="#e9d5ff" stroke-width="1.5"/>
+  <text x="480" y="368" text-anchor="middle" fill="#6b21a8" font-size="13" font-weight="600">Validators</text>
+  <text x="480" y="384" text-anchor="middle" fill="#6b7280" font-size="11">Review and verify</text>
+  <text x="480" y="398" text-anchor="middle" fill="#6b7280" font-size="11">worker output</text>
+
+  <rect x="670" y="342" width="190" height="64" rx="8" fill="#fff7ed" stroke="#fed7aa" stroke-width="1.5"/>
+  <text x="765" y="368" text-anchor="middle" fill="#9a3412" font-size="13" font-weight="600">Researchers</text>
+  <text x="765" y="384" text-anchor="middle" fill="#6b7280" font-size="11">Explore codebase</text>
+  <text x="765" y="398" text-anchor="middle" fill="#6b7280" font-size="11">and gather context</text>
+
+  <path d="M 195 406 L 310 480" stroke="#94a3b8" stroke-width="1.2" fill="none" marker-end="url(#a-gray)" stroke-dasharray="5,3"/>
+  <path d="M 480 406 L 480 480" stroke="#94a3b8" stroke-width="1.2" fill="none" marker-end="url(#a-gray)" stroke-dasharray="5,3"/>
+  <path d="M 765 406 L 650 480" stroke="#94a3b8" stroke-width="1.2" fill="none" marker-end="url(#a-gray)" stroke-dasharray="5,3"/>
+
+  <rect x="115" y="486" width="220" height="48" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="225" y="508" text-anchor="middle" fill="#111827" font-size="13" font-weight="600">PiNyx Gateway</text>
+  <text x="225" y="524" text-anchor="middle" fill="#6b7280" font-size="10">Routes all LLM calls</text>
+
+  <rect x="375" y="486" width="210" height="48" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="480" y="508" text-anchor="middle" fill="#111827" font-size="13" font-weight="600">LaPis Shared State</text>
+  <text x="480" y="524" text-anchor="middle" fill="#6b7280" font-size="10">Mission data · Audit trail</text>
+
+  <rect x="625" y="486" width="210" height="48" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="730" y="508" text-anchor="middle" fill="#111827" font-size="13" font-weight="600">Git Worktrees</text>
+  <text x="730" y="524" text-anchor="middle" fill="#6b7280" font-size="10">Isolated branches per worker</text>
+
+  <rect x="730" y="70" width="190" height="50" rx="8" fill="#fff7ed" stroke="#fed7aa" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="825" y="92" text-anchor="middle" fill="#9a3412" font-size="11" font-weight="600">Human-in-the-Loop</text>
+  <text x="825" y="108" text-anchor="middle" fill="#6b7280" font-size="10">Approve scope &amp; cost changes</text>
+  <path d="M 730 105 L 650 130" stroke="#ea580c" stroke-width="1" fill="none" stroke-dasharray="4,2" marker-end="url(#a-orange)"/>
+
+  <rect x="30" y="552" width="900" height="1" fill="#e5e7eb"/>
+  <line x1="50" y1="570" x2="80" y2="570" stroke="#2563eb" stroke-width="1.5" marker-end="url(#a-blue)"/>
+  <text x="88" y="574" fill="#6b7280" font-size="11">Control flow</text>
+  <line x1="190" y1="570" x2="220" y2="570" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="5,3" marker-end="url(#a-gray)"/>
+  <text x="228" y="574" fill="#6b7280" font-size="11">Data access</text>
+
+</svg>

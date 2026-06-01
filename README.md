@@ -1,128 +1,94 @@
 # Aurex
 
-A multi-agent orchestration runtime that coordinates AI coding agents (workers, validators, researchers) through structured missions with milestones, checkpoints, and enforcement guardrails.
+**An AI-powered mission control for coding tasks.**
 
-## Architecture
+Give Aurex a goal — "add authentication to the API", "write tests for the payment module", "refactor the database layer" — and it orchestrates a team of AI agents to plan, build, validate, and deliver the work. You watch from a real-time dashboard, stepping in only when it needs your approval.
 
-```text
-┌─────────────────────────────────────────────────────────────────┐
-│                        AUREX RUNTIME                            │
-│                                                                 │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐      │
-│  │ Orchestrator  │    │  PiNyx       │    │   LaPis      │      │
-│  │ (persistent)  │    │  Gateway     │    │   (shared    │      │
-│  │              │    │  :7331       │    │    state DB)  │      │
-│  └──────┬───────┘    └──────▲───────┘    └──────▲───────┘      │
-│         │                   │                   │              │
-│         │ spawns            │ all LLM calls     │ all data     │
-│         │                   │                   │ access       │
-│         ▼                   │                   │              │
-│  ┌──────────────┐  ┌───────┴──────┐  ┌─────────┴──────┐      │
-│  │   Workers    │  │  Validators  │  │   Research     │      │
-│  │  (ephemeral) │  │   (paired)   │  │  (read-only)   │      │
-│  │              │  │              │  │                │      │
-│  │ Pi SDK       │  │ Pi SDK       │  │ Pi SDK         │      │
-│  │ + worktree   │  │ + restricted │  │ + read-only    │      │
-│  │ + task/*     │  │              │  │                │      │
-│  └──────────────┘  └──────────────┘  └────────────────┘      │
-│                                                                 │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │                    Fastify Server                        │   │
-│  │  REST API (missions, checkpoints)  │  WebSocket (events) │   │
-│  └─────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    FRONTEND (React + Vite)                       │
-│                                                                 │
-│  ┌─────────────────┐  ┌──────────────────────────────────────┐ │
-│  │  Passive View   │  │  Active View (escalation modal)      │ │
-│  │  • Agent grid   │  │  • Checkpoint context                │ │
-│  │  • Milestone    │  │  • Approve / Reject / Re-scope       │ │
-│  │  • Cost counter │  │  • Attempt history                   │ │
-│  │  • Status feed  │  │                                      │ │
-│  └─────────────────┘  └──────────────────────────────────────┘ │
-│                                                                 │
-│  Tailwind CSS + anime.js v4 (all animations)                    │
-└─────────────────────────────────────────────────────────────────┘
-```
+---
 
-### Architectural Invariants
+## How It Works
 
-1. **LaPis is the shared state DB** — all data access through LaPis HTTP client, never direct SQLite
-2. **No direct agent communication** — isolated Pi SDK sessions with restricted tool sets
-3. **PiNyx is the sole LLM gateway** — all model calls route through `localhost:7331`
-4. **Each worker gets its own git worktree** — filesystem isolation by default
-5. **Logic in skill files, boundaries in runtime** — agent behavior defined in markdown skills, enforcement in TypeScript
+![Architecture Overview](docs/architecture-overview.svg)
 
-For a deeper dive into the design rationale, see [DESIGN.md](./DESIGN.md).
+1. **You create a mission** — describe what you want done
+2. **The AI plans** — the orchestrator breaks your goal into milestones and working units
+3. **Workers build** — AI coding agents write code in isolated git branches
+4. **Validators check** — separate agents review the work against acceptance criteria
+5. **You approve** — Aurex escalates to you only when needed (scope changes, cost limits, test failures)
+6. **Done** — merged code, audit trail, and cost report
 
-## Key Concepts
+---
 
-- **Missions** → **Milestones** → **Working Units**: hierarchical task decomposition planned by the orchestrator via LLM
-- **Workers**: ephemeral Pi SDK agents with isolated git worktrees that implement code changes
-- **Validators**: paired agents that evaluate worker output against immutable validation contracts
-- **Researchers**: read-only agents for codebase exploration and context gathering
-- **Negotiator**: decides pass/retry/rescope/escalate based on validation verdicts
-- **Checkpoints**: human-in-the-loop escalation for scope changes, cost caps, and test failures
-- **Enforcement module**: branch guards, handoff validation, broadcast lifecycle, contract immutability, creator-verifier audit
+## Mission Lifecycle
 
-## Monorepo Structure
+![Mission Lifecycle](docs/mission-lifecycle.svg)
 
-```plaintext
-packages/
-├── shared/              # @aurex/shared — types, enums, REST/WS definitions
-│   └── src/
-│       ├── enums.ts     # MissionStatus, MilestoneStatus, AgentType, etc.
-│       ├── types.ts     # Mission, Milestone, WorkingUnit, Handoff, etc.
-│       ├── events.ts    # WsClientEvent discriminated union
-│       ├── rest.ts      # REST request/response types
-│       └── index.ts     # barrel export
-│
-├── backend/             # @aurex/backend — Fastify server + orchestrator
-│   └── src/
-│       ├── server.ts    # entry point, Fastify + WS setup
-│       ├── config.ts    # env-driven configuration
-│       ├── agents/      # agent spawner, factory, tool definitions
-│       ├── clients/     # LaPis HTTP client, PiNyx LLM client
-│       ├── enforcement/ # branch guard, handoff validator, lifecycle enforcers
-│       ├── orchestrator/# mission runner, planner, negotiator, milestone loop
-│       ├── routes/      # REST routes (missions, checkpoints, auth)
-│       ├── skills/      # markdown skill files (orchestrator, worker, validator, research)
-│       └── ws/          # WebSocket event bus
-│
-└── frontend/            # @aurex/frontend — React dashboard
-    └── src/
-        ├── App.tsx      # root component with WS + passive/active routing
-        ├── passive/     # StatusBoard, AgentGrid, MilestoneBar, CostCounter, StatusFeed
-        ├── active/      # EscalationOverlay, CheckpointPanel, AttemptHistory, DecisionActions
-        ├── animations/  # anime.js modules (agent, state, counter, stagger)
-        ├── hooks/       # useWebSocket, useMission, useMissions
-        └── api.ts       # REST client
-```
+Every mission follows a structured loop:
+
+- **Plan → Build → Validate → Pass/Fail**
+- On **pass**, move to the next milestone (or complete the mission)
+- On **fail**, retry with the same worker (up to 2 times) or re-scope the milestone
+- If retries are exhausted, **you decide** — approve the attempt, re-scope, or abort
+
+---
+
+## The Dashboard
+
+Aurex comes with a real-time mission control dashboard — think air traffic control for AI agents.
+
+| Area | What you see |
+|---|---|
+| **Topbar** | System status (connected services), uptime, active mission count |
+| **Sidebar** | List of missions, create new mission button, running costs |
+| **Main View** | Agent grid (who's working on what), milestone progress, status feed |
+| **Telemetry Bar** | Live token count, cost, active agents, WebSocket status |
+| **Escalation Panel** | When Aurex needs you — context, attempt history, approve/reject/rescope |
+
+Three color themes are built in: **Solar Flare** (amber), **Frost Command** (cyan), and **Signal Red** (crimson). Switch instantly without reloading.
+
+---
+
+## Key Ideas
+
+| Concept | Plain English |
+|---|---|
+| **Mission** | Your high-level goal — "add login to the app" |
+| **Milestone** | A chunk of the mission — "set up the auth middleware" |
+| **Worker** | An AI agent that writes code in its own isolated git branch |
+| **Validator** | An AI agent that reviews a worker's output against requirements |
+| **Researcher** | An AI agent that explores the codebase to gather context (read-only) |
+| **Checkpoint** | A pause where Aurex asks you for approval before continuing |
+| **Negotiator** | The decision-maker that determines pass/fail/retry/escalate |
+
+---
+
+## Design Principles
+
+- **Isolation by default** — every worker gets its own git worktree, so agents never step on each other
+- **No agent-to-agent chatter** — agents communicate only through shared state, never directly
+- **LLM calls go through a gateway** — all model requests route through PiNyx (no direct API calls)
+- **Human-in-the-loop when it matters** — you're not in the weeds, but you're not locked out either
+- **Enforcement guardrails** — branch protection, handoff validation, contract immutability, and full audit trails
+
+---
 
 ## Tech Stack
 
-- **Runtime**: Node.js >= 20, pnpm >= 9
-- **Language**: TypeScript 5.7
-- **Backend**: Fastify 5, @fastify/websocket, Pi SDK
-- **Frontend**: React 19, Vite 6, Tailwind CSS 4, anime.js 4
-- **Testing**: Vitest (251 tests across 48 files)
-- **Validation**: @sinclair/typebox
+| Layer | Technology |
+|---|---|
+| **Backend** | Node.js, Fastify, TypeScript, Pi SDK |
+| **Frontend** | React, Vite, Tailwind CSS, anime.js |
+| **Shared State** | LaPis (SQLite-backed HTTP API) |
+| **LLM Gateway** | PiNyx (proxies all model calls) |
+| **Testing** | Vitest (251 tests across 48 files) |
 
-## Prerequisites
-
-Aurex requires two external services:
-
-- **LaPis** — shared state database (SQLite-backed HTTP API). Set `LAPIS_ENDPOINT`.
-- **PiNyx** — LLM gateway that proxies all model calls. Set `PINYX_ENDPOINT`.
+---
 
 ## Quick Start
 
 ### Docker (recommended)
 
-One command runs the full stack — LaPis, PiNyx stub, backend, frontend:
+One command runs the full stack:
 
 ```bash
 docker compose up --build
@@ -130,93 +96,91 @@ docker compose up --build
 
 | Service | URL |
 |---|---|
-| Frontend | http://localhost:8080 |
+| Dashboard | http://localhost:8080 |
 | Backend API | http://localhost:3000 |
-| LaPis (shared state) | http://localhost:9100 |
-| PiNyx stub | http://localhost:7331 |
+| Shared State (LaPis) | http://localhost:9100 |
+| LLM Gateway (stub) | http://localhost:7331 |
 
-> **Note**: The bundled PiNyx is a stub that returns mock LLM responses. To use real agents, set `PINYX_ENDPOINT` to a real PiNyx instance and remove `pinyx-stub` from the compose file.
->
-> **Note**: `REPO_ROOT` defaults to `/tmp` (no real repo). Mount a real git repo: `REPO_ROOT=/path/to/your/repo docker compose up --build`
+> The bundled PiNyx is a stub that returns mock responses. To use real AI agents, point `PINYX_ENDPOINT` to a live PiNyx instance.
 
-Stop with `Ctrl+C` or `docker compose down`.
-
-### Local development
+### Local Development
 
 ```bash
-# Install dependencies
 pnpm install
-
-# Configure environment
-cp .env.example .env
-# Edit .env with your LaPis/PiNyx endpoints, model names, and API key
-
-# Build all packages
+cp .env.example .env   # configure endpoints and model names
 pnpm run build
-
-# Type-check all packages
-pnpm run typecheck
-
-# Development (backend)
-pnpm --filter @aurex/backend run dev
-
-# Development (frontend)
-pnpm --filter @aurex/frontend run dev
-
-# Run tests
-npx vitest
+pnpm --filter @aurex/backend run dev   # backend on :3000
+pnpm --filter @aurex/frontend run dev  # frontend on :5173
 ```
+
+---
+
+## API at a Glance
+
+**REST**
+
+| Method | Path | What it does |
+|---|---|---|
+| `POST` | `/api/missions` | Start a new mission |
+| `GET` | `/api/missions/active` | List running missions |
+| `GET` | `/api/missions/:id` | Get mission details |
+| `POST` | `/api/missions/:id/checkpoints` | Submit your decision on a checkpoint |
+| `POST` | `/api/missions/:id/abort` | Abort a running mission |
+
+**WebSocket** — connect to `/ws` for real-time mission events (status changes, milestone transitions, cost updates, checkpoint escalations). Supports auth and replay.
+
+---
 
 ## Configuration
 
-All configuration is via environment variables (see `.env.example`):
+All config is via environment variables. Key ones:
 
-| Variable | Default | Description |
+| Variable | Default | What it controls |
 |---|---|---|
-| `LAPIS_ENDPOINT` | `http://localhost:9100` | LaPis shared state DB endpoint |
-| `PINYX_ENDPOINT` | `http://localhost:7331` | PiNyx LLM gateway endpoint |
-| `REPO_ROOT` | `/workspace` | Git repository root path |
-| `GIT_MAIN_BRANCH` | `main` | Main branch for worktree operations |
-| `PORT` | `3000` | Backend HTTP/WS port |
-| `API_KEY` | _(empty)_ | Optional API key for auth |
-| `MAX_CONCURRENT_MISSIONS` | `3` | Max parallel missions in pool |
-| `MODEL_ORCHESTRATOR` | `reasoning-strong` | Model hint for planning/negotiation |
-| `MODEL_WORKER` | `code-fast` | Model hint for worker agents |
-| `MODEL_VALIDATOR_SCRUTINY` | `reasoning` | Model hint for scrutiny validators |
-| `MODEL_VALIDATOR_USER_TESTING` | `computer-use` | Model hint for user-testing validators |
-| `MODEL_RESEARCH` | `fast-cheap` | Model hint for research agents |
-| `WORKER_TIMEOUT_SIMPLE` | `120000` | Timeout (ms) for simple worker tasks |
-| `WORKER_TIMEOUT_BUILD` | `300000` | Timeout (ms) for build tasks |
-| `WORKER_TIMEOUT_TEST_HEAVY` | `600000` | Timeout (ms) for test-heavy tasks |
-| `VALIDATOR_TIMEOUT` | `180000` | Timeout (ms) for validator agents |
-| `RESEARCH_TIMEOUT` | `120000` | Timeout (ms) for research agents |
-| `MAX_VALIDATOR_RETRIES` | `2` | Max validator retries per milestone |
-| `MAX_RESCOPES_PER_MILESTONE` | `5` | Max re-scope attempts per milestone |
-| `MISSION_COST_CAP` | `50.00` | Cost cap (USD) per mission |
+| `LAPIS_ENDPOINT` | `http://localhost:9100` | Where the shared state DB lives |
+| `PINYX_ENDPOINT` | `http://localhost:7331` | Where LLM calls go |
+| `REPO_ROOT` | `/workspace` | Path to the git repo to work on |
+| `MAX_CONCURRENT_MISSIONS` | `3` | How many missions run at once |
+| `MISSION_COST_CAP` | `$50.00` | Max spend per mission before pausing |
+| `MAX_VALIDATOR_RETRIES` | `2` | How many times a failed milestone can retry |
 
-## API
+Full list in `.env.example`.
 
-### REST
+---
 
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/api/missions` | Create a new mission |
-| `GET` | `/api/missions/active` | List active missions |
-| `GET` | `/api/missions/current` | Get current active mission |
-| `GET` | `/api/missions/:id` | Get mission by ID |
-| `POST` | `/api/missions/:id/checkpoints` | Submit checkpoint decision |
-| `POST` | `/api/missions/:id/abort` | Abort a running mission |
-| `GET` | `/health` | Health check (LaPis + PiNyx) |
+## Monorepo Layout
 
-### WebSocket
+```
+packages/
+├── shared/          # Types, enums, event definitions (shared between backend & frontend)
+├── backend/         # Fastify server, orchestrator, agent spawner, enforcement
+│   ├── agents/      # Factory, tool definitions for each agent type
+│   ├── enforcement/ # Branch guards, handoff validation, lifecycle enforcers
+│   ├── orchestrator/# Mission runner, planner, negotiator, milestone loop
+│   ├── routes/      # REST endpoints
+│   ├── skills/      # Markdown skill files that define agent behavior
+│   └── ws/          # WebSocket event bus
+└── frontend/        # React dashboard
+    ├── passive/     # Status board, agent grid, milestone bar, cost counter
+    ├── active/      # Escalation overlay, checkpoint panel, decision actions
+    └── animations/  # anime.js modules (pulse, spin, counter, stagger)
+```
 
-Connect to `/ws` for real-time mission events. Supports auth, replay (catch-up by sequence number), and streams all `WsClientEvent` types (status changes, milestone transitions, cost updates, checkpoint escalations).
+---
 
 ## Testing
 
 ```bash
-npx vitest              # run all tests
-npx vitest --reporter=verbose   # verbose output
+npx vitest                        # run all 251 tests
+npx vitest --reporter=verbose     # detailed output
 ```
 
-The test suite includes 251 tests across 48 files, covering shared types, backend logic (enforcement, orchestrator, overlap detection, routes), and the frontend API client.
+---
+
+## Design System
+
+Aurex has its own design system — dark-mode-native, mission-control-inspired, with three switchable themes. See [DESIGN.md](./DESIGN.md) for the full token spec, component guidelines, and animation rules.
+
+---
+
+*Built with the [Pi](https://github.com/earendil-works/pi-coding-agent) coding agent SDK.*
