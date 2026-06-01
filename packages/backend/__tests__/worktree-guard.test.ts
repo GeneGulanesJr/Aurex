@@ -36,7 +36,7 @@ describe("worktree manager — branch guard hooks", () => {
     // Check that the pre-commit hook exists and allows task/* branches
     const hookPath = path.join(repoRoot, ".git", "hooks", "pre-commit");
     const hookContent = await readFile(hookPath, "utf-8");
-    expect(hookContent).toContain("task/*");
+    expect(hookContent).toContain("task/worker-1/u-1");
     expect(hookContent).toContain("branch guard");
 
     // Clean up worktree

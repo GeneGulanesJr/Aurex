@@ -211,6 +211,12 @@ describe("milestone loop with spawner", () => {
     // Agent status callbacks should have been called
     expect(callbacks.onAgentStatus).toHaveBeenCalledWith(
       "worker-unit-1", "worker", "spawned", "ms-1",
+      expect.objectContaining({
+        declaredPaths: ["src/auth/login.ts"],
+        declaredModules: ["auth"],
+        taskBranch: "task/worker-unit-1/unit-1",
+        description: "Create login endpoint",
+      }),
     );
     expect(callbacks.onAgentStatus).toHaveBeenCalledWith(
       "worker-unit-1", "worker", "working", "ms-1",

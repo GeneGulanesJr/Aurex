@@ -17,7 +17,7 @@ type Action =
   | { type: "CLEAR_ESCALATION" }
   | { type: "COST_UPDATE"; totalCost: number; totalTokens: number }
   | { type: "MILESTONE_PROGRESS"; milestoneId: string; status: MilestoneStatus; completedUnits: number; totalUnits: number }
-  | { type: "AGENT_STATUS"; agentId: string; agentType: AgentType; status: AgentStatus; milestoneId: string }
+  | { type: "AGENT_STATUS"; agentId: string; agentType: AgentType; status: AgentStatus; milestoneId: string; workerSnapshot?: { declaredPaths: string[]; declaredModules: string[]; taskBranch: string; worktreePath: string; sessionId: string; description: string } }
   | { type: "MISSION_COMPLETED"; finalState: string }
   | { type: "MISSION_LOG"; phase: string; message: string; data?: Record<string, unknown> }
   | { type: "RESET" };
@@ -35,7 +35,7 @@ export function missionReducer(state: MissionState, action: Action): MissionStat
     case "CLEAR_ESCALATION":
       return { ...state, escalation: null };
     case "COST_UPDATE":
-      return { ...state, cost: { totalCost: action.totalCost, totalTokens: action.totalTokens, entries: 0 } };
+      return { ...state, cost: { totalCost: action.totalCost, totalTokens: action.totalTokens, entries: (state.cost?.entries ?? 0) + 1 } };
     case "MILESTONE_PROGRESS": {
       const milestones = state.milestones.map((m) =>
         m.id === action.milestoneId ? { ...m, status: action.status as Milestone["status"] } : m,
@@ -57,7 +57,7 @@ export function missionReducer(state: MissionState, action: Action): MissionStat
       }
       const activeWorkers = [
         ...state.activeWorkers,
-        { id: action.agentId, milestoneId: action.milestoneId, description: `${action.agentType} agent`, status: action.status as WorkingUnit["status"], declaredPaths: [] as string[], declaredModules: [] as string[], taskBranch: "", worktreePath: "", sessionId: "" },
+        { id: action.agentId, milestoneId: action.milestoneId, description: action.workerSnapshot?.description ?? `${action.agentType} agent`, status: action.status as WorkingUnit["status"], declaredPaths: action.workerSnapshot?.declaredPaths ?? [], declaredModules: action.workerSnapshot?.declaredModules ?? [], taskBranch: action.workerSnapshot?.taskBranch ?? "", worktreePath: action.workerSnapshot?.worktreePath ?? "", sessionId: action.workerSnapshot?.sessionId ?? "" },
       ];
       return { ...state, activeWorkers };
     }
@@ -116,7 +116,7 @@ export function useMission(missionId: string | null) {
         dispatch({ type: "MILESTONE_PROGRESS", milestoneId: event.milestoneId, status: event.status, completedUnits: event.completedUnits, totalUnits: event.totalUnits });
         break;
       case "agent_status":
-        dispatch({ type: "AGENT_STATUS", agentId: event.agentId, agentType: event.agentType, status: event.status, milestoneId: event.milestoneId });
+        dispatch({ type: "AGENT_STATUS", agentId: event.agentId, agentType: event.agentType, status: event.status, milestoneId: event.milestoneId, workerSnapshot: event.workerSnapshot });
         break;
       case "mission_completed":
         dispatch({ type: "MISSION_COMPLETED", finalState: event.finalState });
