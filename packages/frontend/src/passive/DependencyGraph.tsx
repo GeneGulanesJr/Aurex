@@ -8,6 +8,8 @@ const ROW_HEIGHT = 40;
 const NODE_RADIUS_MIN = 6;
 const NODE_RADIUS_MAX = 14;
 const SVG_PADDING = 24;
+const MAX_VISIBLE_HEIGHT = 320;
+const SINGLE_MODULE_WRAP_COLS = 5;
 
 export function DependencyGraph({ data, error }: { data: CodeGraphResponse | null; error?: boolean }) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -20,13 +22,18 @@ export function DependencyGraph({ data, error }: { data: CodeGraphResponse | nul
       list.push(node);
       moduleMap.set(node.module, list);
     }
+    const isSingleModule = moduleMap.size === 1;
+    const wrapCols = isSingleModule ? SINGLE_MODULE_WRAP_COLS : 1;
     const modules = [...moduleMap.keys()];
     const positions = new Map<string, { x: number; y: number; r: number }>();
     let maxY = 0;
 
-    modules.forEach((mod, colIdx) => {
+    modules.forEach((mod) => {
       const nodes = [...(moduleMap.get(mod) || [])].sort((a, b) => b.importance - a.importance);
-      nodes.forEach((node, rowIdx) => {
+      nodes.forEach((node, idx) => {
+        const colIdx = isSingleModule ? idx % wrapCols : modules.indexOf(mod);
+        const rowIdx = isSingleModule ? Math.floor(idx / wrapCols) : idx;
+        const totalCols = isSingleModule ? Math.min(wrapCols, nodes.length) : modules.length;
         const x = SVG_PADDING + colIdx * (COL_WIDTH + COL_GAP) + COL_WIDTH / 2;
         const y = SVG_PADDING + 16 + rowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
         const r = NODE_RADIUS_MIN + (NODE_RADIUS_MAX - NODE_RADIUS_MIN) * Math.max(0, Math.min(1, node.importance));
@@ -35,10 +42,12 @@ export function DependencyGraph({ data, error }: { data: CodeGraphResponse | nul
       });
     });
 
+    const totalCols = isSingleModule ? Math.min(wrapCols, data.nodes.length) : modules.length;
     return {
       positions,
       modules,
-      svgWidth: SVG_PADDING * 2 + modules.length * COL_WIDTH + Math.max(0, modules.length - 1) * COL_GAP,
+      isSingleModule,
+      svgWidth: SVG_PADDING * 2 + totalCols * COL_WIDTH + Math.max(0, totalCols - 1) * COL_GAP,
       svgHeight: SVG_PADDING + maxY,
     };
   }, [data]);
@@ -79,9 +88,9 @@ export function DependencyGraph({ data, error }: { data: CodeGraphResponse | nul
   );
 
   return (
-    <div style={{ padding: "12px 0", overflowX: "auto" }}>
+    <div style={{ padding: "12px 0", overflowX: "auto", overflowY: "auto", maxHeight: layout.isSingleModule ? `${MAX_VISIBLE_HEIGHT}px` : undefined }}>
       <svg ref={svgRef} width={layout.svgWidth} height={layout.svgHeight} viewBox={`0 0 ${layout.svgWidth} ${layout.svgHeight}`} style={{ display: "block", maxWidth: "100%" }}>
-        {layout.modules.map((mod, i) => (
+        {!layout.isSingleModule && layout.modules.map((mod, i) => (
           <text key={mod} x={SVG_PADDING + i * (COL_WIDTH + COL_GAP) + COL_WIDTH / 2} y={14} textAnchor="middle" fill="var(--text-muted)" style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "9px", letterSpacing: "1.5px", textTransform: "uppercase" }}>
             {mod}
           </text>
