@@ -13,6 +13,7 @@ interface MissionSidebarProps {
   onCreateMission: (description: string, cloneUrl?: string) => Promise<void>;
   github?: UseGitHubReturn;
   systemReady?: boolean;
+  totalCost?: number;
 }
 
 function statusBadge(state: string): { label: string; style: React.CSSProperties } {
@@ -23,17 +24,17 @@ function statusBadge(state: string): { label: string; style: React.CSSProperties
     case "executing":
       return { label: "Running", style: { background: "var(--info)", color: "var(--bg-deep)", fontSize: "10px", padding: "1px 6px", borderRadius: "3px" } };
     case "waiting_checkpoint":
-      return { label: "Checkpoint", style: { background: "rgba(129, 140, 248, 0.2)", color: "var(--info)", fontSize: "10px", padding: "1px 6px", borderRadius: "3px" } };
+      return { label: "Checkpoint", style: { background: "var(--badge-info-bg)", color: "var(--info)", fontSize: "10px", padding: "1px 6px", borderRadius: "3px" } };
     case "completed":
-      return { label: "Done", style: { background: "rgba(74, 222, 128, 0.2)", color: "var(--success)", fontSize: "10px", padding: "1px 6px", borderRadius: "3px" } };
+      return { label: "Done", style: { background: "var(--badge-success-bg)", color: "var(--success)", fontSize: "10px", padding: "1px 6px", borderRadius: "3px" } };
     case "failed":
-      return { label: "Failed", style: { background: "rgba(239, 68, 68, 0.2)", color: "var(--error)", fontSize: "10px", padding: "1px 6px", borderRadius: "3px" } };
+      return { label: "Failed", style: { background: "var(--badge-error-bg)", color: "var(--error)", fontSize: "10px", padding: "1px 6px", borderRadius: "3px" } };
     default:
       return { label: state, style: { background: "var(--bg-elevated)", color: "var(--text-muted)", fontSize: "10px", padding: "1px 6px", borderRadius: "3px" } };
   }
 }
 
-export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove, onRestart, onCreateMission, github, systemReady }: MissionSidebarProps) {
+export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove, onRestart, onCreateMission, github, systemReady, totalCost }: MissionSidebarProps) {
   const handleAbort = useCallback(async (e: React.MouseEvent, missionId: string) => {
     e.stopPropagation();
     try {
@@ -65,6 +66,15 @@ export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove
           ) : (
             <span style={{ fontSize: "10px", color: "var(--border-bright)" }}>Create a mission to begin</span>
           )}
+        </div>
+        {/* Footer: Total Spent */}
+        <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)", marginTop: "auto" }}>
+          <div style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "2px", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', marginBottom: "4px" }}>
+            Total Spent
+          </div>
+          <div style={{ fontSize: "14px", fontWeight: 500, color: "var(--accent)", fontFamily: '"JetBrains Mono", monospace' }}>
+            ${(totalCost ?? 0).toFixed(2)}
+          </div>
         </div>
       </aside>
     );
@@ -139,6 +149,15 @@ export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove
             </div>
           );
         })}
+      </div>
+      {/* Footer: Total Spent */}
+      <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
+        <div style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "2px", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', marginBottom: "4px" }}>
+          Total Spent
+        </div>
+        <div style={{ fontSize: "14px", fontWeight: 500, color: "var(--accent)", fontFamily: '"JetBrains Mono", monospace' }}>
+          ${(totalCost ?? 0).toFixed(2)}
+        </div>
       </div>
     </aside>
   );

@@ -118,6 +118,7 @@ export function App() {
           onCreateMission={handleCreateMission}
           github={github}
           systemReady={systemReady}
+          totalCost={state.cost?.totalCost}
         />
         <main style={{ overflowY: "auto", background: "var(--bg-deep)" }}>
           <StatusBoard
