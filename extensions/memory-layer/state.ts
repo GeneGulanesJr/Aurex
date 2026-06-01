@@ -105,8 +105,6 @@ export const state = {
   currentProject: null as string | null,
   projectSessionCount: 0 as number,
   memoriesSavedThisSession: 0 as number,
-  nudgeCountThisSession: 0 as number,
-  MAX_NUDGES_PER_SESSION: 8 as number,
   exploredFiles: new Set<string>(),
   turnCount: 0 as number,
   lastMemoryToolCall: 0 as number,
