@@ -287,6 +287,32 @@ function search(deps, args) {
 
   const ranked = rankObservations(rows, query).slice(0, limit);
 
+  if (ranked.length > 0) {
+    const rankedIds = ranked.map((r) => r.id);
+    const placeholders = rankedIds.map(() => '?').join(',');
+    const allRelations = sqlJson(
+      `SELECT source_id, target_id, relation, confidence
+       FROM observation_relations
+       WHERE source_id IN (${placeholders}) OR target_id IN (${placeholders})`,
+      [...rankedIds, ...rankedIds],
+    );
+    const rankedIdSet = new Set(rankedIds);
+    const relMap = new Map();
+    for (const rel of allRelations) {
+      for (const id of [rel.source_id, rel.target_id]) {
+        if (rankedIdSet.has(id)) {
+          if (!relMap.has(id)) {
+            relMap.set(id, []);
+          }
+          relMap.get(id).push(rel);
+        }
+      }
+    }
+    for (const r of ranked) {
+      r._relations = relMap.get(r.id) || [];
+    }
+  }
+
   if (sessionId && ranked.length > 0) {
     insertRecallLog(
       { sqlRun },
