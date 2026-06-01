@@ -5,9 +5,17 @@ function insertRecallLog(deps, entries) {
     return { inserted: 0 };
   }
   const { sqlRun } = deps;
-  const placeholders = entries.map(() => '(?, ?, ?)').join(',');
-  const params = entries.flatMap((r) => [r.memoryId, r.sessionId, r.query]);
-  sqlRun(`INSERT OR IGNORE INTO recall_log (memory_id, session_id, query) VALUES ${placeholders}`, params);
+  const placeholders = entries.map(() => '(?, ?, ?, ?)').join(',');
+  const params = entries.flatMap((r) => [
+    r.memoryId,
+    r.sessionId,
+    r.query,
+    r.wasUseful === false ? 0 : 1,
+  ]);
+  sqlRun(
+    `INSERT OR IGNORE INTO recall_log (memory_id, session_id, query, was_useful) VALUES ${placeholders}`,
+    params,
+  );
   return { inserted: entries.length };
 }
 
