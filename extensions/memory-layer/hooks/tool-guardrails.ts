@@ -60,35 +60,43 @@ interface GuardrailsDeps {
   invalidateRepoCache: typeof invalidateRepoCache;
 }
 
-let activeIndexing: Promise<string | null> | null = null;
+interface IndexResult {
+  ok: boolean;
+  summary: string;
+}
 
-async function ensureIndexed(deps: GuardrailsDeps, resolvedCwd: string, projectName: string): Promise<string | null> {
-  if (activeIndexing) {
-    return activeIndexing;
+const activeIndexing = new Map<string, Promise<IndexResult | null>>();
+
+function ensureIndexed(deps: GuardrailsDeps, resolvedCwd: string, projectName: string): Promise<IndexResult | null> {
+  const key = resolvedCwd;
+  const pending = activeIndexing.get(key);
+  if (pending) {
+    return pending;
   }
-  activeIndexing = (async () => {
+  const promise = (async (): Promise<IndexResult | null> => {
     try {
       const result = await deps.memStreaming('code', { mode: 'index-repo', path: resolvedCwd, name: projectName });
-      deps.invalidateRepoCache();
       if (!result) {
         return null;
       }
       if (result.error) {
-        return `Indexing error: ${result.error}`;
+        return { ok: false, summary: `Indexing error: ${result.error}` };
       }
+      deps.invalidateRepoCache();
       const summary = (result as any).summary || '';
-      return summary;
+      return { ok: true, summary };
     } catch (e) {
-      return `Indexing failed: ${e instanceof Error ? e.message : String(e)}`;
+      return { ok: false, summary: `Indexing failed: ${e instanceof Error ? e.message : String(e)}` };
     } finally {
-      activeIndexing = null;
+      activeIndexing.delete(key);
     }
   })();
-  return activeIndexing;
+  activeIndexing.set(key, promise);
+  return promise;
 }
 
 export function registerToolGuardrails(pi: ExtensionAPI, deps: GuardrailsDeps) {
-  pi.on('tool_call', async (event, _ctx) => {
+  pi.on('tool_call', async (event, ctx) => {
     const toolName = event.toolName;
     const input = event.input as Record<string, unknown>;
 
@@ -143,11 +151,11 @@ export function registerToolGuardrails(pi: ExtensionAPI, deps: GuardrailsDeps) {
         const projectName = deps.state.currentProject || path.basename(resolvedCwd);
         const searchHint = CODE_PATH_HINT_RE.test(cmd) ? 'Code search' : 'Raw repository search';
         const indexResult = await ensureIndexed(deps, resolvedCwd, projectName);
-        if (indexResult && !indexResult.startsWith('Indexing error') && !indexResult.startsWith('Indexing failed')) {
+        if (indexResult?.ok) {
           return {
             block: true,
             reason:
-              `${searchHint} in an unindexed project. The repo has been auto-indexed (${indexResult}).\n` +
+              `${searchHint} in an unindexed project. The repo has been auto-indexed (${indexResult.summary}).\n` +
               `Use \`memory-code\` instead of raw grep/find:\n` +
               `• \`memory-code search --repo ${projectName} --query <query>\`\n` +
               `• \`memory-code outline --repo ${projectName} --file <path>\`\n` +
@@ -158,7 +166,7 @@ export function registerToolGuardrails(pi: ExtensionAPI, deps: GuardrailsDeps) {
         return {
           block: true,
           reason:
-            `${searchHint} in an unindexed project. Auto-indexing failed: ${indexResult || 'unknown error'}.\n` +
+            `${searchHint} in an unindexed project. Auto-indexing failed: ${indexResult?.summary || 'unknown error'}.\n` +
             `Try indexing manually: \`memory-code index-repo --path ${resolvedCwd} --name ${projectName}\``,
         };
       }
@@ -194,24 +202,24 @@ export function registerToolGuardrails(pi: ExtensionAPI, deps: GuardrailsDeps) {
       );
 
       if (!matchedRepo) {
-        const cwd = process.cwd();
-        const projectName = deps.state.currentProject || path.basename(cwd);
-        const indexResult = await ensureIndexed(deps, cwd, projectName);
-        if (indexResult && !indexResult.startsWith('Indexing error') && !indexResult.startsWith('Indexing failed')) {
+        const projectDir = path.dirname(absPath);
+        const projectName = deps.state.currentProject || path.basename(projectDir);
+        const indexResult = await ensureIndexed(deps, projectDir, projectName);
+        if (indexResult?.ok) {
           return {
             block: true,
             reason:
-              `Cannot read "${path.basename(filePath)}" — project was not indexed. It has been auto-indexed (${indexResult}).\n` +
+              `Cannot read "${path.basename(filePath)}" — project was not indexed. It has been auto-indexed (${indexResult.summary}).\n` +
               `Use \`memory-code\` to understand the file first:\n` +
-              `• \`memory-code outline --repo ${projectName} --file ${path.relative(cwd, absPath)}\`\n` +
+              `• \`memory-code outline --repo ${projectName} --file ${path.relative(projectDir, absPath)}\`\n` +
               `After reviewing the outline, use \`read\` with \`offset\`/\`limit\` for targeted editing.`,
           };
         }
         return {
           block: true,
           reason:
-            `Cannot read "${path.basename(filePath)}" — project auto-indexing failed: ${indexResult || 'unknown error'}.\n` +
-            `Try indexing manually: \`memory-code index-repo --path ${cwd} --name ${projectName}\``,
+            `Cannot read "${path.basename(filePath)}" — project auto-indexing failed: ${indexResult?.summary || 'unknown error'}.\n` +
+            `Try indexing manually: \`memory-code index-repo --path ${projectDir} --name ${projectName}\``,
         };
       }
 
@@ -238,7 +246,7 @@ export function registerToolGuardrails(pi: ExtensionAPI, deps: GuardrailsDeps) {
   });
 
   // Track explored files from memory-code results (callers, deps, importance, etc.)
-  pi.on('tool_result', async (event, _ctx) => {
+  pi.on('tool_result', async (event, ctx) => {
     if (event.toolName !== 'memory-code') {
       return;
     }
