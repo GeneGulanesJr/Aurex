@@ -96,7 +96,7 @@ function ensureIndexed(deps: GuardrailsDeps, resolvedCwd: string, projectName: s
 }
 
 export function registerToolGuardrails(pi: ExtensionAPI, deps: GuardrailsDeps) {
-  pi.on('tool_call', async (event, ctx) => {
+  pi.on('tool_call', async (event, _ctx) => {
     const toolName = event.toolName;
     const input = event.input as Record<string, unknown>;
 
@@ -249,7 +249,7 @@ export function registerToolGuardrails(pi: ExtensionAPI, deps: GuardrailsDeps) {
   });
 
   // Track explored files from memory-code results (callers, deps, importance, etc.)
-  pi.on('tool_result', async (event, ctx) => {
+  pi.on('tool_result', async (event, _ctx) => {
     if (event.toolName !== 'memory-code') {
       return;
     }
