@@ -78,3 +78,62 @@ describe('recall feedback', () => {
     expect(rows[0].was_useful).toBe(0);
   });
 });
+
+const { rankObservations } = require('../src/memory-domain/search');
+
+describe('rankObservations with useful_ratio', () => {
+  it('ranks memory with higher useful_ratio above lower', () => {
+    const rows = [
+      {
+        id: 1,
+        title: 'Memory A',
+        type: 'decision',
+        created_at: '2026-01-01 00:00:00',
+        recall_count: 10,
+        useful_count: 9,
+        trust_score: 0.7,
+        rank: -1,
+      },
+      {
+        id: 2,
+        title: 'Memory B',
+        type: 'decision',
+        created_at: '2026-01-01 00:00:00',
+        recall_count: 10,
+        useful_count: 2,
+        trust_score: 0.7,
+        rank: -1,
+      },
+    ];
+    const ranked = rankObservations(rows, 'memory');
+    expect(ranked[0].id).toBe(1);
+    expect(ranked[0]._score).toBeGreaterThan(ranked[1]._score);
+  });
+
+  it('memory with zero useful_count but high recall_count ranks lower', () => {
+    const rows = [
+      {
+        id: 1,
+        title: 'Noisy',
+        type: 'discovery',
+        created_at: '2026-01-01 00:00:00',
+        recall_count: 20,
+        useful_count: 1,
+        trust_score: 0.7,
+        rank: -1,
+      },
+      {
+        id: 2,
+        title: 'Precise',
+        type: 'discovery',
+        created_at: '2026-01-01 00:00:00',
+        recall_count: 3,
+        useful_count: 3,
+        trust_score: 0.7,
+        rank: -1,
+      },
+    ];
+    const ranked = rankObservations(rows, 'test');
+    expect(ranked[0].id).toBe(2);
+  });
+});

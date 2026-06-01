@@ -16,7 +16,9 @@ LEFT JOIN (
   FROM symbol_links GROUP BY memory_id
 ) sl ON sl.memory_id = CAST(o.id AS TEXT)
 LEFT JOIN (
-  SELECT memory_id, COUNT(*) as recall_count
+  SELECT memory_id,
+         COUNT(*) as recall_count,
+         SUM(CASE WHEN was_useful = 1 THEN 1 ELSE 0 END) as useful_count
   FROM recall_log GROUP BY memory_id
 ) rl ON rl.memory_id = o.id`;
 
@@ -45,7 +47,12 @@ function rankObservations(rows, query = '') {
       const recencyScore = Math.exp(-ageMs / TIME_WINDOWS.RECENCY_HALF_LIFE_MS);
       const trustScore =
         row.trust_score !== undefined && row.trust_score !== null ? row.trust_score : RANKING.DEFAULT_TRUST_SCORE;
-      const recallScore = Math.log(1 + (row.recall_count || 0)) * RANKING.RECALL_LOG_MULTIPLIER;
+      const recallCount = row.recall_count || 0;
+      const usefulCount = row.useful_count || 0;
+      const usefulRatio = recallCount > 0 ? usefulCount / recallCount : 0.5;
+      const recallScore =
+        Math.log(1 + recallCount) * RANKING.RECALL_LOG_MULTIPLIER * usefulRatio +
+        usefulRatio * RANKING.USEFULNESS_MULTIPLIER;
       const typeBoost = RANKING.TYPE_BOOST[row.type] || 1.0;
 
       // Boost memories containing file paths for navigation queries
@@ -252,7 +259,8 @@ function search(deps, args) {
       SELECT o.id, o.title, o.type, o.project, o.scope, o.topic_key, o.created_at,
              '' as snippet, 0 as rank,
              sl.trust_score,
-             COALESCE(rl.recall_count, 0) as recall_count
+             COALESCE(rl.recall_count, 0) as recall_count,
+             COALESCE(rl.useful_count, 0) as useful_count
       FROM observations o
       ${TRUST_RECALL_JOINS}
       WHERE (o.title LIKE ? OR o.content LIKE ?)
