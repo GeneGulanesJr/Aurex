@@ -8,5 +8,6 @@ __pycache__/
 /crosshash/.crosshash/
 .crosshash/
 jobs/
+.kilo/
 bench/results/
 bench/realworld/results/
