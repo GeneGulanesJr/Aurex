@@ -313,7 +313,59 @@ src/platform/
 
 A feature module should receive a storage/repository dependency instead of importing raw SQL helpers globally.
 
-### 9. Crosshash Rust engine
+### 9. HTTP server (Aurex domain)
+
+**Current entry points**
+
+- `src/http/server.js` for HTTP server creation, route registration, and startup.
+- `src/http/routes.js` for route pattern matching with path parameters.
+- `src/http/errors.js` for JSON error response helpers.
+- `src/http/handlers/` with 18 handler modules covering the Aurex domain and code endpoints.
+
+**Sub-features**
+
+- Aurex domain CRUD: missions, milestones, working units, handoffs, contracts, verdicts, broadcasts, findings.
+- Session registration and per-milestone session listing.
+- Memory search over HTTP.
+- Cost tracking per mission.
+- Retry and rescope logging per milestone.
+- Context compression (stub).
+- Checkpoint create/resolve/query.
+- Key-value settings store.
+- Code indexing, reindexing, health, summary, dependency graph, and hotspots via GET endpoints.
+
+**Boundary to establish**
+
+Keep handlers thin — they parse parameters, call repository methods, and format JSON responses:
+
+```text
+src/http/
+  server.js          # createHttpServer, startHttpServer, buildRoutes
+  routes.js           # matchRoute, matchPath
+  errors.js           # jsonError, jsonOk helpers
+  handlers/
+    health.js         # /health
+    missions.js       # /missions
+    milestones.js     # /milestones
+    units.js          # /units
+    handoffs.js       # handoff writes
+    contracts.js      # contract create/supersede/history
+    verdicts.js       # verdict write/classify/query
+    broadcasts.js     # broadcast write/transition/query
+    findings.js       # finding write/transition/query
+    sessions.js       # session register/query
+    memory.js         # /memory/search
+    costs.js          # cost log/query
+    compression.js    # compression stub
+    retry.js          # retry/rescope
+    checkpoints.js    # checkpoint CRUD
+    settings.js       # KV settings CRUD
+    code-index.js     # code index/reindex/health/summary/graph/hotspots
+```
+
+Handlers should not contain business logic. They should receive a repository dependency at construction time and delegate all domain work to the repository or feature service.
+
+### 10. Crosshash Rust engine
 
 **Current entry points**
 
@@ -405,11 +457,11 @@ extensions/memory-layer/index.ts
   └─ backend client
        │
        ▼
-src/cli or src/api command gateway
-  ├─ memory router
-  ├─ workflow router
-  ├─ code-index router
-  ├─ code-analysis router
+src/cli command gateway  or  src/http HTTP server
+  ├─ memory router             ├─ Aurex domain handlers
+  ├─ workflow router           ├─ memory search handler
+  ├─ code-index router         ├─ code index/analysis handlers
+  ├─ code-analysis router      └─ settings/checkpoint handlers
   ├─ doc-index router
   ├─ trust-sync router
   └─ maintenance router
@@ -443,7 +495,8 @@ Platform
 6. `doc-index` may depend on Markdown/doc storage; doc coverage may depend only on `CodeSymbolLookup`.
 7. `trust-sync` is the only module allowed to coordinate memory and code symbol tables.
 8. `platform/protocol` owns `_meta`, compact/auto output, and LLM-facing transformations.
-9. Crosshash should remain behind a command/API boundary until it fully replaces the JS code-intelligence path.
+9. `src/http/` may depend on platform repositories and feature services, but should not contain business logic or raw SQL.
+10. Crosshash should remain behind a command/API boundary until it fully replaces the JS code-intelligence path.
 
 ## Suggested extraction order
 

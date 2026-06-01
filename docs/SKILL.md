@@ -1,55 +1,25 @@
 # Memory Layer Skill
 
-This is the main skill file for the memory layer extension.
+This is the companion skill doc for the `skills/memory-layer/SKILL.md` extension registration. For the authoritative and complete skill reference, see [`../skills/memory-layer/SKILL.md`](../skills/memory-layer/SKILL.md).
 
 ## Overview
 
-The memory layer provides persistent memory capabilities for AI agents. It integrates with the memory store to save and retrieve context across sessions.
+The memory layer provides persistent memory capabilities for the Pi coding agent. It runs as a Pi extension with a local SQLite backend, providing observation CRUD, code indexing, code analysis, doc indexing, trust scoring, and session lifecycle management — all without cloud dependencies or API keys.
 
-## How to Use
+## Key Capabilities
 
-To use the memory layer, you need to `require` the memory-store module in your project.
-
-**Memory Store** — The core storage engine that persists memories to a local SQLite database.
-
-**Doc Indexer** — Indexes markdown documentation for fast search and retrieval.
-
-## Memory WASM Integration
-
-The memory wasm module provides high-performance lookups for indexed code symbols. It uses a compact binary format for efficient storage and retrieval.
-
-## Configuration
-
-See [CONFIGURATION.md](CONFIGURATION.md) for setup details.
-
-## Glossary
-
-- **Symbol** — A named code entity such as a function, class, or variable.
-- **Memory Store** — The SQLite-backed persistence layer for agent memories.
-- **Doc Repo** — A collection of markdown files indexed for documentation search.
-
-## Code Examples
-
-### Basic Usage
-
-```js
-const store = require('../memory-store');
-const result = store.save('my-memory', 'Important context about the project');
-console.log(result);
-```
-
-### Advanced Query
-
-```js
-const store = require('../memory-store');
-const memories = store.search('memory wasm performance');
-for (const m of memories) {
-  console.log(m.content);
-}
-```
+- **Declarative memory** — save, search, update, and delete observations (decisions, bugfixes, patterns, discoveries).
+- **Code indexing** — web-tree-sitter (WASM) parses JS/TS/TSX/Go/Python/Rust/SQL for semantic symbol lookup.
+- **Code analysis** — import graphs, call hierarchies, blast radius, dead code, complexity, hotspots, cycles, importance, coupling, signal chains, layer violations, AST patterns, provenance, untested detection, and PR risk.
+- **Doc indexing** — Markdown sections, links, glossary terms, code examples, broken link detection, tutorial path reconstruction.
+- **Trust scoring** — memories linked to changed code lose confidence; stable linked code recovers trust.
+- **HTTP server** — optional REST API for programmatic access to the Aurex domain model and code analysis.
+- **Auto-detection** — the extension automatically captures decisions, bugfixes, and discoveries from assistant messages.
 
 ## See Also
 
-- [API.md](API.md) for the full API reference
-- [TUTORIAL.md](TUTORIAL.md) for step-by-step guides
-- [nonexistent-file.md](nonexistent-file.md) for an example broken link
+- [`../skills/memory-layer/SKILL.md`](../skills/memory-layer/SKILL.md) — complete extension skill reference
+- [`API.md`](API.md) — HTTP API and CLI reference
+- [`TUTORIAL.md`](TUTORIAL.md) — step-by-step usage guide
+- [`CONFIGURATION.md`](CONFIGURATION.md) — configuration options
+- [`COMMANDS.md`](COMMANDS.md) — full CLI command reference

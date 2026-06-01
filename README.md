@@ -44,6 +44,7 @@ npm install
 - **Deduplicates memory** - similar saves are merged or flagged before they clutter recall.
 - **Manages workspaces** - project isolation is explicit through create/list/archive workflows.
 - **Cleans stale memory** - the Dream Cycle removes superseded, never-useful, and replaced memories based on quality signals.
+- **Exposes an HTTP API** - optional REST server for programmatic access to missions, milestones, working units, and code analysis.
 
 ## Benchmarks
 
@@ -140,9 +141,12 @@ The paired benchmark also reports behavior counters. In the latest run, memory-o
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) - contributor workflow and checks.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - architecture overview and dependency rules.
 - [`docs/MODULE_MAP.md`](docs/MODULE_MAP.md) - module ownership and entry points.
+- [`docs/ARCHITECTURE_MODULARIZATION.md`](docs/ARCHITECTURE_MODULARIZATION.md) - detailed modularization assessment.
 - [`docs/COMMANDS.md`](docs/COMMANDS.md) - command reference.
+- [`docs/API.md`](docs/API.md) - HTTP API and CLI reference.
 - [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) - config file and stored data.
 - [`docs/DREAM_CYCLE.md`](docs/DREAM_CYCLE.md) - stale-memory cleanup behavior.
+- [`docs/TUTORIAL.md`](docs/TUTORIAL.md) - step-by-step usage guide.
 
 ## License
 

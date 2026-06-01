@@ -31,6 +31,7 @@ Start with the feature area, then add code in the owning module. If a change app
 | Import/call graphs, blast radius, dead code, complexity, hotspots, cycles, PageRank, coupling, signal chains, layer violations, query winnowing, or PR risk | `src/code-analysis/`                         | Analysis consumes code-index read models and git metrics; it must not depend on Pi extension state. |
 | Markdown indexing, section search, backlinks, broken links, glossary terms, tutorial paths, code examples, or doc analytics                                 | `src/doc-index/`                             | Documentation features are independent; coverage may use only a narrow code-symbol lookup.          |
 | Trust decay/recovery or memory-to-code-symbol relationship updates                                                                                          | `src/trust-sync/`                            | This is the integration boundary between declarative memory and indexed code.                       |
+| HTTP server, REST endpoints, Aurex domain handlers (missions, milestones, units, contracts, verdicts, broadcasts, findings, costs, settings)              | `src/http/`                                  | Handlers should be thin — parse params, call repositories, format JSON. No business logic or raw SQL. |
 | CLI subcommand parsing/routing                                                                                                                              | `src/cli/commands/` and `src/cli/gateway.js` | Routers should delegate to feature services and avoid embedding business logic.                     |
 | JSON envelopes, compact output, LLM-facing transformations, or response metadata                                                                            | `src/platform/protocol/`                     | Presentation belongs at platform/protocol boundaries, not inside feature services.                  |
 | Database access helpers or feature repositories                                                                                                             | `src/platform/storage/` and `data-access/`   | Prefer repository interfaces over ad hoc SQL in feature modules.                                    |
@@ -46,13 +47,14 @@ memory-store.js          # CLI entry point that delegates to cli.js
 cli.js                   # Runtime command dispatch setup
 extensions/memory-layer/ # Pi extension composition root, hooks, host client, and tools
 src/cli/                 # CLI gateway and feature command routers
+src/http/                # Optional HTTP server (Aurex domain + code endpoints)
 src/memory-domain/       # Declarative memory feature module
 src/workflow-memory/     # Procedural workflow-memory feature module
 src/code-index/          # Code indexing and source retrieval feature module
 src/code-analysis/       # Code intelligence and analysis feature module
 src/doc-index/           # Documentation indexing and doc intelligence feature module
 src/trust-sync/          # Memory/code trust integration feature module
-src/platform/            # Shared storage/protocol/platform adapters
+src/platform/            # Shared storage/protocol/platform adapters and repository construction
 data-access/             # Repository-style SQL access modules used by legacy/runtime code
 test/                    # Vitest unit/integration tests and CLI smoke tests
 crosshash/               # Rust code-intelligence workspace
@@ -79,7 +81,8 @@ Follow these rules when adding or moving code:
 6. `doc-index` may depend on Markdown/doc storage; documentation coverage may depend only on a narrow code-symbol lookup.
 7. `trust-sync` is the only module that should coordinate memory observations with code symbol tables.
 8. `platform/protocol` owns `_meta`, compact/auto output, and LLM-facing transformations.
-9. Crosshash should stay behind a command/API boundary until it fully replaces the JavaScript code-intelligence path.
+9. `src/http/` may depend on platform repositories and feature services, but should not contain business logic or raw SQL.
+10. Crosshash should stay behind a command/API boundary until it fully replaces the JavaScript code-intelligence path.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the concise architecture overview and [`docs/ARCHITECTURE_MODULARIZATION.md`](docs/ARCHITECTURE_MODULARIZATION.md) for the detailed extraction rationale.
 

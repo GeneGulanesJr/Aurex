@@ -11,6 +11,7 @@ Pi Agent
   -> extensions/memory-layer/        # Pi hooks, tools, host adapters, formatting adapters
   -> memory-store.js / cli.js        # CLI entry points and command dispatch setup
   -> src/cli/                        # command gateway and feature routers
+  -> src/http/                       # optional HTTP server (Aurex domain + code endpoints)
   -> src/{feature}/                  # independently testable feature services
   -> src/platform/ + data-access/    # storage, repositories, protocol formatting
 ```
@@ -46,9 +47,13 @@ Feature services live under `src/` and own one feature family each:
 - `src/doc-index/` — Markdown documentation indexing and documentation intelligence.
 - `src/trust-sync/` — explicit integration between memory observations and code symbols.
 
+### HTTP server (Aurex domain)
+
+`src/http/` provides an optional HTTP server for programmatic access. It exposes REST endpoints for the Aurex domain model (missions, milestones, working units, handoffs, contracts, verdicts, broadcasts, findings, sessions, costs, retry, compression, checkpoints, settings) and code indexing/analysis. The server uses the same repository interfaces as the CLI and is started with `node memory-store.js serve`. It defaults to `127.0.0.1:9100`.
+
 ### Platform helpers
 
-`src/platform/` owns shared platform concerns such as storage composition and protocol/output formatting. Feature modules should receive repositories or typed helpers rather than importing unrelated feature internals.
+`src/platform/` owns shared platform concerns such as storage composition, repository construction, and protocol/output formatting. Feature modules should receive repositories or typed helpers rather than importing unrelated feature internals.
 
 ## Dependency rules
 
@@ -60,7 +65,8 @@ Feature services live under `src/` and own one feature family each:
 6. `doc-index` may depend on Markdown/doc storage; documentation coverage may depend only on a narrow code-symbol lookup.
 7. `trust-sync` is the only feature module that should coordinate memory observations with code symbol tables.
 8. `platform/protocol` owns `_meta`, compact/auto output, and LLM-facing transformations.
-9. Crosshash remains behind a command/API boundary until it fully replaces the JavaScript code-intelligence path.
+9. `src/http/` may depend on platform repositories and feature services, but should not contain business logic or raw SQL.
+10. Crosshash remains behind a command/API boundary until it fully replaces the JavaScript code-intelligence path.
 
 ## Testability expectations
 
