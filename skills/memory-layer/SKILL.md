@@ -9,6 +9,7 @@ Persistent memory via a single SQLite database (`~/.pi/memory/memory.db`).
 All operations through `memory-store.js` — zero Python dependency, zero MCP servers.
 Code parsing uses web-tree-sitter (WASM) in-process.
 Code analysis (imports, call graph, complexity, dead code, churn) and doc indexing (markdown sections, links, glossary, code examples) built in — no external tools needed.
+Optional HTTP server for programmatic access to the Aurex domain (missions, milestones, working units) and code analysis endpoints.
 
 ## CLI Quick Reference
 
@@ -52,6 +53,7 @@ Code analysis (imports, call graph, complexity, dead code, churn) and doc indexi
 - `index-repo --path ABS_PATH [--name NAME]` — Index a local folder with tree-sitter.
 - `reindex-repo --repo NAME [--mode full|incremental]` — Incremental reindex via mtime.
 - `search-code --query TEXT [--repo NAME] [--kind TYPE] [--max-results N]` — FTS5 BM25 over code symbols.
+- `ranked-code-context --query TEXT [--repo NAME] [--token-budget N] [--max-results N]` — Token-budgeted ranked code context for injection.
 - `get-code-source --repo NAME --file PATH --name SYMBOL` — Byte-accurate source retrieval.
 - `list-code-repos` / `remove-code-repo --repo NAME` — Manage indexed repos.
 
@@ -83,6 +85,14 @@ Grammar .wasm files bundled in `grammars/`.
 
 - `signal-chains --repo NAME [--kind http|cli] [--symbol S] [--max-depth N]` — Detect HTTP/CLI gateways and trace call chains
 - `layer-violations --repo NAME [--rules JSON]` — Check import rules against declared architecture layers
+
+### Code Analytics (v5.4 — winnow, AST patterns, provenance, untested, PR risk)
+
+- `winnow --repo NAME` — Filter analysis results by confidence/type
+- `ast-patterns --repo NAME` — AST-based code smell and pattern detection
+- `provenance --repo NAME` — Git blame-based provenance for symbols
+- `untested --repo NAME` — Find symbols without test coverage
+- `pr-risk --repo NAME` — Assess risk of changes for PR review
 
 **Note:** Layer rules can be defined inline via `--rules` or in a `.pimemory-layers.jsonc` file at the repo root.
 Signal chains detect Express routes (`app.get/post/...`), router patterns, and CLI commands.
@@ -144,6 +154,17 @@ Dead code confidence: 0.33 per signal (no callers, unreachable file), 1.0 = prov
 
 - `stats`
 - `list-projects`
+- `init` — Initialize the database schema.
+
+## HTTP Server
+
+LaPis includes an optional HTTP server for programmatic access to the Aurex domain model and code analysis features:
+
+```bash
+node memory-store.js serve [--host HOST] [--port PORT]
+```
+
+Defaults to `127.0.0.1:9100`. Provides REST endpoints for missions, milestones, working units, handoffs, contracts, verdicts, broadcasts, findings, sessions, memory search, costs, retry/rescope, compression, checkpoints, settings, and code indexing/analysis. See [`docs/API.md`](docs/API.md) for the full endpoint reference.
 
 ## Project Detection (v3.2)
 

@@ -43,6 +43,39 @@ Supported settings include:
 }
 ```
 
+## Tool Tier Configuration
+
+LaPis supports tool access tiers to control which commands are available to the Pi agent. The tier is configured in the file specified by `tier_config_path` (defaults to `~/.pi/memory/tier.jsonc`):
+
+```jsonc
+{
+  "tier": "full"  // "core", "standard", or "full"
+}
+```
+
+### Tier Definitions
+
+| Tier      | Commands included                                                                                       |
+| --------- | ------------------------------------------------------------------------------------------------------- |
+| `core`    | `search`, `save`, `context`, `search-code`, `get-code-source`, `importance`, `outline`, `winnow`, `dream` |
+| `standard`| All core commands + `complexity`, `dead-code`, `hotspots`, `blast-radius`, `call-hierarchy`, `cycles`, `coupling` |
+| `full`    | All commands unrestricted                                                                               |
+
+## HTTP Server Configuration
+
+The optional HTTP server can be started via the `serve` command:
+
+```bash
+node memory-store.js serve [--host HOST] [--port PORT]
+```
+
+| Option   | Default       | Description                                         |
+| -------- | ------------- | --------------------------------------------------- |
+| `--host` | `127.0.0.1`   | Bind address. Use `0.0.0.0` to expose on network (prints warning). |
+| `--port` | `9100`        | Port number.                                        |
+
+Binding to `0.0.0.0` exposes memory APIs on your network. Use only on trusted networks or behind a proxy.
+
 ## What Gets Stored
 
 LaPis stores data locally in the configured SQLite database. It can store:
@@ -54,6 +87,7 @@ LaPis stores data locally in the configured SQLite database. It can store:
 - Indexed code/documentation metadata for repositories explicitly indexed with `memory-code` and `memory-doc`.
 - Code index diagnostics, including parse errors, zero-symbol files, freshness, and index health signals.
 - Symbol links and trust scores used to reduce confidence when linked code changes.
+- Aurex domain data: missions, milestones, working units, handoffs, contracts, verdicts, broadcasts, findings, sessions, costs, checkpoints, and settings (when using the HTTP server).
 
 ## Dream Cycle
 
