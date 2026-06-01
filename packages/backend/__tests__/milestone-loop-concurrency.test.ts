@@ -109,6 +109,7 @@ describe("milestone loop — concurrent worker spawning", () => {
       onEscalation: vi.fn(),
       onAgentStatus: vi.fn(),
       onCostUpdate: vi.fn(),
+      onError: vi.fn(),
       onMilestoneProgress: vi.fn(),
     };
 
@@ -141,6 +142,7 @@ describe("milestone loop — concurrent worker spawning", () => {
         statusLog.push(status);
       }),
       onCostUpdate: vi.fn(),
+      onError: vi.fn(),
       onMilestoneProgress: vi.fn(),
     };
 
@@ -182,6 +184,7 @@ describe("milestone loop — concurrent worker spawning", () => {
       onAgentStatus: vi.fn(),
       onMilestoneProgress: vi.fn(),
       onCostUpdate: vi.fn(),
+      onError: vi.fn(),
     };
 
     const loop = createMilestoneLoop(lapis, pinyx, callbacks, {

@@ -84,7 +84,11 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexing skipped: ${msg}` });
       }
 
-      const planResult = await planner.plan(mission.description, missionId);
+      const planResult = await planner.plan(mission.description, missionId).catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        eventBus.emit({ type: "mission_error", missionId, code: "planner_failed", message: `Planning failed: ${msg}`, recoverable: true });
+        throw err;
+      });
 
       await lapis.updateMissionStatus(missionId, "running");
       setStatus("executing", missionId);
@@ -110,6 +114,9 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
             if (mission.configJson.costCap > 0 && totalCost >= mission.configJson.costCap * 0.8) {
               compression.run(mId, "budget_threshold" as any).catch(() => {});
             }
+          },
+          onError: (mId, code, message, opts) => {
+            eventBus.emit({ type: "mission_error", missionId: mId, code, message, workerId: opts?.workerId, milestoneId: opts?.milestoneId, recoverable: opts?.recoverable ?? false, details: opts?.details });
           },
         },
         { agentDir, repoRoot: missionRepoRoot, gitMainBranch, onCompression: (mId, trigger) => compression.run(mId, trigger) },
@@ -210,6 +217,8 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
       setStatus("completed", missionId);
     } catch (error) {
       console.error(`[runner] Mission ${missionId} failed:`, error instanceof Error ? error.message : error);
+      const msg = error instanceof Error ? error.message : String(error);
+      eventBus.emit({ type: "mission_error", missionId, code: "mission_crash", message: `Mission crashed: ${msg}`, recoverable: false });
       await lapis.updateMissionStatus(missionId, "failed").catch(() => {});
       setStatus("failed", missionId);
     } finally {

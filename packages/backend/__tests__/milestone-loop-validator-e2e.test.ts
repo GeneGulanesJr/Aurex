@@ -170,6 +170,7 @@ describe("milestone loop validator E2E", () => {
       onAgentStatus: vi.fn(),
       onMilestoneProgress: vi.fn(),
       onCostUpdate: vi.fn(),
+      onError: vi.fn(),
     };
 
     const loop = createMilestoneLoop(lapis, {} as PinyxClient, callbacks, {
@@ -327,6 +328,7 @@ describe("milestone loop validator E2E", () => {
       onAgentStatus: vi.fn(),
       onMilestoneProgress: vi.fn(),
       onCostUpdate: vi.fn(),
+      onError: vi.fn(),
     };
 
     const loop = createMilestoneLoop(lapis, {} as PinyxClient, callbacks, {

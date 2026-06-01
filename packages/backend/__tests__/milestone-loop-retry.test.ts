@@ -141,6 +141,7 @@ describe("milestone loop — retry/rescope handling", () => {
       onAgentStatus: vi.fn(),
       onMilestoneProgress: vi.fn(),
       onCostUpdate: vi.fn(),
+      onError: vi.fn(),
     };
 
     const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
@@ -194,6 +195,7 @@ describe("milestone loop — retry/rescope handling", () => {
       onAgentStatus: vi.fn(),
       onMilestoneProgress: vi.fn(),
       onCostUpdate: vi.fn(),
+      onError: vi.fn(),
     };
 
     const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
@@ -223,6 +225,7 @@ describe("milestone loop — retry/rescope handling", () => {
       onAgentStatus: vi.fn(),
       onMilestoneProgress: vi.fn(),
       onCostUpdate: vi.fn(),
+      onError: vi.fn(),
     };
 
     const loop = createMilestoneLoop(lapis, pinyx, callbacks, {

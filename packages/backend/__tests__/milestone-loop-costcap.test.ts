@@ -128,8 +128,8 @@ describe("milestone loop — cost cap enforcement", () => {
       onAgentStatus: vi.fn(),
       onMilestoneProgress: vi.fn(),
       onCostUpdate: vi.fn().mockImplementation((_mId: string, _cost: number, _tokens: number, _delta: number) => {
-        // This fires during spawning — but we need to simulate cost exceeding cap
       }),
+      onError: vi.fn(),
     };
 
     const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
@@ -179,6 +179,7 @@ describe("milestone loop — cost cap enforcement", () => {
       onAgentStatus: vi.fn(),
       onMilestoneProgress: vi.fn(),
       onCostUpdate: vi.fn(),
+      onError: vi.fn(),
     };
 
     const loop = createMilestoneLoop(lapis, pinyx, callbacks, {

@@ -4,6 +4,7 @@ import { createPulse, createSpin, createIdle } from "../animations/agent-animati
 import { staggerEntrance } from "../animations/stagger";
 import { animateProgress } from "../animations/counters";
 import type { Milestone, WorkingUnit, WsClientEvent, MilestoneStatus } from "@aurex/shared";
+import type { MissionError } from "../hooks/useMission";
 import { CodeContextPanel } from "./CodeContextPanel";
 
 interface MissionPipelineProps {
@@ -13,6 +14,8 @@ interface MissionPipelineProps {
   cost: { totalCost: number; totalTokens: number } | null;
   events: WsClientEvent[];
   logs: Array<{ phase: string; message: string; timestamp: number; data?: Record<string, unknown> }>;
+  errors: MissionError[];
+  onRetry?: () => void;
 }
 
 const statusConfig: Record<string, { color: string; label: string; icon: string }> = {
@@ -32,7 +35,7 @@ const workerStatusColor: Record<string, string> = {
   failed: "var(--error)",
 };
 
-export function MissionPipeline({ mission, milestones, workers, cost, events, logs }: MissionPipelineProps) {
+export function MissionPipeline({ mission, milestones, workers, cost, events, logs, errors, onRetry }: MissionPipelineProps) {
   const pipelineRef = useRef<HTMLDivElement>(null);
   const prevMilestoneCountRef = useRef(0);
 
@@ -123,12 +126,7 @@ export function MissionPipeline({ mission, milestones, workers, cost, events, lo
       {/* Milestone pipeline */}
       <div ref={pipelineRef} style={{ display: "flex", flexDirection: "column", gap: "0" }}>
         {milestones.length === 0 && (
-          <div style={{ textAlign: "center", padding: "32px 0" }}>
-            <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "11px", color: "var(--text-muted)", letterSpacing: "2px", textTransform: "uppercase", marginBottom: "8px" }}>
-              Planning milestones…
-            </div>
-            <PlanningSpinner />
-          </div>
+          <PlanningPhase missionStatus={mission.status} errors={errors} onRetry={onRetry} />
         )}
         {milestones.map((milestone, i) => {
           const cfg = statusConfig[milestone.status] || statusConfig.planned;
@@ -205,7 +203,7 @@ export function MissionPipeline({ mission, milestones, workers, cost, events, lo
                   {isActive && msWorkers.length > 0 && (
                     <div ref={workerContainerRef} style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                       {msWorkers.map((w) => (
-                        <WorkerChip key={w.id} worker={w} />
+                        <WorkerChip key={w.id} worker={w} errors={errors} />
                       ))}
                     </div>
                   )}
@@ -308,8 +306,11 @@ function MilestoneProgressBar({ milestone, workers }: { milestone: Milestone; wo
   );
 }
 
-function WorkerChip({ worker }: { worker: WorkingUnit }) {
+function WorkerChip({ worker, errors }: { worker: WorkingUnit; errors: MissionError[] }) {
   const chipRef = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const isFailed = worker.status === "failed" || worker.status === "timed_out";
+  const workerError = errors.find((e) => e.workerId === worker.id);
 
   useEffect(() => {
     const el = chipRef.current;
@@ -326,36 +327,63 @@ function WorkerChip({ worker }: { worker: WorkingUnit }) {
   }, [worker.status]);
 
   return (
-    <div
-      ref={chipRef}
-      className="worker-chip"
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "8px",
-        background: "var(--bg-elevated)",
-        border: "1px solid var(--border)",
-        borderRadius: "4px",
-        padding: "6px 10px",
-      }}
-    >
+    <div>
       <div
-        className="status-dot"
+        ref={chipRef}
+        className="worker-chip"
+        onClick={isFailed ? () => setExpanded(!expanded) : undefined}
         style={{
-          width: "6px",
-          height: "6px",
-          borderRadius: "50%",
-          background: workerStatusColor[worker.status] || "var(--text-muted)",
-          boxShadow: worker.status === "working" ? `0 0 6px ${workerStatusColor[worker.status] || "var(--text-muted)"}` : "none",
-          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          background: "var(--bg-elevated)",
+          border: `1px solid ${isFailed ? "var(--error)" : "var(--border)"}`,
+          borderRadius: "4px",
+          padding: "6px 10px",
+          cursor: isFailed ? "pointer" : "default",
         }}
-      />
-      <span style={{ fontSize: "12px", color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "200px" }}>
-        {worker.description}
-      </span>
-      <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "9px", letterSpacing: "1px", textTransform: "uppercase", color: workerStatusColor[worker.status] || "var(--text-muted)" }}>
-        {worker.status.replace("_", " ")}
-      </span>
+      >
+        <div
+          className="status-dot"
+          style={{
+            width: "6px",
+            height: "6px",
+            borderRadius: "50%",
+            background: workerStatusColor[worker.status] || "var(--text-muted)",
+            boxShadow: worker.status === "working" ? `0 0 6px ${workerStatusColor[worker.status] || "var(--text-muted)"}` : "none",
+            flexShrink: 0,
+          }}
+        />
+        <span style={{ fontSize: "12px", color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "200px" }}>
+          {worker.description}
+        </span>
+        <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "9px", letterSpacing: "1px", textTransform: "uppercase", color: workerStatusColor[worker.status] || "var(--text-muted)" }}>
+          {worker.status.replace("_", " ")}
+        </span>
+        {isFailed && <span style={{ fontSize: "9px", color: "var(--text-muted)" }}>{expanded ? "▲" : "▼"}</span>}
+      </div>
+      {expanded && isFailed && workerError && (
+        <div style={{
+          marginTop: "4px",
+          padding: "8px 10px",
+          background: "var(--bg-inset)",
+          border: "1px solid var(--error)",
+          borderRadius: "4px",
+          fontSize: "11px",
+          color: "var(--text-secondary)",
+          lineHeight: 1.5,
+        }}>
+          <div style={{ color: "var(--error)", fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", marginBottom: "4px" }}>
+            {workerError.code}
+          </div>
+          <div>{workerError.message}</div>
+          {workerError.details && (
+            <pre style={{ marginTop: "6px", fontSize: "10px", color: "var(--text-muted)", whiteSpace: "pre-wrap", margin: 0 }}>
+              {JSON.stringify(workerError.details, null, 2)}
+            </pre>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -481,6 +509,100 @@ function PlanningSpinner() {
   );
 }
 
+const PLANNING_TIMEOUT_MS = 5 * 60 * 1000;
+
+function PlanningPhase({ missionStatus, errors, onRetry }: { missionStatus: string; errors: MissionError[]; onRetry?: () => void }) {
+  const [timedOut, setTimedOut] = useState(false);
+
+  useEffect(() => {
+    if (missionStatus !== "planning") return;
+    const id = setTimeout(() => setTimedOut(true), PLANNING_TIMEOUT_MS);
+    return () => clearTimeout(id);
+  }, [missionStatus]);
+
+  const hasFailed = missionStatus === "failed";
+  const plannerErrors = errors.filter((e) => e.code.startsWith("planner") || e.code === "mission_crash");
+  const lastError = plannerErrors[plannerErrors.length - 1];
+
+  if (hasFailed || (timedOut && lastError && !lastError.recoverable)) {
+    return (
+      <div style={{ textAlign: "center", padding: "32px 0" }}>
+        <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "13px", color: "var(--error)", letterSpacing: "2px", textTransform: "uppercase", marginBottom: "12px" }}>
+          Planning Failed
+        </div>
+        {lastError && (
+          <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "16px", maxWidth: "480px", margin: "0 auto 16px" }}>
+            {lastError.message}
+          </div>
+        )}
+        {onRetry && (
+          <button
+            onClick={onRetry}
+            style={{
+              fontFamily: '"JetBrains Mono", monospace',
+              fontSize: "11px",
+              letterSpacing: "1px",
+              textTransform: "uppercase",
+              background: "var(--bg-elevated)",
+              color: "var(--accent)",
+              border: "1px solid var(--accent)",
+              borderRadius: "4px",
+              padding: "8px 20px",
+              cursor: "pointer",
+            }}
+          >
+            Retry Mission
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  if (timedOut) {
+    return (
+      <div style={{ textAlign: "center", padding: "32px 0" }}>
+        <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "11px", color: "var(--warning)", letterSpacing: "2px", textTransform: "uppercase", marginBottom: "8px" }}>
+          Planning is taking longer than expected…
+        </div>
+        {lastError && (
+          <div style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "12px" }}>
+            {lastError.message}
+          </div>
+        )}
+        {onRetry && lastError?.recoverable && (
+          <button
+            onClick={onRetry}
+            style={{
+              fontFamily: '"JetBrains Mono", monospace',
+              fontSize: "10px",
+              letterSpacing: "1px",
+              textTransform: "uppercase",
+              background: "transparent",
+              color: "var(--warning)",
+              border: "1px solid var(--warning)",
+              borderRadius: "4px",
+              padding: "6px 16px",
+              cursor: "pointer",
+            }}
+          >
+            Retry Planning
+          </button>
+        )}
+        <PlanningSpinner />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ textAlign: "center", padding: "32px 0" }}>
+      <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "11px", color: "var(--text-muted)", letterSpacing: "2px", textTransform: "uppercase", marginBottom: "8px" }}>
+        Planning milestones…
+      </div>
+      <PlanningSpinner />
+    </div>
+  );
+}
+
 function EventStream({ events }: { events: WsClientEvent[] }) {
   const listRef = useRef<HTMLDivElement>(null);
   const recentEvents = events.slice(-8);
@@ -511,6 +633,7 @@ function EventStream({ events }: { events: WsClientEvent[] }) {
     mission_queued: "QUEUE",
     mission_started: "START",
     mission_completed: "DONE",
+    mission_error: "ERROR",
   };
 
   const eventTypeColor: Record<string, string> = {
@@ -521,6 +644,7 @@ function EventStream({ events }: { events: WsClientEvent[] }) {
     mission_queued: "var(--text-muted)",
     mission_started: "var(--success)",
     mission_completed: "var(--success)",
+    mission_error: "var(--error)",
   };
 
   return (
@@ -564,5 +688,7 @@ function EventSummary({ event }: { event: WsClientEvent }) {
       return <>mission {event.finalState}</>;
     case "mission_queued":
       return <>queued #{event.queuePosition}</>;
+    case "mission_error":
+      return <>{event.code}: {event.message}</>;
   }
 }
