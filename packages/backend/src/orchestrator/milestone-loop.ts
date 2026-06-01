@@ -17,7 +17,7 @@ export type MilestoneLoopResult =
 
 export interface MilestoneLoopCallbacks {
   onEscalation: (missionId: string, trigger: EscalationTrigger, context: EscalationContext) => void;
-  onAgentStatus: (agentId: string, agentType: AgentType, status: AgentStatus, milestoneId: string) => void;
+  onAgentStatus: (agentId: string, agentType: AgentType, status: AgentStatus, milestoneId: string, workerSnapshot?: { declaredPaths: string[]; declaredModules: string[]; taskBranch: string; worktreePath: string; sessionId: string; description: string }) => void;
   onMilestoneProgress: (milestoneId: string, status: MilestoneStatus | string, completedUnits: number, totalUnits: number) => void;
   onCostUpdate: (missionId: string, totalCost: number, totalTokens: number, delta: number) => void;
 }
@@ -141,7 +141,14 @@ export function createMilestoneLoop(
                 testCommands: contract?.content?.testCommands ?? [],
               });
 
-              callbacks.onAgentStatus(agentId, "worker", "spawned", milestone.id);
+              callbacks.onAgentStatus(agentId, "worker", "spawned", milestone.id, {
+                declaredPaths: unit.declaredPaths,
+                declaredModules: unit.declaredModules,
+                taskBranch,
+                worktreePath,
+                sessionId: "",
+                description: unit.description,
+              });
               const handle = await spawner.spawn({
                 agentType: "worker",
                 unitId: unit.id,

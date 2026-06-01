@@ -3,7 +3,7 @@ import type { AgentType, AgentStatus, MilestoneStatus } from "./enums.js";
 import type { AttemptSummary, EscalationContext } from "./types.js";
 
 export type WsClientEvent =
-  | { type: "agent_status"; agentId: string; agentType: AgentType; status: AgentStatus; milestoneId: string }
+  | { type: "agent_status"; agentId: string; agentType: AgentType; status: AgentStatus; milestoneId: string; workerSnapshot?: { declaredPaths: string[]; declaredModules: string[]; taskBranch: string; worktreePath: string; sessionId: string; description: string } }
   | { type: "milestone_progress"; milestoneId: string; status: MilestoneStatus; completedUnits: number; totalUnits: number }
   | { type: "cost_update"; missionId: string; totalCost: number; totalTokens: number; delta: number }
   | { type: "escalation"; missionId: string; checkpointId: string; trigger: EscalationTrigger; context: EscalationContext }

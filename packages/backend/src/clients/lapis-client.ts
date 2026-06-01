@@ -68,7 +68,7 @@ export interface LaPisClient {
   incrementRetry(milestoneId: string): Promise<RetryCounter>;
   logRescope(milestoneId: string, event: Omit<RescopeEvent, "id" | "timestamp">): Promise<void>;
 
-  // State compression (stubbed)
+  // State compression
   runCompression(missionId: string, trigger: CompressionTrigger): Promise<void>;
 
   // Checkpoints

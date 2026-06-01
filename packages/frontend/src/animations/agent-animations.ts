@@ -13,7 +13,12 @@ export function createPulse(element: HTMLElement) {
 
 export function createSpin(element: HTMLElement) {
   const dot = element.querySelector(".status-dot");
-  if (!dot) return;
+  if (!dot) {
+    return animate(element, {
+      opacity: [1, 1],
+      duration: 0,
+    });
+  }
   return animate(dot, {
     rotate: "1turn",
     duration: 1000,
@@ -23,5 +28,11 @@ export function createSpin(element: HTMLElement) {
 }
 
 export function createIdle(element: HTMLElement) {
-  element.style.opacity = "0.5";
+  return animate(element, {
+    opacity: [0.5, 0.3],
+    duration: 2000,
+    ease: "inOutSine",
+    loop: true,
+    direction: "alternate",
+  });
 }

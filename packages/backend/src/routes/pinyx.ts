@@ -58,7 +58,7 @@ const defaultModelHints: Record<AgentType, string> = {
   research: "kilo/kilo-auto/free",
 };
 
-const STUB_MODEL = "kilo/kilo-auto/free";
+const FALLBACK_MODEL = "kilo/kilo-auto/free";
 
 const DEFAULT_PINYX_ENDPOINTS = [
   "http://host.docker.internal:7331", // Real PiNyx running on the host
@@ -195,7 +195,7 @@ export function registerPinyxRoutes(app: FastifyInstance, deps: PinyxRouteDeps) 
 
     // Resolve model hints: if still stub defaults, auto-fill from discovered models
     const savedHints = { ...defaultModelHints, ...(body.modelHints ?? {}) };
-    const allStub = Object.values(savedHints).every((v) => !v || v === STUB_MODEL);
+    const allStub = Object.values(savedHints).every((v) => !v || v === FALLBACK_MODEL);
     let modelHints = savedHints;
     if (allStub && discoveredModels.length > 0) {
       const bestModel = discoveredModels.find((m) => !m.id.includes("/free"))?.id ?? discoveredModels[0].id;

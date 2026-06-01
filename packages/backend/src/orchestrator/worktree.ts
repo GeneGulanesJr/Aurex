@@ -54,19 +54,21 @@ export function createWorktreeManager(repoRoot: string): WorktreeManager {
       await git("worktree", "prune");
     },
 
-    async installBranchGuard(_worktreePath, _allowedBranch) {
+    async installBranchGuard(_worktreePath, allowedBranch) {
       const hooksDir = path.join(repoRoot, ".git", "hooks");
       const hookPath = path.join(hooksDir, "pre-commit");
+      const allowedPatterns = [allowedBranch, "integration/*", "release/*"];
+      const caseStatements = allowedPatterns
+        .map((p) => `  ${p}) exit 0 ;;`)
+        .join("\n");
       const hookContent = [
         "#!/bin/sh",
-        "# Aurex branch guard — only allow commits on task/* branches",
+        "# Aurex branch guard — only allow commits on permitted branches",
         'BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "detached")',
         'case "$BRANCH" in',
-        '  task/*) exit 0 ;;',
-        '  integration/*) exit 0 ;;',
-        '  release/*) exit 0 ;;',
-        '  *)',
-        '    echo "Aurex branch guard: commits not allowed on $BRANCH (only task/*, integration/*, release/*)" >&2',
+        caseStatements,
+        "  *)",
+        '    echo "Aurex branch guard: commits not allowed on $BRANCH (only ' + allowedPatterns.join(", ") + ')" >&2',
         "    exit 1",
         "    ;;",
         "esac",
@@ -76,7 +78,11 @@ export function createWorktreeManager(repoRoot: string): WorktreeManager {
       try {
         await mkdir(hooksDir, { recursive: true });
         await writeFile(hookPath, hookContent, { mode: 0o755 });
-      } catch {
+      } catch (err) {
+        console.warn(
+          `[worktree] Failed to install branch guard hook at ${hookPath}:`,
+          err instanceof Error ? err.message : err,
+        );
       }
     },
   };

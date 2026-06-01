@@ -33,21 +33,21 @@ export async function missionRoutes(
       .filter((unit) => !["completed", "failed", "timed_out"].includes(unit.status));
     return { mission, milestones, activeWorkers, cost };
   }
-  const STUB_MODEL = "kilo/kilo-auto/free";
+  const FALLBACK_MODEL = "kilo/kilo-auto/free";
 
   async function resolveDefaultModel(pinyxConfig: { endpoint?: string } | null): Promise<string> {
     const endpoint = pinyxConfig?.endpoint?.replace(/\/$/, "");
-    if (!endpoint) return STUB_MODEL;
+    if (!endpoint) return FALLBACK_MODEL;
     try {
       const res = await fetch(`${endpoint}/v1/models`, { method: "GET", signal: AbortSignal.timeout(3000) });
-      if (!res.ok) return STUB_MODEL;
+      if (!res.ok) return FALLBACK_MODEL;
       const body = await res.json() as { data?: { id: string }[] };
       const models = body.data ?? [];
       // Prefer a non-free model for reliability, fall back to first available
       const real = models.find((m) => !m.id.includes("/free"));
-      return real?.id ?? models[0]?.id ?? STUB_MODEL;
+      return real?.id ?? models[0]?.id ?? FALLBACK_MODEL;
     } catch {
-      return STUB_MODEL;
+      return FALLBACK_MODEL;
     }
   }
 
@@ -58,8 +58,8 @@ export async function missionRoutes(
     }
     const pinyxConfig = await lapis.getSetting<{ modelHints?: Partial<MissionConfig["modelHints"]>; endpoint?: string }>("pinyx_config");
     const savedHints = pinyxConfig?.modelHints ?? {};
-    const allStub = Object.values(savedHints).every((v) => !v || v === STUB_MODEL);
-    const defaultModel = allStub ? await resolveDefaultModel(pinyxConfig) : STUB_MODEL;
+    const allStub = Object.values(savedHints).every((v) => !v || v === FALLBACK_MODEL);
+    const defaultModel = allStub ? await resolveDefaultModel(pinyxConfig) : FALLBACK_MODEL;
     const modelHints = {
       orchestrator: defaultModel,
       worker: defaultModel,
