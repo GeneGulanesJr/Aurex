@@ -1,6 +1,8 @@
 import { useEffect, useRef, useMemo } from "react";
 import { animate, stagger } from "animejs";
 import { createPulse, createSpin, createIdle } from "../animations/agent-animations";
+import { staggerEntrance } from "../animations/stagger";
+import { animateProgress } from "../animations/counters";
 import type { Milestone, WorkingUnit, WsClientEvent, MilestoneStatus } from "@aurex/shared";
 import { CodeContextPanel } from "./CodeContextPanel";
 
@@ -62,6 +64,20 @@ export function MissionPipeline({ mission, milestones, workers, cost, events, lo
     }
     return map;
   }, [workers]);
+
+  const workerContainerRef = useRef<HTMLDivElement>(null);
+  const prevWorkerCountRef = useRef(0);
+
+  useEffect(() => {
+    const el = workerContainerRef.current;
+    if (!el) return;
+    const chips = el.querySelectorAll<HTMLElement>(".worker-chip");
+    if (chips.length > prevWorkerCountRef.current) {
+      const newChips = Array.from(chips).slice(prevWorkerCountRef.current);
+      staggerEntrance(newChips);
+    }
+    prevWorkerCountRef.current = chips.length;
+  }, [workers.length]);
 
   const activeMilestone = milestones.find((m) => m.status === "in_progress" || m.status === "validating");
   const completedCount = milestones.filter((m) => m.status === "completed").length;
@@ -187,7 +203,7 @@ export function MissionPipeline({ mission, milestones, workers, cost, events, lo
 
                   {/* Workers under active milestone */}
                   {isActive && msWorkers.length > 0 && (
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                    <div ref={workerContainerRef} style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                       {msWorkers.map((w) => (
                         <WorkerChip key={w.id} worker={w} />
                       ))}

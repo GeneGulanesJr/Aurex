@@ -115,14 +115,24 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         { agentDir, repoRoot: missionRepoRoot, gitMainBranch, onCompression: (mId, trigger) => compression.run(mId, trigger) },
       );
 
-      const plannedMilestones: Milestone[] = planResult.milestones.map((milestone, index) => ({
-        id: milestone.id,
+      const storedMilestones = await lapis.getMilestonesForMission(missionId);
+      const contractLookup = new Map<string, string>();
+      for (const ms of storedMilestones) {
+        const contracts = await lapis.getContractHistory(ms.id);
+        const latest = contracts.reduce(
+          (a: any, b: any) => ((b as any).version > (a as any).version ? b : a),
+          contracts[0],
+        );
+        if (latest) contractLookup.set(ms.id, (latest as any).id);
+      }
+      const plannedMilestones: Milestone[] = storedMilestones.map((ms) => ({
+        id: ms.id,
         missionId,
-        title: milestone.title,
-        description: milestone.title,
-        orderIndex: index,
-        status: "planned",
-        validationContractId: "",
+        title: ms.title,
+        description: ms.description,
+        orderIndex: ms.orderIndex,
+        status: "planned" as const,
+        validationContractId: contractLookup.get(ms.id) ?? "",
       }));
 
       // Run milestone loop — handles checkpoint_needed by re-running
