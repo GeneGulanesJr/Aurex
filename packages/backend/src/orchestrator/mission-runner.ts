@@ -84,11 +84,14 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexing skipped: ${msg}` });
       }
 
-      const planResult = await planner.plan(mission.description, missionId).catch((err) => {
+      const planResult = await planner.plan(mission.description, missionId).catch(async (err) => {
         const msg = err instanceof Error ? err.message : String(err);
         eventBus.emit({ type: "mission_error", missionId, code: "planner_failed", message: `Planning failed: ${msg}`, recoverable: true });
-        throw err;
+        await lapis.updateMissionStatus(missionId, "failed").catch(() => {});
+        setStatus("failed", missionId);
+        return null;
       });
+      if (!planResult) return;
 
       await lapis.updateMissionStatus(missionId, "running");
       setStatus("executing", missionId);

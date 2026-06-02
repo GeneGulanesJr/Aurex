@@ -72,4 +72,26 @@ describe("planner", () => {
       expect.any(Function),
     );
   });
+
+  it("emits planner_parse_error when fallback JSON extraction also fails", async () => {
+    const mockLapis = {
+      searchMemory: vi.fn().mockResolvedValue([]),
+      createMilestone: vi.fn(),
+      createWorkingUnit: vi.fn(),
+      createContract: vi.fn(),
+      getContractHistory: vi.fn(),
+    } as unknown as LaPisClient;
+    const mockPinyx = createMockPinyx("Here is a broken object: { definitely not json }");
+    const eventBus = { emit: vi.fn() };
+
+    const planner = createPlanner(mockLapis, mockPinyx as never, { eventBus: eventBus as never, missionId: "m-1" });
+
+    await expect(planner.plan("Broken plan", "m-1")).rejects.toThrow("Planner returned invalid JSON");
+    expect(eventBus.emit).toHaveBeenCalledWith(expect.objectContaining({
+      type: "mission_error",
+      missionId: "m-1",
+      code: "planner_parse_error",
+      recoverable: true,
+    }));
+  });
 });

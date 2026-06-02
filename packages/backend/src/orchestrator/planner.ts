@@ -105,7 +105,12 @@ export function createPlanner(
         const firstBrace = response.content.indexOf("{");
         const lastBrace = response.content.lastIndexOf("}");
         if (firstBrace >= 0 && lastBrace > firstBrace) {
-          raw = JSON.parse(response.content.slice(firstBrace, lastBrace + 1));
+          try {
+            raw = JSON.parse(response.content.slice(firstBrace, lastBrace + 1));
+          } catch {
+            emitError("planner_parse_error", `Planner returned invalid JSON`, { recoverable: true, details: { preview: response.content.slice(0, 200) } });
+            throw new Error(`Planner returned invalid JSON: ${response.content.slice(0, 200)}`);
+          }
         } else {
           emitError("planner_parse_error", `Planner returned invalid JSON`, { recoverable: true, details: { preview: response.content.slice(0, 200) } });
           throw new Error(`Planner returned invalid JSON: ${response.content.slice(0, 200)}`);

@@ -42,7 +42,7 @@ export const initialMissionState: MissionState = {
 export function missionReducer(state: MissionState, action: Action): MissionState {
   switch (action.type) {
     case "SET_MISSION":
-      return { ...state, mission: action.mission, milestones: action.milestones, activeWorkers: action.workers, cost: action.cost };
+      return { ...state, mission: action.mission, milestones: action.milestones, activeWorkers: action.workers, cost: action.cost, logs: [], errors: [], escalation: null };
     case "ESCALATION":
       return { ...state, escalation: action.event };
     case "CLEAR_ESCALATION":
