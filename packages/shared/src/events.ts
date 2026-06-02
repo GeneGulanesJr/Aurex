@@ -10,7 +10,8 @@ export type WsClientEvent =
   | { type: "mission_queued"; missionId: string; queuePosition: number }
   | { type: "mission_started"; missionId: string }
   | { type: "mission_completed"; missionId: string; finalState: string }
-  | { type: "mission_log"; missionId: string; phase: string; message: string; data?: Record<string, unknown> };
+  | { type: "mission_log"; missionId: string; phase: string; message: string; data?: Record<string, unknown> }
+  | { type: "mission_error"; missionId: string; code: string; message: string; workerId?: string; milestoneId?: string; recoverable: boolean; details?: Record<string, unknown> };
 
 export type StreamingChunk = {
   delta: string;

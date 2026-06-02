@@ -185,6 +185,39 @@ describe("MissionRunner", () => {
     expect(runner.getStatus().state).toBe("completed");
   });
 
+  it("does not overwrite recoverable planner failures with non-recoverable mission_crash", async () => {
+    const lapis = createMockLapis();
+    const failingPinyx = {
+      chat: vi.fn(),
+      chatStream: vi.fn().mockRejectedValue(new Error("planner provider unavailable")),
+      ping: vi.fn().mockResolvedValue(undefined),
+    };
+    vi.mocked(createPinyxClient).mockReturnValueOnce(failingPinyx as any);
+    const runner = createMissionRunner({
+      lapis,
+      eventBus: mockEventBus as any,
+      agentDir: "/test/.pi/agent",
+      repoRoot: "/test/repo",
+      gitMainBranch: "main",
+    });
+
+    const done = runner.waitForCompletion();
+    runner.start("m-1");
+    await done;
+
+    expect(mockEventBus.emit).toHaveBeenCalledWith(expect.objectContaining({
+      type: "mission_error",
+      code: "planner_failed",
+      recoverable: true,
+    }));
+    expect(mockEventBus.emit).not.toHaveBeenCalledWith(expect.objectContaining({
+      type: "mission_error",
+      code: "mission_crash",
+      recoverable: false,
+    }));
+    expect(runner.getStatus().state).toBe("failed");
+  });
+
   it("passes the mission orchestrator model hint to the planner", async () => {
     const lapis = createMockLapis();
     const mockPinyx = createPinyxClient({ endpoint: "http://pinyx:7331" });

@@ -11,7 +11,7 @@ import { EscalationOverlay } from "./active/EscalationOverlay";
 import { IntegrationsPanel } from "./active/IntegrationsPanel";
 import { TopBar } from "./frame/TopBar";
 import { TelemetryBar } from "./frame/TelemetryBar";
-import { submitCheckpoint, createMission } from "./api";
+import { submitCheckpoint, createMission, restartMission } from "./api";
 import type { WsClientEvent, CheckpointDecision } from "@aurex/shared";
 
 export function App() {
@@ -64,6 +64,15 @@ export function App() {
     const { missionId } = await createMission(description, cloneUrl);
     addOptimisticMission(missionId, description);
   }, [addOptimisticMission]);
+
+  const handleRetryMission = useCallback(async () => {
+    if (!state.mission) return;
+    try {
+      const { missionId } = await restartMission(state.mission.id);
+      dispatch({ type: "CLEAR_ERRORS" });
+      selectMission(missionId);
+    } catch {}
+  }, [state.mission, dispatch, selectMission]);
 
   // Connecting overlay
   if (!connected) {
@@ -128,8 +137,11 @@ export function App() {
             cost={state.cost}
             events={eventsRef.current}
             logs={state.logs}
+            errors={state.errors}
             blurred={!!state.escalation}
             onExampleClick={handleCreateMission}
+            onRetryMission={handleRetryMission}
+            onDismissErrors={() => dispatch({ type: "CLEAR_ERRORS" })}
           />
         </main>
         <TelemetryBar

@@ -124,6 +124,7 @@ describe("milestone loop — validator phase", () => {
       onAgentStatus: vi.fn(),
       onMilestoneProgress: vi.fn(),
       onCostUpdate: vi.fn(),
+      onError: vi.fn(),
     };
 
     const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
@@ -159,6 +160,7 @@ describe("milestone loop — validator phase", () => {
       onAgentStatus: vi.fn(),
       onMilestoneProgress: vi.fn(),
       onCostUpdate: vi.fn(),
+      onError: vi.fn(),
     };
 
     const loop = createMilestoneLoop(lapis, pinyx, callbacks, {

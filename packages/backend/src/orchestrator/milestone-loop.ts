@@ -20,6 +20,7 @@ export interface MilestoneLoopCallbacks {
   onAgentStatus: (agentId: string, agentType: AgentType, status: AgentStatus, milestoneId: string, workerSnapshot?: { declaredPaths: string[]; declaredModules: string[]; taskBranch: string; worktreePath: string; sessionId: string; description: string }) => void;
   onMilestoneProgress: (milestoneId: string, status: MilestoneStatus | string, completedUnits: number, totalUnits: number) => void;
   onCostUpdate: (missionId: string, totalCost: number, totalTokens: number, delta: number) => void;
+  onError: (missionId: string, code: string, message: string, opts?: { workerId?: string; milestoneId?: string; recoverable: boolean; details?: Record<string, unknown> }) => void;
 }
 
 export interface MilestoneLoopConfig {
@@ -182,10 +183,12 @@ export function createMilestoneLoop(
               } else if (result.status === "timed_out") {
                 await lapis.updateWorkingUnitStatus(unit.id, "timed_out");
                 callbacks.onAgentStatus(agentId, "worker", "timed_out", milestone.id);
+                callbacks.onError(mission.id, "worker_timeout", `Worker "${unit.description}" timed out`, { workerId: agentId, milestoneId: milestone.id, recoverable: true });
                 failedCount++;
               } else {
                 await lapis.updateWorkingUnitStatus(unit.id, "failed");
                 callbacks.onAgentStatus(agentId, "worker", "failed", milestone.id);
+                callbacks.onError(mission.id, "worker_failed", `Worker "${unit.description}" failed`, { workerId: agentId, milestoneId: milestone.id, recoverable: true });
                 failedCount++;
               }
               handle.dispose();
@@ -363,9 +366,9 @@ export function createMilestoneLoop(
                 await lapis.createWorkingUnit(milestone.id, newUnit);
               }
             } catch {
-              // If re-planning fails, escalate
               const trigger: CheckpointTrigger = "rescope_limit";
               const summary = `Rescope re-planning failed: ${resp.content}`;
+              callbacks.onError(mission.id, "rescope_failed", summary, { milestoneId: milestone.id, recoverable: false });
               callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary });
               return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
             }
@@ -385,6 +388,7 @@ export function createMilestoneLoop(
           } catch (error) {
             const trigger: CheckpointTrigger = "unclassifiable_error";
             const summary = `Integration failed after validation pass: ${error instanceof Error ? error.message : String(error)}`;
+            callbacks.onError(mission.id, "integration_failed", summary, { milestoneId: milestone.id, recoverable: false, details: { phase: "integration" } });
             callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary, phase: "integration" });
             return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
           }

@@ -2,6 +2,16 @@ import { useReducer, useCallback, useEffect } from "react";
 import type { Mission, Milestone, WorkingUnit, CostSummary, WsClientEvent, MilestoneStatus, AgentType, AgentStatus } from "@aurex/shared";
 import { getMission } from "../api";
 
+export interface MissionError {
+  code: string;
+  message: string;
+  workerId?: string;
+  milestoneId?: string;
+  recoverable: boolean;
+  details?: Record<string, unknown>;
+  timestamp: number;
+}
+
 export interface MissionState {
   mission: Mission | null;
   milestones: Milestone[];
@@ -9,6 +19,7 @@ export interface MissionState {
   cost: CostSummary | null;
   escalation: WsClientEvent | null;
   logs: Array<{ phase: string; message: string; timestamp: number; data?: Record<string, unknown> }>;
+  errors: MissionError[];
 }
 
 type Action =
@@ -20,16 +31,18 @@ type Action =
   | { type: "AGENT_STATUS"; agentId: string; agentType: AgentType; status: AgentStatus; milestoneId: string; workerSnapshot?: { declaredPaths: string[]; declaredModules: string[]; taskBranch: string; worktreePath: string; sessionId: string; description: string } }
   | { type: "MISSION_COMPLETED"; finalState: string }
   | { type: "MISSION_LOG"; phase: string; message: string; data?: Record<string, unknown> }
+  | { type: "MISSION_ERROR"; code: string; message: string; workerId?: string; milestoneId?: string; recoverable: boolean; details?: Record<string, unknown> }
+  | { type: "CLEAR_ERRORS" }
   | { type: "RESET" };
 
 export const initialMissionState: MissionState = {
-  mission: null, milestones: [], activeWorkers: [], cost: null, escalation: null, logs: [],
+  mission: null, milestones: [], activeWorkers: [], cost: null, escalation: null, logs: [], errors: [],
 };
 
 export function missionReducer(state: MissionState, action: Action): MissionState {
   switch (action.type) {
     case "SET_MISSION":
-      return { ...state, mission: action.mission, milestones: action.milestones, activeWorkers: action.workers, cost: action.cost };
+      return { ...state, mission: action.mission, milestones: action.milestones, activeWorkers: action.workers, cost: action.cost, logs: [], errors: [], escalation: null };
     case "ESCALATION":
       return { ...state, escalation: action.event };
     case "CLEAR_ESCALATION":
@@ -70,6 +83,12 @@ export function missionReducer(state: MissionState, action: Action): MissionStat
       const log = { phase: action.phase, message: action.message, timestamp: Date.now(), data: action.data };
       return { ...state, logs: [...state.logs.slice(-49), log] };
     }
+    case "MISSION_ERROR": {
+      const error: MissionError = { code: action.code, message: action.message, workerId: action.workerId, milestoneId: action.milestoneId, recoverable: action.recoverable, details: action.details, timestamp: Date.now() };
+      return { ...state, errors: [...state.errors.slice(-19), error] };
+    }
+    case "CLEAR_ERRORS":
+      return { ...state, errors: [] };
     case "RESET":
       return initialMissionState;
     default:
@@ -123,6 +142,9 @@ export function useMission(missionId: string | null) {
         break;
       case "mission_log":
         dispatch({ type: "MISSION_LOG", phase: event.phase, message: event.message, data: event.data });
+        break;
+      case "mission_error":
+        dispatch({ type: "MISSION_ERROR", code: event.code, message: event.message, workerId: event.workerId, milestoneId: event.milestoneId, recoverable: event.recoverable, details: event.details });
         break;
       default:
         break;

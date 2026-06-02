@@ -41,6 +41,12 @@ export function createPlanner(
     }
   }
 
+  function emitError(code: string, message: string, opts?: { recoverable?: boolean; details?: Record<string, unknown> }) {
+    if (eventBus && missionId) {
+      eventBus.emit({ type: "mission_error", missionId, code, message, recoverable: opts?.recoverable ?? false, details: opts?.details });
+    }
+  }
+
   return {
     async plan(missionDescription: string, missionId: string): Promise<PlanResult> {
       // 1. Gather memory context
@@ -51,7 +57,9 @@ export function createPlanner(
       // 2. Ask PiNyx to decompose into milestones (streaming)
       let streamedContent = "";
       let lastEmittedTitle = "";
-      const response = await pinyx.chatStream(
+      let response;
+      try {
+        response = await pinyx.chatStream(
         {
           model,
           messages: [
@@ -78,6 +86,11 @@ export function createPlanner(
           }
         },
       );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        emitError("planner_llm_error", `LLM call failed during planning: ${msg}`, { recoverable: true });
+        throw err;
+      }
 
       emitLog("planning", "Parsing plan response…");
 
@@ -92,8 +105,14 @@ export function createPlanner(
         const firstBrace = response.content.indexOf("{");
         const lastBrace = response.content.lastIndexOf("}");
         if (firstBrace >= 0 && lastBrace > firstBrace) {
-          raw = JSON.parse(response.content.slice(firstBrace, lastBrace + 1));
+          try {
+            raw = JSON.parse(response.content.slice(firstBrace, lastBrace + 1));
+          } catch {
+            emitError("planner_parse_error", `Planner returned invalid JSON`, { recoverable: true, details: { preview: response.content.slice(0, 200) } });
+            throw new Error(`Planner returned invalid JSON: ${response.content.slice(0, 200)}`);
+          }
         } else {
+          emitError("planner_parse_error", `Planner returned invalid JSON`, { recoverable: true, details: { preview: response.content.slice(0, 200) } });
           throw new Error(`Planner returned invalid JSON: ${response.content.slice(0, 200)}`);
         }
       }

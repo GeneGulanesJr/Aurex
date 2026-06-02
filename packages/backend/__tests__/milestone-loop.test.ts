@@ -85,6 +85,7 @@ describe("milestone loop", () => {
       onAgentStatus: vi.fn(),
       onMilestoneProgress: vi.fn(),
       onCostUpdate: vi.fn(),
+      onError: vi.fn(),
     };
 
     const loop = createMilestoneLoop(mockLapis, {} as never, callbacks, {
@@ -130,6 +131,7 @@ describe("milestone loop", () => {
       onAgentStatus: vi.fn(),
       onMilestoneProgress: vi.fn(),
       onCostUpdate: vi.fn(),
+      onError: vi.fn(),
     };
 
     const loop = createMilestoneLoop(mockLapis, {} as never, callbacks, {
@@ -183,6 +185,7 @@ describe("milestone loop", () => {
       onAgentStatus: vi.fn(),
       onMilestoneProgress: vi.fn(),
       onCostUpdate: vi.fn(),
+      onError: vi.fn(),
     };
 
     const loop = createMilestoneLoop(mockLapis, {} as never, callbacks, {

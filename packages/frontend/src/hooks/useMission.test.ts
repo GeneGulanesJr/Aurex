@@ -67,6 +67,25 @@ describe("missionReducer", () => {
     expect(state.mission?.status).toBe("failed");
   });
 
+  it("clears transient errors and logs when setting a different mission", () => {
+    const stateWithTransientData = {
+      ...seedState,
+      errors: [{ code: "mission_crash", message: "Old mission failed", recoverable: false, timestamp: 1 }],
+      logs: [{ phase: "planning", message: "Old mission log", timestamp: 1 }],
+    };
+
+    const state = missionReducer(stateWithTransientData as any, {
+      type: "SET_MISSION",
+      mission: { id: "m2", description: "Next", status: "planning", configJson: {} } as any,
+      milestones: [],
+      workers: [],
+      cost: { totalCost: 0, totalTokens: 0, entries: 0 },
+    });
+
+    expect(state.errors).toHaveLength(0);
+    expect(state.logs).toHaveLength(0);
+  });
+
   it("resets to initial state", () => {
     const state = missionReducer(seedState as any, { type: "RESET" });
     expect(state.mission).toBeNull();
