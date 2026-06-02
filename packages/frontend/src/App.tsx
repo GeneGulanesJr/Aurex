@@ -6,6 +6,8 @@ import { useTheme } from "./hooks/useTheme";
 import { useGitHub } from "./hooks/useGitHub";
 import { usePinyxStatus } from "./hooks/usePinyxStatus";
 import { useBreakpoint } from "./hooks/useBreakpoint";
+import { useNotifications } from "./hooks/useNotifications";
+import { useTabBadge } from "./hooks/useTabBadge";
 import { MissionSidebar } from "./active/MissionSidebar";
 import { StatusBoard } from "./passive/StatusBoard";
 import { EscalationOverlay } from "./active/EscalationOverlay";
@@ -49,16 +51,29 @@ export function App() {
     }
   }, [bp.isMobile]);
 
+  const [latestNotifEvent, setLatestNotifEvent] = useState<WsClientEvent | null>(null);
+
   const combinedHandler = useCallback((event: WsClientEvent) => {
     missionsWsHandler(event);
     missionWsHandler(event);
     eventsRef.current = [...eventsRef.current.slice(-49), event];
+    if (event.type === "escalation" || event.type === "mission_completed") {
+      setLatestNotifEvent(event);
+    }
   }, [missionsWsHandler, missionWsHandler]);
 
   const { connected } = useWebSocket(combinedHandler, {
     missionId: missionsState.selectedMissionId,
     apiKey: import.meta.env.VITE_AUREX_API_KEY || undefined,
   });
+
+  // Browser notifications + tab badge
+  useNotifications(latestNotifEvent, missionsState.selectedMissionId);
+  const pendingEscalations = state.escalation?.type === "escalation" ? 1 : 0;
+  const terminalMissions = missionsState.missions.filter(
+    (m) => m.state === "completed" || m.state === "failed",
+  ).length;
+  useTabBadge(pendingEscalations, terminalMissions);
 
   const [uptime, setUptime] = useState("00:00:00");
   useEffect(() => {
@@ -156,6 +171,7 @@ export function App() {
           <MissionSidebar
             missions={missionsState.missions}
             selectedMissionId={missionsState.selectedMissionId}
+            escalationMissionId={state.escalation?.type === "escalation" ? missionsState.selectedMissionId : null}
             onSelect={selectMission}
             onRemove={removeMission}
             onRestart={markMissionRestarted}
@@ -201,6 +217,7 @@ export function App() {
             <MissionSidebar
               missions={missionsState.missions}
               selectedMissionId={missionsState.selectedMissionId}
+              escalationMissionId={state.escalation?.type === "escalation" ? missionsState.selectedMissionId : null}
               onSelect={(id) => { selectMission(id); setMobileOverlayOpen(false); }}
               onRemove={removeMission}
               onRestart={markMissionRestarted}
