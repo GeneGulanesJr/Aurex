@@ -563,3 +563,50 @@ select:focus-visible {
     transform: scale(0.85);
   }
 }
+
+/* === Responsive Layout === */
+
+.sidebar-transition {
+  transition: width 200ms ease;
+}
+
+.sidebar-mobile-overlay {
+  position: fixed;
+  top: 44px;
+  left: 0;
+  bottom: 0;
+  width: 280px;
+  z-index: 50;
+  border-right: 1px solid var(--border);
+  box-shadow: 8px 0 32px rgba(0, 0, 0, 0.5);
+}
+
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 49;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+/* Tablet: hide verbose status labels */
+@media (max-width: 768px) {
+  .hide-on-tablet {
+    display: none !important;
+  }
+
+  .integrations-drawer-content {
+    width: 100%;
+    max-width: 420px;
+  }
+}
+
+/* Mobile: hide non-essential chrome */
+@media (max-width: 640px) {
+  .hide-on-mobile {
+    display: none !important;
+  }
+
+  .integrations-drawer-content {
+    width: 100%;
+  }
+}
