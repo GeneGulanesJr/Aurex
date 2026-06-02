@@ -3,13 +3,14 @@ import {
   DefaultResourceLoader,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
-import type { AgentType, WorkerStatus } from "@aurex/shared";
+import type { AgentType, WorkerStatus, AgentOutputEventType } from "@aurex/shared";
 import { AGENT_TOOLS } from "./factory.js";
 import { createWorkerTools } from "./worker-tools.js";
 import { createValidatorTools } from "./validator-tools.js";
 import { createResearchTools } from "./research-tools.js";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { AgentLogger } from "./agent-logger.js";
+import type { EventBus } from "../ws/events.js";
 import path from "node:path";
 
 export interface AgentSpawnerConfig {
@@ -17,12 +18,14 @@ export interface AgentSpawnerConfig {
   agentDir: string;
   defaultTimeout: number;
   logger?: AgentLogger;
+  eventBus?: EventBus;
   maxConcurrent?: number;
   onCost?: (missionId: string, totalCost: number, totalTokens: number, delta: number) => void;
 }
 
 export interface SpawnOptions {
   agentType: AgentType;
+  agentId: string;
   unitId?: string;
   missionId: string;
   milestoneId: string;
@@ -48,8 +51,26 @@ export interface SpawnResult {
 }
 
 export function createAgentSpawner(config: AgentSpawnerConfig) {
-  const { lapis, agentDir, defaultTimeout, logger, maxConcurrent } = config;
+  const { lapis, agentDir, defaultTimeout, logger, eventBus, maxConcurrent } = config;
   const activeHandles = new Map<string, SpawnHandle>();
+
+  function emitOutput(
+    opts: SpawnOptions,
+    eventType: AgentOutputEventType,
+    message: string,
+    data?: Record<string, unknown>,
+  ) {
+    eventBus?.emit({
+      type: "agent_output",
+      missionId: opts.missionId,
+      agentId: opts.agentId,
+      agentType: opts.agentType,
+      eventType,
+      message,
+      timestamp: new Date().toISOString(),
+      data,
+    });
+  }
 
   return {
     async spawn(opts: SpawnOptions): Promise<SpawnHandle> {
@@ -131,6 +152,7 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
         unitId: opts.unitId,
         event: "spawned",
       });
+      emitOutput(opts, "spawned", `${opts.agentType} agent spawned`);
 
       let resolveCompleted!: (result: SpawnResult) => void;
       const completed = new Promise<SpawnResult>((resolve) => {
@@ -151,12 +173,14 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
             unitId: opts.unitId,
             event: "completed",
           });
+          emitOutput(opts, "completed", "Agent completed successfully");
           resolveCompleted({ status: "completed", sessionId: session.sessionId });
         }
 
         if (event.type === "message_update") {
           if (event.assistantMessageEvent?.type === "error") {
             settled = true;
+            const errorMsg = event.assistantMessageEvent.message ?? "unknown error";
             logger?.log({
               sessionId: session.sessionId,
               agentType: opts.agentType,
@@ -164,12 +188,13 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
               milestoneId: opts.milestoneId,
               unitId: opts.unitId,
               event: "failed",
-              data: { error: event.assistantMessageEvent.message },
+              data: { error: errorMsg },
             });
+            emitOutput(opts, "failed", `Agent failed: ${errorMsg}`, { error: errorMsg });
             resolveCompleted({
               status: "failed",
               sessionId: session.sessionId,
-              error: event.assistantMessageEvent.message ?? "unknown error",
+              error: errorMsg,
             });
           }
 
@@ -184,6 +209,7 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
               event: "tool_call",
               data: { tool: toolName },
             });
+            emitOutput(opts, "tool_call", `Called tool: ${toolName}`, { tool: toolName });
           }
 
           const usage = event.assistantMessageEvent?.usage;
@@ -201,6 +227,8 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
               event: "cost_update",
               data: { cost: delta, cumulativeCost, cumulativeTokens },
             });
+
+            emitOutput(opts, "cost_update", `Cost: $${delta.toFixed(4)}`, { cost: delta, cumulativeCost, cumulativeTokens });
 
             lapis.logCost({
               missionId: opts.missionId,
@@ -229,6 +257,7 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
             unitId: opts.unitId,
             event: "timed_out",
           });
+          emitOutput(opts, "timed_out", "Agent timed out");
           resolveCompleted({ status: "timed_out", sessionId: session.sessionId });
         }
       }, timeout);
@@ -241,10 +270,12 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
         unitId: opts.unitId,
         event: "prompt_sent",
       });
+      emitOutput(opts, "prompt_sent", "Task prompt sent");
 
       session.prompt(opts.taskPrompt).catch((err: Error) => {
         if (!settled) {
           settled = true;
+          const errMsg = err.message;
           logger?.log({
             sessionId: session.sessionId,
             agentType: opts.agentType,
@@ -252,12 +283,13 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
             milestoneId: opts.milestoneId,
             unitId: opts.unitId,
             event: "failed",
-            data: { error: err.message },
+            data: { error: errMsg },
           });
+          emitOutput(opts, "failed", `Agent failed: ${errMsg}`, { error: errMsg });
           resolveCompleted({
             status: "failed",
             sessionId: session.sessionId,
-            error: err.message,
+            error: errMsg,
           });
         }
       });
@@ -277,6 +309,7 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
               unitId: opts.unitId,
               event: "aborted",
             });
+            emitOutput(opts, "aborted", "Agent aborted");
             resolveCompleted({ status: "failed", sessionId: session.sessionId, error: "aborted" });
           }
         },

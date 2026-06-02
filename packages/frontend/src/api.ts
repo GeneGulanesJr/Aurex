@@ -1,5 +1,5 @@
 import type { CheckpointDecision, CostSummary, Milestone, Mission, WorkingUnit, MissionStatus } from "@aurex/shared";
-import type { CreateMissionResponse, GetMissionResponse, CheckpointResponse, HealthResponse } from "@aurex/shared";
+import type { CreateMissionResponse, GetMissionResponse, CheckpointResponse, HealthResponse, AgentLogResponse } from "@aurex/shared";
 
 export type CurrentMissionPayload = GetMissionResponse;
 
@@ -78,6 +78,12 @@ export async function submitCheckpoint(
 export async function getHealth(): Promise<HealthResponse> {
   const res = await apiFetch("/health");
   return res.json() as Promise<HealthResponse>;
+}
+
+export async function getAgentLogs(missionId: string): Promise<AgentLogResponse> {
+  const res = await apiFetch(`/api/missions/${missionId}/agent-logs`);
+  if (!res.ok) throw new Error(`Failed to fetch agent logs: ${res.status}`);
+  return res.json() as Promise<AgentLogResponse>;
 }
 
 export interface GitHubStatusResponse {

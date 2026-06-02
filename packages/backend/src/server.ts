@@ -4,6 +4,7 @@ import websocket from "@fastify/websocket";
 import { loadConfig } from "./config.js";
 import { createLaPisClient } from "./clients/lapis-client.js";
 import { createEventBus, registerWebSocketRoutes } from "./ws/events.js";
+import { createAgentLogger } from "./agents/agent-logger.js";
 import { createMissionRunnerPool } from "./orchestrator/mission-runner-pool.js";
 import { missionRoutes } from "./routes/missions.js";
 import { checkpointRoutes } from "./routes/checkpoints.js";
@@ -16,6 +17,7 @@ async function main() {
   const config = loadConfig();
   const lapis = createLaPisClient({ lapisEndpoint: config.lapisEndpoint });
   const eventBus = createEventBus();
+  const agentLogger = createAgentLogger();
 
   // Startup healthcheck — LaPis is required
   try {
@@ -29,6 +31,7 @@ async function main() {
   const pool = createMissionRunnerPool({
     lapis,
     eventBus,
+    logger: agentLogger,
     agentDir: process.env.PI_AGENT_DIR || `${process.env.HOME}/.pi/agent`,
     repoRoot: config.repoRoot,
     gitMainBranch: config.gitMainBranch,
@@ -77,6 +80,7 @@ async function main() {
   await app.register(missionRoutes, {
     lapis,
     pool,
+    agentLogger,
     missionConfig: {
       workerTimeouts: config.workerTimeouts,
       costCap: config.missionCostCap,

@@ -4,6 +4,7 @@ import type { LaPisClient } from "../clients/lapis-client.js";
 import type { PinyxClient } from "../clients/pinyx-client.js";
 import { createPinyxClient } from "../clients/pinyx-client.js";
 import type { EventBus } from "../ws/events.js";
+import type { AgentLogger } from "../agents/agent-logger.js";
 import { createCheckpointManager } from "./checkpoint-manager.js";
 import { createMilestoneLoop } from "./milestone-loop.js";
 import { createPlanner } from "./planner.js";
@@ -27,6 +28,7 @@ export interface MissionRunner {
 export interface MissionRunnerConfig {
   lapis: LaPisClient;
   eventBus: EventBus;
+  logger?: AgentLogger;
   agentDir: string;
   repoRoot: string;
   gitMainBranch: string;
@@ -122,7 +124,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
             eventBus.emit({ type: "mission_error", missionId: mId, code, message, workerId: opts?.workerId, milestoneId: opts?.milestoneId, recoverable: opts?.recoverable ?? false, details: opts?.details });
           },
         },
-        { agentDir, repoRoot: missionRepoRoot, gitMainBranch, onCompression: (mId, trigger) => compression.run(mId, trigger) },
+        { agentDir, repoRoot: missionRepoRoot, gitMainBranch, eventBus, logger: config.logger, onCompression: (mId, trigger) => compression.run(mId, trigger) },
       );
 
       const storedMilestones = await lapis.getMilestonesForMission(missionId);

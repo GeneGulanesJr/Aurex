@@ -1,10 +1,10 @@
-import { useEffect, useRef, useMemo, useState } from "react";
+import { useEffect, useRef, useMemo, useState, useCallback } from "react";
 import { animate, stagger } from "animejs";
 import { createPulse, createSpin, createIdle } from "../animations/agent-animations";
 import { staggerEntrance } from "../animations/stagger";
 import { animateProgress } from "../animations/counters";
 import type { Milestone, WorkingUnit, WsClientEvent, MilestoneStatus } from "@aurex/shared";
-import type { MissionError } from "../hooks/useMission";
+import type { MissionError, AgentLogEntry } from "../hooks/useMission";
 import { CodeContextPanel } from "./CodeContextPanel";
 
 interface MissionPipelineProps {
@@ -15,6 +15,7 @@ interface MissionPipelineProps {
   events: WsClientEvent[];
   logs: Array<{ phase: string; message: string; timestamp: number; data?: Record<string, unknown> }>;
   errors: MissionError[];
+  agentLogs: Record<string, AgentLogEntry[]>;
   onRetry?: () => void;
 }
 
@@ -35,7 +36,18 @@ const workerStatusColor: Record<string, string> = {
   failed: "var(--error)",
 };
 
-export function MissionPipeline({ mission, milestones, workers, cost, events, logs, errors, onRetry }: MissionPipelineProps) {
+const logEventColor: Record<string, string> = {
+  spawned: "var(--warning)",
+  prompt_sent: "var(--text-muted)",
+  tool_call: "var(--accent)",
+  cost_update: "var(--text-muted)",
+  completed: "var(--success)",
+  timed_out: "var(--warning)",
+  failed: "var(--error)",
+  aborted: "var(--text-muted)",
+};
+
+export function MissionPipeline({ mission, milestones, workers, cost, events, logs, errors, agentLogs, onRetry }: MissionPipelineProps) {
   const pipelineRef = useRef<HTMLDivElement>(null);
   const prevMilestoneCountRef = useRef(0);
 
@@ -201,9 +213,9 @@ export function MissionPipeline({ mission, milestones, workers, cost, events, lo
 
                   {/* Workers under active milestone */}
                   {isActive && msWorkers.length > 0 && (
-                    <div ref={workerContainerRef} style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                    <div ref={workerContainerRef} style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                       {msWorkers.map((w) => (
-                        <WorkerChip key={w.id} worker={w} errors={errors} />
+                        <WorkerChip key={w.id} worker={w} errors={errors} logs={getWorkerLogs(w.id, agentLogs)} />
                       ))}
                     </div>
                   )}
@@ -306,82 +318,51 @@ function MilestoneProgressBar({ milestone, workers }: { milestone: Milestone; wo
   );
 }
 
-function WorkerChip({ worker, errors }: { worker: WorkingUnit; errors: MissionError[] }) {
+function getWorkerLogs(workerId: string, agentLogs: Record<string, AgentLogEntry[]>): AgentLogEntry[] {
+  return agentLogs[workerId] ?? agentLogs[`worker-${workerId}`] ?? [];
+}
+
+function WorkerChip({ worker, errors, logs }: { worker: WorkingUnit; errors: MissionError[]; logs: AgentLogEntry[] }) {
   const chipRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
+  const detailRef = useRef<HTMLDivElement>(null);
   const isFailed = worker.status === "failed" || worker.status === "timed_out";
-  const workerError = errors.find((e) => e.workerId === worker.id);
+  const workerError = errors.find((e) => e.workerId === worker.id || e.workerId === `worker-${worker.id}`);
 
   useEffect(() => {
     const el = chipRef.current;
     if (!el) return;
     let anim: ReturnType<typeof createPulse> | undefined;
-    if (worker.status === "working") {
-      anim = createPulse(el);
-    } else if (worker.status === "spawned") {
-      anim = createSpin(el);
-    } else {
-      createIdle(el);
-    }
+    if (worker.status === "working") anim = createPulse(el);
+    else if (worker.status === "spawned") anim = createSpin(el);
+    else createIdle(el);
     return () => { anim?.pause(); };
   }, [worker.status]);
 
+  useEffect(() => {
+    if (expanded && detailRef.current) detailRef.current.scrollTop = detailRef.current.scrollHeight;
+  }, [expanded, logs.length]);
+
+  const toggle = useCallback(() => setExpanded((v) => !v), []);
+
   return (
-    <div>
-      <div
-        ref={chipRef}
-        className="worker-chip"
-        onClick={isFailed ? () => setExpanded(!expanded) : undefined}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-          background: "var(--bg-elevated)",
-          border: `1px solid ${isFailed ? "var(--error)" : "var(--border)"}`,
-          borderRadius: "4px",
-          padding: "6px 10px",
-          cursor: isFailed ? "pointer" : "default",
-        }}
-      >
-        <div
-          className="status-dot"
-          style={{
-            width: "6px",
-            height: "6px",
-            borderRadius: "50%",
-            background: workerStatusColor[worker.status] || "var(--text-muted)",
-            boxShadow: worker.status === "working" ? `0 0 6px ${workerStatusColor[worker.status] || "var(--text-muted)"}` : "none",
-            flexShrink: 0,
-          }}
-        />
-        <span style={{ fontSize: "12px", color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "200px" }}>
-          {worker.description}
-        </span>
-        <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "9px", letterSpacing: "1px", textTransform: "uppercase", color: workerStatusColor[worker.status] || "var(--text-muted)" }}>
-          {worker.status.replace("_", " ")}
-        </span>
-        {isFailed && <span style={{ fontSize: "9px", color: "var(--text-muted)" }}>{expanded ? "▲" : "▼"}</span>}
+    <div style={{ width: "100%" }}>
+      <div ref={chipRef} className="worker-chip" onClick={toggle} style={{ display: "flex", alignItems: "center", gap: "8px", background: "var(--bg-elevated)", border: `1px solid ${isFailed ? "var(--error)" : "var(--border)"}`, borderRadius: "4px", padding: "6px 10px", cursor: "pointer", userSelect: "none", transition: "border-color 0.2s" }}>
+        <div className="status-dot" style={{ width: "6px", height: "6px", borderRadius: "50%", background: workerStatusColor[worker.status] || "var(--text-muted)", boxShadow: worker.status === "working" ? `0 0 6px ${workerStatusColor[worker.status] || "var(--text-muted)"}` : "none", flexShrink: 0 }} />
+        <span style={{ fontSize: "12px", color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{worker.description}</span>
+        <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "9px", letterSpacing: "1px", textTransform: "uppercase", color: workerStatusColor[worker.status] || "var(--text-muted)" }}>{worker.status.replace("_", " ")}</span>
+        {logs.length > 0 && <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "8px", color: "var(--text-muted)", background: "var(--bg-inset)", padding: "1px 5px", borderRadius: "3px" }}>{logs.length}</span>}
+        {isFailed && <span style={{ fontSize: "9px", color: "var(--error)" }}>!</span>}
+        <span style={{ fontSize: "9px", color: "var(--text-muted)", transition: "transform 0.2s", transform: expanded ? "rotate(90deg)" : "rotate(0deg)", display: "inline-block" }}>▸</span>
       </div>
-      {expanded && isFailed && workerError && (
-        <div style={{
-          marginTop: "4px",
-          padding: "8px 10px",
-          background: "var(--bg-inset)",
-          border: "1px solid var(--error)",
-          borderRadius: "4px",
-          fontSize: "11px",
-          color: "var(--text-secondary)",
-          lineHeight: 1.5,
-        }}>
-          <div style={{ color: "var(--error)", fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", marginBottom: "4px" }}>
-            {workerError.code}
+      {expanded && (
+        <div style={{ marginLeft: "14px", borderLeft: `2px solid ${isFailed ? "var(--error)" : "var(--border)"}`, marginTop: "2px", marginBottom: "4px" }}>
+          <div style={{ padding: "6px 10px", borderBottom: "1px solid var(--border)", display: "flex", gap: "12px", flexWrap: "wrap" }}>
+            {worker.taskBranch && <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", color: "var(--info)" }}>↎ {worker.taskBranch}</span>}
+            {worker.declaredPaths.length > 0 && <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", color: "var(--text-muted)" }}>{worker.declaredPaths.length} path{worker.declaredPaths.length !== 1 ? "s" : ""}</span>}
           </div>
-          <div>{workerError.message}</div>
-          {workerError.details && (
-            <pre style={{ marginTop: "6px", fontSize: "10px", color: "var(--text-muted)", whiteSpace: "pre-wrap", margin: 0 }}>
-              {JSON.stringify(workerError.details, null, 2)}
-            </pre>
-          )}
+          {workerError && <div style={{ padding: "8px 10px", background: "var(--bg-inset)", borderBottom: "1px solid var(--error)", fontSize: "11px", color: "var(--text-secondary)", lineHeight: 1.5 }}><div style={{ color: "var(--error)", fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", marginBottom: "4px" }}>{workerError.code}</div><div>{workerError.message}</div>{workerError.details && <pre style={{ marginTop: "6px", fontSize: "10px", color: "var(--text-muted)", whiteSpace: "pre-wrap", margin: 0 }}>{JSON.stringify(workerError.details, null, 2)}</pre>}</div>}
+          {logs.length > 0 ? <div ref={detailRef} style={{ maxHeight: "180px", overflowY: "auto", padding: "6px 10px", fontFamily: '"JetBrains Mono", monospace', fontSize: "11px", lineHeight: 1.6 }}>{logs.map((log, i) => <div key={i} style={{ display: "flex", gap: "6px", padding: "2px 0", color: i === logs.length - 1 ? "var(--text-primary)" : "var(--text-secondary)" }}><span style={{ color: "var(--text-muted)", flexShrink: 0, fontSize: "9px", paddingTop: "2px" }}>{new Date(log.timestamp).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span><span style={{ fontSize: "8px", textTransform: "uppercase", letterSpacing: "0.5px", color: logEventColor[log.eventType] ?? "var(--text-muted)", flexShrink: 0, paddingTop: "2px", minWidth: "60px" }}>{log.eventType.replace("_", " ")}</span><span style={{ wordBreak: "break-word" }}>{log.message}</span></div>)}</div> : <div style={{ padding: "8px 10px", fontFamily: '"JetBrains Mono", monospace', fontSize: "11px", color: "var(--text-muted)", fontStyle: "italic" }}>No activity yet</div>}
         </div>
       )}
     </div>
@@ -634,6 +615,7 @@ function EventStream({ events }: { events: WsClientEvent[] }) {
     mission_started: "START",
     mission_completed: "DONE",
     mission_error: "ERROR",
+    agent_output: "OUTPUT",
   };
 
   const eventTypeColor: Record<string, string> = {
@@ -645,6 +627,7 @@ function EventStream({ events }: { events: WsClientEvent[] }) {
     mission_started: "var(--success)",
     mission_completed: "var(--success)",
     mission_error: "var(--error)",
+    agent_output: "var(--info)",
   };
 
   return (
@@ -690,5 +673,7 @@ function EventSummary({ event }: { event: WsClientEvent }) {
       return <>queued #{event.queuePosition}</>;
     case "mission_error":
       return <>{event.code}: {event.message}</>;
+    case "agent_output":
+      return <>{event.agentId}: {event.message}</>;
   }
 }

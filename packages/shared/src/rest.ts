@@ -34,3 +34,19 @@ export interface HealthResponse {
   lapis: boolean;
   pinyx: boolean;
 }
+
+export interface AgentLogEntryResponse {
+  sessionId: string;
+  agentType: string;
+  missionId: string;
+  milestoneId: string;
+  unitId?: string;
+  event: string;
+  message: string;
+  timestamp: string;
+  data?: Record<string, unknown>;
+}
+
+export interface AgentLogResponse {
+  logs: AgentLogEntryResponse[];
+}

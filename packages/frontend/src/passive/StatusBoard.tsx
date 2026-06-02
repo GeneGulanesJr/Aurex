@@ -3,7 +3,7 @@ import { MissionPipeline } from "./MissionPipeline";
 import { EmptyState } from "../frame/EmptyState";
 import { dimPassive, restorePassive } from "../animations/state-transitions";
 import type { Mission, Milestone, WorkingUnit, CostSummary, WsClientEvent } from "@aurex/shared";
-import type { MissionError } from "../hooks/useMission";
+import type { MissionError, AgentLogEntry } from "../hooks/useMission";
 
 interface StatusBoardProps {
   mission: Mission | null;
@@ -13,13 +13,14 @@ interface StatusBoardProps {
   events: WsClientEvent[];
   logs: Array<{ phase: string; message: string; timestamp: number }>;
   errors: MissionError[];
+  agentLogs: Record<string, AgentLogEntry[]>;
   blurred: boolean;
   onExampleClick?: (text: string) => void;
   onRetryMission?: () => void;
   onDismissErrors?: () => void;
 }
 
-export function StatusBoard({ mission, milestones, workers, cost, events, logs, errors, blurred, onExampleClick, onRetryMission, onDismissErrors }: StatusBoardProps) {
+export function StatusBoard({ mission, milestones, workers, cost, events, logs, errors, agentLogs, blurred, onExampleClick, onRetryMission, onDismissErrors }: StatusBoardProps) {
   const boardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -61,6 +62,7 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
         events={events}
         logs={logs}
         errors={errors}
+        agentLogs={agentLogs}
         onRetry={onRetryMission}
       />
     </div>
