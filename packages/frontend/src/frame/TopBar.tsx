@@ -12,6 +12,7 @@ interface TopBarProps {
   onOpenIntegrations?: () => void;
   sidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
+  onOpenSettings?: () => void;
 }
 
 function StatusDot({ color }: { color: string }) {
@@ -49,7 +50,7 @@ function StatusItem({ color, label }: { color: string; label: string }) {
   );
 }
 
-export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, githubUser, pinyxConfigured, onOpenIntegrations, sidebarCollapsed, onToggleSidebar }: TopBarProps) {
+export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, githubUser, pinyxConfigured, onOpenIntegrations, sidebarCollapsed, onToggleSidebar, onOpenSettings }: TopBarProps) {
   const dotColor = connected ? "var(--success)" : "var(--error)";
   return (
     <header
@@ -168,6 +169,29 @@ export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, 
             <span>GITHUB —</span>
           )}
         </button>
+        {onOpenSettings && (
+          <button
+            onClick={onOpenSettings}
+            style={{
+              background: "transparent",
+              border: "1px solid var(--border)",
+              borderRadius: "4px",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+              width: "28px",
+              height: "28px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "14px",
+              padding: 0,
+              flexShrink: 0,
+            }}
+            title="Settings"
+          >
+            ⚙
+          </button>
+        )}
         <ThemePicker current={theme} onChange={onThemeChange} />
       </div>
     </header>
