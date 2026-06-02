@@ -53,6 +53,8 @@ export interface SpawnResult {
 export function createAgentSpawner(config: AgentSpawnerConfig) {
   const { lapis, agentDir, defaultTimeout, logger, eventBus, maxConcurrent } = config;
   const activeHandles = new Map<string, SpawnHandle>();
+  let missionCumulativeCost = 0;
+  let missionCumulativeTokens = 0;
 
   function emitOutput(
     opts: SpawnOptions,
@@ -217,6 +219,8 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
             const delta = usage.cost;
             cumulativeCost += delta;
             cumulativeTokens += usage.totalTokens ?? 0;
+            missionCumulativeCost += delta;
+            missionCumulativeTokens += usage.totalTokens ?? 0;
 
             logger?.log({
               sessionId: session.sessionId,
@@ -225,10 +229,10 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
               milestoneId: opts.milestoneId,
               unitId: opts.unitId,
               event: "cost_update",
-              data: { cost: delta, cumulativeCost, cumulativeTokens },
+              data: { cost: delta, cumulativeCost, cumulativeTokens, missionCumulativeCost, missionCumulativeTokens },
             });
 
-            emitOutput(opts, "cost_update", `Cost: $${delta.toFixed(4)}`, { cost: delta, cumulativeCost, cumulativeTokens });
+            emitOutput(opts, "cost_update", `Cost: $${delta.toFixed(4)}`, { cost: delta, cumulativeCost, cumulativeTokens, missionCumulativeCost, missionCumulativeTokens });
 
             lapis.logCost({
               missionId: opts.missionId,
@@ -240,7 +244,7 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
               timestamp: new Date().toISOString(),
             }).catch(() => {});
 
-            config.onCost?.(opts.missionId, cumulativeCost, cumulativeTokens, delta);
+            config.onCost?.(opts.missionId, missionCumulativeCost, missionCumulativeTokens, delta);
           }
         }
       });
