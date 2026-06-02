@@ -16,12 +16,13 @@ interface StatusBoardProps {
   errors: MissionError[];
   agentLogs: Record<string, AgentLogEntry[]>;
   blurred: boolean;
+  eventStreamCount?: number;
   onExampleClick?: (text: string) => void;
   onRetryMission?: () => void;
   onDismissErrors?: () => void;
 }
 
-export function StatusBoard({ mission, milestones, workers, cost, events, logs, errors, agentLogs, blurred, onExampleClick, onRetryMission, onDismissErrors }: StatusBoardProps) {
+export function StatusBoard({ mission, milestones, workers, cost, events, logs, errors, agentLogs, blurred, eventStreamCount, onExampleClick, onRetryMission, onDismissErrors }: StatusBoardProps) {
   const boardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -78,6 +79,7 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
           logs={logs}
           errors={errors}
           agentLogs={agentLogs}
+          eventStreamCount={eventStreamCount}
           onRetry={onRetryMission}
         />
       )}

@@ -24,19 +24,22 @@ export function MissionComplete({ mission, milestones, workers, cost, events, er
   const completedWorkers = workers.filter((w) => w.status === "completed");
   const failedWorkers = workers.filter((w) => w.status === "failed" || w.status === "timed_out");
 
-  // Elapsed time
+  // Elapsed time — use mission.createdAt as start, last event with a timestamp as end
   const createdAt = "createdAt" in mission && typeof mission.createdAt === "string"
     ? new Date(mission.createdAt).getTime()
     : 0;
-  const lastEventTs = events.length > 0 && "timestamp" in events[events.length - 1!]
-    ? 0
-    : events.length > 0
-      ? (() => {
-          const last = events[events.length - 1];
-          if ("timestamp" in last && typeof last.timestamp === "string") return new Date(last.timestamp).getTime();
-          return 0;
-        })()
-      : 0;
+  const lastEventTs = events.length > 0
+    ? (() => {
+        // Walk backwards to find the last event with a timestamp
+        for (let i = events.length - 1; i >= 0; i--) {
+          const evt = events[i];
+          if ("timestamp" in evt && typeof (evt as any).timestamp === "string") {
+            return new Date((evt as any).timestamp).getTime();
+          }
+        }
+        return 0;
+      })()
+    : 0;
   const elapsedMs = createdAt > 0 && lastEventTs > 0 ? lastEventTs - createdAt : 0;
   const elapsedStr = elapsedMs > 0
     ? (() => {

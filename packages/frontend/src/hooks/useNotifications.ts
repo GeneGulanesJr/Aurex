@@ -37,12 +37,13 @@ function toNotificationEvent(event: WsClientEvent): NotificationEvent | null {
   }
 }
 
-export function useNotifications(wsEvent: WsClientEvent | null, selectedMissionId: string | null) {
+export function useNotifications(wsEvent: WsClientEvent | null, selectedMissionId: string | null, enabled: boolean = true) {
   const permissionRef = useRef<NotificationPermission>("default");
   const lastNotifiedRef = useRef<Set<string>>(new Set());
 
-  // Request permission on mount
+  // Request permission on mount (only if enabled)
   useEffect(() => {
+    if (!enabled) return;
     if (typeof window === "undefined" || !("Notification" in window)) return;
     if (Notification.permission === "granted") {
       permissionRef.current = "granted";
@@ -51,7 +52,7 @@ export function useNotifications(wsEvent: WsClientEvent | null, selectedMissionI
         permissionRef.current = p;
       });
     }
-  }, []);
+  }, [enabled]);
 
   const notify = useCallback((event: WsClientEvent) => {
     const notif = toNotificationEvent(event);
@@ -65,7 +66,7 @@ export function useNotifications(wsEvent: WsClientEvent | null, selectedMissionI
     if (lastNotifiedRef.current.has(key)) return;
     lastNotifiedRef.current.add(key);
 
-    if (permissionRef.current !== "granted") return;
+    if (!enabled || permissionRef.current !== "granted") return;
 
     try {
       const n = new Notification(notif.title, {
