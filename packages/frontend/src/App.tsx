@@ -9,6 +9,7 @@ import { useBreakpoint } from "./hooks/useBreakpoint";
 import { useNotifications } from "./hooks/useNotifications";
 import { useTabBadge } from "./hooks/useTabBadge";
 import { useSettings } from "./hooks/useSettings";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { MissionSidebar } from "./active/MissionSidebar";
 import { StatusBoard } from "./passive/StatusBoard";
 import { EscalationOverlay } from "./active/EscalationOverlay";
@@ -116,6 +117,34 @@ export function App() {
       selectMission(missionId);
     } catch {}
   }, [state.mission, dispatch, selectMission]);
+
+  // Keyboard shortcuts
+  const { helpOpen, setHelpOpen } = useKeyboardShortcuts({
+    onSelectMissionByIndex: (i) => {
+      const mission = missionsState.missions[i];
+      if (mission) selectMission(mission.missionId);
+    },
+    onApprove: () => {
+      if (state.escalation?.type === "escalation" && state.escalation.checkpointId) {
+        handleDecision("approve");
+      }
+    },
+    onReject: () => {
+      if (state.escalation?.type === "escalation" && state.escalation.checkpointId) {
+        handleDecision("reject");
+      }
+    },
+    onDismiss: () => {
+      if (state.escalation?.type === "escalation") {
+        dispatch({ type: "CLEAR_ESCALATION" });
+      }
+    },
+    onNewMission: () => {
+      // Focus the new mission input by dispatching a custom event
+      window.dispatchEvent(new CustomEvent("aurex:focus-new-mission"));
+    },
+    onToggleSidebar: toggleSidebar,
+  });
 
   // Connecting overlay
   if (!connected) {
@@ -250,6 +279,43 @@ export function App() {
           onDismiss={() => dispatch({ type: "CLEAR_ESCALATION" })}
         />
       )}
+      {helpOpen && <HelpOverlay onClose={() => setHelpOpen(false)} />}
+    </div>
+  );
+}
+
+function HelpOverlay({ onClose }: { onClose: () => void }) {
+  const shortcuts = [
+    { keys: "1 - 9", desc: "Select mission by position" },
+    { keys: "Enter", desc: "Approve checkpoint" },
+    { keys: "Esc", desc: "Dismiss overlay / close help" },
+    { keys: "R", desc: "Reject checkpoint" },
+    { keys: "N", desc: "New mission" },
+    { keys: "[ / ]", desc: "Toggle sidebar" },
+    { keys: "?", desc: "Toggle this help" },
+  ];
+  return (
+    <div
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200 }}
+    >
+      <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "6px", padding: "24px 32px", minWidth: "320px", maxWidth: "420px", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)" }}>
+        <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "11px", letterSpacing: "2px", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: "16px" }}>
+          Keyboard Shortcuts
+        </div>
+        {shortcuts.map((s) => (
+          <div key={s.keys} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+            <span style={{ fontSize: "13px", color: "var(--text-primary)" }}>{s.desc}</span>
+            <kbd style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", color: "var(--accent)", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: "3px", padding: "2px 8px", letterSpacing: "1px" }}>{s.keys}</kbd>
+          </div>
+        ))}
+        <button
+          onClick={onClose}
+          style={{ marginTop: "16px", color: "var(--text-muted)", fontSize: "12px", background: "none", border: "none", cursor: "pointer" }}
+        >
+          Close (Esc)
+        </button>
+      </div>
     </div>
   );
 }
