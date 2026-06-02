@@ -7,6 +7,7 @@ import { NewMissionForm } from "./NewMissionForm";
 interface MissionSidebarProps {
   missions: MissionListItem[];
   selectedMissionId: string | null;
+  escalationMissionId?: string | null;
   onSelect: (missionId: string) => void;
   onRemove: (missionId: string) => void;
   onRestart: (missionId: string) => void;
@@ -59,7 +60,7 @@ function statusIconColor(state: string): string {
   }
 }
 
-export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove, onRestart, onCreateMission, github, systemReady, totalCost, collapsed = false }: MissionSidebarProps) {
+export function MissionSidebar({ missions, selectedMissionId, escalationMissionId, onSelect, onRemove, onRestart, onCreateMission, github, systemReady, totalCost, collapsed = false }: MissionSidebarProps) {
   const handleAbort = useCallback(async (e: React.MouseEvent, missionId: string) => {
     e.stopPropagation();
     try {
@@ -175,6 +176,9 @@ export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove
             >
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  {escalationMissionId === mission.missionId && (
+                    <span style={{ display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", background: "var(--warning)", boxShadow: "0 0 6px var(--warning)", flexShrink: 0 }} />
+                  )}
                   <span style={badge.style}>{badge.label}</span>
                   {mission.queuePosition != null && (
                     <span style={{ fontSize: "11px", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace' }}>#{mission.queuePosition}</span>
