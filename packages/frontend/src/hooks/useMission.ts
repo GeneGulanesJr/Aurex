@@ -1,5 +1,5 @@
 import { useReducer, useCallback, useEffect } from "react";
-import type { Mission, Milestone, WorkingUnit, CostSummary, WsClientEvent, MilestoneStatus, AgentType, AgentStatus } from "@aurex/shared";
+import type { Mission, Milestone, WorkingUnit, CostSummary, WsClientEvent, MilestoneStatus, AgentType, AgentStatus, AgentOutputEventType } from "@aurex/shared";
 import { getMission } from "../api";
 
 export interface MissionError {
@@ -12,6 +12,13 @@ export interface MissionError {
   timestamp: number;
 }
 
+export interface AgentLogEntry {
+  eventType: AgentOutputEventType;
+  message: string;
+  timestamp: string;
+  data?: Record<string, unknown>;
+}
+
 export interface MissionState {
   mission: Mission | null;
   milestones: Milestone[];
@@ -20,6 +27,7 @@ export interface MissionState {
   escalation: WsClientEvent | null;
   logs: Array<{ phase: string; message: string; timestamp: number; data?: Record<string, unknown> }>;
   errors: MissionError[];
+  agentLogs: Record<string, AgentLogEntry[]>;
 }
 
 type Action =
@@ -32,17 +40,18 @@ type Action =
   | { type: "MISSION_COMPLETED"; finalState: string }
   | { type: "MISSION_LOG"; phase: string; message: string; data?: Record<string, unknown> }
   | { type: "MISSION_ERROR"; code: string; message: string; workerId?: string; milestoneId?: string; recoverable: boolean; details?: Record<string, unknown> }
+  | { type: "AGENT_OUTPUT"; agentId: string; eventType: AgentOutputEventType; message: string; timestamp: string; data?: Record<string, unknown> }
   | { type: "CLEAR_ERRORS" }
   | { type: "RESET" };
 
 export const initialMissionState: MissionState = {
-  mission: null, milestones: [], activeWorkers: [], cost: null, escalation: null, logs: [], errors: [],
+  mission: null, milestones: [], activeWorkers: [], cost: null, escalation: null, logs: [], errors: [], agentLogs: {},
 };
 
 export function missionReducer(state: MissionState, action: Action): MissionState {
   switch (action.type) {
     case "SET_MISSION":
-      return { ...state, mission: action.mission, milestones: action.milestones, activeWorkers: action.workers, cost: action.cost, logs: [], errors: [], escalation: null };
+      return { ...state, mission: action.mission, milestones: action.milestones, activeWorkers: action.workers, cost: action.cost, logs: [], errors: [], agentLogs: {}, escalation: null };
     case "ESCALATION":
       return { ...state, escalation: action.event };
     case "CLEAR_ESCALATION":
@@ -56,15 +65,10 @@ export function missionReducer(state: MissionState, action: Action): MissionStat
       return { ...state, milestones };
     }
     case "AGENT_STATUS": {
-      // Upsert a lightweight worker display record keyed by agentId
-      const existing = state.activeWorkers.find(
-        (w) => w.id === action.agentId,
-      );
+      const existing = state.activeWorkers.find((w) => w.id === action.agentId);
       if (existing) {
         const activeWorkers = state.activeWorkers.map((w) =>
-          w.id === action.agentId
-            ? { ...w, status: action.status as WorkingUnit["status"] }
-            : w,
+          w.id === action.agentId ? { ...w, status: action.status as WorkingUnit["status"] } : w,
         );
         return { ...state, activeWorkers };
       }
@@ -86,6 +90,17 @@ export function missionReducer(state: MissionState, action: Action): MissionStat
     case "MISSION_ERROR": {
       const error: MissionError = { code: action.code, message: action.message, workerId: action.workerId, milestoneId: action.milestoneId, recoverable: action.recoverable, details: action.details, timestamp: Date.now() };
       return { ...state, errors: [...state.errors.slice(-19), error] };
+    }
+    case "AGENT_OUTPUT": {
+      const entry: AgentLogEntry = { eventType: action.eventType, message: action.message, timestamp: action.timestamp, data: action.data };
+      const existing = state.agentLogs[action.agentId] ?? [];
+      return {
+        ...state,
+        agentLogs: {
+          ...state.agentLogs,
+          [action.agentId]: [...existing.slice(-199), entry],
+        },
+      };
     }
     case "CLEAR_ERRORS":
       return { ...state, errors: [] };
@@ -145,6 +160,9 @@ export function useMission(missionId: string | null) {
         break;
       case "mission_error":
         dispatch({ type: "MISSION_ERROR", code: event.code, message: event.message, workerId: event.workerId, milestoneId: event.milestoneId, recoverable: event.recoverable, details: event.details });
+        break;
+      case "agent_output":
+        dispatch({ type: "AGENT_OUTPUT", agentId: event.agentId, eventType: event.eventType, message: event.message, timestamp: event.timestamp, data: event.data });
         break;
       default:
         break;

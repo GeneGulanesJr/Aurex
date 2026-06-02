@@ -2,6 +2,16 @@
 import type { AgentType, AgentStatus, MilestoneStatus } from "./enums.js";
 import type { AttemptSummary, EscalationContext } from "./types.js";
 
+export type AgentOutputEventType =
+  | "spawned"
+  | "prompt_sent"
+  | "tool_call"
+  | "cost_update"
+  | "completed"
+  | "timed_out"
+  | "failed"
+  | "aborted";
+
 export type WsClientEvent =
   | { type: "agent_status"; agentId: string; agentType: AgentType; status: AgentStatus; milestoneId: string; workerSnapshot?: { declaredPaths: string[]; declaredModules: string[]; taskBranch: string; worktreePath: string; sessionId: string; description: string } }
   | { type: "milestone_progress"; milestoneId: string; status: MilestoneStatus; completedUnits: number; totalUnits: number }
@@ -11,7 +21,8 @@ export type WsClientEvent =
   | { type: "mission_started"; missionId: string }
   | { type: "mission_completed"; missionId: string; finalState: string }
   | { type: "mission_log"; missionId: string; phase: string; message: string; data?: Record<string, unknown> }
-  | { type: "mission_error"; missionId: string; code: string; message: string; workerId?: string; milestoneId?: string; recoverable: boolean; details?: Record<string, unknown> };
+  | { type: "mission_error"; missionId: string; code: string; message: string; workerId?: string; milestoneId?: string; recoverable: boolean; details?: Record<string, unknown> }
+  | { type: "agent_output"; missionId: string; agentId: string; agentType: AgentType; eventType: AgentOutputEventType; message: string; timestamp: string; data?: Record<string, unknown> };
 
 export type StreamingChunk = {
   delta: string;

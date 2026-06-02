@@ -138,6 +138,7 @@ export function App() {
             events={eventsRef.current}
             logs={state.logs}
             errors={state.errors}
+            agentLogs={state.agentLogs}
             blurred={!!state.escalation}
             onExampleClick={handleCreateMission}
             onRetryMission={handleRetryMission}

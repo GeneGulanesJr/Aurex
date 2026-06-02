@@ -71,6 +71,7 @@ describe("agent spawner — cost tracking", () => {
 
     const handle = await spawner.spawn({
       agentType: "worker" as AgentType,
+      agentId: "worker-u-1",
       unitId: "u-1",
       missionId: "m-1",
       milestoneId: "ms-1",
@@ -167,6 +168,47 @@ describe("agent spawner — cost tracking", () => {
     expect((mockLapis.logCost as any).mock.calls.length).toBe(2);
     // onCost should be called twice with accumulating totals
     expect(onCost).toHaveBeenCalledTimes(2);
+  });
+
+  it("accumulates onCost totals across multiple agent sessions from the same spawner", async () => {
+    const spawner = createAgentSpawner({
+      lapis: mockLapis,
+      agentDir: "/test/.pi/agent",
+      defaultTimeout: 120_000,
+      onCost,
+    });
+
+    async function spawnAndReport(sessionId: string, agentId: string, cost: number, totalTokens: number) {
+      mockSession.sessionId = sessionId;
+      const handle = await spawner.spawn({
+        agentType: "worker" as AgentType,
+        agentId,
+        unitId: agentId.replace("worker-", ""),
+        missionId: "m-1",
+        milestoneId: "ms-1",
+        cwd: "/test/repo",
+        skillFilePath: "/test/skills/worker.md",
+        contextContent: "context",
+        taskPrompt: "do the thing",
+      });
+      capturedSubscriber?.({
+        type: "message_update",
+        assistantMessageEvent: {
+          type: "message_stop",
+          usage: { promptTokens: totalTokens / 2, completionTokens: totalTokens / 2, totalTokens, cost },
+        },
+      });
+      await completeHandle(handle);
+    }
+
+    await spawnAndReport("cost-session-1", "worker-u-1", 0.003, 150);
+    await spawnAndReport("cost-session-2", "worker-u-2", 0.006, 300);
+
+    const lastCall = onCost.mock.calls.at(-1);
+    expect(lastCall?.[0]).toBe("m-1");
+    expect(lastCall?.[1]).toBeCloseTo(0.009);
+    expect(lastCall?.[2]).toBe(450);
+    expect(lastCall?.[3]).toBe(0.006);
   });
 
   it("handles events without usage data gracefully", async () => {

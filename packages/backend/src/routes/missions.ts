@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import type { MissionConfig } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { MissionRunnerPool } from "../orchestrator/mission-runner-pool.js";
+import type { AgentLogger } from "../agents/agent-logger.js";
 
 const defaultMissionConfig: Omit<MissionConfig, "modelHints"> = {
   workerTimeouts: { simple: 120000, build: 300000, testHeavy: 600000 },
@@ -13,9 +14,10 @@ const defaultMissionConfig: Omit<MissionConfig, "modelHints"> = {
 
 export async function missionRoutes(
   app: FastifyInstance,
-  { lapis, pool, missionConfig = defaultMissionConfig }: {
+  { lapis, pool, agentLogger, missionConfig = defaultMissionConfig }: {
     lapis: LaPisClient;
     pool: MissionRunnerPool;
+    agentLogger?: AgentLogger;
     missionConfig?: typeof defaultMissionConfig;
   },
 ) {
@@ -137,4 +139,46 @@ export async function missionRoutes(
       return reply.status(404).send({ error: "Mission not found" });
     }
   });
+
+  app.get("/api/missions/:id/agent-logs", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (!agentLogger) {
+      return reply.status(503).send({ error: "Agent logger not available" });
+    }
+    try {
+      const mission = await lapis.getMission(id);
+      if (!mission) {
+        return reply.status(404).send({ error: "Mission not found" });
+      }
+      const entries = agentLogger.getEntries({ missionId: id });
+      const logs = entries.map((e) => ({
+        sessionId: e.sessionId,
+        agentType: e.agentType,
+        missionId: e.missionId,
+        milestoneId: e.milestoneId,
+        unitId: e.unitId,
+        event: e.event,
+        message: formatLogMessage(e.event, e.data),
+        timestamp: e.timestamp,
+        data: e.data,
+      }));
+      return { logs };
+    } catch {
+      return reply.status(404).send({ error: "Mission not found" });
+    }
+  });
+}
+
+function formatLogMessage(event: string, data?: Record<string, unknown>): string {
+  switch (event) {
+    case "spawned": return "Agent spawned";
+    case "prompt_sent": return "Task prompt sent";
+    case "tool_call": return `Called tool: ${data?.tool ?? "unknown"}`;
+    case "cost_update": return `Cost: $${typeof data?.cost === "number" ? data.cost.toFixed(4) : "0.0000"}`;
+    case "completed": return "Agent completed successfully";
+    case "timed_out": return "Agent timed out";
+    case "failed": return `Agent failed: ${data?.error ?? "unknown error"}`;
+    case "aborted": return "Agent aborted";
+    default: return event;
+  }
 }

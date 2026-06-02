@@ -1,10 +1,11 @@
-// packages/backend/src/orchestrator/milestone-loop.ts
 import type { CheckpointTrigger, CompressionTrigger, Mission, Milestone, WorkingUnit, EscalationTrigger, EscalationContext, AgentType, AgentStatus, MilestoneStatus } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { PinyxClient } from "../clients/pinyx-client.js";
 import { createNegotiator } from "./negotiator.js";
 import { createWorktreeManager } from "./worktree.js";
 import { createAgentSpawner } from "../agents/agent-spawner.js";
+import type { AgentLogger } from "../agents/agent-logger.js";
+import type { EventBus } from "../ws/events.js";
 import { buildValidatorContext, buildWorkerContext, buildResearchContext, type ValidatorUnitContext } from "../agents/context-builder.js";
 import { createIntegrationLifecycle } from "./integration-lifecycle.js";
 import { validateHandoff } from "../enforcement/handoff-validator.js";
@@ -27,6 +28,8 @@ export interface MilestoneLoopConfig {
   agentDir: string;
   repoRoot: string;
   gitMainBranch: string;
+  eventBus: EventBus;
+  logger?: AgentLogger;
   onCompression?: (missionId: string, trigger: CompressionTrigger) => Promise<void>;
 }
 
@@ -43,6 +46,8 @@ export function createMilestoneLoop(
     lapis,
     agentDir: loopConfig.agentDir,
     defaultTimeout: 120_000,
+    logger: loopConfig.logger,
+    eventBus: loopConfig.eventBus,
     onCost: (missionId, totalCost, totalTokens, delta) => {
       cumulativeCost = totalCost;
       callbacks.onCostUpdate(missionId, totalCost, totalTokens, delta);
@@ -152,6 +157,7 @@ export function createMilestoneLoop(
               });
               const handle = await spawner.spawn({
                 agentType: "worker",
+                agentId,
                 unitId: unit.id,
                 missionId: mission.id,
                 milestoneId: milestone.id,
@@ -227,6 +233,7 @@ export function createMilestoneLoop(
           callbacks.onAgentStatus(researchAgentId, "research", "spawned", milestone.id);
           const researchHandle = await spawner.spawn({
             agentType: "research",
+            agentId: researchAgentId,
             missionId: mission.id,
             milestoneId: milestone.id,
             cwd: loopConfig.repoRoot,
@@ -304,7 +311,7 @@ export function createMilestoneLoop(
 
             callbacks.onAgentStatus(agentId, validatorType, "spawned", milestone.id);
             const handle = await spawner.spawn({
-              agentType: validatorType, missionId: mission.id, milestoneId: milestone.id,
+              agentType: validatorType, agentId, missionId: mission.id, milestoneId: milestone.id,
               contractId, cwd: loopConfig.repoRoot,
               skillFilePath: `${loopConfig.repoRoot}/packages/backend/src/skills/validator.md`,
               contextContent,
