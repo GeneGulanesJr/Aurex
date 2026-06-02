@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNewMissionForm } from "./useNewMissionForm";
 import { RepoPicker } from "./RepoPicker";
 import { RepoPrepareModal } from "./RepoPrepareModal";
@@ -21,6 +21,13 @@ export function NewMissionForm({ onSubmit, github }: NewMissionFormProps) {
     setPrepareError(null);
     setPendingRepo(repo);
   };
+
+  // Listen for keyboard shortcut to focus/open the form
+  useEffect(() => {
+    const handler = () => open();
+    window.addEventListener("aurex:focus-new-mission", handler);
+    return () => window.removeEventListener("aurex:focus-new-mission", handler);
+  }, [open]);
 
   async function handleConfirmRepo() {
     if (!pendingRepo) return;
