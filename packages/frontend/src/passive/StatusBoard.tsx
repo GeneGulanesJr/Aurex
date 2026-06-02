@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { MissionPipeline } from "./MissionPipeline";
+import { MissionComplete } from "./MissionComplete";
 import { EmptyState } from "../frame/EmptyState";
 import { dimPassive, restorePassive } from "../animations/state-transitions";
 import type { Mission, Milestone, WorkingUnit, CostSummary, WsClientEvent } from "@aurex/shared";
@@ -44,9 +45,11 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
     );
   }
 
+  const isTerminal = mission.status === "completed" || mission.status === "failed";
+
   return (
     <div ref={boardRef} style={{ height: "100%", overflowY: "auto" }}>
-      {nonRecoverableErrors.length > 0 && (
+      {!isTerminal && nonRecoverableErrors.length > 0 && (
         <ErrorBanner
           errors={nonRecoverableErrors}
           expanded={errorBannerExpanded}
@@ -54,17 +57,30 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
           onDismiss={onDismissErrors}
         />
       )}
-      <MissionPipeline
-        mission={mission}
-        milestones={milestones}
-        workers={workers}
-        cost={cost}
-        events={events}
-        logs={logs}
-        errors={errors}
-        agentLogs={agentLogs}
-        onRetry={onRetryMission}
-      />
+      {isTerminal ? (
+        <MissionComplete
+          mission={mission}
+          milestones={milestones}
+          workers={workers}
+          cost={cost}
+          events={events}
+          errors={errors}
+          onRestart={onRetryMission}
+          onCreateMission={onExampleClick}
+        />
+      ) : (
+        <MissionPipeline
+          mission={mission}
+          milestones={milestones}
+          workers={workers}
+          cost={cost}
+          events={events}
+          logs={logs}
+          errors={errors}
+          agentLogs={agentLogs}
+          onRetry={onRetryMission}
+        />
+      )}
     </div>
   );
 }
