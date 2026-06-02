@@ -5,6 +5,7 @@ import { useMission } from "./hooks/useMission";
 import { useTheme } from "./hooks/useTheme";
 import { useGitHub } from "./hooks/useGitHub";
 import { usePinyxStatus } from "./hooks/usePinyxStatus";
+import { useBreakpoint } from "./hooks/useBreakpoint";
 import { MissionSidebar } from "./active/MissionSidebar";
 import { StatusBoard } from "./passive/StatusBoard";
 import { EscalationOverlay } from "./active/EscalationOverlay";
@@ -24,6 +25,30 @@ export function App() {
   const { state, dispatch, handleWsEvent: missionWsHandler } = useMission(missionsState.selectedMissionId);
   const eventsRef = useRef<WsClientEvent[]>([]);
 
+  const bp = useBreakpoint();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileOverlayOpen, setMobileOverlayOpen] = useState(false);
+
+  useEffect(() => {
+    if (bp.isMobile) {
+      setSidebarCollapsed(false);
+      setMobileOverlayOpen(false);
+    } else if (bp.isTablet) {
+      setSidebarCollapsed(true);
+      setMobileOverlayOpen(false);
+    } else {
+      setMobileOverlayOpen(false);
+    }
+  }, [bp.breakpoint]);
+
+  const toggleSidebar = useCallback(() => {
+    if (bp.isMobile) {
+      setMobileOverlayOpen((prev) => !prev);
+    } else {
+      setSidebarCollapsed((prev) => !prev);
+    }
+  }, [bp.isMobile]);
+
   const combinedHandler = useCallback((event: WsClientEvent) => {
     missionsWsHandler(event);
     missionWsHandler(event);
@@ -35,7 +60,6 @@ export function App() {
     apiKey: import.meta.env.VITE_AUREX_API_KEY || undefined,
   });
 
-  // Uptime timer
   const [uptime, setUptime] = useState("00:00:00");
   useEffect(() => {
     if (!connected) { setUptime("00:00:00"); return; }
@@ -105,6 +129,14 @@ export function App() {
     ["queued", "planning", "executing", "waiting_checkpoint"].includes(m.state)
   ).length;
 
+  const gridColumns = bp.isMobile
+    ? "1fr"
+    : sidebarCollapsed
+      ? "48px 1fr"
+      : "280px 1fr";
+
+  const showMobileOverlay = bp.isMobile && mobileOverlayOpen;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
       <TopBar
@@ -116,19 +148,24 @@ export function App() {
         githubUser={github.user}
         pinyxConfigured={pinyxStatus.configured}
         onOpenIntegrations={() => setIntegrationsOpen(true)}
+        sidebarCollapsed={bp.isMobile ? !mobileOverlayOpen : sidebarCollapsed}
+        onToggleSidebar={toggleSidebar}
       />
-      <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gridTemplateRows: "1fr 36px", flex: 1, overflow: "hidden" }}>
-        <MissionSidebar
-          missions={missionsState.missions}
-          selectedMissionId={missionsState.selectedMissionId}
-          onSelect={selectMission}
-          onRemove={removeMission}
-          onRestart={markMissionRestarted}
-          onCreateMission={handleCreateMission}
-          github={github}
-          systemReady={systemReady}
-          totalCost={state.cost?.totalCost}
-        />
+      <div style={{ display: "grid", gridTemplateColumns: gridColumns, gridTemplateRows: "1fr 36px", flex: 1, overflow: "hidden", position: "relative" }}>
+        {!bp.isMobile && (
+          <MissionSidebar
+            missions={missionsState.missions}
+            selectedMissionId={missionsState.selectedMissionId}
+            onSelect={selectMission}
+            onRemove={removeMission}
+            onRestart={markMissionRestarted}
+            onCreateMission={handleCreateMission}
+            github={github}
+            systemReady={systemReady}
+            totalCost={state.cost?.totalCost}
+            collapsed={sidebarCollapsed}
+          />
+        )}
         <main style={{ overflowY: "auto", background: "var(--bg-deep)" }}>
           <StatusBoard
             mission={state.mission}
@@ -145,13 +182,37 @@ export function App() {
             onDismissErrors={() => dispatch({ type: "CLEAR_ERRORS" })}
           />
         </main>
-        <TelemetryBar
-          tokens={state.cost?.totalTokens ?? 0}
-          cost={state.cost?.totalCost ?? 0}
-          agentCount={state.activeWorkers.length}
-          wsConnected={connected}
-        />
+        <div style={{ gridColumn: "1 / -1" }}>
+          <TelemetryBar
+            tokens={state.cost?.totalTokens ?? 0}
+            cost={state.cost?.totalCost ?? 0}
+            agentCount={state.activeWorkers.length}
+            wsConnected={connected}
+          />
+        </div>
       </div>
+      {showMobileOverlay && (
+        <>
+          <div
+            className="sidebar-backdrop"
+            onClick={() => setMobileOverlayOpen(false)}
+          />
+          <div className="sidebar-mobile-overlay">
+            <MissionSidebar
+              missions={missionsState.missions}
+              selectedMissionId={missionsState.selectedMissionId}
+              onSelect={(id) => { selectMission(id); setMobileOverlayOpen(false); }}
+              onRemove={removeMission}
+              onRestart={markMissionRestarted}
+              onCreateMission={handleCreateMission}
+              github={github}
+              systemReady={systemReady}
+              totalCost={state.cost?.totalCost}
+              collapsed={false}
+            />
+          </div>
+        </>
+      )}
       <IntegrationsPanel open={integrationsOpen} github={github} onClose={() => setIntegrationsOpen(false)} onPinyxConfigUpdate={() => void pinyxStatus.refresh()} />
       {state.escalation?.type === "escalation" && (
         <EscalationOverlay

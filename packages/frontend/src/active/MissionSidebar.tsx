@@ -14,6 +14,7 @@ interface MissionSidebarProps {
   github?: UseGitHubReturn;
   systemReady?: boolean;
   totalCost?: number;
+  collapsed?: boolean;
 }
 
 function statusBadge(state: string): { label: string; style: React.CSSProperties } {
@@ -34,7 +35,31 @@ function statusBadge(state: string): { label: string; style: React.CSSProperties
   }
 }
 
-export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove, onRestart, onCreateMission, github, systemReady, totalCost }: MissionSidebarProps) {
+function statusIcon(state: string): string {
+  switch (state) {
+    case "queued": return "◷";
+    case "planning":
+    case "executing": return "▶";
+    case "waiting_checkpoint": return "⏸";
+    case "completed": return "✓";
+    case "failed": return "✕";
+    default: return "•";
+  }
+}
+
+function statusIconColor(state: string): string {
+  switch (state) {
+    case "queued": return "var(--warning)";
+    case "planning":
+    case "executing": return "var(--info)";
+    case "waiting_checkpoint": return "var(--info)";
+    case "completed": return "var(--success)";
+    case "failed": return "var(--error)";
+    default: return "var(--text-muted)";
+  }
+}
+
+export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove, onRestart, onCreateMission, github, systemReady, totalCost, collapsed = false }: MissionSidebarProps) {
   const handleAbort = useCallback(async (e: React.MouseEvent, missionId: string) => {
     e.stopPropagation();
     try {
@@ -51,9 +76,45 @@ export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove
     } catch {}
   }, [onRestart]);
 
+  if (collapsed) {
+    return (
+      <aside className="sidebar-transition" style={{ width: "48px", borderRight: "1px solid var(--border)", background: "var(--bg-surface)", display: "flex", flexDirection: "column", alignItems: "center", paddingTop: "12px", gap: "4px" }}>
+        <div style={{ fontSize: "10px", fontFamily: '"JetBrains Mono", monospace', color: "var(--text-muted)", letterSpacing: "0", marginBottom: "8px" }}>
+          M
+        </div>
+        {missions.map((mission) => {
+          const isSelected = mission.missionId === selectedMissionId;
+          return (
+            <div
+              key={mission.missionId}
+              onClick={() => onSelect(mission.missionId)}
+              title={mission.description ?? mission.missionId}
+              style={{
+                width: "32px",
+                height: "32px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                borderRadius: "4px",
+                background: isSelected ? "var(--bg-elevated)" : "transparent",
+                color: statusIconColor(mission.state),
+                fontSize: "14px",
+              }}
+              onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = "var(--bg-elevated)"; }}
+              onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = "transparent"; }}
+            >
+              {statusIcon(mission.state)}
+            </div>
+          );
+        })}
+      </aside>
+    );
+  }
+
   if (missions.length === 0) {
     return (
-      <aside style={{ width: "280px", borderRight: "1px solid var(--border)", background: "var(--bg-surface)", display: "flex", flexDirection: "column" }}>
+      <aside className="sidebar-transition" style={{ width: "280px", borderRight: "1px solid var(--border)", background: "var(--bg-surface)", display: "flex", flexDirection: "column" }}>
         <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)" }}>
           <h2 style={{ fontSize: "11px", fontWeight: 500, color: "var(--text-secondary)", fontFamily: '"JetBrains Mono", monospace', textTransform: "uppercase", letterSpacing: "2px", margin: 0 }}>Missions</h2>
         </div>
@@ -67,7 +128,6 @@ export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove
             <span style={{ fontSize: "10px", color: "var(--border-bright)" }}>Create a mission to begin</span>
           )}
         </div>
-        {/* Footer: Total Spent */}
         <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)", marginTop: "auto" }}>
           <div style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "2px", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', marginBottom: "4px" }}>
             Total Spent
@@ -81,7 +141,7 @@ export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove
   }
 
   return (
-    <aside style={{ width: "280px", borderRight: "1px solid var(--border)", background: "var(--bg-surface)", display: "flex", flexDirection: "column" }}>
+    <aside className="sidebar-transition" style={{ width: "280px", borderRight: "1px solid var(--border)", background: "var(--bg-surface)", display: "flex", flexDirection: "column" }}>
       <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)" }}>
         <h2 style={{ fontSize: "11px", fontWeight: 500, color: "var(--text-secondary)", fontFamily: '"JetBrains Mono", monospace', textTransform: "uppercase", letterSpacing: "2px", margin: 0 }}>Missions</h2>
       </div>
@@ -150,7 +210,6 @@ export function MissionSidebar({ missions, selectedMissionId, onSelect, onRemove
           );
         })}
       </div>
-      {/* Footer: Total Spent */}
       <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
         <div style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "2px", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', marginBottom: "4px" }}>
           Total Spent
