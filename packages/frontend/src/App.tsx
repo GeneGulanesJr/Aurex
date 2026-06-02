@@ -73,7 +73,7 @@ export function App() {
   });
 
   // Browser notifications + tab badge
-  useNotifications(latestNotifEvent, missionsState.selectedMissionId);
+  useNotifications(latestNotifEvent, missionsState.selectedMissionId, settings.notificationsEnabled);
   const pendingEscalations = state.escalation?.type === "escalation" ? 1 : 0;
   const terminalMissions = missionsState.missions.filter(
     (m) => m.state === "completed" || m.state === "failed",
@@ -227,6 +227,7 @@ export function App() {
             errors={state.errors}
             agentLogs={state.agentLogs}
             blurred={!!state.escalation}
+            eventStreamCount={settings.eventStreamCount}
             onExampleClick={handleCreateMission}
             onRetryMission={handleRetryMission}
             onDismissErrors={() => dispatch({ type: "CLEAR_ERRORS" })}

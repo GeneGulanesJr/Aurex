@@ -16,6 +16,7 @@ interface MissionPipelineProps {
   logs: Array<{ phase: string; message: string; timestamp: number; data?: Record<string, unknown> }>;
   errors: MissionError[];
   agentLogs: Record<string, AgentLogEntry[]>;
+  eventStreamCount?: number;
   onRetry?: () => void;
 }
 
@@ -47,7 +48,7 @@ const logEventColor: Record<string, string> = {
   aborted: "var(--text-muted)",
 };
 
-export function MissionPipeline({ mission, milestones, workers, cost, events, logs, errors, agentLogs, onRetry }: MissionPipelineProps) {
+export function MissionPipeline({ mission, milestones, workers, cost, events, logs, errors, agentLogs, eventStreamCount = 8, onRetry }: MissionPipelineProps) {
   const pipelineRef = useRef<HTMLDivElement>(null);
   const prevMilestoneCountRef = useRef(0);
 
@@ -237,7 +238,7 @@ export function MissionPipeline({ mission, milestones, workers, cost, events, lo
       )}
 
       {/* Live event stream */}
-      <EventStream events={events} />
+      <EventStream events={events} eventStreamCount={eventStreamCount} />
     </div>
   );
 }
@@ -584,9 +585,9 @@ function PlanningPhase({ missionStatus, errors, onRetry }: { missionStatus: stri
   );
 }
 
-function EventStream({ events }: { events: WsClientEvent[] }) {
+function EventStream({ events, eventStreamCount = 8 }: { events: WsClientEvent[]; eventStreamCount?: number }) {
   const listRef = useRef<HTMLDivElement>(null);
-  const recentEvents = events.slice(-8);
+  const recentEvents = events.slice(-eventStreamCount);
 
   useEffect(() => {
     const el = listRef.current;
