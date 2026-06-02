@@ -8,10 +8,12 @@ import { usePinyxStatus } from "./hooks/usePinyxStatus";
 import { useBreakpoint } from "./hooks/useBreakpoint";
 import { useNotifications } from "./hooks/useNotifications";
 import { useTabBadge } from "./hooks/useTabBadge";
+import { useSettings } from "./hooks/useSettings";
 import { MissionSidebar } from "./active/MissionSidebar";
 import { StatusBoard } from "./passive/StatusBoard";
 import { EscalationOverlay } from "./active/EscalationOverlay";
 import { IntegrationsPanel } from "./active/IntegrationsPanel";
+import { SettingsPanel } from "./active/SettingsPanel";
 import { TopBar } from "./frame/TopBar";
 import { TelemetryBar } from "./frame/TelemetryBar";
 import { submitCheckpoint, createMission, restartMission } from "./api";
@@ -23,6 +25,8 @@ export function App() {
   const pinyxStatus = usePinyxStatus();
   const systemReady = github.connected && pinyxStatus.configured;
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const { settings, setSettings, resetSettings } = useSettings();
   const { state: missionsState, selectMission, removeMission, addOptimisticMission, markMissionRestarted, handleWsEvent: missionsWsHandler } = useMissions();
   const { state, dispatch, handleWsEvent: missionWsHandler } = useMission(missionsState.selectedMissionId);
   const eventsRef = useRef<WsClientEvent[]>([]);
@@ -165,6 +169,7 @@ export function App() {
         onOpenIntegrations={() => setIntegrationsOpen(true)}
         sidebarCollapsed={bp.isMobile ? !mobileOverlayOpen : sidebarCollapsed}
         onToggleSidebar={toggleSidebar}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
       <div style={{ display: "grid", gridTemplateColumns: gridColumns, gridTemplateRows: "1fr 36px", flex: 1, overflow: "hidden", position: "relative" }}>
         {!bp.isMobile && (
@@ -231,6 +236,13 @@ export function App() {
         </>
       )}
       <IntegrationsPanel open={integrationsOpen} github={github} onClose={() => setIntegrationsOpen(false)} onPinyxConfigUpdate={() => void pinyxStatus.refresh()} />
+      <SettingsPanel
+        open={settingsOpen}
+        settings={settings}
+        onSettingsChange={setSettings}
+        onReset={resetSettings}
+        onClose={() => setSettingsOpen(false)}
+      />
       {state.escalation?.type === "escalation" && (
         <EscalationOverlay
           event={state.escalation}
