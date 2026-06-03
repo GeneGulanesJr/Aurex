@@ -32,7 +32,12 @@ export function createCheckpointManager(
         const poll = async () => {
           if (stopped) return;
           try {
-            const checkpoint = await lapis.getCheckpoint(checkpointId);
+            const checkpoint = await lapis.getCheckpoint(checkpointId).catch(() => null);
+            if (!checkpoint) {
+              // LaPis may not have the route yet — retry
+              setTimeout(poll, pollIntervalMs);
+              return;
+            }
             if (checkpoint.status === "resolved") {
               stopped = true;
               resolve(checkpoint);
@@ -54,7 +59,7 @@ export function createCheckpointManager(
     },
 
     async getPendingForMission(missionId) {
-      return lapis.getPendingCheckpoints(missionId);
+      return lapis.getPendingCheckpoints(missionId).catch(() => [] as import("@aurex/shared").CheckpointRecord[]);
     },
   };
 }
