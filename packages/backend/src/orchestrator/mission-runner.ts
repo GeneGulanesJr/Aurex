@@ -68,7 +68,31 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
       eventBus.emit({ type: "mission_log", missionId, phase: "setup", message: `Resolving repo for mission: ${mission.description.slice(0, 80)}…` });
       const { repoPath: missionRepoRoot } = await prepareRepoForMission({ lapis, parentRepoRoot: repoRoot, cloneUrl: mission.configJson.cloneUrl });
       eventBus.emit({ type: "mission_log", missionId, phase: "planning", message: `Calling ${mission.configJson.modelHints.orchestrator} to plan milestones…` });
-      const planner = createPlanner(lapis, pinyx, { model: mission.configJson.modelHints.orchestrator, eventBus, missionId });
+      // Resolve model: prefer stored hint, but verify it exists in PiNyx.
+      // If not found (e.g. kilo/kilo-auto/free with only Z.AI key), discover a working one.
+      let model = mission.configJson.modelHints.orchestrator || "kilo/kilo-auto/free";
+      try {
+        const saved = await lapis.getSetting<{ endpoint: string }>("pinyx_config");
+        const endpoint = saved?.endpoint?.replace(/\/$/, "");
+        if (endpoint) {
+          const res = await fetch(`${endpoint}/v1/models`, { method: "GET", signal: AbortSignal.timeout(3000) });
+          if (res.ok) {
+            const body = await res.json() as { data?: { id: string }[] };
+            const available = (body.data ?? []).map((m) => m.id);
+            if (!available.includes(model)) {
+              const real = available.find((m) => !m.includes("/free"));
+              const resolved = real ?? available[0];
+              if (resolved && resolved !== model) {
+                eventBus.emit({ type: "mission_log", missionId, phase: "planning", message: `Model ${model} not available, using ${resolved}` });
+                model = resolved;
+              }
+            }
+          }
+        }
+      } catch { /* discovery failed, use configured model */ }
+
+      eventBus.emit({ type: "mission_log", missionId, phase: "planning", message: `Calling ${model} to plan milestones…` });
+      const planner = createPlanner(lapis, pinyx, { model, eventBus, missionId });
 
       // Index repo before planning so the planner has code context
       try {
