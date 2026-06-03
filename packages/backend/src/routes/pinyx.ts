@@ -84,15 +84,33 @@ function providerApi(providerId: string): string {
 
 async function syncConfigToPinyx(config: PinyxConfigSetting): Promise<void> {
   const endpoint = config.endpoint.replace(/\/$/, "");
+
+  // Fetch current models from PiNyx so we preserve the model list per provider
+  let discoveredModels: { id: string }[] = [];
+  try {
+    const modelsRes = await fetch(`${endpoint}/v1/models`, { method: "GET" });
+    if (modelsRes.ok) {
+      const modelsBody = await modelsRes.json() as { data?: { id: string }[] };
+      discoveredModels = modelsBody.data ?? [];
+    }
+  } catch { /* PiNyx may not be up yet */ }
+
   const providers = Object.fromEntries(
     config.providers
       .filter((provider) => provider.apiKey)
-      .map((provider) => [provider.id, {
-        api: providerApi(provider.id),
-        baseUrl: provider.baseUrl,
-        apiKey: provider.apiKey,
-        models: [],
-      }]),
+      .map((provider) => {
+        // Associate models that belong to this provider by prefix
+        const prefix = `${provider.id}/`;
+        const providerModels = discoveredModels
+          .filter((m) => m.id.startsWith(prefix))
+          .map((m) => m.id);
+        return [provider.id, {
+          api: providerApi(provider.id),
+          baseUrl: provider.baseUrl,
+          apiKey: provider.apiKey,
+          models: providerModels,
+        }];
+      }),
   );
 
   await fetch(`${endpoint}/api/config`, {
