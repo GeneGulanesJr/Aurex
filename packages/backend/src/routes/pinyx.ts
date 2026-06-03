@@ -103,7 +103,15 @@ async function syncConfigToPinyx(config: PinyxConfigSetting): Promise<void> {
         const prefix = `${provider.id}/`;
         const providerModels = discoveredModels
           .filter((m) => m.id.startsWith(prefix))
-          .map((m) => ({ id: m.id, name: m.id.replace(prefix, "") }));
+          .map((m) => {
+            // Strip provider prefix — but handle already-doubled prefixes from
+            // previous bad syncs (e.g. zai/zai/zai/glm-5 → strip all zai/ prefixes)
+            let bare = m.id;
+            while (bare.startsWith(prefix)) {
+              bare = bare.slice(prefix.length);
+            }
+            return { id: bare, name: bare };
+          });
         return [provider.id, {
           api: providerApi(provider.id),
           baseUrl: provider.baseUrl,
