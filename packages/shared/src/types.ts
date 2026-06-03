@@ -244,3 +244,70 @@ export interface CheckpointRecord {
   createdAt: string;
   resolvedAt?: string;
 }
+
+export interface BumblebeeScanResult {
+  id: string;
+  missionId: string;
+  profile: "baseline" | "project" | "deep";
+  status: "running" | "completed" | "failed";
+  startedAt: string;
+  completedAt?: string;
+  summary?: BumblebeeScanSummary;
+  findings?: BumblebeeFinding[];
+}
+
+export interface BumblebeeScanSummary {
+  totalPackages: number;
+  totalFindings: number;
+  criticalCount: number;
+  highCount: number;
+  mediumCount: number;
+  lowCount: number;
+  ecosystems: string[];
+}
+
+export interface BumblebeePackage {
+  id: string;
+  scanId: string;
+  ecosystem: string;
+  packageName: string;
+  normalizedName: string;
+  version: string;
+  projectPath?: string;
+  packageManager?: string;
+  sourceType: string;
+  sourceFile: string;
+  confidence: "high" | "medium" | "low";
+}
+
+export interface BumblebeeFinding {
+  id: string;
+  scanId: string;
+  missionId: string;
+  findingType: string;
+  severity: "critical" | "high" | "medium" | "low";
+  catalogId: string;
+  catalogName: string;
+  ecosystem: string;
+  packageName: string;
+  normalizedName: string;
+  version: string;
+  sourceType: string;
+  sourceFile: string;
+  confidence: "high" | "medium" | "low";
+  evidence: string;
+}
+
+export interface ExposureCatalog {
+  schema_version: string;
+  entries: ExposureCatalogEntry[];
+}
+
+export interface ExposureCatalogEntry {
+  id: string;
+  name: string;
+  ecosystem: string;
+  package: string;
+  versions: string[];
+  severity: "critical" | "high" | "medium" | "low";
+}

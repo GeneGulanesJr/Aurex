@@ -3,7 +3,7 @@ import { MissionPipeline } from "./MissionPipeline";
 import { MissionComplete } from "./MissionComplete";
 import { EmptyState } from "../frame/EmptyState";
 import { dimPassive, restorePassive } from "../animations/state-transitions";
-import type { Mission, Milestone, WorkingUnit, CostSummary, WsClientEvent } from "@aurex/shared";
+import type { Mission, Milestone, WorkingUnit, CostSummary, WsClientEvent, BumblebeeFinding, BumblebeeScanResult } from "@aurex/shared";
 import type { MissionError, AgentLogEntry } from "../hooks/useMission";
 
 interface StatusBoardProps {
@@ -20,9 +20,13 @@ interface StatusBoardProps {
   onExampleClick?: (text: string) => void;
   onRetryMission?: () => void;
   onDismissErrors?: () => void;
+  scanFindings?: BumblebeeFinding[];
+  isScanning?: boolean;
+  scans?: BumblebeeScanResult[];
+  onTriggerScan?: (profile?: "baseline" | "project" | "deep") => void;
 }
 
-export function StatusBoard({ mission, milestones, workers, cost, events, logs, errors, agentLogs, blurred, eventStreamCount, onExampleClick, onRetryMission, onDismissErrors }: StatusBoardProps) {
+export function StatusBoard({ mission, milestones, workers, cost, events, logs, errors, agentLogs, blurred, eventStreamCount, onExampleClick, onRetryMission, onDismissErrors, scanFindings = [], isScanning = false, scans = [], onTriggerScan }: StatusBoardProps) {
   const boardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -81,6 +85,10 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
           agentLogs={agentLogs}
           eventStreamCount={eventStreamCount}
           onRetry={onRetryMission}
+          scanFindings={scanFindings}
+          isScanning={isScanning}
+          scans={scans}
+          onTriggerScan={onTriggerScan}
         />
       )}
     </div>
