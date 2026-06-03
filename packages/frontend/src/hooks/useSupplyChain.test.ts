@@ -1,19 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { missionReducer, initialMissionState } from "./useMission";
+import { supplyChainReducer, initialSupplyChainState } from "./useSupplyChain";
 
-describe("missionReducer — supply chain scan events", () => {
-  const seedState = {
-    ...initialMissionState,
-    mission: { id: "m1", description: "Test", status: "running", configJson: {} } as any,
-  };
-
+describe("supplyChainReducer — scan state management", () => {
   it("handles SCAN_STARTED — sets isScanning to true", () => {
-    const state = missionReducer(seedState as any, { type: "SCAN_STARTED" });
+    const state = supplyChainReducer(initialSupplyChainState, { type: "SCAN_STARTED", scanId: "s1", profile: "project" });
     expect(state.isScanning).toBe(true);
+    expect(state.error).toBeNull();
   });
 
   it("handles SCAN_COMPLETED — sets isScanning to false and stores summary", () => {
-    const scanningState = { ...seedState, isScanning: true } as any;
+    const scanningState = { ...initialSupplyChainState, isScanning: true, scans: [{ id: "s1", missionId: "m1", profile: "project", status: "running", startedAt: "" }] } as any;
     const summary = {
       totalPackages: 142,
       totalFindings: 2,
@@ -23,12 +19,12 @@ describe("missionReducer — supply chain scan events", () => {
       lowCount: 0,
       ecosystems: ["npm", "go"],
     };
-    const state = missionReducer(scanningState, { type: "SCAN_COMPLETED", summary });
+    const state = supplyChainReducer(scanningState, { type: "SCAN_COMPLETED", scanId: "s1", summary });
     expect(state.isScanning).toBe(false);
-    expect(state.scanSummary).toEqual(summary);
+    expect(state.latestSummary).toEqual(summary);
   });
 
-  it("handles SCAN_FINDING — appends finding to scanFindings", () => {
+  it("handles SCAN_FINDING — appends finding to findings", () => {
     const finding = {
       id: "f1",
       scanId: "s1",
@@ -46,33 +42,33 @@ describe("missionReducer — supply chain scan events", () => {
       confidence: "high" as const,
       evidence: "exact name+version match",
     };
-    const state = missionReducer(seedState as any, { type: "SCAN_FINDING", finding });
-    expect(state.scanFindings).toHaveLength(1);
-    expect(state.scanFindings[0]).toEqual(finding);
+    const state = supplyChainReducer(initialSupplyChainState, { type: "SCAN_FINDING", finding });
+    expect(state.findings).toHaveLength(1);
+    expect(state.findings[0]).toEqual(finding);
   });
 
   it("accumulates multiple findings", () => {
-    let state = missionReducer(seedState as any, {
+    let state = supplyChainReducer(initialSupplyChainState, {
       type: "SCAN_FINDING",
       finding: { id: "f1", severity: "critical" } as any,
     });
-    state = missionReducer(state, {
+    state = supplyChainReducer(state, {
       type: "SCAN_FINDING",
       finding: { id: "f2", severity: "medium" } as any,
     });
-    expect(state.scanFindings).toHaveLength(2);
+    expect(state.findings).toHaveLength(2);
   });
 
   it("resets scan state on RESET", () => {
     const stateWithScan = {
-      ...seedState,
+      ...initialSupplyChainState,
       isScanning: true,
-      scanFindings: [{ id: "f1" } as any],
-      scanSummary: { totalPackages: 10 } as any,
+      findings: [{ id: "f1" } as any],
+      latestSummary: { totalPackages: 10 } as any,
     };
-    const state = missionReducer(stateWithScan as any, { type: "RESET" });
+    const state = supplyChainReducer(stateWithScan, { type: "RESET" });
     expect(state.isScanning).toBe(false);
-    expect(state.scanFindings).toHaveLength(0);
-    expect(state.scanSummary).toBeNull();
+    expect(state.findings).toHaveLength(0);
+    expect(state.latestSummary).toBeNull();
   });
 });

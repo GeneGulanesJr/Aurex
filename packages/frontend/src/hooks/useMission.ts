@@ -1,5 +1,5 @@
 import { useReducer, useCallback, useEffect } from "react";
-import type { Mission, Milestone, WorkingUnit, CostSummary, WsClientEvent, MilestoneStatus, AgentType, AgentStatus, AgentOutputEventType, BumblebeeFinding, BumblebeeScanSummary } from "@aurex/shared";
+import type { Mission, Milestone, WorkingUnit, CostSummary, WsClientEvent, MilestoneStatus, AgentType, AgentStatus, AgentOutputEventType } from "@aurex/shared";
 import { getMission } from "../api";
 
 export interface MissionError {
@@ -28,9 +28,6 @@ export interface MissionState {
   logs: Array<{ phase: string; message: string; timestamp: number; data?: Record<string, unknown> }>;
   errors: MissionError[];
   agentLogs: Record<string, AgentLogEntry[]>;
-  scanFindings: BumblebeeFinding[];
-  isScanning: boolean;
-  scanSummary: BumblebeeScanSummary | null;
 }
 
 type Action =
@@ -44,15 +41,11 @@ type Action =
   | { type: "MISSION_LOG"; phase: string; message: string; data?: Record<string, unknown> }
   | { type: "MISSION_ERROR"; code: string; message: string; workerId?: string; milestoneId?: string; recoverable: boolean; details?: Record<string, unknown> }
   | { type: "AGENT_OUTPUT"; agentId: string; eventType: AgentOutputEventType; message: string; timestamp: string; data?: Record<string, unknown> }
-  | { type: "SCAN_STARTED" }
-  | { type: "SCAN_COMPLETED"; summary: BumblebeeScanSummary }
-  | { type: "SCAN_FINDING"; finding: BumblebeeFinding }
   | { type: "CLEAR_ERRORS" }
   | { type: "RESET" };
 
 export const initialMissionState: MissionState = {
   mission: null, milestones: [], activeWorkers: [], cost: null, escalation: null, logs: [], errors: [], agentLogs: {},
-  scanFindings: [], isScanning: false, scanSummary: null,
 };
 
 export function missionReducer(state: MissionState, action: Action): MissionState {
@@ -111,12 +104,6 @@ export function missionReducer(state: MissionState, action: Action): MissionStat
     }
     case "CLEAR_ERRORS":
       return { ...state, errors: [] };
-    case "SCAN_STARTED":
-      return { ...state, isScanning: true };
-    case "SCAN_COMPLETED":
-      return { ...state, isScanning: false, scanSummary: action.summary };
-    case "SCAN_FINDING":
-      return { ...state, scanFindings: [...state.scanFindings, action.finding] };
     case "RESET":
       return initialMissionState;
     default:
@@ -176,15 +163,6 @@ export function useMission(missionId: string | null) {
         break;
       case "agent_output":
         dispatch({ type: "AGENT_OUTPUT", agentId: event.agentId, eventType: event.eventType, message: event.message, timestamp: event.timestamp, data: event.data });
-        break;
-      case "scan_started":
-        dispatch({ type: "SCAN_STARTED" });
-        break;
-      case "scan_completed":
-        dispatch({ type: "SCAN_COMPLETED", summary: event.summary });
-        break;
-      case "scan_finding":
-        dispatch({ type: "SCAN_FINDING", finding: event.finding });
         break;
       default:
         break;

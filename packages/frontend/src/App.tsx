@@ -234,8 +234,8 @@ export function App() {
             onExampleClick={handleCreateMission}
             onRetryMission={handleRetryMission}
             onDismissErrors={() => dispatch({ type: "CLEAR_ERRORS" })}
-            scanFindings={state.scanFindings}
-            isScanning={state.isScanning}
+            scanFindings={supplyChainState.findings}
+            isScanning={supplyChainState.isScanning}
             scans={supplyChainState.scans}
             onTriggerScan={triggerSupplyChainScan}
           />
@@ -246,8 +246,8 @@ export function App() {
             cost={state.cost?.totalCost ?? 0}
             agentCount={state.activeWorkers.length}
             wsConnected={connected}
-            scanFindings={state.scanFindings.length}
-            isScanning={state.isScanning}
+            scanFindings={supplyChainState.findings.length}
+            isScanning={supplyChainState.isScanning}
           />
         </div>
       </div>

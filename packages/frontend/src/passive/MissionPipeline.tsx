@@ -20,7 +20,6 @@ interface MissionPipelineProps {
   eventStreamCount?: number;
   onRetry?: () => void;
   scanFindings?: BumblebeeFinding[];
-  scanSummary?: { totalPackages: number; totalFindings: number; criticalCount: number; highCount: number; mediumCount: number; lowCount: number; ecosystems: string[] } | null;
   isScanning?: boolean;
   scans?: BumblebeeScanResult[];
   onTriggerScan?: (profile?: "baseline" | "project" | "deep") => void;
@@ -54,7 +53,7 @@ const logEventColor: Record<string, string> = {
   aborted: "var(--text-muted)",
 };
 
-export function MissionPipeline({ mission, milestones, workers, cost, events, logs, errors, agentLogs, eventStreamCount = 8, onRetry, scanFindings = [], scanSummary = null, isScanning = false, scans = [], onTriggerScan }: MissionPipelineProps) {
+export function MissionPipeline({ mission, milestones, workers, cost, events, logs, errors, agentLogs, eventStreamCount = 8, onRetry, scanFindings = [], isScanning = false, scans = [], onTriggerScan }: MissionPipelineProps) {
   const pipelineRef = useRef<HTMLDivElement>(null);
   const prevMilestoneCountRef = useRef(0);
 

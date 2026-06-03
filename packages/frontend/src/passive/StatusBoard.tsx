@@ -86,7 +86,6 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
           eventStreamCount={eventStreamCount}
           onRetry={onRetryMission}
           scanFindings={scanFindings}
-          scanSummary={null}
           isScanning={isScanning}
           scans={scans}
           onTriggerScan={onTriggerScan}

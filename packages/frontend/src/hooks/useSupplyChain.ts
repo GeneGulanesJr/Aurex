@@ -1,4 +1,4 @@
-import { useReducer, useCallback } from "react";
+import { useReducer, useCallback, useEffect } from "react";
 import type { BumblebeeScanResult, BumblebeeFinding, BumblebeeScanSummary, WsClientEvent } from "@aurex/shared";
 import { triggerScan, listScans } from "../api";
 
@@ -30,21 +30,33 @@ export function supplyChainReducer(state: SupplyChainState, action: Action): Sup
   switch (action.type) {
     case "SCAN_STARTED":
       return { ...state, isScanning: true, error: null };
-    case "SCAN_COMPLETED":
+    case "SCAN_COMPLETED": {
+      const updatedScans = state.scans.map((s) =>
+        s.id === action.scanId
+          ? { ...s, status: "completed" as const, summary: action.summary, completedAt: new Date().toISOString() }
+          : s,
+      );
       return {
         ...state,
-        isScanning: state.scans.some((s) => s.status === "running"),
+        isScanning: updatedScans.some((s) => s.status === "running"),
         latestSummary: action.summary,
-        scans: state.scans.map((s) =>
-          s.id === action.scanId
-            ? { ...s, status: "completed", summary: action.summary, completedAt: new Date().toISOString() }
-            : s,
-        ),
+        scans: updatedScans,
       };
+    }
     case "SCAN_FINDING":
       return { ...state, findings: [...state.findings, action.finding] };
-    case "SET_SCANS":
-      return { ...state, scans: action.scans, isScanning: action.scans.some((s) => s.status === "running") };
+    case "SET_SCANS": {
+      const scans = action.scans;
+      // Rehydrate findings from the latest completed scan's persisted findings
+      const latestCompleted = [...scans].reverse().find((s) => s.status === "completed" && s.findings);
+      const restoredFindings = latestCompleted?.findings ?? state.findings;
+      return {
+        ...state,
+        scans,
+        findings: restoredFindings,
+        isScanning: scans.some((s) => s.status === "running"),
+      };
+    }
     case "SET_ERROR":
       return { ...state, error: action.error, isScanning: false };
     case "RESET":
@@ -57,14 +69,22 @@ export function supplyChainReducer(state: SupplyChainState, action: Action): Sup
 export function useSupplyChain(missionId: string | null) {
   const [state, dispatch] = useReducer(supplyChainReducer, initialSupplyChainState);
 
-  const loadScans = useCallback(async () => {
-    if (!missionId) return;
-    try {
-      const { scans } = await listScans(missionId);
-      dispatch({ type: "SET_SCANS", scans });
-    } catch (err) {
-      dispatch({ type: "SET_ERROR", error: err instanceof Error ? err.message : "Failed to load scans" });
+  // Auto-load historical scans when mission changes
+  useEffect(() => {
+    if (!missionId) {
+      dispatch({ type: "RESET" });
+      return;
     }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { scans } = await listScans(missionId);
+        if (!cancelled) dispatch({ type: "SET_SCANS", scans });
+      } catch (err) {
+        if (!cancelled) dispatch({ type: "SET_ERROR", error: err instanceof Error ? err.message : "Failed to load scans" });
+      }
+    })();
+    return () => { cancelled = true; };
   }, [missionId]);
 
   const handleTriggerScan = useCallback(async (profile?: "baseline" | "project" | "deep", ecosystems?: string[]) => {
@@ -93,5 +113,5 @@ export function useSupplyChain(missionId: string | null) {
     }
   }, [missionId]);
 
-  return { state, dispatch, loadScans, triggerScan: handleTriggerScan, handleWsEvent };
+  return { state, dispatch, triggerScan: handleTriggerScan, handleWsEvent };
 }
