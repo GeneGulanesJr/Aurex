@@ -18,6 +18,42 @@ interface PlannedMilestoneRaw {
   testCommands: string[];
 }
 
+/**
+ * Attempt to repair truncated JSON by closing open brackets/braces.
+ * Scans character by character, tracking nesting depth, then appends
+ * closing characters for any still-open structures.
+ */
+function repairTruncatedJson(input: string): string {
+  const stack: ("{" | "[")[] = [];
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    if (escape) { escape = false; continue; }
+    if (ch === "\\" && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === "{" || ch === "[") stack.push(ch);
+    if (ch === "}" || ch === "]") stack.pop();
+  }
+
+  // If we're mid-string, close it
+  let repaired = input;
+  if (inString) repaired += '"';
+
+  // Trim trailing incomplete tokens (partial key/value)
+  // Remove any trailing comma + incomplete content after last complete value
+  repaired = repaired.replace(/,\s*[^,\]\}"]*$/, "");
+
+  // Close open structures in reverse order
+  for (let i = stack.length - 1; i >= 0; i--) {
+    repaired += stack[i] === "{" ? "}" : "]";
+  }
+
+  return repaired;
+}
+
 export interface PlanResult {
   milestones: Array<{
     id: string;
@@ -62,14 +98,15 @@ export function createPlanner(
         response = await pinyx.chatStream(
         {
           model,
+          max_tokens: 8192,
           messages: [
             {
               role: "system",
-              content: "You are a mission planner. Decompose the mission into ordered milestones. Each milestone has working units with declared paths and modules, validation criteria, and test commands. Respond with JSON only.",
+              content: "You are a mission planner. Decompose the mission into ordered milestones. Each milestone has working units with declared paths and modules, validation criteria, and test commands. Respond with JSON only. Keep the plan concise — at most 4 milestones, each with at most 4 working units.",
             },
             {
               role: "user",
-              content: `Mission: ${missionDescription}\n\nRelevant context: ${memories.map((m) => m.content).join("\n")}`,
+              content: `Mission: ${missionDescription}\n\nRelevant context: ${memories.slice(0, 5).map((m) => m.content).join("\n")}`,
             },
           ],
         },
@@ -92,6 +129,11 @@ export function createPlanner(
         throw err;
       }
 
+      // Check if the response was truncated by max tokens
+      if (response.finishReason === "length") {
+        emitLog("planning", `Response truncated (finish_reason=length). Attempting to parse partial JSON…`);
+      }
+
       emitLog("planning", "Parsing plan response…");
 
       // 3. Parse — resilient to varying LLM output formats
@@ -108,8 +150,20 @@ export function createPlanner(
           try {
             raw = JSON.parse(response.content.slice(firstBrace, lastBrace + 1));
           } catch {
-            emitError("planner_parse_error", `Planner returned invalid JSON`, { recoverable: true, details: { preview: response.content.slice(0, 200) } });
-            throw new Error(`Planner returned invalid JSON: ${response.content.slice(0, 200)}`);
+            // If truncated (finish_reason=length), try to repair by closing open brackets
+            if (response.finishReason === "length") {
+              try {
+                const repaired = repairTruncatedJson(response.content.slice(firstBrace));
+                raw = JSON.parse(repaired);
+                emitLog("planning", `Successfully repaired truncated JSON`);
+              } catch {
+                emitError("planner_parse_error", `Planner returned truncated JSON that could not be repaired`, { recoverable: true, details: { preview: response.content.slice(0, 200), finishReason: response.finishReason } });
+                throw new Error(`Planner returned invalid JSON: ${response.content.slice(0, 200)}`);
+              }
+            } else {
+              emitError("planner_parse_error", `Planner returned invalid JSON`, { recoverable: true, details: { preview: response.content.slice(0, 200) } });
+              throw new Error(`Planner returned invalid JSON: ${response.content.slice(0, 200)}`);
+            }
           }
         } else {
           emitError("planner_parse_error", `Planner returned invalid JSON`, { recoverable: true, details: { preview: response.content.slice(0, 200) } });
