@@ -1,15 +1,18 @@
 import type { CheckpointDecision, CheckpointTrigger, Milestone } from "@aurex/shared";
-import type { EscalationTrigger, EscalationContext, AgentType, AgentStatus, MilestoneStatus } from "@aurex/shared";
+import type { EscalationTrigger, EscalationContext, AgentType, AgentStatus, MilestoneStatus, QuotaWindow } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { PinyxClient } from "../clients/pinyx-client.js";
 import { createPinyxClient } from "../clients/pinyx-client.js";
+import { createQuotaAwarePinyxClient, QuotaExhaustedError } from "../clients/pinyx-quota-wrapper.js";
 import type { EventBus } from "../ws/events.js";
 import type { AgentLogger } from "../agents/agent-logger.js";
+import type { AppConfig } from "../config.js";
 import { createCheckpointManager } from "./checkpoint-manager.js";
 import { createMilestoneLoop } from "./milestone-loop.js";
 import { createPlanner } from "./planner.js";
 import { createCompressionService } from "./compression.js";
 import { prepareRepoForMission } from "./repo-prep.js";
+import { checkQuota, resetWindow } from "../enforcement/quota-gate.js";
 import path from "path";
 
 export interface RunnerStatus {
@@ -33,6 +36,7 @@ export interface MissionRunnerConfig {
   repoRoot: string;
   gitMainBranch: string;
   onPostMilestoneScan?: (missionId: string, root: string) => Promise<void>;
+  quotaEnabled?: boolean;
 }
 
 export function createMissionRunner(config: MissionRunnerConfig): MissionRunner {
@@ -57,7 +61,13 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
   async function resolvePinyx(): Promise<PinyxClient> {
     const saved = await lapis.getSetting<{ endpoint: string }>("pinyx_config");
     if (!saved?.endpoint) throw new Error("PiNyx is not configured. Configure it in the Integrations panel.");
-    return createPinyxClient({ endpoint: saved.endpoint });
+    const inner = createPinyxClient({ endpoint: saved.endpoint });
+    if (!config.quotaEnabled) return inner;
+    return createQuotaAwarePinyxClient(inner, {
+      getQuotaWindow: () => lapis.getSetting<QuotaWindow>("quota_window"),
+      saveQuotaWindow: (w) => lapis.setSetting("quota_window", w),
+      enabled: true,
+    });
   }
 
   async function runMission(missionId: string): Promise<void> {
@@ -248,6 +258,57 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
       await lapis.updateMissionStatus(missionId, "completed");
       setStatus("completed", missionId);
     } catch (error) {
+      if (error instanceof QuotaExhaustedError) {
+        const currentMilestoneId = status.missionId
+          ? (await lapis.getMilestonesForMission(status.missionId).catch(() => [] as Milestone[])).find(
+              (m) => m.status === "in_progress" || m.status === "validating",
+            )?.id ?? ""
+          : "";
+
+        setStatus("waiting_checkpoint", missionId);
+        await lapis.updateMissionStatus(missionId, "paused");
+
+        const checkpointId = await checkpointManager.create({
+          missionId,
+          trigger: "quota_exhausted",
+          milestoneId: currentMilestoneId,
+          summary: `Quota exhausted. Window resets at ${error.windowResetsAt}`,
+        });
+
+        eventBus.emit({
+          type: "quota_exhausted" as any,
+          windowResetsAt: error.windowResetsAt,
+        } as any);
+
+        eventBus.emit({
+          type: "escalation",
+          missionId,
+          checkpointId,
+          trigger: { kind: "quota_exhausted", milestoneId: currentMilestoneId, windowResetsAt: error.windowResetsAt } as EscalationTrigger,
+          context: { summary: `Quota exhausted. Window resets at ${error.windowResetsAt}` } as EscalationContext,
+        });
+
+        const resolved = await checkpointManager.waitForResolution(checkpointId);
+        const decision = resolved.decision as CheckpointDecision | undefined;
+
+        if (decision === "reject") {
+          await lapis.updateMissionStatus(missionId, "aborted");
+          setStatus("failed", missionId);
+          return;
+        }
+
+        const quotaWindow = await lapis.getSetting<QuotaWindow>("quota_window");
+        if (quotaWindow) {
+          const reset = resetWindow(quotaWindow, new Date());
+          await lapis.setSetting("quota_window", reset);
+        }
+
+        await lapis.updateMissionStatus(missionId, "running");
+        setStatus("executing", missionId);
+        void runMission(missionId);
+        return;
+      }
+
       console.error(`[runner] Mission ${missionId} failed:`, error instanceof Error ? error.message : error);
       const msg = error instanceof Error ? error.message : String(error);
       eventBus.emit({ type: "mission_error", missionId, code: "mission_crash", message: `Mission crashed: ${msg}`, recoverable: false });

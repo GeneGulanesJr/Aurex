@@ -1,5 +1,5 @@
-import type { CheckpointDecision, CostSummary, Milestone, Mission, WorkingUnit, MissionStatus, BumblebeeScanResult, BumblebeeFinding, ExposureCatalog } from "@aurex/shared";
-import type { CreateMissionResponse, GetMissionResponse, CheckpointResponse, HealthResponse, AgentLogResponse, TriggerScanResponse, ListScansResponse, GetScanResultsResponse, BumblebeeStatusResponse } from "@aurex/shared";
+import type { CheckpointDecision, CostSummary, Milestone, Mission, WorkingUnit, MissionStatus, BumblebeeScanResult, BumblebeeFinding, ExposureCatalog, QuotaStatus } from "@aurex/shared";
+import type { CreateMissionResponse, GetMissionResponse, CheckpointResponse, HealthResponse, AgentLogResponse, TriggerScanResponse, ListScansResponse, GetScanResultsResponse, BumblebeeStatusResponse, QuotaStatusResponse, PrefireRequest, PrefireResponse, CalculatePrefireRequest, CalculatePrefireResponse } from "@aurex/shared";
 
 export type CurrentMissionPayload = GetMissionResponse;
 
@@ -306,4 +306,36 @@ export async function saveExposureCatalog(catalog: ExposureCatalog): Promise<{ s
   });
   if (!res.ok) throw new Error(`Failed to save exposure catalog: ${res.status}`);
   return res.json() as Promise<{ saved: boolean }>;
+}
+
+export async function getQuotaStatus(): Promise<QuotaStatusResponse> {
+  const res = await apiFetch("/api/quota");
+  if (!res.ok) throw new Error(`Failed to fetch quota status: ${res.status}`);
+  return res.json() as Promise<QuotaStatusResponse>;
+}
+
+export async function prefireQuota(opts?: PrefireRequest): Promise<PrefireResponse> {
+  const res = await apiFetch("/api/quota/prefire", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(opts ?? {}),
+  });
+  if (!res.ok) throw new Error(`Failed to prefire quota: ${res.status}`);
+  return res.json() as Promise<PrefireResponse>;
+}
+
+export async function resetQuota(): Promise<QuotaStatusResponse> {
+  const res = await apiFetch("/api/quota/reset", { method: "POST" });
+  if (!res.ok) throw new Error(`Failed to reset quota: ${res.status}`);
+  return res.json() as Promise<QuotaStatusResponse>;
+}
+
+export async function calculatePrefire(opts: CalculatePrefireRequest): Promise<CalculatePrefireResponse> {
+  const res = await apiFetch("/api/quota/calculate-prefire", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(opts),
+  });
+  if (!res.ok) throw new Error(`Failed to calculate prefire: ${res.status}`);
+  return res.json() as Promise<CalculatePrefireResponse>;
 }

@@ -23,7 +23,9 @@ export type ResearchLifecycle = "unverified" | "verified" | "superseded" | "reje
 export type ResearchRelevance = "high" | "medium" | "low";
 
 // Checkpoints
-export type CheckpointTrigger = "milestone_complete" | "rescope_limit" | "unclassifiable_error" | "cost_cap_exceeded";
+export type CheckpointTrigger = "milestone_complete" | "rescope_limit" | "unclassifiable_error" | "cost_cap_exceeded" | "quota_exhausted";
+
+export type QuotaStatus = "unlimited" | "active" | "exhausted" | "window_expired";
 export type CheckpointDecision = "approve" | "reject" | "rescope";
 
 // Compression

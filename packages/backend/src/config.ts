@@ -30,6 +30,11 @@ export interface AppConfig {
 
   // Multi-mission concurrency
   maxConcurrentMissions: number;
+
+  // Quota / coding plan
+  quotaEnabled: boolean;
+  quotaWindowDurationMs: number;
+  quotaBurnDurationMs: number;
 }
 
 function env(key: string, fallback?: string): string {
@@ -79,5 +84,9 @@ export function loadConfig(): AppConfig {
     port: envInt("PORT", 3000),
     apiKey: process.env.API_KEY || null,
     maxConcurrentMissions: envInt("MAX_CONCURRENT_MISSIONS", 3),
+
+    quotaEnabled: process.env.QUOTA_ENABLED === "true",
+    quotaWindowDurationMs: envInt("QUOTA_WINDOW_HOURS", 5) * 60 * 60 * 1000,
+    quotaBurnDurationMs: envInt("QUOTA_BURN_HOURS", 1) * 60 * 60 * 1000,
   };
 }

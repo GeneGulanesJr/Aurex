@@ -15,6 +15,7 @@ import { registerCodeContextRoutes } from "./routes/code-context.js";
 import { createBumblebeeClient } from "./clients/bumblebee-client.js";
 import { createBumblebeeRunner } from "./orchestrator/bumblebee-runner.js";
 import { bumblebeeRoutes } from "./routes/bumblebee.js";
+import { quotaRoutes } from "./routes/quota.js";
 
 async function main() {
   const config = loadConfig();
@@ -47,6 +48,7 @@ async function main() {
     repoRoot: config.repoRoot,
     gitMainBranch: config.gitMainBranch,
     maxConcurrent: config.maxConcurrentMissions,
+    quotaEnabled: config.quotaEnabled,
     onPostMilestoneScan: async (missionId: string, root: string) => {
       try {
         await bumblebeeRunner.triggerScan(missionId, { profile: "project", root });
@@ -99,6 +101,7 @@ async function main() {
     lapis,
     pool,
     agentLogger,
+    appConfig: config,
     missionConfig: {
       workerTimeouts: config.workerTimeouts,
       costCap: config.missionCostCap,
@@ -119,6 +122,9 @@ async function main() {
 
   // Bumblebee routes
   await app.register(bumblebeeRoutes, { lapis, bumblebeeClient, bumblebeeRunner });
+
+  // Quota / coding plan routes
+  await app.register(quotaRoutes, { lapis, config });
 
   // Start
   try {
