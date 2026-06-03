@@ -103,7 +103,7 @@ async function syncConfigToPinyx(config: PinyxConfigSetting): Promise<void> {
         const prefix = `${provider.id}/`;
         const providerModels = discoveredModels
           .filter((m) => m.id.startsWith(prefix))
-          .map((m) => m.id);
+          .map((m) => ({ id: m.id, name: m.id.replace(prefix, "") }));
         return [provider.id, {
           api: providerApi(provider.id),
           baseUrl: provider.baseUrl,
