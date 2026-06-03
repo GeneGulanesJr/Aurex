@@ -88,8 +88,8 @@ export function createMilestoneLoop(
           loopActive = false;
 
           // Fetch current units (may change after rescope)
-          const units = await lapis.getWorkingUnitsForMilestone(milestone.id);
-          const contracts = await lapis.getContractHistory(milestone.id);
+          const units = await lapis.getWorkingUnitsForMilestone(milestone.id).catch(() => [] as import("@aurex/shared").WorkingUnit[]);
+          const contracts = await lapis.getContractHistory(milestone.id).catch(() => [] as any[]);
           const contract = contracts[0] as any;
 
           let completedCount = 0;
@@ -257,7 +257,7 @@ export function createMilestoneLoop(
           researchHandle.dispose();
 
           // --- VALIDATOR PHASE ---
-          const handoffs = await lapis.getHandoffsForMilestone(milestone.id);
+          const handoffs = await lapis.getHandoffsForMilestone(milestone.id).catch(() => [] as any[]);
           const handoffsByUnitId = new Map(handoffs.map((handoff: any) => [handoff.unitId, handoff]));
           for (const unit of validatorUnits) {
             unit.handoff = handoffsByUnitId.get(unit.id);
