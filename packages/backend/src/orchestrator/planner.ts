@@ -132,6 +132,15 @@ export function createPlanner(
         milestoneList = arrProp ?? [];
       }
 
+      // Normalize a value that could be array, string, or missing into an array
+      const toArray = (v: any, ...fallbacks: any[]): string[] => {
+        for (const val of [v, ...fallbacks]) {
+          if (Array.isArray(val)) return val;
+          if (typeof val === "string" && val.length > 0) return [val];
+        }
+        return [];
+      };
+
       // Normalize field names: LLMs use various conventions
       const plan = milestoneList.map((ms: any) => ({
         title: ms.title || ms.name || ms.milestone || `Milestone`,
@@ -141,8 +150,8 @@ export function createPlanner(
           declaredPaths: u.declaredPaths || u.paths || (u.path ? [u.path] : []),
           declaredModules: u.declaredModules || u.modules || [],
         })),
-        criteria: ms.criteria || ms.validation_criteria || ms.validation || [],
-        testCommands: ms.testCommands || ms.test_commands || ms.tests || [],
+        criteria: toArray(ms.criteria, ms.validation_criteria, ms.validation),
+        testCommands: toArray(ms.testCommands, ms.test_commands, ms.tests),
       }));
 
       emitLog("planning", `Plan received: ${plan.length} milestones. Creating in LaPis…`);
