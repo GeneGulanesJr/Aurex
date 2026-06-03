@@ -206,10 +206,13 @@ export function calculatePrefireTime(
   desiredStart: Date,
   burnDurationMs: number,
   windowDurationMs: number,
+  now?: Date,
 ): Date {
   const offset = burnDurationMs - windowDurationMs;
   if (offset >= 0) return new Date(desiredStart.getTime());
-  return new Date(desiredStart.getTime() + offset);
+  const raw = new Date(desiredStart.getTime() + offset);
+  if (now && raw.getTime() < now.getTime()) return new Date(now.getTime());
+  return raw;
 }
 
 export function buildPrefireTimeline(

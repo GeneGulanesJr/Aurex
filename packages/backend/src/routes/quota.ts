@@ -3,46 +3,23 @@ import type { LaPisClient } from "../clients/lapis-client.js";
 import type { QuotaWindow, QuotaConfig, QuotaProviderStatus, PrefireRequest, PrefireResponse, CalculatePrefireRequest, CalculatePrefireResponse, QuotaConfigUpdateRequest } from "@aurex/shared";
 import {
   prefire as prefireWindow,
-  checkQuota,
   getEffectiveProviderConfig,
   getProviderStatusDisplay,
   calculatePrefireTime,
   buildPrefireTimeline,
   resetWindow,
-  createQuotaWindow,
   validateQuotaDurations,
-  DEFAULT_WINDOW_DURATION_MS,
-  DEFAULT_BURN_DURATION_MS,
 } from "../enforcement/quota-gate.js";
+import { acquireQuotaLock } from "../enforcement/quota-mutex.js";
 import type { AppConfig } from "../config.js";
 
 const QUOTA_CONFIG_KEY = "quota_config";
 const QUOTA_WINDOWS_KEY = "quota_windows";
 
-function createProviderMutex() {
-  const locks = new Map<string, Promise<void>>();
-
-  async function acquire(providerId: string): Promise<() => void> {
-    while (locks.has(providerId)) {
-      await locks.get(providerId);
-    }
-    let release: () => void;
-    const p = new Promise<void>((resolve) => { release = resolve; });
-    locks.set(providerId, p);
-    return () => {
-      locks.delete(providerId);
-      release!();
-    };
-  }
-
-  return { acquire };
-}
-
 export async function quotaRoutes(
   app: FastifyInstance,
   { lapis, config }: { lapis: LaPisClient; config: AppConfig },
 ) {
-  const mutex = createProviderMutex();
 
   async function loadQuotaConfig(): Promise<QuotaConfig> {
     const saved = await lapis.getSetting<QuotaConfig>(QUOTA_CONFIG_KEY);
@@ -68,7 +45,7 @@ export async function quotaRoutes(
   }
 
   async function withProviderLock<T>(providerId: string, fn: () => Promise<T>): Promise<T> {
-    const release = await mutex.acquire(providerId);
+    const release = await acquireQuotaLock(providerId);
     try {
       return await fn();
     } finally {
@@ -109,19 +86,7 @@ export async function quotaRoutes(
     const providerStatuses: QuotaProviderStatus[] = [];
     for (const providerId of knownProviderIds) {
       const providerConfig = getEffectiveProviderConfig(qc, providerId);
-      let window = allWindows[providerId] ?? null;
-
-      if (qc.enabled && providerConfig.tracked && window) {
-        const result = checkQuota(window, now);
-        if (result.reason === "window_expired") {
-          window = await atomicUpdateProviderWindow(providerId, async (current) => {
-            if (!current) return resetWindow(createQuotaWindow(), now);
-            const recheck = checkQuota(current, now);
-            if (recheck.reason === "window_expired") return resetWindow(current, now);
-            return current;
-          });
-        }
-      }
+      const window = allWindows[providerId] ?? null;
 
       providerStatuses.push(
         getProviderStatusDisplay(providerId, providerConfig, window, qc.enabled, now),
@@ -241,7 +206,7 @@ export async function quotaRoutes(
       return reply.status(400).send({ error: "windowDurationMs and burnDurationMs must be positive and burn <= window" });
     }
 
-    const prefireTime = calculatePrefireTime(desiredStart, burnDurationMs, windowDurationMs);
+    const prefireTime = calculatePrefireTime(desiredStart, burnDurationMs, windowDurationMs, new Date());
     const timeline = buildPrefireTimeline(prefireTime, desiredStart, burnDurationMs, windowDurationMs);
 
     const response: CalculatePrefireResponse = {

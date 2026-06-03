@@ -1,6 +1,7 @@
 import type { PinyxClient, ChatRequest, ChatResponse } from "./pinyx-client.js";
 import type { QuotaConfig, QuotaWindow } from "@aurex/shared";
-import { checkQuota, recordFirstLLMCall, getEffectiveProviderConfig, extractProviderIdFromModel } from "../enforcement/quota-gate.js";
+import { checkQuota, recordFirstLLMCall, getEffectiveProviderConfig, extractProviderIdFromModel, createQuotaWindow } from "../enforcement/quota-gate.js";
+import { acquireQuotaLock } from "../enforcement/quota-mutex.js";
 
 export class QuotaExhaustedError extends Error {
   constructor(
@@ -18,27 +19,7 @@ export interface QuotaAwarePinyxOpts {
   saveQuotaWindow: (providerId: string, w: QuotaWindow) => Promise<void>;
 }
 
-function createProviderMutex() {
-  const locks = new Map<string, Promise<void>>();
-
-  async function acquire(providerId: string): Promise<() => void> {
-    while (locks.has(providerId)) {
-      await locks.get(providerId);
-    }
-    let release: () => void;
-    const p = new Promise<void>((resolve) => { release = resolve; });
-    locks.set(providerId, p);
-    return () => {
-      locks.delete(providerId);
-      release!();
-    };
-  }
-
-  return { acquire };
-}
-
 export function createQuotaAwarePinyxClient(inner: PinyxClient, opts: QuotaAwarePinyxOpts): PinyxClient {
-  const mutex = createProviderMutex();
 
   async function enforceAndTrack(model: string): Promise<void> {
     const providerId = extractProviderIdFromModel(model);
@@ -49,17 +30,27 @@ export function createQuotaAwarePinyxClient(inner: PinyxClient, opts: QuotaAware
     const providerConfig = getEffectiveProviderConfig(config, providerId);
     if (!providerConfig.tracked) return;
 
-    const release = await mutex.acquire(providerId);
+    const release = await acquireQuotaLock(providerId);
     try {
-      const window = await opts.getQuotaWindow(providerId);
+      let window = await opts.getQuotaWindow(providerId);
       const now = new Date();
+
+      if (!window) {
+        window = createQuotaWindow({
+          windowDurationMs: providerConfig.windowDurationMs,
+          burnDurationMs: providerConfig.burnDurationMs,
+          now,
+        });
+        await opts.saveQuotaWindow(providerId, window);
+      }
+
       const result = checkQuota(window, now);
 
       if (!result.ok && result.reason === "quota_exhausted") {
         throw new QuotaExhaustedError(providerId, result.windowResetsAt ?? new Date().toISOString());
       }
 
-      if (window && window.firstLLMCallAt === null) {
+      if (window.firstLLMCallAt === null) {
         const updated = recordFirstLLMCall(window, now);
         await opts.saveQuotaWindow(providerId, updated);
       }
