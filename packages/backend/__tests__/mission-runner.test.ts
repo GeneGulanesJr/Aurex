@@ -69,9 +69,12 @@ import { createPinyxClient } from "../src/clients/pinyx-client.js";
 function createMockLapis(): LaPisClient {
   return {
     getSetting: vi.fn().mockImplementation((key: string) => {
-      if (key === "pinyx_config") return { endpoint: "http://pinyx:7331" };
-      if (key === "github_token") return null;
-      return null;
+      if (key === "pinyx_config") return Promise.resolve({ endpoint: "http://pinyx:7331" });
+      if (key === "github_token") return Promise.resolve(null);
+      if (key === "quota_config") return Promise.resolve({ enabled: false, windowDurationMs: 5 * 3600_000, burnDurationMs: 3600_000, providers: [] });
+      if (key === "quota_windows") return Promise.resolve({});
+      if (key.startsWith("mission:")) return Promise.resolve(null);
+      return Promise.resolve(null);
     }),
     getMission: vi.fn().mockResolvedValue({
       id: "m-1",
@@ -130,6 +133,7 @@ function createMockLapis(): LaPisClient {
     getPendingCheckpoints: vi.fn().mockResolvedValue([]),
     listMissions: vi.fn().mockResolvedValue([]),
     runCompression: vi.fn().mockResolvedValue(undefined),
+    setSetting: vi.fn().mockResolvedValue(undefined),
   } as unknown as LaPisClient;
 }
 

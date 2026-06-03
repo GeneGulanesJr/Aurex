@@ -26,8 +26,8 @@ export type WsClientEvent =
   | { type: "scan_started"; missionId: string; scanId: string; profile: string }
   | { type: "scan_completed"; missionId: string; scanId: string; summary: BumblebeeScanSummary }
   | { type: "scan_finding"; missionId: string; scanId: string; finding: BumblebeeFinding }
-  | { type: "quota_update"; status: string; remainingBurnMs: number; remainingWindowMs: number; burnExpiresAt: string | null }
-  | { type: "quota_exhausted"; windowResetsAt: string };
+  | { type: "quota_update"; providerId: string; status: string; remainingBurnMs: number; remainingWindowMs: number; burnExpiresAt: string | null }
+  | { type: "quota_exhausted"; providerId: string; windowResetsAt: string };
 
 export type StreamingChunk = {
   delta: string;

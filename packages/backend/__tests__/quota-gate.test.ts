@@ -8,9 +8,13 @@ import {
   calculatePrefireTime,
   buildPrefireTimeline,
   resetWindow,
+  getEffectiveProviderConfig,
+  getProviderStatusDisplay,
+  extractProviderIdFromModel,
   DEFAULT_WINDOW_DURATION_MS,
   DEFAULT_BURN_DURATION_MS,
 } from "../src/enforcement/quota-gate.js";
+import type { QuotaConfig } from "@aurex/shared";
 
 const HOUR = 60 * 60 * 1000;
 
@@ -240,5 +244,129 @@ describe("getQuotaStatusDisplay", () => {
     const withCall = recordFirstLLMCall(w, dateAt(18, 0));
     const display = getQuotaStatusDisplay(withCall, dateAt(19, 0), true);
     expect(display.status).toBe("exhausted");
+  });
+});
+
+describe("getEffectiveProviderConfig", () => {
+  const baseConfig: QuotaConfig = {
+    enabled: true,
+    windowDurationMs: 5 * HOUR,
+    burnDurationMs: HOUR,
+    providers: [
+      { providerId: "kilo", tracked: true, burnDurationMs: 2 * HOUR },
+      { providerId: "zai", tracked: false },
+    ],
+  };
+
+  it("returns tracked config for a tracked provider", () => {
+    const result = getEffectiveProviderConfig(baseConfig, "kilo");
+    expect(result.tracked).toBe(true);
+    expect(result.burnDurationMs).toBe(2 * HOUR);
+    expect(result.windowDurationMs).toBe(5 * HOUR);
+  });
+
+  it("returns untracked for an untracked provider", () => {
+    const result = getEffectiveProviderConfig(baseConfig, "zai");
+    expect(result.tracked).toBe(false);
+  });
+
+  it("returns untracked for an unknown provider", () => {
+    const result = getEffectiveProviderConfig(baseConfig, "unknown");
+    expect(result.tracked).toBe(false);
+  });
+
+  it("uses global defaults when provider has no overrides", () => {
+    const config: QuotaConfig = {
+      enabled: true,
+      windowDurationMs: 4 * HOUR,
+      burnDurationMs: 30 * 60 * 1000,
+      providers: [{ providerId: "kilo", tracked: true }],
+    };
+    const result = getEffectiveProviderConfig(config, "kilo");
+    expect(result.tracked).toBe(true);
+    expect(result.windowDurationMs).toBe(4 * HOUR);
+    expect(result.burnDurationMs).toBe(30 * 60 * 1000);
+  });
+});
+
+describe("getProviderStatusDisplay", () => {
+  it("returns unlimited when global is disabled", () => {
+    const status = getProviderStatusDisplay(
+      "kilo",
+      { tracked: true, windowDurationMs: 5 * HOUR, burnDurationMs: HOUR },
+      null,
+      false,
+      new Date(),
+    );
+    expect(status.enabled).toBe(false);
+    expect(status.status).toBe("unlimited");
+    expect(status.providerId).toBe("kilo");
+  });
+
+  it("returns unlimited when provider is untracked", () => {
+    const status = getProviderStatusDisplay(
+      "zai",
+      { tracked: false, windowDurationMs: 5 * HOUR, burnDurationMs: HOUR },
+      null,
+      true,
+      new Date(),
+    );
+    expect(status.enabled).toBe(false);
+    expect(status.tracked).toBe(false);
+  });
+
+  it("returns active with no window when enabled+tracked but no window", () => {
+    const status = getProviderStatusDisplay(
+      "kilo",
+      { tracked: true, windowDurationMs: 5 * HOUR, burnDurationMs: HOUR },
+      null,
+      true,
+      new Date(),
+    );
+    expect(status.enabled).toBe(true);
+    expect(status.status).toBe("active");
+    expect(status.windowStart).toBeNull();
+  });
+
+  it("returns active within burn", () => {
+    const w = createQuotaWindow({ now: dateAt(14, 0) });
+    const withCall = recordFirstLLMCall(w, dateAt(18, 0));
+    const status = getProviderStatusDisplay(
+      "kilo",
+      { tracked: true, windowDurationMs: 5 * HOUR, burnDurationMs: HOUR },
+      withCall,
+      true,
+      dateAt(18, 30),
+    );
+    expect(status.status).toBe("active");
+    expect(status.remainingBurnMs).toBe(30 * 60 * 1000);
+    expect(status.burnExpiresAt).toBe(dateAt(19, 0).toISOString());
+  });
+
+  it("returns exhausted when burn used up", () => {
+    const w = createQuotaWindow({ now: dateAt(14, 0), windowDurationMs: 10 * HOUR });
+    const withCall = recordFirstLLMCall(w, dateAt(18, 0));
+    const status = getProviderStatusDisplay(
+      "kilo",
+      { tracked: true, windowDurationMs: 10 * HOUR, burnDurationMs: HOUR },
+      withCall,
+      true,
+      dateAt(19, 0),
+    );
+    expect(status.status).toBe("exhausted");
+  });
+});
+
+describe("extractProviderIdFromModel", () => {
+  it("extracts provider from 'kilo/kilo-auto/free'", () => {
+    expect(extractProviderIdFromModel("kilo/kilo-auto/free")).toBe("kilo");
+  });
+
+  it("extracts provider from 'zai/glm-5'", () => {
+    expect(extractProviderIdFromModel("zai/glm-5")).toBe("zai");
+  });
+
+  it("returns full string when no slash", () => {
+    expect(extractProviderIdFromModel("default")).toBe("default");
   });
 });

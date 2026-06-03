@@ -1,5 +1,5 @@
 import type { CheckpointDecision, CheckpointTrigger, Milestone } from "@aurex/shared";
-import type { EscalationTrigger, EscalationContext, AgentType, AgentStatus, MilestoneStatus, QuotaWindow } from "@aurex/shared";
+import type { EscalationTrigger, EscalationContext, AgentType, AgentStatus, MilestoneStatus, QuotaWindow, QuotaConfig } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { PinyxClient } from "../clients/pinyx-client.js";
 import { createPinyxClient } from "../clients/pinyx-client.js";
@@ -62,11 +62,17 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
     const saved = await lapis.getSetting<{ endpoint: string }>("pinyx_config");
     if (!saved?.endpoint) throw new Error("PiNyx is not configured. Configure it in the Integrations panel.");
     const inner = createPinyxClient({ endpoint: saved.endpoint });
-    if (!config.quotaEnabled) return inner;
     return createQuotaAwarePinyxClient(inner, {
-      getQuotaWindow: () => lapis.getSetting<QuotaWindow>("quota_window"),
-      saveQuotaWindow: (w) => lapis.setSetting("quota_window", w),
-      enabled: true,
+      getQuotaConfig: () => lapis.getSetting<QuotaConfig>("quota_config").then((c) => c ?? { enabled: false, windowDurationMs: 5 * 3600_000, burnDurationMs: 3600_000, providers: [] }),
+      getQuotaWindow: (providerId) => {
+        const all = lapis.getSetting<Record<string, QuotaWindow>>("quota_windows").then((w) => w ?? {});
+        return all.then((w) => w[providerId] ?? null);
+      },
+      saveQuotaWindow: async (providerId, w) => {
+        const all = (await lapis.getSetting<Record<string, QuotaWindow>>("quota_windows")) ?? {};
+        all[providerId] = w;
+        await lapis.setSetting("quota_windows", all);
+      },
     });
   }
 
@@ -272,11 +278,12 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
           missionId,
           trigger: "quota_exhausted",
           milestoneId: currentMilestoneId,
-          summary: `Quota exhausted. Window resets at ${error.windowResetsAt}`,
+          summary: `Quota exhausted for provider ${error.providerId}. Window resets at ${error.windowResetsAt}`,
         });
 
         eventBus.emit({
           type: "quota_exhausted" as any,
+          providerId: error.providerId,
           windowResetsAt: error.windowResetsAt,
         } as any);
 
@@ -285,7 +292,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
           missionId,
           checkpointId,
           trigger: { kind: "quota_exhausted", milestoneId: currentMilestoneId, windowResetsAt: error.windowResetsAt } as EscalationTrigger,
-          context: { summary: `Quota exhausted. Window resets at ${error.windowResetsAt}` } as EscalationContext,
+          context: { summary: `Quota exhausted for provider ${error.providerId}. Window resets at ${error.windowResetsAt}` } as EscalationContext,
         });
 
         const resolved = await checkpointManager.waitForResolution(checkpointId);
@@ -297,10 +304,11 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
           return;
         }
 
-        const quotaWindow = await lapis.getSetting<QuotaWindow>("quota_window");
-        if (quotaWindow) {
-          const reset = resetWindow(quotaWindow, new Date());
-          await lapis.setSetting("quota_window", reset);
+        const allWindows = (await lapis.getSetting<Record<string, QuotaWindow>>("quota_windows")) ?? {};
+        const providerWindow = allWindows[error.providerId];
+        if (providerWindow) {
+          allWindows[error.providerId] = resetWindow(providerWindow, new Date());
+          await lapis.setSetting("quota_windows", allWindows);
         }
 
         await lapis.updateMissionStatus(missionId, "running");

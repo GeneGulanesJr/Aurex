@@ -1,14 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { getQuotaStatus, prefireQuota, resetQuota } from "../api";
-import type { QuotaStatusResponse, PrefireRequest } from "@aurex/shared";
+import { getQuotaStatus, prefireQuota, resetQuota, updateQuotaConfig } from "../api";
+import type { QuotaStatusResponse, PrefireRequest, QuotaConfigUpdateRequest } from "@aurex/shared";
 
 const POLL_INTERVAL = 30_000;
 
 export interface QuotaState {
   status: QuotaStatusResponse | null;
   loading: boolean;
-  prefire: (opts?: PrefireRequest) => Promise<void>;
-  reset: () => Promise<void>;
+  prefire: (opts?: PrefireRequest & { providerId?: string }) => Promise<void>;
+  reset: (providerId?: string) => Promise<void>;
+  updateConfig: (update: QuotaConfigUpdateRequest) => Promise<void>;
   refresh: () => void;
 }
 
@@ -31,15 +32,20 @@ export function useQuota(): QuotaState {
     };
   }, [refresh]);
 
-  const prefire = useCallback(async (opts?: PrefireRequest) => {
+  const prefire = useCallback(async (opts?: PrefireRequest & { providerId?: string }) => {
     await prefireQuota(opts);
     refresh();
   }, [refresh]);
 
-  const reset = useCallback(async () => {
-    const s = await resetQuota();
-    setQuotaStatus(s);
-  }, []);
+  const reset = useCallback(async (providerId?: string) => {
+    await resetQuota(providerId);
+    refresh();
+  }, [refresh]);
 
-  return { status: quotaStatus, loading, prefire, reset, refresh };
+  const updateConfigFn = useCallback(async (update: QuotaConfigUpdateRequest) => {
+    await updateQuotaConfig(update);
+    refresh();
+  }, [refresh]);
+
+  return { status: quotaStatus, loading, prefire, reset, updateConfig: updateConfigFn, refresh };
 }

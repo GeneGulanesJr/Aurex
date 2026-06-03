@@ -321,3 +321,32 @@ export interface QuotaWindow {
   isActive: boolean;
   lastActiveAt: string | null;
 }
+
+export interface QuotaProviderQuotaConfig {
+  providerId: string;
+  tracked: boolean;
+  windowDurationMs?: number;
+  burnDurationMs?: number;
+}
+
+export interface QuotaConfig {
+  enabled: boolean;
+  windowDurationMs: number;
+  burnDurationMs: number;
+  providers: QuotaProviderQuotaConfig[];
+}
+
+export interface QuotaProviderStatus {
+  providerId: string;
+  tracked: boolean;
+  enabled: boolean;
+  status: QuotaStatus;
+  windowStart: string | null;
+  windowEnd: string | null;
+  burnDurationMs: number;
+  windowDurationMs: number;
+  firstLLMCallAt: string | null;
+  burnExpiresAt: string | null;
+  remainingBurnMs: number;
+  remainingWindowMs: number;
+}

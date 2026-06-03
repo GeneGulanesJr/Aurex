@@ -1,5 +1,5 @@
 import type { CheckpointDecision, CostSummary, Milestone, Mission, WorkingUnit, MissionStatus, BumblebeeScanResult, BumblebeeFinding, ExposureCatalog, QuotaStatus } from "@aurex/shared";
-import type { CreateMissionResponse, GetMissionResponse, CheckpointResponse, HealthResponse, AgentLogResponse, TriggerScanResponse, ListScansResponse, GetScanResultsResponse, BumblebeeStatusResponse, QuotaStatusResponse, PrefireRequest, PrefireResponse, CalculatePrefireRequest, CalculatePrefireResponse } from "@aurex/shared";
+import type { CreateMissionResponse, GetMissionResponse, CheckpointResponse, HealthResponse, AgentLogResponse, TriggerScanResponse, ListScansResponse, GetScanResultsResponse, BumblebeeStatusResponse, QuotaStatusResponse, PrefireRequest, PrefireResponse, CalculatePrefireRequest, CalculatePrefireResponse, QuotaConfigUpdateRequest } from "@aurex/shared";
 
 export type CurrentMissionPayload = GetMissionResponse;
 
@@ -314,7 +314,17 @@ export async function getQuotaStatus(): Promise<QuotaStatusResponse> {
   return res.json() as Promise<QuotaStatusResponse>;
 }
 
-export async function prefireQuota(opts?: PrefireRequest): Promise<PrefireResponse> {
+export async function updateQuotaConfig(update: QuotaConfigUpdateRequest): Promise<{ ok: boolean }> {
+  const res = await apiFetch("/api/quota/config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(update),
+  });
+  if (!res.ok) throw new Error(`Failed to update quota config: ${res.status}`);
+  return res.json() as Promise<{ ok: boolean }>;
+}
+
+export async function prefireQuota(opts?: PrefireRequest & { providerId?: string }): Promise<PrefireResponse> {
   const res = await apiFetch("/api/quota/prefire", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -324,8 +334,12 @@ export async function prefireQuota(opts?: PrefireRequest): Promise<PrefireRespon
   return res.json() as Promise<PrefireResponse>;
 }
 
-export async function resetQuota(): Promise<QuotaStatusResponse> {
-  const res = await apiFetch("/api/quota/reset", { method: "POST" });
+export async function resetQuota(providerId?: string): Promise<QuotaStatusResponse> {
+  const res = await apiFetch("/api/quota/reset", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(providerId ? { providerId } : {}),
+  });
   if (!res.ok) throw new Error(`Failed to reset quota: ${res.status}`);
   return res.json() as Promise<QuotaStatusResponse>;
 }

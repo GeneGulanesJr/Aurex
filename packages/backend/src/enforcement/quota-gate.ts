@@ -1,4 +1,5 @@
-import type { QuotaWindow, QuotaStatus } from "@aurex/shared";
+import type { QuotaWindow, QuotaConfig, QuotaProviderQuotaConfig, QuotaProviderStatus } from "@aurex/shared";
+import type { QuotaStatus } from "@aurex/shared";
 
 export interface QuotaCheckResult {
   ok: boolean;
@@ -228,4 +229,107 @@ export function resetWindow(window: QuotaWindow, now: Date): QuotaWindow {
     isActive: false,
     lastActiveAt: null,
   };
+}
+
+export function getEffectiveProviderConfig(
+  config: QuotaConfig,
+  providerId: string,
+): { tracked: boolean; windowDurationMs: number; burnDurationMs: number } {
+  const provider = config.providers.find((p) => p.providerId === providerId);
+  if (!provider || !provider.tracked) {
+    return {
+      tracked: false,
+      windowDurationMs: config.windowDurationMs,
+      burnDurationMs: config.burnDurationMs,
+    };
+  }
+  return {
+    tracked: true,
+    windowDurationMs: provider.windowDurationMs ?? config.windowDurationMs,
+    burnDurationMs: provider.burnDurationMs ?? config.burnDurationMs,
+  };
+}
+
+export function getProviderStatusDisplay(
+  providerId: string,
+  providerConfig: { tracked: boolean; windowDurationMs: number; burnDurationMs: number },
+  window: QuotaWindow | null,
+  globalEnabled: boolean,
+  now: Date,
+): QuotaProviderStatus {
+  const enabled = globalEnabled && providerConfig.tracked;
+
+  if (!enabled) {
+    return {
+      providerId,
+      tracked: providerConfig.tracked,
+      enabled: false,
+      status: "unlimited" as QuotaStatus,
+      windowStart: null,
+      windowEnd: null,
+      burnDurationMs: providerConfig.burnDurationMs,
+      windowDurationMs: providerConfig.windowDurationMs,
+      firstLLMCallAt: null,
+      burnExpiresAt: null,
+      remainingBurnMs: Infinity,
+      remainingWindowMs: Infinity,
+    };
+  }
+
+  if (!window) {
+    return {
+      providerId,
+      tracked: true,
+      enabled: true,
+      status: "active" as QuotaStatus,
+      windowStart: null,
+      windowEnd: null,
+      burnDurationMs: providerConfig.burnDurationMs,
+      windowDurationMs: providerConfig.windowDurationMs,
+      firstLLMCallAt: null,
+      burnExpiresAt: null,
+      remainingBurnMs: providerConfig.burnDurationMs,
+      remainingWindowMs: providerConfig.windowDurationMs,
+    };
+  }
+
+  const windowStartMs = new Date(window.windowStart).getTime();
+  const windowEnd = new Date(windowStartMs + window.windowDurationMs).toISOString();
+  const result = checkQuota(window, now);
+
+  let status: QuotaStatus;
+  if (result.reason === "window_expired") {
+    status = "window_expired";
+  } else if (!result.ok) {
+    status = "exhausted";
+  } else {
+    status = "active";
+  }
+
+  let burnExpiresAt: string | null = null;
+  if (window.firstLLMCallAt) {
+    const firstCallMs = new Date(window.firstLLMCallAt).getTime();
+    burnExpiresAt = new Date(firstCallMs + window.burnDurationMs).toISOString();
+  }
+
+  return {
+    providerId,
+    tracked: true,
+    enabled: true,
+    status,
+    windowStart: window.windowStart,
+    windowEnd,
+    burnDurationMs: window.burnDurationMs,
+    windowDurationMs: window.windowDurationMs,
+    firstLLMCallAt: window.firstLLMCallAt,
+    burnExpiresAt,
+    remainingBurnMs: result.remainingBurnMs,
+    remainingWindowMs: result.remainingWindowMs,
+  };
+}
+
+export function extractProviderIdFromModel(model: string): string {
+  const slashIdx = model.indexOf("/");
+  if (slashIdx === -1) return model;
+  return model.slice(0, slashIdx);
 }

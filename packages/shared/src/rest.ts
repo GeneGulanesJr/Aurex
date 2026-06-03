@@ -1,5 +1,5 @@
 // packages/shared/src/rest.ts
-import type { Mission, Milestone, WorkingUnit, CostSummary, BumblebeeScanResult, BumblebeeFinding, ExposureCatalog } from "./types.js";
+import type { Mission, Milestone, WorkingUnit, CostSummary, BumblebeeScanResult, BumblebeeFinding, ExposureCatalog, QuotaProviderStatus } from "./types.js";
 import type { QuotaStatus } from "./enums.js";
 
 export interface CreateMissionRequest {
@@ -86,15 +86,14 @@ export interface ExposureCatalogResponse {
 
 export interface QuotaStatusResponse {
   enabled: boolean;
-  status: QuotaStatus;
-  windowStart: string | null;
-  windowEnd: string | null;
-  burnDurationMs: number;
-  windowDurationMs: number;
-  firstLLMCallAt: string | null;
-  burnExpiresAt: string | null;
-  remainingBurnMs: number;
-  remainingWindowMs: number;
+  providers: QuotaProviderStatus[];
+}
+
+export interface QuotaConfigUpdateRequest {
+  enabled?: boolean;
+  windowDurationMs?: number;
+  burnDurationMs?: number;
+  providers?: Array<{ providerId: string; tracked: boolean; windowDurationMs?: number; burnDurationMs?: number }>;
 }
 
 export interface PrefireRequest {

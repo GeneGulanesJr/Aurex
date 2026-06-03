@@ -1,57 +1,138 @@
 import type { FastifyInstance } from "fastify";
 import type { LaPisClient } from "../clients/lapis-client.js";
-import type { AppConfig } from "../config.js";
-import type { QuotaWindow, QuotaStatusResponse, PrefireRequest, PrefireResponse, CalculatePrefireRequest, CalculatePrefireResponse } from "@aurex/shared";
+import type { QuotaWindow, QuotaConfig, QuotaProviderStatus, PrefireRequest, PrefireResponse, CalculatePrefireRequest, CalculatePrefireResponse, QuotaConfigUpdateRequest } from "@aurex/shared";
 import {
   prefire as prefireWindow,
   checkQuota,
-  getQuotaStatusDisplay,
+  getEffectiveProviderConfig,
+  getProviderStatusDisplay,
   calculatePrefireTime,
   buildPrefireTimeline,
   resetWindow,
+  createQuotaWindow,
+  DEFAULT_WINDOW_DURATION_MS,
+  DEFAULT_BURN_DURATION_MS,
 } from "../enforcement/quota-gate.js";
+import type { AppConfig } from "../config.js";
 
-const QUOTA_SETTINGS_KEY = "quota_window";
+const QUOTA_CONFIG_KEY = "quota_config";
+const QUOTA_WINDOWS_KEY = "quota_windows";
 
 export async function quotaRoutes(
   app: FastifyInstance,
   { lapis, config }: { lapis: LaPisClient; config: AppConfig },
 ) {
-  async function loadQuotaWindow(): Promise<QuotaWindow | null> {
-    return lapis.getSetting<QuotaWindow>(QUOTA_SETTINGS_KEY);
+  async function loadQuotaConfig(): Promise<QuotaConfig> {
+    const saved = await lapis.getSetting<QuotaConfig>(QUOTA_CONFIG_KEY);
+    if (saved) return saved;
+    return {
+      enabled: config.quotaEnabled,
+      windowDurationMs: config.quotaWindowDurationMs,
+      burnDurationMs: config.quotaBurnDurationMs,
+      providers: [],
+    };
   }
 
-  async function saveQuotaWindow(window: QuotaWindow): Promise<void> {
-    await lapis.setSetting(QUOTA_SETTINGS_KEY, window);
+  async function saveQuotaConfig(qc: QuotaConfig): Promise<void> {
+    await lapis.setSetting(QUOTA_CONFIG_KEY, qc);
+  }
+
+  async function loadAllWindows(): Promise<Record<string, QuotaWindow>> {
+    return (await lapis.getSetting<Record<string, QuotaWindow>>(QUOTA_WINDOWS_KEY)) ?? {};
+  }
+
+  async function saveAllWindows(windows: Record<string, QuotaWindow>): Promise<void> {
+    await lapis.setSetting(QUOTA_WINDOWS_KEY, windows);
+  }
+
+  async function loadProviderWindow(providerId: string): Promise<QuotaWindow | null> {
+    const all = await loadAllWindows();
+    return all[providerId] ?? null;
+  }
+
+  async function saveProviderWindow(providerId: string, w: QuotaWindow): Promise<void> {
+    const all = await loadAllWindows();
+    all[providerId] = w;
+    await saveAllWindows(all);
+  }
+
+  async function ensureProviderWindow(providerId: string, windowDurationMs: number, burnDurationMs: number): Promise<QuotaWindow> {
+    const existing = await loadProviderWindow(providerId);
+    if (existing) return existing;
+    const w = createQuotaWindow({ windowDurationMs, burnDurationMs });
+    await saveProviderWindow(providerId, w);
+    return w;
   }
 
   app.get("/api/quota", async () => {
-    const window = await loadQuotaWindow();
+    const qc = await loadQuotaConfig();
     const now = new Date();
 
-    if (config.quotaEnabled && window) {
-      const result = checkQuota(window, now);
-      if (result.reason === "window_expired") {
-        const reset = resetWindow(window, now);
-        await saveQuotaWindow(reset);
-        return getQuotaStatusDisplay(reset, now, config.quotaEnabled);
-      }
+    const knownProviderIds = new Set(qc.providers.map((p) => p.providerId));
+    const allWindows = await loadAllWindows();
+    for (const pid of Object.keys(allWindows)) {
+      knownProviderIds.add(pid);
     }
 
-    return getQuotaStatusDisplay(window, now, config.quotaEnabled);
+    const providerStatuses: QuotaProviderStatus[] = [];
+    for (const providerId of knownProviderIds) {
+      const providerConfig = getEffectiveProviderConfig(qc, providerId);
+      let window = allWindows[providerId] ?? null;
+
+      if (qc.enabled && providerConfig.tracked && window) {
+        const result = checkQuota(window, now);
+        if (result.reason === "window_expired") {
+          window = resetWindow(window, now);
+          await saveProviderWindow(providerId, window);
+        }
+      }
+
+      providerStatuses.push(
+        getProviderStatusDisplay(providerId, providerConfig, window, qc.enabled, now),
+      );
+    }
+
+    if (providerStatuses.length === 0) {
+      providerStatuses.push(
+        getProviderStatusDisplay("default", { tracked: true, windowDurationMs: qc.windowDurationMs, burnDurationMs: qc.burnDurationMs }, null, qc.enabled, now),
+      );
+    }
+
+    return { enabled: qc.enabled, providers: providerStatuses };
+  });
+
+  app.post("/api/quota/config", async (request, reply) => {
+    const body = (request.body ?? {}) as QuotaConfigUpdateRequest;
+    const qc = await loadQuotaConfig();
+
+    if (body.enabled !== undefined) qc.enabled = body.enabled;
+    if (body.windowDurationMs !== undefined) qc.windowDurationMs = body.windowDurationMs;
+    if (body.burnDurationMs !== undefined) qc.burnDurationMs = body.burnDurationMs;
+    if (body.providers !== undefined) {
+      qc.providers = body.providers.map((p) => ({
+        providerId: p.providerId,
+        tracked: p.tracked,
+        windowDurationMs: p.windowDurationMs,
+        burnDurationMs: p.burnDurationMs,
+      }));
+    }
+
+    await saveQuotaConfig(qc);
+    return reply.status(200).send({ ok: true });
   });
 
   app.post("/api/quota/prefire", async (request, reply) => {
-    const body = (request.body ?? {}) as PrefireRequest;
+    const body = (request.body ?? {}) as PrefireRequest & { providerId?: string };
+    const qc = await loadQuotaConfig();
+    const providerId = body.providerId ?? "default";
+    const providerConfig = getEffectiveProviderConfig(qc, providerId);
+    const windowDurationMs = body.windowDurationMs ?? providerConfig.windowDurationMs;
+    const burnDurationMs = body.burnDurationMs ?? providerConfig.burnDurationMs;
+
     const now = new Date();
-    const current = await loadQuotaWindow();
-
-    const window = prefireWindow(current, now, {
-      windowDurationMs: body.windowDurationMs ?? config.quotaWindowDurationMs,
-      burnDurationMs: body.burnDurationMs ?? config.quotaBurnDurationMs,
-    });
-
-    await saveQuotaWindow(window);
+    const current = await loadProviderWindow(providerId);
+    const window = prefireWindow(current, now, { windowDurationMs, burnDurationMs });
+    await saveProviderWindow(providerId, window);
 
     const windowEnd = new Date(new Date(window.windowStart).getTime() + window.windowDurationMs);
     const response: PrefireResponse = {
@@ -64,27 +145,33 @@ export async function quotaRoutes(
     return reply.status(201).send(response);
   });
 
-  app.post("/api/quota/reset", async () => {
-    const current = await loadQuotaWindow();
+  app.post("/api/quota/reset", async (request) => {
+    const body = (request.body ?? {}) as { providerId?: string };
+    const qc = await loadQuotaConfig();
+    const providerId = body.providerId ?? "default";
+    const providerConfig = getEffectiveProviderConfig(qc, providerId);
+
+    const current = await loadProviderWindow(providerId);
     const now = new Date();
     const window = resetWindow(current ?? {
       windowStart: now.toISOString(),
-      windowDurationMs: config.quotaWindowDurationMs,
-      burnDurationMs: config.quotaBurnDurationMs,
+      windowDurationMs: providerConfig.windowDurationMs,
+      burnDurationMs: providerConfig.burnDurationMs,
       firstLLMCallAt: null,
       isActive: false,
       lastActiveAt: null,
     }, now);
 
-    await saveQuotaWindow(window);
-    return getQuotaStatusDisplay(window, now, config.quotaEnabled);
+    await saveProviderWindow(providerId, window);
+    return getProviderStatusDisplay(providerId, providerConfig, window, qc.enabled, now);
   });
 
   app.post("/api/quota/calculate-prefire", async (request) => {
     const body = request.body as CalculatePrefireRequest;
     const desiredStart = new Date(body.desiredStartTime);
-    const burnDurationMs = body.burnDurationMs ?? config.quotaBurnDurationMs;
-    const windowDurationMs = body.windowDurationMs ?? config.quotaWindowDurationMs;
+    const qc = await loadQuotaConfig();
+    const burnDurationMs = body.burnDurationMs ?? qc.burnDurationMs;
+    const windowDurationMs = body.windowDurationMs ?? qc.windowDurationMs;
 
     const prefireTime = calculatePrefireTime(desiredStart, burnDurationMs, windowDurationMs);
     const timeline = buildPrefireTimeline(prefireTime, desiredStart, burnDurationMs, windowDurationMs);

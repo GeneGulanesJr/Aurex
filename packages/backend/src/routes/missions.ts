@@ -1,11 +1,11 @@
 // packages/backend/src/routes/missions.ts
 import type { FastifyInstance } from "fastify";
-import type { MissionConfig, QuotaWindow } from "@aurex/shared";
+import type { MissionConfig, QuotaWindow, QuotaConfig } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { MissionRunnerPool } from "../orchestrator/mission-runner-pool.js";
 import type { AgentLogger } from "../agents/agent-logger.js";
 import type { AppConfig } from "../config.js";
-import { checkQuota, resetWindow } from "../enforcement/quota-gate.js";
+import { checkQuota, resetWindow, getEffectiveProviderConfig } from "../enforcement/quota-gate.js";
 
 const defaultMissionConfig: Omit<MissionConfig, "modelHints"> = {
   workerTimeouts: { simple: 120000, build: 300000, testHeavy: 600000 },
@@ -64,19 +64,27 @@ export async function missionRoutes(
       return reply.status(400).send({ error: "description is required" });
     }
 
-    if (appConfig?.quotaEnabled) {
-      const quotaWindow = await lapis.getSetting<QuotaWindow>("quota_window");
+    const quotaConfig = await lapis.getSetting<QuotaConfig>("quota_config");
+    if (quotaConfig?.enabled) {
+      const allWindows = (await lapis.getSetting<Record<string, QuotaWindow>>("quota_windows")) ?? {};
       const now = new Date();
-      const quotaResult = checkQuota(quotaWindow, now);
-      if (quotaResult.reason === "window_expired" && quotaWindow) {
-        const reset = resetWindow(quotaWindow, now);
-        await lapis.setSetting("quota_window", reset);
-      } else if (!quotaResult.ok) {
-        return reply.status(429).send({
-          error: "quota_exhausted",
-          remainingMs: quotaResult.remainingWindowMs,
-          windowResetsAt: quotaResult.windowResetsAt,
-        });
+      for (const providerEntry of quotaConfig.providers) {
+        if (!providerEntry.tracked) continue;
+        const window = allWindows[providerEntry.providerId];
+        if (!window) continue;
+        const result = checkQuota(window, now);
+        if (result.reason === "window_expired") {
+          const reset = resetWindow(window, now);
+          allWindows[providerEntry.providerId] = reset;
+          await lapis.setSetting("quota_windows", allWindows);
+        } else if (!result.ok) {
+          return reply.status(429).send({
+            error: "quota_exhausted",
+            providerId: providerEntry.providerId,
+            remainingMs: result.remainingWindowMs,
+            windowResetsAt: result.windowResetsAt,
+          });
+        }
       }
     }
 

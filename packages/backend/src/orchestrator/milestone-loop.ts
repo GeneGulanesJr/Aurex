@@ -370,7 +370,7 @@ export function createMilestoneLoop(
             } catch (err) {
               if (err instanceof QuotaExhaustedError) {
                 const trigger: CheckpointTrigger = "quota_exhausted";
-                const summary = `Quota exhausted during rescope. Window resets at ${err.windowResetsAt}`;
+                const summary = `Quota exhausted during rescope for provider ${err.providerId}. Window resets at ${err.windowResetsAt}`;
                 callbacks.onEscalation(mission.id, { kind: "quota_exhausted", milestoneId: milestone.id, windowResetsAt: err.windowResetsAt } as EscalationTrigger, { summary });
                 return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
               }
