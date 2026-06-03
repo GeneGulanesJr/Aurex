@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { writeFile, unlink, mkdir } from "fs/promises";
+import { writeFile, unlink } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import type { BumblebeeScanResult, BumblebeeScanSummary, BumblebeeFinding, ExposureCatalog } from "@aurex/shared";
@@ -73,12 +73,17 @@ export function createBumblebeeRunner(config: BumblebeeRunnerConfig) {
 
     setImmediate(async () => {
       try {
+        const seenFindingIds = new Set<string>();
         const collectedFindings: BumblebeeFinding[] = [];
 
         const result = await config.bumblebee.scan(
           scanOptions,
           (progress) => {
             for (const finding of progress.findings) {
+              // Progress callback includes ALL accumulated findings on each
+              // invocation — skip ones we've already processed
+              if (seenFindingIds.has(finding.id)) continue;
+              seenFindingIds.add(finding.id);
               const enriched: BumblebeeFinding = { ...finding, scanId, missionId };
               collectedFindings.push(enriched);
               config.eventBus.emit({
@@ -118,11 +123,6 @@ export function createBumblebeeRunner(config: BumblebeeRunnerConfig) {
 
         await persistScan(completedScan);
 
-        // Clean up temp catalog file
-        if (catalogFile && !config.catalogPath) {
-          await unlink(catalogFile).catch(() => {});
-        }
-
         config.eventBus.emit({
           type: "scan_completed",
           missionId,
@@ -146,6 +146,10 @@ export function createBumblebeeRunner(config: BumblebeeRunnerConfig) {
         });
       } finally {
         ACTIVE_SCANS.delete(scanId);
+        // Clean up temp catalog file
+        if (catalogFile && !config.catalogPath) {
+          await unlink(catalogFile).catch(() => {});
+        }
       }
     });
 

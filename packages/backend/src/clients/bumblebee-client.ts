@@ -37,6 +37,47 @@ export function parseNdjsonLine(line: string): Record<string, unknown> | null {
   }
 }
 
+function processRecord(
+  record: Record<string, unknown>,
+  scanId: string,
+  packages: BumblebeePackage[],
+  findings: BumblebeeFinding[],
+): void {
+  if (record.record_type === "package") {
+    packages.push({
+      id: (record.record_id as string) || randomUUID(),
+      scanId,
+      ecosystem: (record.ecosystem as string) || "unknown",
+      packageName: (record.package_name as string) || "",
+      normalizedName: (record.normalized_name as string) || (record.package_name as string) || "",
+      version: (record.version as string) || "",
+      projectPath: record.project_path as string | undefined,
+      packageManager: record.package_manager as string | undefined,
+      sourceType: (record.source_type as string) || "",
+      sourceFile: (record.source_file as string) || "",
+      confidence: (record.confidence as "high" | "medium" | "low") || "low",
+    });
+  } else if (record.record_type === "finding") {
+    findings.push({
+      id: (record.record_id as string) || randomUUID(),
+      scanId,
+      missionId: "",
+      findingType: (record.finding_type as string) || "package_exposure",
+      severity: (record.severity as "critical" | "high" | "medium" | "low") || "medium",
+      catalogId: (record.catalog_id as string) || "",
+      catalogName: (record.catalog_name as string) || "",
+      ecosystem: (record.ecosystem as string) || "",
+      packageName: (record.package_name as string) || "",
+      normalizedName: (record.normalized_name as string) || (record.package_name as string) || "",
+      version: (record.version as string) || "",
+      sourceType: (record.source_type as string) || "",
+      sourceFile: (record.source_file as string) || "",
+      confidence: (record.confidence as "high" | "medium" | "low") || "low",
+      evidence: (record.evidence as string) || "",
+    });
+  }
+}
+
 export function createBumblebeeClient(): BumblebeeClient {
   return {
     async isAvailable() {
@@ -83,46 +124,17 @@ export function createBumblebeeClient(): BumblebeeClient {
         const findings: BumblebeeFinding[] = [];
         const scanId = options.scanId || randomUUID();
         let stderr = "";
+        let buffer = "";
 
         proc.stdout.on("data", (chunk: Buffer) => {
-          const lines = chunk.toString().split("\n");
+          buffer += chunk.toString();
+          const lines = buffer.split("\n");
+          // Keep the last (potentially partial) line in the buffer
+          buffer = lines.pop()!;
           for (const line of lines) {
             const record = parseNdjsonLine(line);
             if (!record) continue;
-
-            if (record.record_type === "package") {
-              packages.push({
-                id: (record.record_id as string) || randomUUID(),
-                scanId,
-                ecosystem: (record.ecosystem as string) || "unknown",
-                packageName: (record.package_name as string) || "",
-                normalizedName: (record.normalized_name as string) || (record.package_name as string) || "",
-                version: (record.version as string) || "",
-                projectPath: record.project_path as string | undefined,
-                packageManager: record.package_manager as string | undefined,
-                sourceType: (record.source_type as string) || "",
-                sourceFile: (record.source_file as string) || "",
-                confidence: (record.confidence as "high" | "medium" | "low") || "low",
-              });
-            } else if (record.record_type === "finding") {
-              findings.push({
-                id: (record.record_id as string) || randomUUID(),
-                scanId,
-                missionId: "",
-                findingType: (record.finding_type as string) || "package_exposure",
-                severity: (record.severity as "critical" | "high" | "medium" | "low") || "medium",
-                catalogId: (record.catalog_id as string) || "",
-                catalogName: (record.catalog_name as string) || "",
-                ecosystem: (record.ecosystem as string) || "",
-                packageName: (record.package_name as string) || "",
-                normalizedName: (record.normalized_name as string) || (record.package_name as string) || "",
-                version: (record.version as string) || "",
-                sourceType: (record.source_type as string) || "",
-                sourceFile: (record.source_file as string) || "",
-                confidence: (record.confidence as "high" | "medium" | "low") || "low",
-                evidence: (record.evidence as string) || "",
-              });
-            }
+            processRecord(record, scanId, packages, findings);
 
             onProgress?.({ packages: [...packages], findings: [...findings] });
           }
@@ -137,6 +149,14 @@ export function createBumblebeeClient(): BumblebeeClient {
 
         proc.on("close", (code) => {
           signal?.removeEventListener("abort", abortHandler);
+          // Drain any remaining buffered line
+          if (buffer.trim()) {
+            const record = parseNdjsonLine(buffer);
+            if (record) {
+              processRecord(record, scanId, packages, findings);
+              onProgress?.({ packages: [...packages], findings: [...findings] });
+            }
+          }
           if (code === 0 || (code !== null && packages.length > 0)) {
             resolve({ packages, findings });
           } else if (signal?.aborted) {
