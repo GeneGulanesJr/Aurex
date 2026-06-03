@@ -32,6 +32,7 @@ export interface MissionRunnerConfig {
   agentDir: string;
   repoRoot: string;
   gitMainBranch: string;
+  onPostMilestoneScan?: (missionId: string, root: string) => Promise<void>;
 }
 
 export function createMissionRunner(config: MissionRunnerConfig): MissionRunner {
@@ -124,7 +125,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
             eventBus.emit({ type: "mission_error", missionId: mId, code, message, workerId: opts?.workerId, milestoneId: opts?.milestoneId, recoverable: opts?.recoverable ?? false, details: opts?.details });
           },
         },
-        { agentDir, repoRoot: missionRepoRoot, gitMainBranch, eventBus, logger: config.logger, onCompression: (mId, trigger) => compression.run(mId, trigger) },
+        { agentDir, repoRoot: missionRepoRoot, gitMainBranch, eventBus, logger: config.logger, onCompression: (mId, trigger) => compression.run(mId, trigger), onPostMilestoneScan: config.onPostMilestoneScan },
       );
 
       const storedMilestones = await lapis.getMilestonesForMission(missionId);

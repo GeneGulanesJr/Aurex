@@ -3,9 +3,10 @@ import { animate, stagger } from "animejs";
 import { createPulse, createSpin, createIdle } from "../animations/agent-animations";
 import { staggerEntrance } from "../animations/stagger";
 import { animateProgress } from "../animations/counters";
-import type { Milestone, WorkingUnit, WsClientEvent, MilestoneStatus } from "@aurex/shared";
+import type { Milestone, WorkingUnit, WsClientEvent, MilestoneStatus, BumblebeeFinding, BumblebeeScanResult } from "@aurex/shared";
 import type { MissionError, AgentLogEntry } from "../hooks/useMission";
 import { CodeContextPanel } from "./CodeContextPanel";
+import { SupplyChainPanel } from "./SupplyChainPanel";
 
 interface MissionPipelineProps {
   mission: { id: string; description: string; status: string };
@@ -18,6 +19,11 @@ interface MissionPipelineProps {
   agentLogs: Record<string, AgentLogEntry[]>;
   eventStreamCount?: number;
   onRetry?: () => void;
+  scanFindings?: BumblebeeFinding[];
+  scanSummary?: { totalPackages: number; totalFindings: number; criticalCount: number; highCount: number; mediumCount: number; lowCount: number; ecosystems: string[] } | null;
+  isScanning?: boolean;
+  scans?: BumblebeeScanResult[];
+  onTriggerScan?: (profile?: "baseline" | "project" | "deep") => void;
 }
 
 const statusConfig: Record<string, { color: string; label: string; icon: string }> = {
@@ -48,7 +54,7 @@ const logEventColor: Record<string, string> = {
   aborted: "var(--text-muted)",
 };
 
-export function MissionPipeline({ mission, milestones, workers, cost, events, logs, errors, agentLogs, eventStreamCount = 8, onRetry }: MissionPipelineProps) {
+export function MissionPipeline({ mission, milestones, workers, cost, events, logs, errors, agentLogs, eventStreamCount = 8, onRetry, scanFindings = [], scanSummary = null, isScanning = false, scans = [], onTriggerScan }: MissionPipelineProps) {
   const pipelineRef = useRef<HTMLDivElement>(null);
   const prevMilestoneCountRef = useRef(0);
 
@@ -134,6 +140,14 @@ export function MissionPipeline({ mission, milestones, workers, cost, events, lo
         missionId={mission.id}
         logs={logs}
         milestones={milestones}
+      />
+
+      {/* Supply Chain Panel */}
+      <SupplyChainPanel
+        findings={scanFindings}
+        scans={scans}
+        isScanning={isScanning}
+        onTriggerScan={onTriggerScan}
       />
 
       {/* Milestone pipeline */}
@@ -617,6 +631,9 @@ function EventStream({ events, eventStreamCount = 8 }: { events: WsClientEvent[]
     mission_completed: "DONE",
     mission_error: "ERROR",
     agent_output: "OUTPUT",
+    scan_started: "SCAN",
+    scan_completed: "SCAN",
+    scan_finding: "FINDING",
   };
 
   const eventTypeColor: Record<string, string> = {
@@ -629,6 +646,9 @@ function EventStream({ events, eventStreamCount = 8 }: { events: WsClientEvent[]
     mission_completed: "var(--success)",
     mission_error: "var(--error)",
     agent_output: "var(--info)",
+    scan_started: "var(--accent)",
+    scan_completed: "var(--success)",
+    scan_finding: "var(--error)",
   };
 
   return (
@@ -676,5 +696,11 @@ function EventSummary({ event }: { event: WsClientEvent }) {
       return <>{event.code}: {event.message}</>;
     case "agent_output":
       return <>{event.agentId}: {event.message}</>;
+    case "scan_started":
+      return <>supply chain scan started ({event.profile})</>;
+    case "scan_completed":
+      return <>scan complete: {event.summary.totalFindings} findings, {event.summary.totalPackages} packages</>;
+    case "scan_finding":
+      return <>{event.finding.severity}: {event.finding.packageName}@{event.finding.version}</>;
   }
 }

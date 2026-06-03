@@ -12,6 +12,9 @@ import { registerGlobalAuth } from "./routes/auth.js";
 import { registerGitHubRoutes } from "./routes/github.js";
 import { registerPinyxRoutes } from "./routes/pinyx.js";
 import { registerCodeContextRoutes } from "./routes/code-context.js";
+import { createBumblebeeClient } from "./clients/bumblebee-client.js";
+import { createBumblebeeRunner } from "./orchestrator/bumblebee-runner.js";
+import { bumblebeeRoutes } from "./routes/bumblebee.js";
 
 async function main() {
   const config = loadConfig();
@@ -28,6 +31,14 @@ async function main() {
     process.exit(1);
   }
 
+  // Bumblebee supply-chain scanner
+  const bumblebeeClient = createBumblebeeClient();
+  const bumblebeeRunner = createBumblebeeRunner({
+    lapis,
+    bumblebee: bumblebeeClient,
+    eventBus,
+  });
+
   const pool = createMissionRunnerPool({
     lapis,
     eventBus,
@@ -36,6 +47,13 @@ async function main() {
     repoRoot: config.repoRoot,
     gitMainBranch: config.gitMainBranch,
     maxConcurrent: config.maxConcurrentMissions,
+    onPostMilestoneScan: async (missionId: string, root: string) => {
+      try {
+        await bumblebeeRunner.triggerScan(missionId, { profile: "project", root });
+      } catch (err) {
+        console.warn(`[bumblebee] Auto-scan failed for mission ${missionId}:`, err instanceof Error ? err.message : err);
+      }
+    },
   });
 
   try {
@@ -98,6 +116,9 @@ async function main() {
 
   // Code context proxy (summary, graph, hotspots)
   registerCodeContextRoutes(app, { lapis });
+
+  // Bumblebee routes
+  await app.register(bumblebeeRoutes, { lapis, bumblebeeClient, bumblebeeRunner });
 
   // Start
   try {

@@ -1,5 +1,5 @@
-import type { CheckpointDecision, CostSummary, Milestone, Mission, WorkingUnit, MissionStatus } from "@aurex/shared";
-import type { CreateMissionResponse, GetMissionResponse, CheckpointResponse, HealthResponse, AgentLogResponse } from "@aurex/shared";
+import type { CheckpointDecision, CostSummary, Milestone, Mission, WorkingUnit, MissionStatus, BumblebeeScanResult, BumblebeeFinding, ExposureCatalog } from "@aurex/shared";
+import type { CreateMissionResponse, GetMissionResponse, CheckpointResponse, HealthResponse, AgentLogResponse, TriggerScanResponse, ListScansResponse, GetScanResultsResponse, BumblebeeStatusResponse } from "@aurex/shared";
 
 export type CurrentMissionPayload = GetMissionResponse;
 
@@ -258,4 +258,52 @@ export async function getCodeHotspots(missionId: string): Promise<CodeHotspotsRe
   const res = await apiFetch(`/api/missions/${missionId}/code/hotspots`);
   if (!res.ok) throw new Error(`Failed to fetch code hotspots: ${res.status}`);
   return res.json() as Promise<CodeHotspotsResponse>;
+}
+
+// Bumblebee supply-chain scanner
+export async function getBumblebeeStatus(): Promise<BumblebeeStatusResponse> {
+  const res = await apiFetch("/api/bumblebee/status");
+  if (!res.ok) throw new Error(`Failed to fetch bumblebee status: ${res.status}`);
+  return res.json() as Promise<BumblebeeStatusResponse>;
+}
+
+export async function triggerScan(
+  missionId: string,
+  options?: { profile?: "baseline" | "project" | "deep"; ecosystems?: string[] },
+): Promise<TriggerScanResponse> {
+  const res = await apiFetch(`/api/missions/${missionId}/scans`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(options || {}),
+  });
+  if (!res.ok) throw new Error(`Failed to trigger scan: ${res.status}`);
+  return res.json() as Promise<TriggerScanResponse>;
+}
+
+export async function listScans(missionId: string): Promise<ListScansResponse> {
+  const res = await apiFetch(`/api/missions/${missionId}/scans`);
+  if (!res.ok) throw new Error(`Failed to list scans: ${res.status}`);
+  return res.json() as Promise<ListScansResponse>;
+}
+
+export async function getScanResults(missionId: string, scanId: string): Promise<GetScanResultsResponse> {
+  const res = await apiFetch(`/api/missions/${missionId}/scans/${scanId}`);
+  if (!res.ok) throw new Error(`Failed to get scan results: ${res.status}`);
+  return res.json() as Promise<GetScanResultsResponse>;
+}
+
+export async function getExposureCatalog(): Promise<{ catalog: ExposureCatalog | null }> {
+  const res = await apiFetch("/api/bumblebee/catalog");
+  if (!res.ok) throw new Error(`Failed to fetch exposure catalog: ${res.status}`);
+  return res.json() as Promise<{ catalog: ExposureCatalog | null }>;
+}
+
+export async function saveExposureCatalog(catalog: ExposureCatalog): Promise<{ saved: boolean }> {
+  const res = await apiFetch("/api/bumblebee/catalog", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(catalog),
+  });
+  if (!res.ok) throw new Error(`Failed to save exposure catalog: ${res.status}`);
+  return res.json() as Promise<{ saved: boolean }>;
 }

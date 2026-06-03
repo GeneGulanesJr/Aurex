@@ -1,5 +1,5 @@
 // packages/shared/src/rest.ts
-import type { Mission, Milestone, WorkingUnit, CostSummary } from "./types.js";
+import type { Mission, Milestone, WorkingUnit, CostSummary, BumblebeeScanResult, BumblebeeFinding, ExposureCatalog } from "./types.js";
 
 export interface CreateMissionRequest {
   description: string;
@@ -49,4 +49,36 @@ export interface AgentLogEntryResponse {
 
 export interface AgentLogResponse {
   logs: AgentLogEntryResponse[];
+}
+
+export interface TriggerScanRequest {
+  missionId: string;
+  profile?: "baseline" | "project" | "deep";
+  ecosystems?: string[];
+  exposureCatalogPath?: string;
+}
+
+export interface TriggerScanResponse {
+  scanId: string;
+  status: "running";
+}
+
+export interface GetScanResultsResponse {
+  scan: BumblebeeScanResult;
+  findings: BumblebeeFinding[];
+  packageCount: number;
+}
+
+export interface ListScansResponse {
+  scans: BumblebeeScanResult[];
+}
+
+export interface BumblebeeStatusResponse {
+  available: boolean;
+  version?: string;
+  path?: string;
+}
+
+export interface ExposureCatalogResponse {
+  catalog: ExposureCatalog | null;
 }

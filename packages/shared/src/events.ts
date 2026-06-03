@@ -1,6 +1,6 @@
 // packages/shared/src/events.ts
 import type { AgentType, AgentStatus, MilestoneStatus } from "./enums.js";
-import type { AttemptSummary, EscalationContext } from "./types.js";
+import type { AttemptSummary, EscalationContext, BumblebeeFinding, BumblebeeScanSummary } from "./types.js";
 
 export type AgentOutputEventType =
   | "spawned"
@@ -22,7 +22,10 @@ export type WsClientEvent =
   | { type: "mission_completed"; missionId: string; finalState: string }
   | { type: "mission_log"; missionId: string; phase: string; message: string; data?: Record<string, unknown> }
   | { type: "mission_error"; missionId: string; code: string; message: string; workerId?: string; milestoneId?: string; recoverable: boolean; details?: Record<string, unknown> }
-  | { type: "agent_output"; missionId: string; agentId: string; agentType: AgentType; eventType: AgentOutputEventType; message: string; timestamp: string; data?: Record<string, unknown> };
+  | { type: "agent_output"; missionId: string; agentId: string; agentType: AgentType; eventType: AgentOutputEventType; message: string; timestamp: string; data?: Record<string, unknown> }
+  | { type: "scan_started"; missionId: string; scanId: string; profile: string }
+  | { type: "scan_completed"; missionId: string; scanId: string; summary: BumblebeeScanSummary }
+  | { type: "scan_finding"; missionId: string; scanId: string; finding: BumblebeeFinding };
 
 export type StreamingChunk = {
   delta: string;

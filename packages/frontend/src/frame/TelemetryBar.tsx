@@ -6,6 +6,8 @@ interface TelemetryBarProps {
   cost: number;
   agentCount: number;
   wsConnected: boolean;
+  scanFindings?: number;
+  isScanning?: boolean;
 }
 
 const monoLabel: React.CSSProperties = {
@@ -15,7 +17,7 @@ const monoLabel: React.CSSProperties = {
   color: "var(--text-muted)",
 };
 
-export function TelemetryBar({ tokens, cost, agentCount, wsConnected }: TelemetryBarProps) {
+export function TelemetryBar({ tokens, cost, agentCount, wsConnected, scanFindings = 0, isScanning = false }: TelemetryBarProps) {
   const costRef = useRef<HTMLSpanElement>(null);
   const tokensRef = useRef<HTMLSpanElement>(null);
   const prevCostRef = useRef(cost);
@@ -57,6 +59,21 @@ export function TelemetryBar({ tokens, cost, agentCount, wsConnected }: Telemetr
         <span style={monoLabel}>
           AGENTS <span style={{ color: "var(--text-secondary)" }}>{agentCount}</span>
         </span>
+        {(isScanning || scanFindings > 0) && (
+          <span style={{ ...monoLabel, display: "flex", alignItems: "center", gap: "4px" }}>
+            <span
+              style={{
+                display: "inline-block",
+                width: "5px",
+                height: "5px",
+                borderRadius: "50%",
+                background: scanFindings > 0 ? "var(--error)" : "var(--accent)",
+                animation: isScanning ? "pulse 1.5s infinite" : "none",
+              }}
+            />
+            {isScanning ? "SCANNING" : `${scanFindings} FINDING${scanFindings !== 1 ? "S" : ""}`}
+          </span>
+        )}
       </div>
       <div style={{ display: "flex", gap: "20px", alignItems: "center" }}>
         <span style={{ ...monoLabel, display: "flex", alignItems: "center", gap: "4px" }}>

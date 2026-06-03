@@ -31,6 +31,7 @@ export interface MilestoneLoopConfig {
   eventBus: EventBus;
   logger?: AgentLogger;
   onCompression?: (missionId: string, trigger: CompressionTrigger) => Promise<void>;
+  onPostMilestoneScan?: (missionId: string, root: string) => Promise<void>;
 }
 
 export function createMilestoneLoop(
@@ -398,6 +399,15 @@ export function createMilestoneLoop(
             callbacks.onError(mission.id, "integration_failed", summary, { milestoneId: milestone.id, recoverable: false, details: { phase: "integration" } });
             callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary, phase: "integration" });
             return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
+          }
+
+          // Post-milestone supply-chain scan
+          if (loopConfig.onPostMilestoneScan) {
+            try {
+              await loopConfig.onPostMilestoneScan(mission.id, loopConfig.repoRoot);
+            } catch (err) {
+              console.warn(`[bumblebee] Post-milestone scan failed for mission ${mission.id}:`, err instanceof Error ? err.message : err);
+            }
           }
 
           // Human must approve the release before merging to main

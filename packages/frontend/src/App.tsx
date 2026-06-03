@@ -10,6 +10,7 @@ import { useNotifications } from "./hooks/useNotifications";
 import { useTabBadge } from "./hooks/useTabBadge";
 import { useSettings } from "./hooks/useSettings";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
+import { useSupplyChain } from "./hooks/useSupplyChain";
 import { MissionSidebar } from "./active/MissionSidebar";
 import { StatusBoard } from "./passive/StatusBoard";
 import { EscalationOverlay } from "./active/EscalationOverlay";
@@ -30,6 +31,7 @@ export function App() {
   const { settings, setSettings, resetSettings } = useSettings();
   const { state: missionsState, selectMission, removeMission, addOptimisticMission, markMissionRestarted, handleWsEvent: missionsWsHandler } = useMissions();
   const { state, dispatch, handleWsEvent: missionWsHandler } = useMission(missionsState.selectedMissionId);
+  const { state: supplyChainState, triggerScan: triggerSupplyChainScan, handleWsEvent: supplyChainWsHandler } = useSupplyChain(missionsState.selectedMissionId);
   const eventsRef = useRef<WsClientEvent[]>([]);
 
   const bp = useBreakpoint();
@@ -61,11 +63,12 @@ export function App() {
   const combinedHandler = useCallback((event: WsClientEvent) => {
     missionsWsHandler(event);
     missionWsHandler(event);
+    supplyChainWsHandler(event);
     eventsRef.current = [...eventsRef.current.slice(-49), event];
     if (event.type === "escalation" || event.type === "mission_completed") {
       setLatestNotifEvent(event);
     }
-  }, [missionsWsHandler, missionWsHandler]);
+  }, [missionsWsHandler, missionWsHandler, supplyChainWsHandler]);
 
   const { connected } = useWebSocket(combinedHandler, {
     missionId: missionsState.selectedMissionId,
@@ -231,6 +234,10 @@ export function App() {
             onExampleClick={handleCreateMission}
             onRetryMission={handleRetryMission}
             onDismissErrors={() => dispatch({ type: "CLEAR_ERRORS" })}
+            scanFindings={state.scanFindings}
+            isScanning={state.isScanning}
+            scans={supplyChainState.scans}
+            onTriggerScan={triggerSupplyChainScan}
           />
         </main>
         <div style={{ gridColumn: "1 / -1" }}>
@@ -239,6 +246,8 @@ export function App() {
             cost={state.cost?.totalCost ?? 0}
             agentCount={state.activeWorkers.length}
             wsConnected={connected}
+            scanFindings={state.scanFindings.length}
+            isScanning={state.isScanning}
           />
         </div>
       </div>
