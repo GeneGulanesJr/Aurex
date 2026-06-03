@@ -18,10 +18,10 @@ export function createNegotiator(lapis: LaPisClient) {
       maxRetries: number,
       maxRescopes: number,
     ): Promise<NegotiateResult> {
-      const verdicts: ValidationVerdict[] = await lapis.getVerdicts(milestoneId);
+      const verdicts: ValidationVerdict[] = await lapis.getVerdicts(milestoneId).catch(() => [] as ValidationVerdict[]);
 
       // Verify creator sessions — skip verdicts without sessionId, discard invalid sessions
-      const sessions = await lapis.getSessionsForMilestone(milestoneId);
+      const sessions = await lapis.getSessionsForMilestone(milestoneId).catch(() => [] as any[]);
       const validVerdicts = verdicts.filter((v) => {
         if (!v.sessionId) return true; // Legacy verdicts without session tracking
         const expectedType = (v.validatorType ?? "validator_scrutiny") as AgentType;

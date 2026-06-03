@@ -133,7 +133,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
       // (Avoids GET /missions/:id/milestones which may not exist in LaPis.)
       const contractLookup = new Map<string, string>();
       for (const ms of planResult.milestones) {
-        const contracts = await lapis.getContractHistory(ms.id);
+        const contracts = await lapis.getContractHistory(ms.id).catch(() => [] as any[]);
         const latest = contracts.reduce(
           (a: any, b: any) => ((b as any).version > (a as any).version ? b : a),
           contracts[0],
