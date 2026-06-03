@@ -128,9 +128,11 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         { agentDir, repoRoot: missionRepoRoot, gitMainBranch, eventBus, logger: config.logger, onCompression: (mId, trigger) => compression.run(mId, trigger), onPostMilestoneScan: config.onPostMilestoneScan },
       );
 
-      const storedMilestones = await lapis.getMilestonesForMission(missionId);
+      // Use milestones from the plan result directly — they were just created
+      // in LaPis by the planner, so we already have their IDs and titles.
+      // (Avoids GET /missions/:id/milestones which may not exist in LaPis.)
       const contractLookup = new Map<string, string>();
-      for (const ms of storedMilestones) {
+      for (const ms of planResult.milestones) {
         const contracts = await lapis.getContractHistory(ms.id);
         const latest = contracts.reduce(
           (a: any, b: any) => ((b as any).version > (a as any).version ? b : a),
@@ -138,12 +140,12 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         );
         if (latest) contractLookup.set(ms.id, (latest as any).id);
       }
-      const plannedMilestones: Milestone[] = storedMilestones.map((ms) => ({
+      const plannedMilestones: Milestone[] = planResult.milestones.map((ms, i) => ({
         id: ms.id,
         missionId,
         title: ms.title,
-        description: ms.description,
-        orderIndex: ms.orderIndex,
+        description: ms.title,
+        orderIndex: i,
         status: "planned" as const,
         validationContractId: contractLookup.get(ms.id) ?? "",
       }));
