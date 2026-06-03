@@ -23,6 +23,8 @@ export async function missionRoutes(
 ) {
   async function hydrateMissionPayload(missionId: string) {
     const mission = await lapis.getMission(missionId);
+    // GET /missions/:id/milestones may not exist in all LaPis versions,
+    // so fall back to empty — the frontend receives milestones via WS events.
     const [milestones, cost] = await Promise.all([
       lapis.getMilestonesForMission(missionId).catch(() => [] as import("@aurex/shared").Milestone[]),
       lapis.getMissionCost(missionId).catch(() => ({ totalCost: 0, totalTokens: 0, entries: 0 })),
