@@ -10,6 +10,7 @@ import {
   buildPrefireTimeline,
   resetWindow,
   createQuotaWindow,
+  validateQuotaDurations,
   DEFAULT_WINDOW_DURATION_MS,
   DEFAULT_BURN_DURATION_MS,
 } from "../enforcement/quota-gate.js";
@@ -18,10 +19,31 @@ import type { AppConfig } from "../config.js";
 const QUOTA_CONFIG_KEY = "quota_config";
 const QUOTA_WINDOWS_KEY = "quota_windows";
 
+function createProviderMutex() {
+  const locks = new Map<string, Promise<void>>();
+
+  async function acquire(providerId: string): Promise<() => void> {
+    while (locks.has(providerId)) {
+      await locks.get(providerId);
+    }
+    let release: () => void;
+    const p = new Promise<void>((resolve) => { release = resolve; });
+    locks.set(providerId, p);
+    return () => {
+      locks.delete(providerId);
+      release!();
+    };
+  }
+
+  return { acquire };
+}
+
 export async function quotaRoutes(
   app: FastifyInstance,
   { lapis, config }: { lapis: LaPisClient; config: AppConfig },
 ) {
+  const mutex = createProviderMutex();
+
   async function loadQuotaConfig(): Promise<QuotaConfig> {
     const saved = await lapis.getSetting<QuotaConfig>(QUOTA_CONFIG_KEY);
     if (saved) return saved;
@@ -45,6 +67,15 @@ export async function quotaRoutes(
     await lapis.setSetting(QUOTA_WINDOWS_KEY, windows);
   }
 
+  async function withProviderLock<T>(providerId: string, fn: () => Promise<T>): Promise<T> {
+    const release = await mutex.acquire(providerId);
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  }
+
   async function loadProviderWindow(providerId: string): Promise<QuotaWindow | null> {
     const all = await loadAllWindows();
     return all[providerId] ?? null;
@@ -56,12 +87,13 @@ export async function quotaRoutes(
     await saveAllWindows(all);
   }
 
-  async function ensureProviderWindow(providerId: string, windowDurationMs: number, burnDurationMs: number): Promise<QuotaWindow> {
-    const existing = await loadProviderWindow(providerId);
-    if (existing) return existing;
-    const w = createQuotaWindow({ windowDurationMs, burnDurationMs });
-    await saveProviderWindow(providerId, w);
-    return w;
+  async function atomicUpdateProviderWindow(providerId: string, updater: (current: QuotaWindow | null) => Promise<QuotaWindow>): Promise<QuotaWindow> {
+    return withProviderLock(providerId, async () => {
+      const current = await loadProviderWindow(providerId);
+      const updated = await updater(current);
+      await saveProviderWindow(providerId, updated);
+      return updated;
+    });
   }
 
   app.get("/api/quota", async () => {
@@ -82,8 +114,12 @@ export async function quotaRoutes(
       if (qc.enabled && providerConfig.tracked && window) {
         const result = checkQuota(window, now);
         if (result.reason === "window_expired") {
-          window = resetWindow(window, now);
-          await saveProviderWindow(providerId, window);
+          window = await atomicUpdateProviderWindow(providerId, async (current) => {
+            if (!current) return resetWindow(createQuotaWindow(), now);
+            const recheck = checkQuota(current, now);
+            if (recheck.reason === "window_expired") return resetWindow(current, now);
+            return current;
+          });
         }
       }
 
@@ -103,6 +139,27 @@ export async function quotaRoutes(
 
   app.post("/api/quota/config", async (request, reply) => {
     const body = (request.body ?? {}) as QuotaConfigUpdateRequest;
+
+    if (body.windowDurationMs !== undefined && !validateQuotaDurations(body.windowDurationMs, body.burnDurationMs ?? (await loadQuotaConfig()).burnDurationMs)) {
+      return reply.status(400).send({ error: "windowDurationMs and burnDurationMs must be positive and burn <= window" });
+    }
+    if (body.burnDurationMs !== undefined && !validateQuotaDurations(body.windowDurationMs ?? (await loadQuotaConfig()).windowDurationMs, body.burnDurationMs)) {
+      return reply.status(400).send({ error: "windowDurationMs and burnDurationMs must be positive and burn <= window" });
+    }
+    if (body.providers !== undefined) {
+      for (const p of body.providers) {
+        if (!p.providerId || typeof p.providerId !== "string") {
+          return reply.status(400).send({ error: "Each provider must have a non-empty providerId" });
+        }
+        if (p.windowDurationMs !== undefined && p.windowDurationMs <= 0) {
+          return reply.status(400).send({ error: `Provider ${p.providerId} windowDurationMs must be positive` });
+        }
+        if (p.burnDurationMs !== undefined && p.burnDurationMs <= 0) {
+          return reply.status(400).send({ error: `Provider ${p.providerId} burnDurationMs must be positive` });
+        }
+      }
+    }
+
     const qc = await loadQuotaConfig();
 
     if (body.enabled !== undefined) qc.enabled = body.enabled;
@@ -129,10 +186,14 @@ export async function quotaRoutes(
     const windowDurationMs = body.windowDurationMs ?? providerConfig.windowDurationMs;
     const burnDurationMs = body.burnDurationMs ?? providerConfig.burnDurationMs;
 
+    if (!validateQuotaDurations(windowDurationMs, burnDurationMs)) {
+      return reply.status(400).send({ error: "windowDurationMs and burnDurationMs must be positive and burn <= window" });
+    }
+
     const now = new Date();
-    const current = await loadProviderWindow(providerId);
-    const window = prefireWindow(current, now, { windowDurationMs, burnDurationMs });
-    await saveProviderWindow(providerId, window);
+    const window = await atomicUpdateProviderWindow(providerId, async (current) => {
+      return prefireWindow(current, now, { windowDurationMs, burnDurationMs });
+    });
 
     const windowEnd = new Date(new Date(window.windowStart).getTime() + window.windowDurationMs);
     const response: PrefireResponse = {
@@ -150,28 +211,35 @@ export async function quotaRoutes(
     const qc = await loadQuotaConfig();
     const providerId = body.providerId ?? "default";
     const providerConfig = getEffectiveProviderConfig(qc, providerId);
-
-    const current = await loadProviderWindow(providerId);
     const now = new Date();
-    const window = resetWindow(current ?? {
-      windowStart: now.toISOString(),
-      windowDurationMs: providerConfig.windowDurationMs,
-      burnDurationMs: providerConfig.burnDurationMs,
-      firstLLMCallAt: null,
-      isActive: false,
-      lastActiveAt: null,
-    }, now);
 
-    await saveProviderWindow(providerId, window);
+    const window = await atomicUpdateProviderWindow(providerId, async (current) => {
+      return resetWindow(current ?? {
+        windowStart: now.toISOString(),
+        windowDurationMs: providerConfig.windowDurationMs,
+        burnDurationMs: providerConfig.burnDurationMs,
+        firstLLMCallAt: null,
+        isActive: false,
+        lastActiveAt: null,
+      }, now);
+    });
+
     return getProviderStatusDisplay(providerId, providerConfig, window, qc.enabled, now);
   });
 
-  app.post("/api/quota/calculate-prefire", async (request) => {
+  app.post("/api/quota/calculate-prefire", async (request, reply) => {
     const body = request.body as CalculatePrefireRequest;
     const desiredStart = new Date(body.desiredStartTime);
+    if (isNaN(desiredStart.getTime())) {
+      return reply.status(400).send({ error: "Invalid desiredStartTime" });
+    }
     const qc = await loadQuotaConfig();
     const burnDurationMs = body.burnDurationMs ?? qc.burnDurationMs;
     const windowDurationMs = body.windowDurationMs ?? qc.windowDurationMs;
+
+    if (!validateQuotaDurations(windowDurationMs, burnDurationMs)) {
+      return reply.status(400).send({ error: "windowDurationMs and burnDurationMs must be positive and burn <= window" });
+    }
 
     const prefireTime = calculatePrefireTime(desiredStart, burnDurationMs, windowDurationMs);
     const timeline = buildPrefireTimeline(prefireTime, desiredStart, burnDurationMs, windowDurationMs);

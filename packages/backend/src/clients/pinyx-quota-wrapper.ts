@@ -18,7 +18,28 @@ export interface QuotaAwarePinyxOpts {
   saveQuotaWindow: (providerId: string, w: QuotaWindow) => Promise<void>;
 }
 
+function createProviderMutex() {
+  const locks = new Map<string, Promise<void>>();
+
+  async function acquire(providerId: string): Promise<() => void> {
+    while (locks.has(providerId)) {
+      await locks.get(providerId);
+    }
+    let release: () => void;
+    const p = new Promise<void>((resolve) => { release = resolve; });
+    locks.set(providerId, p);
+    return () => {
+      locks.delete(providerId);
+      release!();
+    };
+  }
+
+  return { acquire };
+}
+
 export function createQuotaAwarePinyxClient(inner: PinyxClient, opts: QuotaAwarePinyxOpts): PinyxClient {
+  const mutex = createProviderMutex();
+
   async function enforceAndTrack(model: string): Promise<void> {
     const providerId = extractProviderIdFromModel(model);
     const config = await opts.getQuotaConfig();
@@ -28,17 +49,22 @@ export function createQuotaAwarePinyxClient(inner: PinyxClient, opts: QuotaAware
     const providerConfig = getEffectiveProviderConfig(config, providerId);
     if (!providerConfig.tracked) return;
 
-    const window = await opts.getQuotaWindow(providerId);
-    const now = new Date();
-    const result = checkQuota(window, now);
+    const release = await mutex.acquire(providerId);
+    try {
+      const window = await opts.getQuotaWindow(providerId);
+      const now = new Date();
+      const result = checkQuota(window, now);
 
-    if (!result.ok && result.reason === "quota_exhausted") {
-      throw new QuotaExhaustedError(providerId, result.windowResetsAt ?? new Date().toISOString());
-    }
+      if (!result.ok && result.reason === "quota_exhausted") {
+        throw new QuotaExhaustedError(providerId, result.windowResetsAt ?? new Date().toISOString());
+      }
 
-    if (window && window.firstLLMCallAt === null) {
-      const updated = recordFirstLLMCall(window, now);
-      await opts.saveQuotaWindow(providerId, updated);
+      if (window && window.firstLLMCallAt === null) {
+        const updated = recordFirstLLMCall(window, now);
+        await opts.saveQuotaWindow(providerId, updated);
+      }
+    } finally {
+      release();
     }
   }
 

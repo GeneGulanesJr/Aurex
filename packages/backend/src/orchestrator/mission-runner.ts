@@ -77,6 +77,10 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
   }
 
   async function runMission(missionId: string): Promise<void> {
+    let loop: ReturnType<typeof createMilestoneLoop> | null = null;
+    let currentMilestones: Milestone[] = [];
+    let costCapApproved = false;
+
     try {
       setStatus("planning", missionId);
       const pinyx = await resolvePinyx();
@@ -84,8 +88,6 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
       eventBus.emit({ type: "mission_log", missionId, phase: "setup", message: `Resolving repo for mission: ${mission.description.slice(0, 80)}…` });
       const { repoPath: missionRepoRoot } = await prepareRepoForMission({ lapis, parentRepoRoot: repoRoot, cloneUrl: mission.configJson.cloneUrl });
       eventBus.emit({ type: "mission_log", missionId, phase: "planning", message: `Calling ${mission.configJson.modelHints.orchestrator} to plan milestones…` });
-      // Resolve model: prefer stored hint, but verify it exists in PiNyx.
-      // If not found (e.g. kilo/kilo-auto/free with only Z.AI key), discover a working one.
       let model = mission.configJson.modelHints.orchestrator || "kilo/kilo-auto/free";
       try {
         const saved = await lapis.getSetting<{ endpoint: string }>("pinyx_config");
@@ -110,7 +112,6 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
       eventBus.emit({ type: "mission_log", missionId, phase: "planning", message: `Calling ${model} to plan milestones…` });
       const planner = createPlanner(lapis, pinyx, { model, eventBus, missionId });
 
-      // Index repo before planning so the planner has code context
       try {
         const repoName = path.basename(missionRepoRoot);
         eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexing repo ${repoName} for code context…` });
@@ -119,7 +120,6 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
           eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexing warning: ${indexResult.error}` });
         } else {
           eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexed ${indexResult.files ?? 0} files, ${indexResult.symbols ?? 0} symbols`, data: { indexingDone: true, files: indexResult.files ?? 0, symbols: indexResult.symbols ?? 0, edges: (indexResult as any).import_edges ?? 0 } });
-          // Store repo name for code context proxy
           await lapis.setSetting(`mission:${missionId}:repoName`, repoName);
         }
       } catch (err) {
@@ -139,7 +139,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
       await lapis.updateMissionStatus(missionId, "running");
       setStatus("executing", missionId);
 
-      const loop = createMilestoneLoop(
+      loop = createMilestoneLoop(
         lapis,
         pinyx,
         {
@@ -168,9 +168,6 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         { agentDir, repoRoot: missionRepoRoot, gitMainBranch, eventBus, logger: config.logger, onCompression: (mId, trigger) => compression.run(mId, trigger), onPostMilestoneScan: config.onPostMilestoneScan },
       );
 
-      // Use milestones from the plan result directly — they were just created
-      // in LaPis by the planner, so we already have their IDs and titles.
-      // (Avoids GET /missions/:id/milestones which may not exist in LaPis.)
       const contractLookup = new Map<string, string>();
       for (const ms of planResult.milestones) {
         const contracts = await lapis.getContractHistory(ms.id).catch(() => [] as any[]);
@@ -180,7 +177,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         );
         if (latest) contractLookup.set(ms.id, (latest as any).id);
       }
-      const plannedMilestones: Milestone[] = planResult.milestones.map((ms, i) => ({
+      currentMilestones = planResult.milestones.map((ms, i) => ({
         id: ms.id,
         missionId,
         title: ms.title,
@@ -190,9 +187,6 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         validationContractId: contractLookup.get(ms.id) ?? "",
       }));
 
-      // Run milestone loop — handles checkpoint_needed by re-running
-      let currentMilestones = plannedMilestones;
-      let costCapApproved = false;
       let refreshedMission = await lapis.getMission(missionId);
       let loopResult = await loop.run(refreshedMission, currentMilestones, abortController?.signal);
 
@@ -232,8 +226,6 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
 
         const cpResult = loopResult as { status: "checkpoint_needed"; trigger: CheckpointTrigger; milestoneId: string; summary: string };
 
-        // For milestone_complete: mark the milestone done, then continue.
-        // For cost_cap_exceeded: approval means continue this mission run over budget.
         if (cpResult.trigger === "milestone_complete") {
           await lapis.updateMilestoneStatus(cpResult.milestoneId, "completed");
           currentMilestones = currentMilestones.map((ms) =>
@@ -247,7 +239,6 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         await lapis.updateMissionStatus(missionId, "running");
         setStatus("executing", missionId);
 
-        // Re-run loop with updated milestones (completed ones are skipped)
         const baseMission = await lapis.getMission(missionId);
         const nextMission = costCapApproved
           ? { ...baseMission, configJson: { ...baseMission.configJson, costCap: 0 } }
@@ -282,17 +273,17 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         });
 
         eventBus.emit({
-          type: "quota_exhausted" as any,
+          type: "quota_exhausted",
           providerId: error.providerId,
           windowResetsAt: error.windowResetsAt,
-        } as any);
+        });
 
         eventBus.emit({
           type: "escalation",
           missionId,
           checkpointId,
-          trigger: { kind: "quota_exhausted", milestoneId: currentMilestoneId, windowResetsAt: error.windowResetsAt } as EscalationTrigger,
-          context: { summary: `Quota exhausted for provider ${error.providerId}. Window resets at ${error.windowResetsAt}` } as EscalationContext,
+          trigger: { kind: "quota_exhausted", milestoneId: currentMilestoneId, windowResetsAt: error.windowResetsAt },
+          context: { summary: `Quota exhausted for provider ${error.providerId}. Window resets at ${error.windowResetsAt}` },
         });
 
         const resolved = await checkpointManager.waitForResolution(checkpointId);
@@ -313,15 +304,87 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
 
         await lapis.updateMissionStatus(missionId, "running");
         setStatus("executing", missionId);
-        void runMission(missionId);
-        return;
-      }
 
-      console.error(`[runner] Mission ${missionId} failed:`, error instanceof Error ? error.message : error);
-      const msg = error instanceof Error ? error.message : String(error);
-      eventBus.emit({ type: "mission_error", missionId, code: "mission_crash", message: `Mission crashed: ${msg}`, recoverable: false });
-      await lapis.updateMissionStatus(missionId, "failed").catch(() => {});
-      setStatus("failed", missionId);
+        if (loop && currentMilestones.length > 0) {
+          const refreshedMission = await lapis.getMission(missionId);
+          const nextMission = costCapApproved
+            ? { ...refreshedMission, configJson: { ...refreshedMission.configJson, costCap: 0 } }
+            : refreshedMission;
+          let loopResult = await loop.run(nextMission, currentMilestones, abortController?.signal);
+
+          while (loopResult.status === "checkpoint_needed") {
+            if (abortController?.signal.aborted) {
+              await lapis.updateMissionStatus(missionId, "aborted");
+              setStatus("failed", missionId);
+              return;
+            }
+
+            setStatus("waiting_checkpoint", missionId);
+            await lapis.updateMissionStatus(missionId, "paused");
+
+            const cpId = await checkpointManager.create({
+              missionId,
+              trigger: loopResult.trigger,
+              milestoneId: loopResult.milestoneId,
+              summary: loopResult.summary,
+            });
+
+            eventBus.emit({
+              type: "escalation",
+              missionId,
+              checkpointId: cpId,
+              trigger: { kind: loopResult.trigger, milestoneId: loopResult.milestoneId } as EscalationTrigger,
+              context: { summary: loopResult.summary } as EscalationContext,
+            });
+
+            const cpResolved = await checkpointManager.waitForResolution(cpId);
+            const cpDecision = cpResolved.decision as CheckpointDecision | undefined;
+
+            if (cpDecision === "reject" || cpDecision === "rescope") {
+              await lapis.updateMissionStatus(missionId, cpDecision === "reject" ? "aborted" : "failed");
+              setStatus("failed", missionId);
+              return;
+            }
+
+            const cp = loopResult as { status: "checkpoint_needed"; trigger: CheckpointTrigger; milestoneId: string; summary: string };
+
+            if (cp.trigger === "milestone_complete") {
+              await lapis.updateMilestoneStatus(cp.milestoneId, "completed");
+              currentMilestones = currentMilestones.map((ms) =>
+                ms.id === cp.milestoneId ? { ...ms, status: "completed" as const } : ms,
+              );
+            }
+            if (cp.trigger === "cost_cap_exceeded") costCapApproved = true;
+
+            await lapis.updateMissionStatus(missionId, "running");
+            setStatus("executing", missionId);
+
+            const baseMission = await lapis.getMission(missionId);
+            const next = costCapApproved
+              ? { ...baseMission, configJson: { ...baseMission.configJson, costCap: 0 } }
+              : baseMission;
+            loopResult = await loop.run(next, currentMilestones, abortController?.signal);
+          }
+
+          if (loopResult.status === "failed") {
+            await lapis.updateMissionStatus(missionId, "failed");
+            setStatus("failed", missionId);
+            return;
+          }
+
+          await lapis.updateMissionStatus(missionId, "completed");
+          setStatus("completed", missionId);
+        } else {
+          void runMission(missionId);
+          return;
+        }
+      } else {
+        console.error(`[runner] Mission ${missionId} failed:`, error instanceof Error ? error.message : error);
+        const msg = error instanceof Error ? error.message : String(error);
+        eventBus.emit({ type: "mission_error", missionId, code: "mission_crash", message: `Mission crashed: ${msg}`, recoverable: false });
+        await lapis.updateMissionStatus(missionId, "failed").catch(() => {});
+        setStatus("failed", missionId);
+      }
     } finally {
       completeWaiters();
     }

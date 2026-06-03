@@ -25,6 +25,12 @@ export interface QuotaStatusDisplay {
 export const DEFAULT_WINDOW_DURATION_MS = 5 * 60 * 60 * 1000;
 export const DEFAULT_BURN_DURATION_MS = 60 * 60 * 1000;
 
+export function validateQuotaDurations(windowDurationMs: number, burnDurationMs: number): boolean {
+  return Number.isFinite(windowDurationMs) && windowDurationMs > 0
+    && Number.isFinite(burnDurationMs) && burnDurationMs > 0
+    && burnDurationMs <= windowDurationMs;
+}
+
 export function createQuotaWindow(opts?: {
   windowDurationMs?: number;
   burnDurationMs?: number;
@@ -201,7 +207,9 @@ export function calculatePrefireTime(
   burnDurationMs: number,
   windowDurationMs: number,
 ): Date {
-  return new Date(desiredStart.getTime() + burnDurationMs - windowDurationMs);
+  const offset = burnDurationMs - windowDurationMs;
+  if (offset >= 0) return new Date(desiredStart.getTime());
+  return new Date(desiredStart.getTime() + offset);
 }
 
 export function buildPrefireTimeline(
