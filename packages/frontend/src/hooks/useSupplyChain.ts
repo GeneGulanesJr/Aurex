@@ -62,7 +62,9 @@ export function useSupplyChain(missionId: string | null) {
     try {
       const { scans } = await listScans(missionId);
       dispatch({ type: "SET_SCANS", scans });
-    } catch {}
+    } catch (err) {
+      dispatch({ type: "SET_ERROR", error: err instanceof Error ? err.message : "Failed to load scans" });
+    }
   }, [missionId]);
 
   const handleTriggerScan = useCallback(async (profile?: "baseline" | "project" | "deep", ecosystems?: string[]) => {

@@ -253,6 +253,7 @@ export interface BumblebeeScanResult {
   startedAt: string;
   completedAt?: string;
   summary?: BumblebeeScanSummary;
+  findings?: BumblebeeFinding[];
 }
 
 export interface BumblebeeScanSummary {
@@ -298,7 +299,7 @@ export interface BumblebeeFinding {
 }
 
 export interface ExposureCatalog {
-  schemaVersion: string;
+  schema_version: string;
   entries: ExposureCatalogEntry[];
 }
 

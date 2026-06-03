@@ -8,6 +8,7 @@ export interface BumblebeeScanOptions {
   ecosystems?: string[];
   exposureCatalog?: string;
   maxDuration?: string;
+  scanId?: string;
 }
 
 export interface BumblebeeScanProgress {
@@ -80,7 +81,7 @@ export function createBumblebeeClient(): BumblebeeClient {
         const proc = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
         const packages: BumblebeePackage[] = [];
         const findings: BumblebeeFinding[] = [];
-        const scanId = randomUUID();
+        const scanId = options.scanId || randomUUID();
         let stderr = "";
 
         proc.stdout.on("data", (chunk: Buffer) => {

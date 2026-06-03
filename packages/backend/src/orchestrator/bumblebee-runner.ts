@@ -1,5 +1,8 @@
 import { randomUUID } from "crypto";
-import type { BumblebeeScanResult, BumblebeeScanSummary, BumblebeeFinding } from "@aurex/shared";
+import { writeFile, unlink, mkdir } from "fs/promises";
+import { join } from "path";
+import { tmpdir } from "os";
+import type { BumblebeeScanResult, BumblebeeScanSummary, BumblebeeFinding, ExposureCatalog } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { BumblebeeClient, BumblebeeScanOptions } from "../clients/bumblebee-client.js";
 import type { EventBus } from "../ws/events.js";
@@ -50,20 +53,34 @@ export function createBumblebeeRunner(config: BumblebeeRunnerConfig) {
     const abortController = new AbortController();
     ACTIVE_SCANS.set(scanId, abortController);
 
+    // Resolve catalog file: if not configured, check KV store and write to temp
+    let catalogFile = config.catalogPath;
+    if (!catalogFile) {
+      const storedCatalog = await config.lapis.getSetting<ExposureCatalog>("bumblebee_catalog");
+      if (storedCatalog?.entries?.length) {
+        catalogFile = join(tmpdir(), `bumblebee-catalog-${scanId}.json`);
+        await writeFile(catalogFile, JSON.stringify(storedCatalog), "utf-8");
+      }
+    }
+
     const scanOptions: BumblebeeScanOptions = {
       root,
       profile,
       ecosystems: options.ecosystems,
-      exposureCatalog: config.catalogPath,
+      exposureCatalog: catalogFile || undefined,
+      scanId,
     };
 
     setImmediate(async () => {
       try {
+        const collectedFindings: BumblebeeFinding[] = [];
+
         const result = await config.bumblebee.scan(
           scanOptions,
           (progress) => {
             for (const finding of progress.findings) {
               const enriched: BumblebeeFinding = { ...finding, scanId, missionId };
+              collectedFindings.push(enriched);
               config.eventBus.emit({
                 type: "scan_finding",
                 missionId,
@@ -96,9 +113,15 @@ export function createBumblebeeRunner(config: BumblebeeRunnerConfig) {
           status: "completed",
           completedAt: new Date().toISOString(),
           summary,
+          findings: collectedFindings.length > 0 ? collectedFindings : undefined,
         };
 
         await persistScan(completedScan);
+
+        // Clean up temp catalog file
+        if (catalogFile && !config.catalogPath) {
+          await unlink(catalogFile).catch(() => {});
+        }
 
         config.eventBus.emit({
           type: "scan_completed",

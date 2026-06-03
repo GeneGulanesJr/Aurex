@@ -42,7 +42,7 @@ export async function bumblebeeRoutes(app: FastifyInstance, deps: BumblebeeRoute
     if (!scan) {
       return reply.code(404).send({ error: "Scan not found" });
     }
-    return { scan, findings: [], packageCount: scan.summary?.totalPackages ?? 0 };
+    return { scan, findings: scan.findings ?? [], packageCount: scan.summary?.totalPackages ?? 0 };
   });
 
   app.get("/api/bumblebee/catalog", async () => {
@@ -50,10 +50,10 @@ export async function bumblebeeRoutes(app: FastifyInstance, deps: BumblebeeRoute
     return { catalog };
   });
 
-  app.post("/api/bumblebee/catalog", async (req: FastifyRequest<{ Body: { schemaVersion: string; entries: Array<{ id: string; name: string; ecosystem: string; package: string; versions: string[]; severity: "critical" | "high" | "medium" | "low" }> } }>, reply: FastifyReply) => {
+  app.post("/api/bumblebee/catalog", async (req: FastifyRequest<{ Body: { schema_version: string; entries: Array<{ id: string; name: string; ecosystem: string; package: string; versions: string[]; severity: "critical" | "high" | "medium" | "low" }> } }>, reply: FastifyReply) => {
     const catalog = req.body;
-    if (!catalog.schemaVersion || !Array.isArray(catalog.entries)) {
-      return reply.code(400).send({ error: "Invalid catalog format. Requires schemaVersion and entries." });
+    if (!catalog.schema_version || !Array.isArray(catalog.entries)) {
+      return reply.code(400).send({ error: "Invalid catalog format. Requires schema_version and entries." });
     }
     await lapis.setSetting("bumblebee_catalog", catalog);
     return { saved: true };
