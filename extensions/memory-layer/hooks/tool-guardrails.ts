@@ -75,7 +75,7 @@ function ensureIndexed(deps: GuardrailsDeps, resolvedCwd: string, projectName: s
   }
   const promise = (async (): Promise<IndexResult | null> => {
     try {
-      const result = await deps.memStreaming('code', { mode: 'index-repo', path: resolvedCwd, name: projectName });
+      const result = await deps.memStreaming('index-repo', { path: resolvedCwd, name: projectName });
       if (!result) {
         return null;
       }
