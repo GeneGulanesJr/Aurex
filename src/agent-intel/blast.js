@@ -47,12 +47,19 @@ function blastRadius(db, repoId, symbolName, options = {}) {
   `).all(repoId, `%${symbolRow.name}%`);
 
   // Docs that reference this symbol
-  const docsWithSymbol = db.prepare(`
-    SELECT title, file_path
-    FROM doc_sections
-    WHERE repo_id = ? AND (content LIKE ? OR heading LIKE ?)
-    LIMIT 10
-  `).all(repoId, `%${symbolRow.name}%`, `%${symbolRow.name}%`);
+  let docsAffected = [];
+  try {
+    const docsWithSymbol = db.prepare(`
+      SELECT ds.title, df.path as file_path
+      FROM doc_sections ds
+      JOIN doc_files df ON df.id = ds.file_id
+      WHERE ds.repo_id = ? AND ds.content LIKE ?
+      LIMIT 10
+    `).all(repoId, `%${symbolRow.name}%`);
+    docsAffected = docsWithSymbol.map(d => d.file_path);
+  } catch {
+    // doc_sections may not have required structure - graceful degradation
+  }
 
   // Runtime hotness (if available)
   let runtime = null;
@@ -112,7 +119,7 @@ function blastRadius(db, repoId, symbolName, options = {}) {
     total_callers: totalCallers,
     routes_affected: likelyTests.length > 0 ? ['(inferred from test files)'] : [],
     tests_likely_affected: likelyTests.map(t => t.path),
-    docs_affected: docsWithSymbol.map(d => d.file_path),
+    docs_affected: docsAffected,
     runtime,
     risk,
     risk_score: riskScore,
