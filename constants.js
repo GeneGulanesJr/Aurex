@@ -212,6 +212,46 @@ const CALL_GRAPH = {
   PROGRESS_INTERVAL_FILES: 50,
 };
 
+const DUPLICATE_DETECTION = {
+  MIN_BODY_LENGTH: 40,
+  MINHASH_PERMUTATIONS: 128,
+  SIMILARITY_THRESHOLD: 0.65,
+  SHINGLE_SIZE: 4,
+  TOP_K_GROUPS: 20,
+  NAME_SIMILARITY_THRESHOLD: 0.6,
+};
+
+const AUDIT_DIFF = {
+  MAX_FILES: 50,
+  VIOLATION_TYPES: [
+    'duplicate_creation',
+    'unused_import_added',
+    'hot_path_modified',
+    'untested_public_api',
+    'constraint_violation',
+    'existing_service_ignored',
+  ],
+  RISK_WEIGHTS: {
+    duplicate: 0.30,
+    hot_path: 0.25,
+    untested: 0.20,
+    constraint: 0.15,
+    ignored_service: 0.10,
+  },
+  RISK_LEVELS: {
+    LOW: 0.3,
+    MEDIUM: 0.6,
+    HIGH: 0.8,
+  },
+};
+
+const SYMBOL_ENRICHMENT = {
+  MIN_SYMBOLS: 10,
+  BATCH_SIZE: 100,
+  MAX_INTENT_LENGTH: 200,
+  MAX_CONSTRAINT_LENGTH: 300,
+};
+
 module.exports = {
   TRUST_DELTA,
   DEDUP,
@@ -231,4 +271,7 @@ module.exports = {
   CAPTURE_PASSIVE,
   WORKER_POOL,
   CALL_GRAPH,
+  DUPLICATE_DETECTION,
+  AUDIT_DIFF,
+  SYMBOL_ENRICHMENT,
 };

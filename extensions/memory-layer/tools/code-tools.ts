@@ -104,6 +104,9 @@ export function registerCodeTools(pi: ExtensionAPI, deps: CodeDeps) {
           health: 'health-code-repo',
           'index-repo': 'index-repo',
           'reindex-repo': 'reindex-repo',
+          dupes: 'dupes',
+          'audit-diff': 'audit-diff',
+          'enrich-symbols': 'enrich-symbols',
         };
         const mode = typeof params.mode === 'string' ? params.mode : '';
         if (!mode) {
@@ -402,7 +405,7 @@ function codeHelpText(): string {
     '- memory-code agent-pack --repo <repo> --task "add notification preferences"',
     '- memory-code reindex-repo --path . --name <repo>',
     '',
-    'Modes: search, callers, callees, blast-radius, dead-code, complexity, deps, outline, churn, hotspots, cycles, importance, coupling, extractable, hierarchy, signal-chains, layer-violations, preflight, agent-pack, health, index-repo, reindex-repo.',
+    'Modes: search, callers, callees, blast-radius, dead-code, complexity, deps, outline, churn, hotspots, cycles, importance, coupling, extractable, hierarchy, signal-chains, layer-violations, preflight, agent-pack, health, index-repo, reindex-repo, dupes, audit-diff, enrich-symbols.',
   ].join('\n');
 }
 
@@ -457,6 +460,10 @@ function validateCodeParams(mode: string, params: Record<string, any>): string |
 
   if (['outline', 'churn'].includes(mode) && !params.file) {
     return `${mode} requires --file.\n\nExample:\nmemory-code ${mode} --repo ${params.repo || '<repo>'} --file src/foo.ts`;
+  }
+
+  if (mode === 'audit-diff' && !params.files) {
+    return `audit-diff requires --files.\n\nExample:\nmemory-code audit-diff --repo ${params.repo || '<repo>'} --files src/a.ts,src/b.ts`;
   }
 
   return null;
