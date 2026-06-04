@@ -322,16 +322,57 @@ function preflight(deps, args) {
     duplicateRisk = 'medium';
   }
 
+  // Enrich with structural duplicates and symbol metadata
+  let structuralDuplicates = [];
+  try {
+    const dupesModule = require('./dupes');
+    const persistedDupes = dupesModule.loadDupes(db, repo.id);
+    structuralDuplicates = persistedDupes
+      .filter((g) => g.instances && g.instances.length >= 2)
+      .slice(0, 3)
+      .map((g) => ({
+        intent: g.intent,
+        risk: g.risk,
+        instances: g.instances.map((i) => `${i.file_path}:${i.symbol_name}`),
+        recommendation: g.recommendation,
+      }));
+  } catch {
+    // Dupes table may not exist yet — graceful degradation
+  }
+
+  // Enrich top code items with metadata
+  let enrichedCodeItems = codeItems;
+  try {
+    const enrichment = require('./symbol-enrichment');
+    enrichedCodeItems = codeItems.slice(0, 5).map((item) => {
+      const symRow = symbolRows.find((s) => s.name === item.symbol && s.file_path === item.file);
+      if (symRow) {
+        const meta = enrichment.getSymbolMeta(db, symRow.id);
+        if (meta) {
+          return {
+            ...item,
+            intent: meta.intent || undefined,
+            constraints: meta.constraints ? JSON.parse(meta.constraints) : undefined,
+          };
+        }
+      }
+      return item;
+    });
+  } catch {
+    // Enrichment module may not exist yet
+  }
+
   return {
     task_summary: task,
     repo: repoName,
-    likely_existing_code: codeItems,
+    likely_existing_code: enrichedCodeItems,
     similar_past_tasks: memories,
     related_files: relatedFiles,
     tests_likely_affected: likelyTests,
     relevant_docs: docs,
     duplicate_risk: duplicateRisk,
     duplicate_warnings: warnings,
+    structural_duplicates: structuralDuplicates,
     risk,
     recommended_action: recommendedAction(risk, warnings, codeItems),
     evidence: {
