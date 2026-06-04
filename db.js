@@ -446,7 +446,7 @@ function runMigrations() {
     console.error('[db] Failed to read user_version:', e.message);
   }
 
-  if (version >= 13) {
+  if (version >= 15) {
     return { migrated: false, version };
   }
 
@@ -464,6 +464,7 @@ function runMigrations() {
     { to: 12, run: runMigrationV12 },
     { to: 13, run: runMigrationV13 },
     { to: 14, run: runMigrationV14 },
+    { to: 15, run: runMigrationV15 },
   ];
 
   const fromVersion = version;
@@ -1038,6 +1039,66 @@ function runMigrationV14() {
     });
   } catch (e) {
     errors.push(`V14: ${e.message}`);
+  }
+  return errors;
+}
+
+function runMigrationV15() {
+  const errors = [];
+  try {
+    withTransaction(() => {
+      sqlRaw(`CREATE TABLE IF NOT EXISTS symbol_metadata (
+        symbol_id INTEGER PRIMARY KEY REFERENCES code_symbols(id) ON DELETE CASCADE,
+        intent TEXT NOT NULL DEFAULT '',
+        behavior_summary TEXT NOT NULL DEFAULT '',
+        constraints TEXT NOT NULL DEFAULT '[]',
+        failure_history TEXT NOT NULL DEFAULT '[]',
+        replacement_of TEXT NOT NULL DEFAULT '',
+        enriched_at TEXT NOT NULL DEFAULT (datetime('now')),
+        enrichment_source TEXT NOT NULL DEFAULT ''
+      )`);
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_sm_symbol ON symbol_metadata(symbol_id)');
+
+      sqlRaw(`CREATE TABLE IF NOT EXISTS duplicate_groups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE,
+        intent TEXT NOT NULL DEFAULT '',
+        risk TEXT NOT NULL DEFAULT 'low',
+        detection_type TEXT NOT NULL DEFAULT 'structural',
+        recommendation TEXT NOT NULL DEFAULT '',
+        fingerprint_hash TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`);
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_dg_repo ON duplicate_groups(repo_id)');
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_dg_hash ON duplicate_groups(repo_id, fingerprint_hash)');
+
+      sqlRaw(`CREATE TABLE IF NOT EXISTS duplicate_instances (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id INTEGER NOT NULL REFERENCES duplicate_groups(id) ON DELETE CASCADE,
+        symbol_id INTEGER NOT NULL REFERENCES code_symbols(id) ON DELETE CASCADE,
+        file_path TEXT NOT NULL,
+        symbol_name TEXT NOT NULL,
+        line_start INTEGER NOT NULL DEFAULT 0
+      )`);
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_di_group ON duplicate_instances(group_id)');
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_di_symbol ON duplicate_instances(symbol_id)');
+
+      sqlRaw(`CREATE TABLE IF NOT EXISTS audit_runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        repo_id INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE,
+        task TEXT NOT NULL DEFAULT '',
+        files_changed TEXT NOT NULL DEFAULT '[]',
+        violations TEXT NOT NULL DEFAULT '[]',
+        risk TEXT NOT NULL DEFAULT 'low',
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`);
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_ar_repo ON audit_runs(repo_id)');
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_ar_created ON audit_runs(created_at DESC)');
+
+      sqlRaw('PRAGMA user_version = 15');
+    });
+  } catch (e) {
+    errors.push(`V15: ${e.message}`);
   }
   return errors;
 }
