@@ -112,6 +112,24 @@ export function registerPassiveCapture(pi: ExtensionAPI, deps: PassiveCaptureDep
       .map((f) => `- ${path.basename(f)}`)
       .join('\n');
 
+    // Run post-edit audit on edited files
+    let auditNote = '';
+    try {
+      const editedPaths = [...deps.state.editedFiles].slice(0, 20);
+      if (editedPaths.length > 0 && editedPaths.length <= 20) {
+        const auditResult = await deps.mem('audit-diff', {
+          repo: deps.state.currentProject || '',
+          files: editedPaths.join(','),
+          task: `checkpoint turn ${deps.state.turnCount}`,
+        });
+        if (auditResult && !auditResult.error && auditResult.violations && auditResult.violations.length > 0) {
+          auditNote = `\n\n**Post-edit audit**: ${auditResult.risk} risk, ${auditResult.violations.length} violation(s): ${auditResult.violations.slice(0, 3).map((v: any) => v.message).join('; ')}`;
+        }
+      }
+    } catch {
+      // Audit-diff is optional — do not block passive capture
+    }
+
     await deps.mem('save', {
       title: `Progress checkpoint (turn ${deps.state.turnCount})`,
       type: 'progress',
@@ -123,6 +141,7 @@ export function registerPassiveCapture(pi: ExtensionAPI, deps: PassiveCaptureDep
         `**Where**: Session ${deps.state.sessionId}`,
         `**Learned**: ${deps.state.memoriesSavedThisSession} explicit memories saved, ${deps.state.editedFiles.size} files edited`,
         summaryFiles ? `Files touched:\n${summaryFiles}` : '',
+        auditNote,
       ].join('\n'),
     });
   });
