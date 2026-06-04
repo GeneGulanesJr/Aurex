@@ -142,9 +142,6 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
     } else {
       lines.push(`- Code index: not indexed for this project`);
     }
-    if ((effectiveStats?.active_workflows || 0) > 0) {
-      lines.push(`- Active workflows: ${effectiveStats.active_workflows}`);
-    }
     lines.push('');
 
     if (effectiveObservations.length > 0) {

@@ -105,14 +105,12 @@ describe('data-access/observations', () => {
         .mockReturnValueOnce([{ cnt: 10 }])
         .mockReturnValueOnce([{ cnt: 5 }])
         .mockReturnValueOnce([{ cnt: 3 }])
-        .mockReturnValueOnce([{ cnt: 2 }])
-        .mockReturnValueOnce([{ cnt: 1 }]);
+        .mockReturnValueOnce([{ cnt: 2 }]);
       const result = getObservationStats(deps);
       expect(result.total_observations).toBe(10);
       expect(result.total_prompts).toBe(5);
       expect(result.total_sessions).toBe(3);
       expect(result.total_symbol_links).toBe(2);
-      expect(result.total_workflows).toBe(1);
     });
   });
 });

@@ -5,7 +5,6 @@
 -- Feature ownership map (Issue #77):
 --   platform/storage: database lifecycle, PRAGMAs, migration user_version.
 --   memory repository: workspaces, observations, observation FTS, prompts, sessions, relations, recall_log.
---   workflow repository: procedural_memory, procedural_steps.
 --   code-index repository: code_repos, code_files, code_symbols, code FTS, imports, calls, complexity.
 --   doc-index repository: doc_repos, doc_files, doc_sections, doc FTS, links, terms, code blocks.
 --   trust-sync repository: symbol_links and trust_adjustments because they bridge memories and code symbols.
@@ -142,31 +141,11 @@ CREATE TABLE IF NOT EXISTS trust_adjustments (
 CREATE INDEX IF NOT EXISTS idx_trust_adj_memory ON trust_adjustments(memory_id);
 
 -- ═══════════════════════════════════════════════════════════
--- WORKFLOW REPOSITORY: PROCEDURAL MEMORY  (existing bridge table)
--- ═══════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS procedural_memory (
-  id         TEXT PRIMARY KEY,
-  name       TEXT NOT NULL,
-  project    TEXT,
-  status     TEXT NOT NULL DEFAULT 'active',
-  success    REAL NOT NULL DEFAULT 0.0,
-  attempts   INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS procedural_steps (
-  workflow   TEXT NOT NULL REFERENCES procedural_memory(id) ON DELETE CASCADE,
-  step_num   INTEGER NOT NULL,
-  command    TEXT NOT NULL,
-  success    REAL NOT NULL DEFAULT 1.0,
-  attempts   INTEGER NOT NULL DEFAULT 0,
-  fail_workaround TEXT,
-  PRIMARY KEY (workflow, step_num)
-);
-
 -- ═══════════════════════════════════════════════════════════
 -- MEMORY REPOSITORY: SESSION LOG
+-- ═══════════════════════════════════════════════════════════
+-- NOTE: procedural_memory and procedural_steps tables removed (Issue #167).
+--       Existing tables are harmless if present in older DBs; new DBs skip them.
 -- ═══════════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS session_log (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,

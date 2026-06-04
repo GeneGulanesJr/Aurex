@@ -14,7 +14,7 @@ function buildDeps(overrides = {}) {
     mem: vi.fn().mockResolvedValue({
       observations: [],
       personal: [],
-      stats: { total_memories: 10, total_personal: 0, active_workflows: 0 },
+      stats: { total_memories: 10, total_personal: 0 },
       topic: null,
     }),
     getKnownRepos: vi.fn().mockResolvedValue([]),

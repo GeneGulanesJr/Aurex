@@ -186,19 +186,6 @@ function context(deps, args) {
   const excludedSet = new Set(CONTEXT.EXCLUDED_TYPES);
   const filtered = observations.filter((o) => !excludedSet.has(o.type));
 
-  const workflows = project
-    ? sqlJson(
-        `
-    SELECT id, name, status, success, updated_at
-    FROM procedural_memory
-    WHERE (project = ? OR project IS NULL) AND status = 'active'
-    ORDER BY updated_at DESC
-    LIMIT ${RESULT_LIMITS.RECENT_SESSIONS}
-  `,
-        [project],
-      )
-    : [];
-
   if (sessionId && filtered.length > 0) {
     const recallQuery = topicQuery || topicKey || 'context-auto';
     const entries = filtered.map((o) => ({
@@ -215,14 +202,12 @@ function context(deps, args) {
     sessions,
     personal,
     observations: filtered,
-    workflows,
     project: project || null,
     cross_project: crossProject,
     topic: topicKey || topicQuery || null,
     stats: {
       total_memories: totalAll,
       total_personal: personal.length,
-      active_workflows: workflows.length,
     },
   };
 }

@@ -20,9 +20,6 @@ function makeDeps(observations = []) {
       if (typeof q === 'string' && q.includes('FROM session_log')) {
         return [];
       }
-      if (typeof q === 'string' && q.includes('FROM procedural_memory')) {
-        return [];
-      }
       if (typeof q === 'string' && q.includes('FROM observations')) {
         return observations;
       }

@@ -50,11 +50,6 @@ function runCompact(deps) {
     sqlRun('DELETE FROM session_recalls WHERE session_id NOT IN (SELECT id FROM session_log)');
     report.steps.recallsPruned = true;
 
-    sqlRun(
-      `DELETE FROM procedural_memory WHERE updated_at < datetime('now', '-${TIME_WINDOWS.WORKFLOW_RETENTION_DAYS} days')`,
-    );
-    report.steps.oldWorkflowsPruned = true;
-
     deps.sqlRun(`UPDATE symbol_links SET trust_score = MAX(${TRUST_DELTA.TRUST_FLOOR}, trust_score - ${Math.abs(TRUST_DELTA.STALE_TRUST_DECAY)})
       WHERE memory_id IN (
         SELECT CAST(id AS TEXT) FROM observations WHERE updated_at < datetime('now', '-${TIME_WINDOWS.ARCHIVE_INACTIVE_DAYS} days')

@@ -154,13 +154,11 @@ function getObservationStats(deps) {
   const prompts = sqlJson('SELECT COUNT(*) as cnt FROM user_prompts')[0].cnt;
   const sessions = sqlJson('SELECT COUNT(*) as cnt FROM session_log')[0].cnt;
   const links = sqlJson('SELECT COUNT(*) as cnt FROM symbol_links')[0].cnt;
-  const workflows = sqlJson('SELECT COUNT(*) as cnt FROM procedural_memory')[0].cnt;
   return {
     total_observations: obs,
     total_prompts: prompts,
     total_sessions: sessions,
     total_symbol_links: links,
-    total_workflows: workflows,
   };
 }
 

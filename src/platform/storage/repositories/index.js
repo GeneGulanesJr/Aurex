@@ -1,5 +1,4 @@
 const { createMemoryRepository } = require('./memory');
-const { createWorkflowRepository } = require('./workflow');
 const { createCodeIndexRepository } = require('./code-index');
 const { createDocIndexRepository } = require('./doc-index');
 const { createTrustSyncRepository } = require('./trust-sync');
@@ -9,7 +8,6 @@ const { createAurexRepository } = require('./aurex');
 function createRepositories(deps) {
   return Object.freeze({
     memory: createMemoryRepository(deps),
-    workflow: createWorkflowRepository(deps),
     codeIndex: createCodeIndexRepository(deps),
     docIndex: createDocIndexRepository(deps),
     trustSync: createTrustSyncRepository(deps),
@@ -21,7 +19,6 @@ function createRepositories(deps) {
 module.exports = {
   createRepositories,
   createMemoryRepository,
-  createWorkflowRepository,
   createCodeIndexRepository,
   createDocIndexRepository,
   createTrustSyncRepository,

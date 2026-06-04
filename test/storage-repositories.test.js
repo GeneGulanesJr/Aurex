@@ -1,6 +1,5 @@
 const { createRepositories } = require('../src/platform/storage/repositories');
 const { createStorageContext } = require('../src/platform/storage');
-const workflowCmd = require('../commands/workflow');
 const obsCmd = require('../commands/observation');
 const symCmd = require('../commands/symbols');
 
@@ -44,10 +43,8 @@ describe('platform storage repositories', () => {
       'docIndex',
       'memory',
       'trustSync',
-      'workflow',
     ]);
     expect(repositories.memory.insertObservation).toBeTypeOf('function');
-    expect(repositories.workflow.saveWorkflow).toBeTypeOf('function');
     expect(repositories.codeIndex.insertFile).toBeTypeOf('function');
     expect(repositories.docIndex.insertSection).toBeTypeOf('function');
     expect(repositories.trustSync.updateLinkTrust).toBeTypeOf('function');
@@ -65,7 +62,6 @@ describe('platform storage repositories', () => {
       prompts: 0,
       sessions: 0,
       symbolLinks: 0,
-      workflows: 0,
       codeRepos: 0,
       docRepos: 0,
     });
@@ -98,26 +94,6 @@ describe('platform storage repositories', () => {
       'INSERT INTO doc_files (repo_id, path, content, content_hash, mtime) VALUES (?, ?, ?, ?, ?)',
       [1, '/tmp/README.md', '# Title', 'hash', 1],
     );
-  });
-
-  it('routes workflow commands through the workflow-memory service and workflow repository when supplied', () => {
-    const workflowRepository = {
-      insertWorkflow: vi.fn(),
-      upsertStep: vi.fn(),
-    };
-
-    const result = workflowCmd.saveWorkflow(
-      { workflowRepository, jsonErrNoExit: vi.fn((message) => ({ error: message })) },
-      { id: 'wf', name: 'Workflow', project: 'p' },
-    );
-
-    expect(result.ok).toBe(true);
-    expect(workflowRepository.insertWorkflow).toHaveBeenCalledWith({
-      id: 'wf',
-      name: 'Workflow',
-      project: 'p',
-    });
-    expect(workflowRepository.upsertStep).not.toHaveBeenCalled();
   });
 
   it('routes observation commands through the memory repository when supplied', () => {

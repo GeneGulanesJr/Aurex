@@ -4,7 +4,6 @@
 // Modules, and Pi extension state must stay outside this gateway.
 
 const memoryRouter = require('./commands/memory');
-const workflowRouter = require('./commands/workflow');
 const codeIndexRouter = require('./commands/code-index');
 const codeAnalysisRouter = require('./commands/code-analysis');
 const docsRouter = require('./commands/docs');
@@ -16,7 +15,6 @@ function buildCommandMap(deps) {
   const commands = {};
 
   memoryRouter.register(commands, deps);
-  workflowRouter.register(commands, deps);
   codeIndexRouter.register(commands, deps);
   codeAnalysisRouter.register(commands, deps);
   docsRouter.register(commands, deps);
@@ -30,7 +28,6 @@ function buildCommandMap(deps) {
 function getAllUsage() {
   return {
     ...memoryRouter.USAGE,
-    ...workflowRouter.USAGE,
     ...codeIndexRouter.USAGE,
     ...codeAnalysisRouter.USAGE,
     ...docsRouter.USAGE,
