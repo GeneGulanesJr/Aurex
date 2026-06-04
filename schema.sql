@@ -643,3 +643,42 @@ CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- ═══════════════════════════════════════════════════════════
+-- RUNTIME REALITY: Symbol hotness and stale flag detection
+-- ═══════════════════════════════════════════════════════════
+
+-- Runtime hotness per symbol (from Istanbul coverage)
+CREATE TABLE IF NOT EXISTS runtime_symbols (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id           INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE,
+  symbol_id         INTEGER REFERENCES code_symbols(id) ON DELETE CASCADE,
+  file_path         TEXT NOT NULL,
+  function_name     TEXT NOT NULL DEFAULT '',
+  hit_count         INTEGER NOT NULL DEFAULT 0,
+  line_start        INTEGER,
+  line_end          INTEGER,
+  traffic           TEXT NOT NULL DEFAULT 'unknown',  -- hot | warm | cold | unknown
+  last_seen         TEXT,                              -- ISO date
+  ingested_at       TEXT NOT NULL DEFAULT (datetime('now')),
+  source_file       TEXT NOT NULL DEFAULT '',          -- coverage JSON path
+  UNIQUE(repo_id, file_path, function_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rs_repo ON runtime_symbols(repo_id);
+CREATE INDEX IF NOT EXISTS idx_rs_traffic ON runtime_symbols(traffic);
+
+-- Stale feature flags (one-sided branches detected in source)
+CREATE TABLE IF NOT EXISTS stale_flags (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id         INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE,
+  file_path       TEXT NOT NULL,
+  line_number     INTEGER NOT NULL,
+  flag_name       TEXT NOT NULL,
+  branch_type     TEXT NOT NULL,  -- always-true | always-false
+  context         TEXT NOT NULL DEFAULT '',
+  detected_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_sf_repo ON stale_flags(repo_id);
+CREATE INDEX IF NOT EXISTS idx_sf_traffic ON stale_flags(file_path);
