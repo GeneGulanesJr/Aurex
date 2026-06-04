@@ -112,4 +112,5 @@ export const state = {
   lastAutoDecisionSave: 0 as number,
   hasInjectedContext: false as boolean,
   editedFiles: new Set<string>(),
+  pendingRecallFeedback: new Map<number, { sessionId: number; query: string }>(),
 };

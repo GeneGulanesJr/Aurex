@@ -1,13 +1,11 @@
 const { RANKING } = require('../../constants');
+const { insertRecallLog: insertRecallLogDA } = require('../../data-access/observations');
 
 function insertRecallLog(deps, entries) {
   if (!entries || entries.length === 0) {
     return { inserted: 0 };
   }
-  const { sqlRun } = deps;
-  const placeholders = entries.map(() => '(?, ?, ?)').join(',');
-  const params = entries.flatMap((r) => [r.memoryId, r.sessionId, r.query]);
-  sqlRun(`INSERT OR IGNORE INTO recall_log (memory_id, session_id, query) VALUES ${placeholders}`, params);
+  insertRecallLogDA(deps, entries);
   return { inserted: entries.length };
 }
 

@@ -63,9 +63,11 @@ describe('src/memory-domain boundary', () => {
       1,
       '10',
       'alpha',
+      1,
       2,
       '10',
       'beta',
+      1,
     ]);
   });
 

@@ -586,6 +586,20 @@ CREATE INDEX IF NOT EXISTS idx_sr_status ON scope_resolution(status);
 CREATE INDEX IF NOT EXISTS idx_sr_pass ON scope_resolution(resolved_at_pass);
 
 -- ═══════════════════════════════════════════════════════════
+-- MEMORY REPOSITORY: OBSERVATION VERSIONS  (edit history trail)
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS observation_versions (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  memory_id   INTEGER NOT NULL REFERENCES observations(id) ON DELETE CASCADE,
+  field       TEXT NOT NULL,
+  old_value   TEXT NOT NULL DEFAULT '',
+  new_value   TEXT NOT NULL DEFAULT '',
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ov_memory ON observation_versions(memory_id);
+CREATE INDEX IF NOT EXISTS idx_ov_created ON observation_versions(created_at DESC);
+
+-- ═══════════════════════════════════════════════════════════
 -- SETTINGS (KV store for integration tokens, config)
 -- ═══════════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS settings (

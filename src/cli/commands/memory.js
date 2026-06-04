@@ -37,6 +37,8 @@ function register(commands, deps) {
   commands['save-prompt'] = (args) => obsCmd.savePrompt({ sqlJson, sqlRun, jsonErrNoExit, memoryRepository }, args);
   commands['capture-passive'] = (args) =>
     obsCmd.capturePassive({ sqlJson, sqlRun, jsonErrNoExit, memoryRepository }, args);
+  commands['log-negative-recall'] = (args) =>
+    obsCmd.logNegativeRecall({ sqlJson, sqlRun, jsonErrNoExit, memoryRepository }, args);
   commands.stats = () => obsCmd.getStats({ ...deps, memoryRepository });
   commands['check-dup'] = (args) => searchCmd.checkDuplicate({ sqlJson, jsonErrNoExit }, args);
   commands['mark-dup'] = (args) => searchCmd.markDuplicate({ sqlJson, sqlRun, jsonErrNoExit }, args);

@@ -463,6 +463,7 @@ function runMigrations() {
     { to: 11, run: runMigrationV11 },
     { to: 12, run: runMigrationV12 },
     { to: 13, run: runMigrationV13 },
+    { to: 14, run: runMigrationV14 },
   ];
 
   const fromVersion = version;
@@ -1015,6 +1016,28 @@ function runMigrationV13() {
     });
   } catch (e) {
     errors.push(`V13: ${e.message}`);
+  }
+  return errors;
+}
+
+function runMigrationV14() {
+  const errors = [];
+  try {
+    withTransaction(() => {
+      sqlRaw(`CREATE TABLE IF NOT EXISTS observation_versions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        memory_id INTEGER NOT NULL REFERENCES observations(id) ON DELETE CASCADE,
+        field TEXT NOT NULL,
+        old_value TEXT NOT NULL DEFAULT '',
+        new_value TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`);
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_ov_memory ON observation_versions(memory_id)');
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_ov_created ON observation_versions(created_at DESC)');
+      sqlRaw('PRAGMA user_version = 14');
+    });
+  } catch (e) {
+    errors.push(`V14: ${e.message}`);
   }
   return errors;
 }
