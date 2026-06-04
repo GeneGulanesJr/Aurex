@@ -369,6 +369,43 @@ describe('memory tool renderer safety', () => {
     expect(text).toContain('Code search');
   });
 
+  it('supports memory-code preflight mode with task text', async () => {
+    const mem = vi.fn().mockResolvedValue({
+      task_summary: 'add notification preferences',
+      risk: 'medium',
+      duplicate_risk: 'medium',
+      recommended_action: 'Review existing getNotificationPreferences before creating new code.',
+      likely_existing_code: [{ symbol: 'getNotificationPreferences', file: 'src/preferences.js', line: 1 }],
+      similar_past_tasks: [],
+      related_files: ['src/preferences.js'],
+      duplicate_warnings: [{ symbol: 'getNotificationPreferences', file: 'src/preferences.js' }],
+    });
+    const tool = captureTool(registerCodeTools, {
+      mem,
+      memStreaming: vi.fn(),
+      getKnownRepos: vi.fn().mockResolvedValue([{ name: 'app' }]),
+      formatCodeResult,
+      invalidateRepoCache: vi.fn(),
+    });
+
+    const result = await tool.execute(
+      'id',
+      { mode: 'preflight', repo: 'app', task: 'add notification preferences' },
+      undefined,
+      vi.fn(),
+      {},
+    );
+    const text = result.content.find((item) => item.type === 'text').text;
+
+    expectRenderable(result);
+    expect(mem).toHaveBeenCalledWith('preflight', {
+      repo: 'app',
+      task: 'add notification preferences',
+    });
+    expect(text).toContain('Preflight');
+    expect(text).toContain('getNotificationPreferences');
+  });
+
   it('infers memory-code repo when only one indexed repo is available', async () => {
     const mem = vi.fn().mockResolvedValue({
       query: 'rankObservations',

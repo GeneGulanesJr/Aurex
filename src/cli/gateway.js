@@ -10,6 +10,7 @@ const codeAnalysisRouter = require('./commands/code-analysis');
 const docsRouter = require('./commands/docs');
 const trustRouter = require('./commands/trust');
 const maintenanceRouter = require('./commands/maintenance');
+const agentIntelRouter = require('./commands/agent-intel');
 
 function buildCommandMap(deps) {
   const commands = {};
@@ -21,6 +22,7 @@ function buildCommandMap(deps) {
   docsRouter.register(commands, deps);
   trustRouter.register(commands, deps);
   maintenanceRouter.register(commands, deps);
+  agentIntelRouter.register(commands, deps);
 
   return commands;
 }
@@ -34,6 +36,7 @@ function getAllUsage() {
     ...docsRouter.USAGE,
     ...trustRouter.USAGE,
     ...maintenanceRouter.USAGE,
+    ...agentIntelRouter.USAGE,
   };
 }
 
@@ -86,6 +89,8 @@ async function dispatch(cmd, args) {
             'context',
             'search-code',
             'get-code-source',
+            'preflight',
+            'agent-pack',
             'importance',
             'outline',
             'winnow',
@@ -97,6 +102,8 @@ async function dispatch(cmd, args) {
             'context',
             'search-code',
             'get-code-source',
+            'preflight',
+            'agent-pack',
             'importance',
             'outline',
             'winnow',

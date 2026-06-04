@@ -26,6 +26,8 @@ const TIMEOUT_DEFAULTS: Record<string, number> = {
   importance: 45000,
   coupling: 30000,
   'blast-radius': 30000,
+  preflight: 30000,
+  'agent-pack': 30000,
   churn: 30000,
   extractable: 30000,
   'import-graph': 30000,
