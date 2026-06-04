@@ -5,6 +5,7 @@
 
 const codeSearch = require('../code-index/source-retrieval');
 const memorySearch = require('../memory-domain/search');
+const path = require('path');
 const docIndex = require('../doc-index');
 
 const DEFAULT_LIMITS = {
@@ -50,6 +51,22 @@ function taskTerms(task) {
   return normalizeName(task)
     .split(/\s+/)
     .filter((term) => term.length >= 3);
+}
+
+function inferRepoName(db, cwd) {
+  const repos = db.prepare('SELECT name, path FROM code_repos ORDER BY updated_at DESC, indexed_at DESC').all();
+  if (repos.length === 0) {
+    return null;
+  }
+  const resolvedCwd = path.resolve(cwd || process.cwd()).toLowerCase();
+  const cwdMatch = repos.find((repo) => {
+    const repoPath = path.resolve(repo.path).toLowerCase();
+    return resolvedCwd === repoPath || resolvedCwd.startsWith(`${repoPath}${path.sep}`);
+  });
+  if (cwdMatch) {
+    return cwdMatch.name;
+  }
+  return repos.length === 1 ? repos[0].name : null;
 }
 
 function getRepoRow(db, repoName) {
@@ -265,14 +282,14 @@ function preflight(deps, args) {
       ? deps.jsonErrNoExit('Usage: preflight --task <task> --repo <repo>')
       : { error: 'Missing task' };
   }
-  const repoName = args.repo;
+  const db = deps.getDb ? deps.getDb() : deps.db;
+  const repoName = args.repo || inferRepoName(db, process.cwd());
   if (!repoName) {
     return deps.jsonErrNoExit
       ? deps.jsonErrNoExit('Usage: preflight --task <task> --repo <repo>')
       : { error: 'Missing repo' };
   }
 
-  const db = deps.getDb ? deps.getDb() : deps.db;
   const repo = getRepoRow(db, repoName);
   if (!repo) {
     return deps.jsonErrNoExit
@@ -392,6 +409,7 @@ module.exports = {
   preflight,
   agentPack,
   _private: {
+    inferRepoName,
     normalizeName,
     duplicateWarnings,
     riskLevel,

@@ -69,6 +69,14 @@ test('loads notification preferences', () => {
     expect(['medium', 'high']).toContain(result.risk);
   });
 
+  it('accepts a positional task for the CLI shorthand', () => {
+    const result = run(`preflight --repo ${repoName} "add notification preferences"`);
+
+    expect(result.error).toBeUndefined();
+    expect(result.task_summary).toBe('add notification preferences');
+    expect(result.likely_existing_code.some((item) => item.symbol === 'getNotificationPreferences')).toBe(true);
+  });
+
   it('builds a compact agent pack for Pi planning', () => {
     const result = run(`agent-pack --repo ${repoName} --task "add notification preferences"`);
 

@@ -1055,7 +1055,7 @@ function jsonErr(msg) {
 }
 
 function parseArgs(argv) {
-  const args = {};
+  const args = { _: [] };
   let key = null;
   for (const arg of argv.slice(3)) {
     if (arg.startsWith('--')) {
@@ -1070,6 +1070,8 @@ function parseArgs(argv) {
     } else if (key) {
       args[key] = arg;
       key = null;
+    } else {
+      args._.push(arg);
     }
   }
   return args;
