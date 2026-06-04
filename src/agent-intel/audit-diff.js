@@ -1,5 +1,6 @@
 'use strict';
 
+const path = require('path');
 const { AUDIT_DIFF: CFG } = require('../../constants');
 
 function _requireNativeDb(db) {
@@ -148,6 +149,40 @@ function _checkUntestedPublic(db, repoId, sym) {
 }
 
 function _checkHotPath(db, repoId, sym) {
+  // First check runtime hotness data if available
+  try {
+    const runtimeIngest = require('./runtime-ingest');
+    const hotSymbols = runtimeIngest.getHotSymbols(db, repoId, 100);
+
+    // Normalize paths for comparison - get basename and check for matches
+    const symFileName = sym.file_path ? path.basename(sym.file_path) : '';
+    const hotMatch = hotSymbols.find(s => {
+      if (!s.file_path) return false;
+      // Try exact match first
+      if (s.file_path === sym.file_path) return true;
+      // Then try basename match for cross-platform compatibility
+      const runtimeFileName = path.basename(s.file_path);
+      return runtimeFileName === symFileName && s.function_name === sym.name;
+    });
+
+    if (hotMatch) {
+      return {
+        type: 'hot_path_modified',
+        severity: 'warning',
+        message: `Hot runtime path (${hotMatch.hit_count} hits) — prefer minimal diffs and add tests`,
+        file: sym.file_path,
+        symbol: sym.name,
+        runtime_data: {
+          traffic: hotMatch.traffic,
+          hit_count: hotMatch.hit_count,
+        },
+      };
+    }
+  } catch {
+    // Runtime data not available — fall back to caller count
+  }
+
+  // Fallback: check caller count as proxy for hot path
   const callers = db
     .prepare(
       `SELECT COUNT(DISTINCT caller_symbol_id) as cnt FROM code_calls

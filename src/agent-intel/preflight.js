@@ -362,6 +362,36 @@ function preflight(deps, args) {
     // Enrichment module may not exist yet
   }
 
+  // Enrich with runtime hotness data if available
+  let runtimeHotness = null;
+  try {
+    const runtimeIngest = require('./runtime-ingest');
+    const hotSymbols = runtimeIngest.getHotSymbols(db, repo.id, 50);
+    
+    // Check if any of the top code items are hot paths
+    const topFiles = codeItems.slice(0, 3).map(item => item.file);
+    const hotMatches = hotSymbols.filter(s => s.file_path && topFiles.some(f => s.file_path.includes(f) || f.includes(s.file_path)));
+    
+    if (hotMatches.length > 0) {
+      runtimeHotness = {
+        is_hot_path: true,
+        hot_matches: hotMatches.slice(0, 3).map(s => ({
+          symbol: s.function_name,
+          file: s.file_path,
+          traffic: s.traffic,
+          hit_count: s.hit_count,
+        })),
+      };
+    }
+  } catch {
+    // Runtime data not available — graceful degradation
+  }
+
+  // Recalculate risk with runtime consideration
+  const effectiveRisk = runtimeHotness && runtimeHotness.is_hot_path
+    ? (risk === 'low' ? 'medium' : risk === 'medium' ? 'high' : risk)
+    : risk;
+
   return {
     task_summary: task,
     repo: repoName,
@@ -373,8 +403,9 @@ function preflight(deps, args) {
     duplicate_risk: duplicateRisk,
     duplicate_warnings: warnings,
     structural_duplicates: structuralDuplicates,
-    risk,
-    recommended_action: recommendedAction(risk, warnings, codeItems),
+    runtime_hotness: runtimeHotness,
+    risk: effectiveRisk,
+    recommended_action: recommendedAction(effectiveRisk, warnings, codeItems),
     evidence: {
       code_search_strategy: codeSearchResult.strategy,
       code_results_considered: codeItems.length,
