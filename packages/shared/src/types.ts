@@ -3,6 +3,7 @@ import type {
   MissionStatus, MilestoneStatus, AgentType, AgentStatus, WorkerStatus,
   BroadcastLifecycle, BroadcastCategory, ResearchLifecycle, ResearchRelevance,
   NegotiatorVerdict, CompressionTrigger, CheckpointDecision, CheckpointTrigger,
+  QuotaStatus,
 } from "./enums.js";
 
 export interface Mission {
@@ -310,4 +311,42 @@ export interface ExposureCatalogEntry {
   package: string;
   versions: string[];
   severity: "critical" | "high" | "medium" | "low";
+}
+
+export interface QuotaWindow {
+  windowStart: string;
+  windowDurationMs: number;
+  burnDurationMs: number;
+  firstLLMCallAt: string | null;
+  isActive: boolean;
+  lastActiveAt: string | null;
+}
+
+export interface QuotaProviderQuotaConfig {
+  providerId: string;
+  tracked: boolean;
+  windowDurationMs?: number;
+  burnDurationMs?: number;
+}
+
+export interface QuotaConfig {
+  enabled: boolean;
+  windowDurationMs: number;
+  burnDurationMs: number;
+  providers: QuotaProviderQuotaConfig[];
+}
+
+export interface QuotaProviderStatus {
+  providerId: string;
+  tracked: boolean;
+  enabled: boolean;
+  status: QuotaStatus;
+  windowStart: string | null;
+  windowEnd: string | null;
+  burnDurationMs: number;
+  windowDurationMs: number;
+  firstLLMCallAt: string | null;
+  burnExpiresAt: string | null;
+  remainingBurnMs: number;
+  remainingWindowMs: number;
 }

@@ -41,5 +41,16 @@ export function CheckpointPanel({ trigger }: CheckpointPanelProps) {
           <p style={{ fontSize: "14px", color: "var(--text-secondary)" }}>Mission spending has reached the cost limit. Approve to continue over budget or abort the mission.</p>
         </div>
       );
+
+    case "quota_exhausted":
+      return (
+        <div style={{ marginBottom: "24px" }}>
+          <h2 style={{ fontSize: "20px", fontWeight: 700, color: "var(--error)", marginBottom: "8px" }}>Quota Exhausted</h2>
+          <p style={{ fontSize: "14px", color: "var(--text-secondary)" }}>
+            Your coding plan quota has been used up. The window resets at <strong style={{ color: "var(--text-primary)" }}>{trigger.windowResetsAt ? new Date(trigger.windowResetsAt).toLocaleTimeString() : "unknown"}</strong>.
+            Approve to resume once the window resets, or abort the mission.
+          </p>
+        </div>
+      );
   }
 }

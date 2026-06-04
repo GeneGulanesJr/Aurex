@@ -16,6 +16,7 @@ import { StatusBoard } from "./passive/StatusBoard";
 import { EscalationOverlay } from "./active/EscalationOverlay";
 import { IntegrationsPanel } from "./active/IntegrationsPanel";
 import { SettingsPanel } from "./active/SettingsPanel";
+import { QuotaPanel } from "./active/QuotaPanel";
 import { TopBar } from "./frame/TopBar";
 import { TelemetryBar } from "./frame/TelemetryBar";
 import { submitCheckpoint, createMission, restartMission } from "./api";
@@ -28,6 +29,7 @@ export function App() {
   const systemReady = github.connected && pinyxStatus.configured;
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [quotaOpen, setQuotaOpen] = useState(false);
   const { settings, setSettings, resetSettings } = useSettings();
   const { state: missionsState, selectMission, removeMission, addOptimisticMission, markMissionRestarted, handleWsEvent: missionsWsHandler } = useMissions();
   const { state, dispatch, handleWsEvent: missionWsHandler } = useMission(missionsState.selectedMissionId);
@@ -202,6 +204,7 @@ export function App() {
         sidebarCollapsed={bp.isMobile ? !mobileOverlayOpen : sidebarCollapsed}
         onToggleSidebar={toggleSidebar}
         onOpenSettings={() => setSettingsOpen(true)}
+        onOpenQuota={() => setQuotaOpen(true)}
       />
       <div style={{ display: "grid", gridTemplateColumns: gridColumns, gridTemplateRows: "1fr 36px", flex: 1, overflow: "hidden", position: "relative" }}>
         {!bp.isMobile && (
@@ -275,6 +278,7 @@ export function App() {
         </>
       )}
       <IntegrationsPanel open={integrationsOpen} github={github} onClose={() => setIntegrationsOpen(false)} onPinyxConfigUpdate={() => void pinyxStatus.refresh()} />
+      <QuotaPanel open={quotaOpen} onClose={() => setQuotaOpen(false)} />
       <SettingsPanel
         open={settingsOpen}
         settings={settings}

@@ -1,6 +1,7 @@
 import type { CheckpointTrigger, CompressionTrigger, Mission, Milestone, WorkingUnit, EscalationTrigger, EscalationContext, AgentType, AgentStatus, MilestoneStatus } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { PinyxClient } from "../clients/pinyx-client.js";
+import { QuotaExhaustedError } from "../clients/pinyx-quota-wrapper.js";
 import { createNegotiator } from "./negotiator.js";
 import { createWorktreeManager } from "./worktree.js";
 import { createAgentSpawner } from "../agents/agent-spawner.js";
@@ -354,17 +355,27 @@ export function createMilestoneLoop(
           }
 
           if (decision.decision === "rescope") {
-            // Re-plan this milestone via PiNyx
             await lapis.updateMilestoneStatus(milestone.id, "in_progress");
             callbacks.onMilestoneProgress(milestone.id, "rescoping", completedCount, units.length);
 
-            const resp = await pinyx.chat({
-              model: config.modelHints.orchestrator,
-              messages: [
-                { role: "system", content: "You are a mission planner. Re-plan this milestone given the validation failures. Respond with JSON: { units: [{ description, declaredPaths, declaredModules }] }" },
-                { role: "user", content: `Milestone: ${milestone.title}\nDescription: ${milestone.description}\nFailed units: ${decision.reason}\nMission: ${mission.description}` },
-              ],
-            });
+            let resp;
+            try {
+              resp = await pinyx.chat({
+                model: config.modelHints.orchestrator,
+                messages: [
+                  { role: "system", content: "You are a mission planner. Re-plan this milestone given the validation failures. Respond with JSON: { units: [{ description, declaredPaths, declaredModules }] }" },
+                  { role: "user", content: `Milestone: ${milestone.title}\nDescription: ${milestone.description}\nFailed units: ${decision.reason}\nMission: ${mission.description}` },
+                ],
+              });
+            } catch (err) {
+              if (err instanceof QuotaExhaustedError) {
+                const trigger: CheckpointTrigger = "quota_exhausted";
+                const summary = `Quota exhausted during rescope for provider ${err.providerId}. Window resets at ${err.windowResetsAt}`;
+                callbacks.onEscalation(mission.id, { kind: "quota_exhausted", milestoneId: milestone.id, windowResetsAt: err.windowResetsAt } as EscalationTrigger, { summary });
+                return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
+              }
+              throw err;
+            }
 
             try {
               const newPlan = JSON.parse(resp.content) as { units: Array<{ description: string; declaredPaths: string[]; declaredModules: string[] }> };

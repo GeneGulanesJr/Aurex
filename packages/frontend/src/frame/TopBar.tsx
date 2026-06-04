@@ -13,6 +13,8 @@ interface TopBarProps {
   sidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
   onOpenSettings?: () => void;
+  onOpenQuota?: () => void;
+  quotaStatus?: string | null;
 }
 
 function StatusDot({ color }: { color: string }) {
@@ -50,7 +52,7 @@ function StatusItem({ color, label }: { color: string; label: string }) {
   );
 }
 
-export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, githubUser, pinyxConfigured, onOpenIntegrations, sidebarCollapsed, onToggleSidebar, onOpenSettings }: TopBarProps) {
+export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, githubUser, pinyxConfigured, onOpenIntegrations, sidebarCollapsed, onToggleSidebar, onOpenSettings, onOpenQuota, quotaStatus }: TopBarProps) {
   const dotColor = connected ? "var(--success)" : "var(--error)";
   return (
     <header
@@ -169,6 +171,31 @@ export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, 
             <span>GITHUB —</span>
           )}
         </button>
+        {onOpenQuota && (
+          <button
+            onClick={onOpenQuota}
+            className="hide-on-mobile"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              background: "transparent",
+              border: "1px solid var(--border)",
+              borderRadius: "4px",
+              color: quotaStatus === "exhausted" ? "var(--error, #ef4444)" : quotaStatus === "active" ? "var(--accent)" : "var(--text-muted)",
+              cursor: "pointer",
+              padding: "3px 8px",
+              fontFamily: '"JetBrains Mono", monospace',
+              fontSize: "10px",
+              letterSpacing: "0.5px",
+            }}
+            title="Coding Plan"
+          >
+            <span style={{ fontSize: "8px", letterSpacing: "1px" }}>QUOTA</span>
+            {quotaStatus === "exhausted" && <StatusDot color="var(--error, #ef4444)" />}
+            {quotaStatus === "active" && <StatusDot color="var(--accent)" />}
+          </button>
+        )}
         {onOpenSettings && (
           <button
             onClick={onOpenSettings}
