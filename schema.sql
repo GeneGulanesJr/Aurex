@@ -579,6 +579,64 @@ CREATE INDEX IF NOT EXISTS idx_ov_memory ON observation_versions(memory_id);
 CREATE INDEX IF NOT EXISTS idx_ov_created ON observation_versions(created_at DESC);
 
 -- ═══════════════════════════════════════════════════════════
+-- ═══════════════════════════════════════════════════════════
+-- AGENT-INTEL REPOSITORY: SYMBOL METADATA  (enriched per-symbol data)
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS symbol_metadata (
+  symbol_id         INTEGER PRIMARY KEY REFERENCES code_symbols(id) ON DELETE CASCADE,
+  intent            TEXT NOT NULL DEFAULT '',
+  behavior_summary  TEXT NOT NULL DEFAULT '',
+  constraints       TEXT NOT NULL DEFAULT '[]',    -- JSON array of strings
+  failure_history   TEXT NOT NULL DEFAULT '[]',    -- JSON array of {date, description}
+  replacement_of    TEXT NOT NULL DEFAULT '',       -- stable_symbol_id of superseded symbol
+  enriched_at       TEXT NOT NULL DEFAULT (datetime('now')),
+  enrichment_source TEXT NOT NULL DEFAULT ''        -- 'auto' | 'manual'
+);
+CREATE INDEX IF NOT EXISTS idx_sm_symbol ON symbol_metadata(symbol_id);
+
+-- ═══════════════════════════════════════════════════════════
+-- AGENT-INTEL REPOSITORY: DUPLICATE DETECTION  (clone families)
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS duplicate_groups (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id         INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE,
+  intent          TEXT NOT NULL DEFAULT '',
+  risk            TEXT NOT NULL DEFAULT 'low',        -- low | medium | high
+  detection_type  TEXT NOT NULL DEFAULT 'structural',  -- name | structural | intent
+  recommendation  TEXT NOT NULL DEFAULT '',
+  fingerprint_hash TEXT NOT NULL DEFAULT '',
+  created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_dg_repo ON duplicate_groups(repo_id);
+CREATE INDEX IF NOT EXISTS idx_dg_hash ON duplicate_groups(repo_id, fingerprint_hash);
+
+CREATE TABLE IF NOT EXISTS duplicate_instances (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id        INTEGER NOT NULL REFERENCES duplicate_groups(id) ON DELETE CASCADE,
+  symbol_id       INTEGER NOT NULL REFERENCES code_symbols(id) ON DELETE CASCADE,
+  file_path       TEXT NOT NULL,
+  symbol_name     TEXT NOT NULL,
+  line_start      INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_di_group ON duplicate_instances(group_id);
+CREATE INDEX IF NOT EXISTS idx_di_symbol ON duplicate_instances(symbol_id);
+
+-- ═══════════════════════════════════════════════════════════
+-- AGENT-INTEL REPOSITORY: AUDIT RUNS  (post-edit diff audit trail)
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS audit_runs (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id         INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE,
+  task            TEXT NOT NULL DEFAULT '',
+  files_changed   TEXT NOT NULL DEFAULT '[]',       -- JSON array of file paths
+  violations      TEXT NOT NULL DEFAULT '[]',       -- JSON array of violation objects
+  risk            TEXT NOT NULL DEFAULT 'low',
+  created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ar_repo ON audit_runs(repo_id);
+CREATE INDEX IF NOT EXISTS idx_ar_created ON audit_runs(created_at DESC);
+
+-- ═══════════════════════════════════════════════════════════
 -- SETTINGS (KV store for integration tokens, config)
 -- ═══════════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS settings (
