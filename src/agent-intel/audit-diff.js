@@ -148,6 +148,30 @@ function _checkUntestedPublic(db, repoId, sym) {
 }
 
 function _checkHotPath(db, repoId, sym) {
+  // First check runtime hotness data if available
+  try {
+    const runtimeIngest = require('./runtime-ingest');
+    const hotSymbols = runtimeIngest.getHotSymbols(db, repoId, 100);
+    const hotMatch = hotSymbols.find(s => s.file_path === sym.file_path);
+    
+    if (hotMatch) {
+      return {
+        type: 'hot_path_modified',
+        severity: 'warning',
+        message: `Hot runtime path (${hotMatch.hit_count} hits) — prefer minimal diffs and add tests`,
+        file: sym.file_path,
+        symbol: sym.name,
+        runtime_data: {
+          traffic: hotMatch.traffic,
+          hit_count: hotMatch.hit_count,
+        },
+      };
+    }
+  } catch {
+    // Runtime data not available — fall back to caller count
+  }
+
+  // Fallback: check caller count as proxy for hot path
   const callers = db
     .prepare(
       `SELECT COUNT(DISTINCT caller_symbol_id) as cnt FROM code_calls
