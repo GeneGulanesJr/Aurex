@@ -65,11 +65,21 @@ function blastRadius(db, repoId, symbolName, options = {}) {
   let runtime = null;
   if (includeRuntime) {
     try {
-      const runtimeData = db.prepare(`
+      // Try to match by symbol_id first, then by function_name and file_path
+      let runtimeData = db.prepare(`
         SELECT hit_count, traffic, last_seen
         FROM runtime_symbols
         WHERE repo_id = ? AND symbol_id = ?
       `).get(repoId, symbolRow.id);
+
+      // If not found by symbol_id, try matching by function_name
+      if (!runtimeData) {
+        runtimeData = db.prepare(`
+          SELECT hit_count, traffic, last_seen
+          FROM runtime_symbols
+          WHERE repo_id = ? AND function_name = ? AND file_path LIKE ?
+        `).get(repoId, symbolRow.name, `%${symbolRow.file_path}`);
+      }
 
       if (runtimeData) {
         runtime = {
