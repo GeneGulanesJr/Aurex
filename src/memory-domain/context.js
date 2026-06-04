@@ -196,18 +196,43 @@ function context(deps, args) {
     insertRecallLog(entries);
   }
 
+  // Supplemental cross-project suggestions: when project-scoped, also find
+  // relevant memories from other projects so insights transfer across projects.
+  let crossProjectSuggestions = [];
+  if (!crossProject && project && filtered.length > 0 && topicQuery) {
+    const supplementLimit = CONTEXT.CROSS_PROJECT_SUPPLEMENT_LIMIT || 3;
+    const match = buildTopicQueryMatch(topicQueryNeedles(topicQuery));
+    crossProjectSuggestions = sqlJson(
+      `
+        SELECT o.id, o.title, o.type, o.project, o.created_at,
+               COALESCE(sl.trust_score, ${RANKING.DEFAULT_TRUST_SCORE}) as trust_score,
+               ${match.scoreSql} as match_score
+        FROM observations o
+        LEFT JOIN symbol_links sl ON sl.memory_id = o.id
+        WHERE o.deleted_at IS NULL AND o.type != 'skill'
+          AND o.scope = 'project' AND o.project != ?
+          AND (${match.whereSql})
+        GROUP BY o.id
+        ORDER BY match_score DESC, trust_score DESC, o.created_at DESC
+        LIMIT ?`,
+      [...match.scoreParams, project, ...match.whereParams, supplementLimit],
+    );
+  }
+
   const totalAll = countObservationsByProjectAndType(crossProject ? null : project);
 
   return {
     sessions,
     personal,
     observations: filtered,
+    cross_project_suggestions: crossProjectSuggestions,
     project: project || null,
     cross_project: crossProject,
     topic: topicKey || topicQuery || null,
     stats: {
       total_memories: totalAll,
       total_personal: personal.length,
+      cross_project_suggestions: crossProjectSuggestions.length,
     },
   };
 }

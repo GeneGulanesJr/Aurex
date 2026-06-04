@@ -180,6 +180,16 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
       lines.push('');
     }
 
+    // Cross-project suggestions: related memories from other projects
+    const crossProjectSuggestions = (effectiveContext.cross_project_suggestions || []) as any[];
+    if (crossProjectSuggestions.length > 0) {
+      lines.push('### Cross-Project Suggestions');
+      for (const s of crossProjectSuggestions) {
+        lines.push(`- [${s.type ?? '?'}] ${s.title ?? '?'} (${s.project ?? '?'})`);
+      }
+      lines.push('');
+    }
+
     lines.push('Use `memory-search` for deeper recall and `memory-save` for durable decisions.');
 
     if (!cwdRepo) {
@@ -190,6 +200,24 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
     } else if (isStale && !isHistoricalMemoryPrompt(promptQuery) && effectiveObservations.length === 0) {
       lines.push('');
       lines.push(CONTEXT.STALE_GUIDANCE.replace('{repo}', cwdRepo.name));
+    }
+
+    // Auto-inject preflight intelligence for coding tasks when an indexed repo exists
+    if (cwdRepo && isPreflightWorthyPrompt(promptQuery)) {
+      try {
+        const preflightResult = await deps.mem('preflight', {
+          repo: cwdRepo.name,
+          task: promptQuery,
+          'code-limit': String(CONTEXT.PREFLIGHT_CODE_LIMIT || 3),
+          'memory-limit': String(CONTEXT.PREFLIGHT_MEMORY_LIMIT || 2),
+          'doc-limit': String(CONTEXT.PREFLIGHT_DOC_LIMIT || 1),
+        });
+        if (preflightResult && !preflightResult.error) {
+          appendPreflightBlock(lines, preflightResult);
+        }
+      } catch {
+        // Preflight is best-effort; never block context injection on failure
+      }
     }
 
     appendExtensionHint(lines, ctx.cwd);
@@ -415,6 +443,77 @@ export function extractFilePaths(content: string): string[] {
   }
   // Deduplicate, max 3
   return [...new Set(matches)].slice(0, 3);
+}
+
+export function isPreflightWorthyPrompt(prompt: string | null): boolean {
+  if (!prompt) {
+    return false;
+  }
+  // Skip prompts that are purely questions/navigation/history
+  if (isSourceAuthoritativePrompt(prompt) || isHistoricalMemoryPrompt(prompt) || isNavigationPrompt(prompt)) {
+    return false;
+  }
+  const normalized = prompt.toLowerCase();
+  // Heavily question-shaped prompts (starts with question words and no action verbs)
+  if (/^(what|where|when|who|how many|does|is there|can you explain|tell me about)\b/.test(normalized)) {
+    return false;
+  }
+  // Must contain at least one action/coding signal
+  const codingSignals = [
+    /\b(add|create|build|implement|fix|refactor|modify|update|change|remove|delete)\b/,
+    /\b(write|extend|extract|move|rename|migrate|wire up|integrate)\b/,
+    /\b(feature|bug|issue|test|function|module|component|endpoint|route)\b/,
+    /\b(make it|ensure|so that|need to|should|let's|let me)\b/,
+  ];
+  return codingSignals.some((re) => re.test(normalized));
+}
+
+function appendPreflightBlock(lines: string[], result: any): void {
+  const maxChars = CONTEXT.PREFLIGHT_MAX_CHARS || 400;
+  const code = (result.likely_existing_code || []) as Array<{
+    symbol: string;
+    file: string;
+    line?: number;
+    kind?: string;
+  }>;
+  const warnings = (result.duplicate_warnings || []) as Array<{
+    symbol: string;
+    file: string;
+  }>;
+  const risk = result.risk as string;
+  const action = result.recommended_action as string;
+  const relatedFiles = (result.related_files || []) as string[];
+  const maxFiles = CONTEXT.PREFLIGHT_RELATED_FILES || 3;
+
+  if (code.length === 0 && warnings.length === 0 && risk === 'low') {
+    return; // Nothing to surface
+  }
+
+  lines.push('');
+  lines.push('### Preflight — Before Coding');
+
+  if (warnings.length > 0) {
+    const riskIcon = risk === 'high' ? '🔴' : risk === 'medium' ? '🟡' : '🟢';
+    lines.push(`${riskIcon} **Duplicate risk: ${risk}** — existing code may already handle this task.`);
+    for (const w of warnings.slice(0, 2)) {
+      lines.push(`- ⚠️ \`${w.symbol}\` in \`${w.file}\``);
+    }
+  } else if (code.length > 0) {
+    const riskIcon = risk === 'high' ? '🔴' : risk === 'medium' ? '🟡' : '🟢';
+    lines.push(`${riskIcon} Risk: **${risk}** — related code exists.`);
+    for (const c of code.slice(0, 2)) {
+      const loc = c.line ? `:${c.line}` : '';
+      lines.push(`- \`${c.symbol}\` (${c.kind || 'symbol'}) — \`${c.file}${loc}\``);
+    }
+  }
+
+  if (relatedFiles.length > 0) {
+    lines.push(`Related files: ${relatedFiles.slice(0, maxFiles).map((f: string) => `\`${f}\``).join(', ')}`);
+  }
+
+  if (action) {
+    lines.push(`→ ${action}`);
+  }
 }
 
 export function registerContextReminder(pi: ExtensionAPI, deps: ContextDeps) {

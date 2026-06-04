@@ -115,6 +115,7 @@ const CONTEXT = {
   },
   CROSS_PROJECT_DEEP_MULTIPLIER: 2,
   CROSS_PROJECT_DEEP_MAX: 30,
+  CROSS_PROJECT_SUPPLEMENT_LIMIT: 3,
   TOPIC_MATCH_BOOST: 5,
   EXCLUDED_TYPES: ['progress', 'accomplished', 'session_summary'],
   DEFAULT_LIMIT: 10,
@@ -129,6 +130,11 @@ const CONTEXT = {
   MAX_INJECTED_CONTEXT_CHARS: 1800,
   STALE_GUIDANCE:
     '📝 **Stale code index:** indexed code may not match current source files. Run `memory-code reindex-repo --repo {repo}` to update. Verify current source before relying on code-index results.',
+  PREFLIGHT_CODE_LIMIT: 3,
+  PREFLIGHT_MEMORY_LIMIT: 2,
+  PREFLIGHT_DOC_LIMIT: 1,
+  PREFLIGHT_MAX_CHARS: 400,
+  PREFLIGHT_RELATED_FILES: 3,
 };
 
 const PAGERANK = {
