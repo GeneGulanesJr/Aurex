@@ -36,7 +36,6 @@ export interface MissionRunnerConfig {
   repoRoot: string;
   gitMainBranch: string;
   onPostMilestoneScan?: (missionId: string, root: string) => Promise<void>;
-  quotaEnabled?: boolean;
 }
 
 export function createMissionRunner(config: MissionRunnerConfig): MissionRunner {

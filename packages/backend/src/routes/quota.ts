@@ -179,14 +179,11 @@ export async function quotaRoutes(
     const now = new Date();
 
     const window = await atomicUpdateProviderWindow(providerId, async (current) => {
-      return resetWindow(current ?? {
-        windowStart: now.toISOString(),
+      return resetWindow(current ?? createQuotaWindow({
         windowDurationMs: providerConfig.windowDurationMs,
         burnDurationMs: providerConfig.burnDurationMs,
-        firstLLMCallAt: null,
-        isActive: false,
-        lastActiveAt: null,
-      }, now);
+        now,
+      }), now);
     });
 
     return getProviderStatusDisplay(providerId, providerConfig, window, qc.enabled, now);

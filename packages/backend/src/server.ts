@@ -48,7 +48,6 @@ async function main() {
     repoRoot: config.repoRoot,
     gitMainBranch: config.gitMainBranch,
     maxConcurrent: config.maxConcurrentMissions,
-    quotaEnabled: config.quotaEnabled,
     onPostMilestoneScan: async (missionId: string, root: string) => {
       try {
         await bumblebeeRunner.triggerScan(missionId, { profile: "project", root });

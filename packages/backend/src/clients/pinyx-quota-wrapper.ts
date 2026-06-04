@@ -47,7 +47,7 @@ export function createQuotaAwarePinyxClient(inner: PinyxClient, opts: QuotaAware
       const result = checkQuota(window, now);
 
       if (!result.ok && result.reason === "quota_exhausted") {
-        throw new QuotaExhaustedError(providerId, result.windowResetsAt ?? new Date().toISOString());
+        throw new QuotaExhaustedError(providerId, result.windowResetsAt!);
       }
 
       if (window.firstLLMCallAt === null) {

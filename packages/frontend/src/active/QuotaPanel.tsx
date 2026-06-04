@@ -33,7 +33,6 @@ const STATUS_STYLES: Record<string, { color: string; label: string }> = {
 
 export function QuotaPanel({ open, onClose }: QuotaPanelProps) {
   const { status, loading, prefire, reset, updateConfig, refresh } = useQuota();
-  const [prefireProviderId, setPrefireProviderId] = useState<string | undefined>(undefined);
   const [prefireTime, setPrefireTime] = useState("");
   const [prefireResult, setPrefireResult] = useState<Array<{ time: string; event: string }> | null>(null);
   const [error, setError] = useState<string | null>(null);
