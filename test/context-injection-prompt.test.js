@@ -1,6 +1,7 @@
 import {
   extractUserPrompt,
   isHistoricalMemoryPrompt,
+  isPreflightWorthyPrompt,
   isSourceAuthoritativePrompt,
   registerBeforeAgentStart,
 } from '../extensions/memory-layer/hooks/context-injection.ts';
@@ -283,5 +284,65 @@ describe('context injection prompt extraction', () => {
     expect(content).toContain('Code index: `PiMemoryExtension`');
     expect(content).not.toContain('Stale code index');
     expect(content).toContain('Why: Avoid external services Where: src/memory-domain/search.js');
+  });
+});
+
+describe('preflight-worthiness detection', () => {
+  test('triggers on coding action verbs', () => {
+    expect(isPreflightWorthyPrompt('add notification preferences')).toBe(true);
+    expect(isPreflightWorthyPrompt('create a new endpoint for auth')).toBe(true);
+    expect(isPreflightWorthyPrompt('fix the memory leak in context injection')).toBe(true);
+    expect(isPreflightWorthyPrompt('implement retry logic for failed requests')).toBe(true);
+    expect(isPreflightWorthyPrompt('refactor the data access layer')).toBe(true);
+    expect(isPreflightWorthyPrompt('update the CLI to support new flags')).toBe(true);
+    expect(isPreflightWorthyPrompt('build a dashboard for monitoring')).toBe(true);
+    expect(isPreflightWorthyPrompt('write a test for the new component')).toBe(true);
+    expect(isPreflightWorthyPrompt('extract the common logic into a utility')).toBe(true);
+  });
+
+  test('triggers on feature/bug keywords', () => {
+    expect(isPreflightWorthyPrompt('feature: support dark mode')).toBe(true);
+    expect(isPreflightWorthyPrompt('bug: context injection fails on empty prompts')).toBe(true);
+    expect(isPreflightWorthyPrompt('issue #42: migrate to new API')).toBe(true);
+    expect(isPreflightWorthyPrompt('the test suite is failing')).toBe(true);
+    expect(isPreflightWorthyPrompt('add a route for /api/health')).toBe(true);
+  });
+
+  test('triggers on intent phrases', () => {
+    expect(isPreflightWorthyPrompt('make it so that the cache auto-clears')).toBe(true);
+    expect(isPreflightWorthyPrompt('ensure all errors are logged')).toBe(true);
+    expect(isPreflightWorthyPrompt('need to add validation')).toBe(true);
+    expect(isPreflightWorthyPrompt("let's move the config to a separate package")).toBe(true);
+    expect(isPreflightWorthyPrompt('I should add a guard clause here')).toBe(true);
+  });
+
+  test('does NOT trigger on navigation prompts', () => {
+    expect(isPreflightWorthyPrompt('where is context injection implemented?')).toBe(false);
+    expect(isPreflightWorthyPrompt('what module handles search?')).toBe(false);
+    expect(isPreflightWorthyPrompt('show me the file path for the gateway')).toBe(false);
+  });
+
+  test('does NOT trigger on historical memory prompts', () => {
+    expect(isPreflightWorthyPrompt('why did LaPis choose SQLite FTS5?')).toBe(false);
+    expect(isPreflightWorthyPrompt('what was the rationale for the decision?')).toBe(false);
+    expect(isPreflightWorthyPrompt('what bug led to the refactor?')).toBe(false);
+  });
+
+  test('does NOT trigger on source-authoritative prompts', () => {
+    expect(isPreflightWorthyPrompt('In the current source, what does rankObservations do?')).toBe(false);
+    expect(isPreflightWorthyPrompt('answer from the code')).toBe(false);
+  });
+
+  test('does NOT trigger on pure question prompts', () => {
+    expect(isPreflightWorthyPrompt('what is LaPis?')).toBe(false);
+    expect(isPreflightWorthyPrompt('how many tests are there?')).toBe(false);
+    expect(isPreflightWorthyPrompt('does the extension support Windows?')).toBe(false);
+    expect(isPreflightWorthyPrompt('can you explain the memory domain architecture?')).toBe(false);
+    expect(isPreflightWorthyPrompt('tell me about the context injection flow')).toBe(false);
+  });
+
+  test('returns false for null/empty prompts', () => {
+    expect(isPreflightWorthyPrompt(null)).toBe(false);
+    expect(isPreflightWorthyPrompt('')).toBe(false);
   });
 });
