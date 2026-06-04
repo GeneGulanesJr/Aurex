@@ -40,6 +40,13 @@ Most commands are called by Pi automatically through the memory-layer extension.
 
 Supported languages: JavaScript, TypeScript, TSX, Go, Python, Rust, and SQL.
 
+## Agent Intelligence
+
+| Command                   | Purpose |
+| ------------------------- | ------- |
+| `preflight --repo --task` | Before-coding check that combines code search, memory recall, related files/tests, docs, duplicate warnings, and recommended action. |
+| `agent-pack --repo --task` | Compact Pi planning packet with must-read files, relevant symbols, past decisions, duplicate warnings, risk, and suggested plan. |
+
 ## Code Analysis
 
 | Command                          | Purpose                                            |

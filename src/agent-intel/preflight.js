@@ -1,0 +1,399 @@
+// Module boundary:
+// Agent-facing coding intelligence orchestration. Composes existing memory,
+// Code-index, doc-index, and static analysis read models into compact
+// Before-coding context. Must not mutate memory or code indexes.
+
+const codeSearch = require('../code-index/source-retrieval');
+const memorySearch = require('../memory-domain/search');
+const docIndex = require('../doc-index');
+
+const DEFAULT_LIMITS = {
+  code: 8,
+  memory: 5,
+  docs: 5,
+  relatedFiles: 8,
+};
+
+function clampInt(value, fallback, min, max) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, Math.floor(n)));
+}
+
+function uniq(items) {
+  return [...new Set((items || []).filter(Boolean))];
+}
+
+function basename(file) {
+  if (!file) {
+    return '';
+  }
+  return String(file).split('/').pop() || String(file);
+}
+
+function normalizeName(text) {
+  return String(text || '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_./:-]+/g, ' ')
+    .toLowerCase()
+    .replace(
+      /\b(get|set|create|add|insert|update|delete|remove|load|fetch|find|list|handle|service|manager|helper)\b/g,
+      ' ',
+    )
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function taskTerms(task) {
+  return normalizeName(task)
+    .split(/\s+/)
+    .filter((term) => term.length >= 3);
+}
+
+function getRepoRow(db, repoName) {
+  const rows = db
+    .prepare('SELECT id, name, path, file_count, symbol_count, head_commit FROM code_repos WHERE name = ?')
+    .all(repoName);
+  return rows[0] || null;
+}
+
+function listDocRepos(db, preferredName) {
+  const rows = db.prepare('SELECT id, name FROM doc_repos ORDER BY name').all();
+  if (!preferredName) {
+    return rows;
+  }
+  return rows.sort((a, b) => {
+    if (a.name === preferredName) {
+      return -1;
+    }
+    if (b.name === preferredName) {
+      return 1;
+    }
+    return 0;
+  });
+}
+
+function mapCodeResult(result) {
+  return {
+    symbol: result.symbol,
+    qualified_name: result.qualified_name,
+    kind: result.kind,
+    file: result.file,
+    line: result.line,
+    score: Number(result.score || 0),
+    signature: result.signature || '',
+    reason: 'Matched task terms in indexed symbol name, signature, docs, or body preview.',
+  };
+}
+
+function findSymbolRows(db, repoId, codeResults) {
+  const rows = [];
+  const seen = new Set();
+  for (const item of codeResults || []) {
+    if (!item.file || !item.symbol) {
+      // Skip incomplete search rows; preflight still has enough evidence from complete rows.
+    } else {
+      const matches = db
+        .prepare(
+          `SELECT id, name, qualified_name, kind, file_path, start_line
+         FROM code_symbols
+         WHERE repo_id = ? AND file_path = ? AND (name = ? OR qualified_name = ?)
+         LIMIT 3`,
+        )
+        .all(repoId, item.file, item.symbol, item.qualified_name || item.symbol);
+      for (const row of matches) {
+        if (!seen.has(row.id)) {
+          seen.add(row.id);
+          rows.push(row);
+        }
+      }
+    }
+  }
+  return rows;
+}
+
+function getRelatedFiles(db, repoId, symbolRows, codeResults, limit) {
+  const files = [];
+  for (const result of codeResults || []) {
+    files.push(result.file);
+  }
+  for (const symbol of symbolRows.slice(0, 5)) {
+    const rows = db
+      .prepare(
+        `SELECT DISTINCT cs.file_path AS file_path
+         FROM code_calls cc
+         JOIN code_symbols cs ON cs.id = cc.caller_symbol_id
+         WHERE cc.repo_id = ? AND (cc.callee_symbol_id = ? OR cc.callee_name = ?)
+         UNION
+         SELECT DISTINCT cs.file_path AS file_path
+         FROM code_calls cc
+         JOIN code_symbols cs ON cs.id = cc.callee_symbol_id
+         WHERE cc.repo_id = ? AND cc.caller_symbol_id = ?
+         LIMIT ?`,
+      )
+      .all(repoId, symbol.id, symbol.name, repoId, symbol.id, limit);
+    for (const row of rows) {
+      files.push(row.file_path);
+    }
+  }
+  return uniq(files).slice(0, limit);
+}
+
+function getLikelyTests(db, repoId, relatedFiles, limit) {
+  if (!relatedFiles.length) {
+    return [];
+  }
+  const bases = relatedFiles
+    .map((file) =>
+      basename(file)
+        .replace(/\.[^.]+$/, '')
+        .toLowerCase(),
+    )
+    .filter(Boolean);
+  const rows = db
+    .prepare(
+      `SELECT path
+       FROM code_files
+       WHERE repo_id = ?
+         AND (LOWER(path) LIKE '%test%' OR LOWER(path) LIKE '%spec%')
+       ORDER BY path
+       LIMIT 200`,
+    )
+    .all(repoId);
+  const scored = rows
+    .map((row) => {
+      const lower = row.path.toLowerCase();
+      const score = bases.reduce((acc, base) => acc + (lower.includes(base) ? 1 : 0), 0);
+      return { path: row.path, score };
+    })
+    .filter((row) => row.score > 0 || relatedFiles.some((file) => row.path.includes(basename(file).split('.')[0])))
+    .sort((a, b) => b.score - a.score || a.path.localeCompare(b.path));
+  return uniq(scored.map((row) => row.path)).slice(0, limit);
+}
+
+function getMemoryMatches(deps, task, repoName, limit) {
+  const result = memorySearch.search(deps, {
+    query: task,
+    project: repoName,
+    limit: String(limit),
+  });
+  return (result.results || []).map((memory) => ({
+    id: memory.id,
+    title: memory.title,
+    type: memory.type,
+    project: memory.project,
+    confidence: Number(memory._score || 0),
+    snippet: memory.snippet || '',
+    trust_score: memory.trust_score ?? null,
+  }));
+}
+
+function getDocMatches(db, task, repoName, limit) {
+  const docRepos = listDocRepos(db, repoName).slice(0, 2);
+  const out = [];
+  for (const repo of docRepos) {
+    const result = docIndex.searchDocs(db, repo.id, task, {});
+    for (const item of result.results || []) {
+      out.push({
+        repo: repo.name,
+        title: item.title,
+        file: item.file_path,
+        role: item.role,
+        level: item.level,
+        snippet: item.snippet || '',
+      });
+      if (out.length >= limit) {
+        return out;
+      }
+    }
+  }
+  return out;
+}
+
+function duplicateWarnings(task, codeItems) {
+  const terms = taskTerms(task);
+  const warnings = [];
+  const normalizedTask = terms.join(' ');
+  for (const item of codeItems.slice(0, 6)) {
+    const normalizedSymbol = normalizeName(`${item.symbol} ${item.qualified_name || ''} ${item.signature || ''}`);
+    const overlap = terms.filter((term) => normalizedSymbol.includes(term));
+    if (
+      overlap.length >= Math.min(2, Math.max(1, terms.length)) ||
+      (normalizedTask && normalizedSymbol.includes(normalizedTask))
+    ) {
+      warnings.push({
+        symbol: item.symbol,
+        file: item.file,
+        reason: `Existing symbol overlaps task intent (${overlap.slice(0, 4).join(', ') || normalizedTask}).`,
+      });
+    }
+  }
+  return warnings;
+}
+
+function riskLevel({ codeItems, memories, warnings, relatedFiles }) {
+  if (warnings.length >= 2 || codeItems.length >= 5) {
+    return 'high';
+  }
+  if (warnings.length || codeItems.length >= 2 || memories.length || relatedFiles.length >= 4) {
+    return 'medium';
+  }
+  return 'low';
+}
+
+function recommendedAction(risk, warnings, codeItems) {
+  if (warnings.length > 0) {
+    const top = warnings[0];
+    return `Review and extend existing ${top.symbol} in ${top.file} before creating new code.`;
+  }
+  if (codeItems.length > 0) {
+    const top = codeItems[0];
+    return `Start from ${top.symbol} in ${top.file}; confirm whether it already owns this behavior.`;
+  }
+  if (risk === 'low') {
+    return 'No obvious existing implementation found; proceed with a small plan and save the decision after implementation.';
+  }
+  return 'Review the related files and memories before editing.';
+}
+
+function preflight(deps, args) {
+  const task = args.task || args.query || args._?.[0];
+  if (!task) {
+    return deps.jsonErrNoExit
+      ? deps.jsonErrNoExit('Usage: preflight --task <task> --repo <repo>')
+      : { error: 'Missing task' };
+  }
+  const repoName = args.repo;
+  if (!repoName) {
+    return deps.jsonErrNoExit
+      ? deps.jsonErrNoExit('Usage: preflight --task <task> --repo <repo>')
+      : { error: 'Missing repo' };
+  }
+
+  const db = deps.getDb ? deps.getDb() : deps.db;
+  const repo = getRepoRow(db, repoName);
+  if (!repo) {
+    return deps.jsonErrNoExit
+      ? deps.jsonErrNoExit(`Repo "${repoName}" not found. Run index-repo first.`)
+      : { error: `Repo "${repoName}" not found. Run index-repo first.` };
+  }
+
+  const codeLimit = clampInt(
+    args['code-limit'] || args.codeLimit || args['max-results'] || args.top,
+    DEFAULT_LIMITS.code,
+    1,
+    25,
+  );
+  const memoryLimit = clampInt(args['memory-limit'] || args.memoryLimit, DEFAULT_LIMITS.memory, 0, 15);
+  const docLimit = clampInt(args['doc-limit'] || args.docLimit, DEFAULT_LIMITS.docs, 0, 15);
+
+  const codeSearchResult = codeSearch.searchCode(task, repoName, null, codeLimit);
+  const codeItems = (codeSearchResult.results || []).map(mapCodeResult);
+  const symbolRows = findSymbolRows(db, repo.id, codeItems);
+  const relatedFiles = getRelatedFiles(db, repo.id, symbolRows, codeItems, DEFAULT_LIMITS.relatedFiles);
+  const likelyTests = getLikelyTests(db, repo.id, relatedFiles, DEFAULT_LIMITS.relatedFiles);
+  const memories = memoryLimit > 0 ? getMemoryMatches(deps, task, repoName, memoryLimit) : [];
+  const docs = docLimit > 0 ? getDocMatches(db, task, repoName, docLimit) : [];
+  const warnings = duplicateWarnings(task, codeItems);
+  const risk = riskLevel({ codeItems, memories, warnings, relatedFiles });
+  let duplicateRisk = 'low';
+  if (risk === 'high') {
+    duplicateRisk = 'high';
+  } else if (warnings.length) {
+    duplicateRisk = 'medium';
+  }
+
+  return {
+    task_summary: task,
+    repo: repoName,
+    likely_existing_code: codeItems,
+    similar_past_tasks: memories,
+    related_files: relatedFiles,
+    tests_likely_affected: likelyTests,
+    relevant_docs: docs,
+    duplicate_risk: duplicateRisk,
+    duplicate_warnings: warnings,
+    risk,
+    recommended_action: recommendedAction(risk, warnings, codeItems),
+    evidence: {
+      code_search_strategy: codeSearchResult.strategy,
+      code_results_considered: codeItems.length,
+      memory_results_considered: memories.length,
+      doc_results_considered: docs.length,
+      indexed_repo: {
+        files: repo.file_count,
+        symbols: repo.symbol_count,
+        head_commit: repo.head_commit,
+      },
+    },
+  };
+}
+
+function agentPack(deps, args) {
+  const result = preflight(deps, args);
+  if (result.error) {
+    return result;
+  }
+  const relevantSymbols = result.likely_existing_code.slice(0, 8).map((item) => ({
+    symbol: item.symbol,
+    file: item.file,
+    line: item.line,
+    reason: item.reason,
+  }));
+  const pastDecisions = result.similar_past_tasks.slice(0, 5).map((memory) => ({
+    id: memory.id,
+    title: memory.title,
+    type: memory.type,
+    snippet: memory.snippet,
+  }));
+  const mustRead = uniq([
+    ...result.related_files.slice(0, 5),
+    ...result.tests_likely_affected.slice(0, 3),
+    ...result.relevant_docs.slice(0, 3).map((doc) => doc.file),
+  ]).slice(0, 10);
+  const suggestedPlan = [];
+  if (result.duplicate_warnings.length > 0) {
+    suggestedPlan.push('Inspect the existing matching symbol before creating new code.');
+    suggestedPlan.push('Prefer extending or reusing the existing abstraction unless it is demonstrably wrong.');
+  } else if (result.likely_existing_code.length > 0) {
+    suggestedPlan.push('Open the top matching files and determine ownership for the requested behavior.');
+  } else {
+    suggestedPlan.push(
+      'No strong existing implementation found; choose the smallest cohesive location for the change.',
+    );
+  }
+  if (result.tests_likely_affected.length > 0) {
+    suggestedPlan.push('Update or add tests near the likely affected test files.');
+  }
+  suggestedPlan.push('After editing, save the implementation decision and link it to changed symbols.');
+
+  return {
+    task_summary: result.task_summary,
+    repo: result.repo,
+    must_read: mustRead,
+    relevant_symbols: relevantSymbols,
+    past_decisions: pastDecisions,
+    duplicate_warnings: result.duplicate_warnings,
+    risk: result.risk,
+    recommended_action: result.recommended_action,
+    suggested_plan: suggestedPlan,
+    compact_context: {
+      related_files: result.related_files.slice(0, 8),
+      tests_likely_affected: result.tests_likely_affected.slice(0, 5),
+      relevant_docs: result.relevant_docs.slice(0, 5),
+      evidence: result.evidence,
+    },
+  };
+}
+
+module.exports = {
+  preflight,
+  agentPack,
+  _private: {
+    normalizeName,
+    duplicateWarnings,
+    riskLevel,
+  },
+};

@@ -278,6 +278,67 @@ function formatCodeResult(mode: string, result: any): string {
         )
         .join('\n\n');
     }
+    case 'preflight': {
+      const code = result.likely_existing_code || [];
+      const memories = result.similar_past_tasks || [];
+      const warnings = result.duplicate_warnings || [];
+      const files = result.related_files || [];
+      const lines = [
+        `**Preflight:** ${result.task_summary ?? 'task'} — risk: ${result.risk ?? 'unknown'} | duplicate risk: ${result.duplicate_risk ?? 'unknown'}`,
+        `Recommended: ${result.recommended_action ?? 'Review relevant context before editing.'}`,
+      ];
+      if (warnings.length) {
+        lines.push('', 'Duplicate warnings:');
+        for (const w of warnings.slice(0, 5)) {
+          lines.push(`  ⚠️ ${w.symbol ?? '?'} (${w.file ?? '?'}) — ${w.reason ?? 'similar intent'}`);
+        }
+      }
+      if (code.length) {
+        lines.push('', 'Likely existing code:');
+        for (const c of code.slice(0, 8)) {
+          lines.push(`  ${c.symbol ?? '?'} (${c.file ?? '?'}:${c.line ?? '?'})`);
+        }
+      }
+      if (memories.length) {
+        lines.push('', 'Similar past tasks:');
+        for (const m of memories.slice(0, 5)) {
+          lines.push(`  [${m.type ?? '?'}] ${m.title ?? '?'}`);
+        }
+      }
+      if (files.length) {
+        lines.push('', `Related files: ${files.slice(0, 8).join(', ')}`);
+      }
+      return lines.join('\n');
+    }
+    case 'agent-pack': {
+      const lines = [
+        `**Agent pack:** ${result.task_summary ?? 'task'} — risk: ${result.risk ?? 'unknown'}`,
+        `Recommended: ${result.recommended_action ?? 'Review relevant context before editing.'}`,
+      ];
+      if (result.must_read?.length) {
+        lines.push('', 'Must read:', ...result.must_read.slice(0, 10).map((f: string) => `  - ${f}`));
+      }
+      if (result.duplicate_warnings?.length) {
+        lines.push('', 'Duplicate warnings:');
+        for (const w of result.duplicate_warnings.slice(0, 5)) {
+          lines.push(`  ⚠️ ${w.symbol ?? '?'} (${w.file ?? '?'})`);
+        }
+      }
+      if (result.past_decisions?.length) {
+        lines.push('', 'Past decisions:');
+        for (const d of result.past_decisions.slice(0, 5)) {
+          lines.push(`  - [${d.type ?? '?'}] ${d.title ?? '?'}`);
+        }
+      }
+      if (result.suggested_plan?.length) {
+        lines.push(
+          '',
+          'Suggested plan:',
+          ...result.suggested_plan.map((step: string, i: number) => `  ${i + 1}. ${step}`),
+        );
+      }
+      return lines.join('\n');
+    }
     case 'index-repo': {
       if (result.error) {
         return `Error: ${result.error}`;
