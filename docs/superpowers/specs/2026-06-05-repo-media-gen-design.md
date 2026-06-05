@@ -39,6 +39,16 @@ Generates one media asset for the current repo.
 | `output_dir` | string | no | `./repo-media/{target-slug}/` | Output directory |
 | `confirm` | boolean | no | true | Show confirmation before generating (set false to skip) |
 
+**Confirmation dialog (when `confirm: true`):** Shows `ctx.ui.confirm()` with:
+```
+Generate {asset_type}?
+  Model: {model}
+  {Duration: {duration}s, Resolution: {resolution} | Aspect: {aspect_ratio}}
+  Output: {output_dir}{output_name}.{ext}
+  [Confirm] [Cancel]
+```
+This gates credit-burning operations. Default is `true`.
+
 **Asset type is always specified by the LLM.** No keyword auto-detection — the LLM reasons about what the user wants and picks the right `asset_type` before calling the tool. The `promptGuidelines` (below) help the LLM choose.
 
 **Wizard trigger logic:**
@@ -51,6 +61,20 @@ Generates one media asset for the current repo.
 - Speech: `speech-2.8-hd`
 - Music: `music-2.6`
 - Video: `MiniMax-Hailuo-2.3`
+
+**Asset type → provider capability mapping:**
+
+| Asset Type | Capability | Notes |
+|---|---|---|
+| `video_explainer` | video | Text-to-video |
+| `feature_showcase` | video | Text-to-video |
+| `architecture_diagram` | image | Text-to-image |
+| `screenshot_animation` | video | Image-to-video (requires `reference_image`) |
+| `voiceover` | speech | Text-to-speech |
+| `background_music` | music | Text-to-music |
+| `hero_image` | image | Text-to-image |
+| `social_asset` | image | Text-to-image |
+| `custom` | (from `model`) | Requires explicit `model` param to determine capability |
 
 **Resolution defaults by asset type:**
 - Video: 768p (1080p for feature_showcase)
@@ -83,6 +107,11 @@ Generates multiple assets at once for a unified theme.
 }
 ```
 If a key is missing, the suite generates a fallback prompt from `prompt` (theme) + asset-type template.
+
+**Social asset prompts in suite:**
+The `prompts` map accepts:
+- `"social_asset"` → one prompt used for all 3 aspect ratio variants (1:1, 16:9, 9:16)
+- `"social_asset_1x1"`, `"social_asset_16x9"`, `"social_asset_9x16"` → individual prompts per variant (overrides `"social_asset"`)
 
 **Default suite assets (when `assets` omitted) — 8 generations:**
 1. Architecture diagram (image)
@@ -141,6 +170,49 @@ interface VideoStatus {
   status: "processing" | "success" | "failed";
   fileId?: string;
   error?: string;
+}
+
+// Provider params mirror tool params, excluding UI/confirmation fields.
+// Each provider receives only the fields relevant to its capability.
+
+interface ImageParams {
+  prompt: string;
+  model: string;
+  aspectRatio?: string;    // "1:1", "16:9", "9:16", "4:3"
+  subjectReference?: { type: string; image: string[] };
+}
+
+interface SpeechParams {
+  text: string;            // The prompt IS the narration text for voiceover
+  model: string;
+  voiceId: string;
+  speed?: number;          // 0.5–2.0
+  pitch?: number;
+  languageBoost?: string;
+  format?: string;         // "mp3", "wav", "flac"
+  pronunciationDict?: { tone: string[] };
+}
+
+interface MusicParams {
+  prompt: string;
+  model: string;
+  lyrics?: string;
+  lyricsOptimizer?: boolean;
+  isInstrumental?: boolean;
+  referenceAudioUrl?: string;
+  format?: string;         // "mp3", "wav", "flac"
+}
+
+interface VideoParams {
+  prompt: string;
+  model: string;
+  mode: "text" | "image" | "first_last" | "subject";
+  duration: number;        // 6 or 10
+  resolution: string;      // "720p", "768p", "1080p"
+  firstFrameImage?: string;
+  lastFrameImage?: string;
+  subjectImage?: string;
+  promptOptimizer?: boolean;
 }
 ```
 
@@ -346,7 +418,7 @@ Providers can optionally check `ctx.modelRegistry` for a provider with a matchin
     ├── tools/
     │   ├── generate.ts       # generate_media tool
     │   └── generate_suite.ts # generate_media_suite tool
-    ├── wizard.ts             # Interactive wizard (for /media command) |
+    ├── wizard.ts             # Interactive wizard (for /media command)
     └── package.json          # Pi extension metadata only — zero runtime dependencies
 ```
 
@@ -359,3 +431,7 @@ No npm dependencies required. Uses Node.js built-in `fetch`, `Buffer`, `fs`, `pa
 - README section generator (auto-insert hero image into README.md)
 - Git commit hook (auto-generate assets on release)
 - Template customization per repo (`.repo-media.json` config file)
+
+## Git Considerations
+
+The extension does **NOT** modify `.gitignore`. Generated media (especially videos) can be large. Users should decide whether to commit `./repo-media/` or add it to `.gitignore`. The `/media list` command helps audit what's been generated before deciding.
