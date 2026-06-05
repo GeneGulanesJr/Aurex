@@ -27,6 +27,7 @@ Generates one media asset for the current repo.
 |-------|------|----------|---------|-------------|
 | `prompt` | string | yes | — | Final generation-ready prompt (LLM crafts this from repo context before calling) |
 | `asset_type` | enum | yes | — | `video_explainer`, `feature_showcase`, `architecture_diagram`, `screenshot_animation`, `voiceover`, `background_music`, `hero_image`, `social_asset`, `custom` |
+| `model` | string | no | best quality | Provider model ID (e.g. `speech-2.8-hd`, `MiniMax-Hailuo-2.3`). Default: best quality per provider. |
 | `target` | string | no | whole repo | What part of the repo (file, feature, module). Used for output subdirectory. |
 | `provider` | string | no | auto | Provider name (default: first available) |
 | `style` | enum | no | professional | `professional`, `playful`, `minimal`, `cinematic` |
@@ -36,10 +37,20 @@ Generates one media asset for the current repo.
 | `reference_image` | string | no | — | URL/path for image-to-video or subject reference |
 | `output_name` | string | no | auto | Filename without extension |
 | `output_dir` | string | no | `./repo-media/{target-slug}/` | Output directory |
-| `skip_wizard` | boolean | no | false | Use defaults for missing params instead of wizard |
 | `confirm` | boolean | no | true | Show confirmation before generating (set false to skip) |
 
 **Asset type is always specified by the LLM.** No keyword auto-detection — the LLM reasons about what the user wants and picks the right `asset_type` before calling the tool. The `promptGuidelines` (below) help the LLM choose.
+
+**Wizard trigger logic:**
+- **Tool called by LLM** (normal flow) → all required params provided, skip straight to confirmation (if `confirm: true`), then generate. No wizard.
+- **`/media` command** (user triggers directly) → full interactive wizard for all params.
+- No `skip_wizard` param needed — the trigger source (tool vs command) determines the flow.
+
+**Model defaults per capability (MiniMax):**
+- Image: `image-01`
+- Speech: `speech-2.8-hd`
+- Music: `music-2.6`
+- Video: `MiniMax-Hailuo-2.3`
 
 **Resolution defaults by asset type:**
 - Video: 768p (1080p for feature_showcase)
@@ -53,21 +64,35 @@ Generates multiple assets at once for a unified theme.
 
 | Param | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `prompt` | string | yes | — | Overall theme/topic |
+| `prompt` | string | yes | — | Overall theme/topic description |
+| `prompts` | object | no | {} | Per-asset generation prompts. Keys are asset types, values are the final prompt strings. Missing assets use `prompt` + asset-type template as fallback. |
 | `target` | string | no | whole repo | Feature, module, or "whole repo" |
 | `assets` | string[] | no | all | Which assets to generate |
 | `style` | enum | no | professional | Style for all assets |
 | `output_dir` | string | no | `./repo-media/{target-slug}/` | Output directory |
-| `skip_wizard` | boolean | no | false | Use defaults for missing params |
 | `confirm` | boolean | no | true | Show plan review before generating |
 
-**Default suite assets (when `assets` omitted):**
+**`prompts` map example:**
+```json
+{
+  "video_explainer": "Animated walkthrough showing data flowing from AGENTS.md through parser into session...",
+  "voiceover": "Welcome to LaPis, the persistent memory extension for Pi. LaPis stores decisions, bugfixes...",
+  "background_music": "Ambient electronic, subtle, professional, suitable for technical video",
+  "hero_image": "Professional hero banner for LaPis GitHub README, dark theme, diamond icon...",
+  "architecture_diagram": "Clean isometric architecture diagram showing memory.db at center..."
+}
+```
+If a key is missing, the suite generates a fallback prompt from `prompt` (theme) + asset-type template.
+
+**Default suite assets (when `assets` omitted) — 8 generations:**
 1. Architecture diagram (image)
 2. Hero image (image)
 3. Voiceover narration (audio)
 4. Background music (audio)
 5. Video explainer (video)
-6. Social assets — 1:1, 16:9, 9:16 (images)
+6. Social asset — 1:1 (image)
+7. Social asset — 16:9 (image)
+8. Social asset — 9:16 (image)
 
 ## Provider Architecture
 
@@ -201,7 +226,7 @@ When the user specifies a style, the LLM incorporates these cues into the prompt
 
 ## Wizard Flow
 
-Triggered when required params are missing. Starts at the first gap.
+Only triggered by the `/media` command. When the LLM calls a tool, it provides all required params — no wizard.
 
 ```
 Step 1: Asset type
@@ -228,6 +253,8 @@ Step 5: Review & confirm
   Summary of all choices → [Generate!] [Edit] [Cancel]
 ```
 
+When the wizard completes, it calls `generate_media` with the collected params.
+
 ## Suite Batch Flow
 
 1. **Plan phase:** Show what will be generated (wizard review or auto)
@@ -235,14 +262,16 @@ Step 5: Review & confirm
 3. **Continue on failure:** If one asset fails, log error and continue to next
 4. **Summary:** Return list of all generated files
 
-Progress example:
+Progress example (8 individual generations):
 ```
-[1/6] Generating architecture diagram... ✓ saved (architecture-diagram.jpeg)
-[2/6] Generating hero image... ✓ saved (hero-image.jpeg)
-[3/6] Generating voiceover... ✓ saved (voiceover.mp3)
-[4/6] Generating background music... ✓ saved (background-music.mp3)
-[5/6] Generating video explainer... (processing, polling every 10s)... ✓ saved (explainer.mp4)
-[6/6] Generating social assets... ✓ saved (social-1x1.jpeg, social-16x9.jpeg, social-9x16.jpeg)
+[1/8] Generating architecture diagram... ✓ saved (architecture-diagram.jpeg)
+[2/8] Generating hero image... ✓ saved (hero-image.jpeg)
+[3/8] Generating voiceover... ✓ saved (voiceover.mp3)
+[4/8] Generating background music... ✓ saved (background-music.mp3)
+[5/8] Generating video explainer... (processing, polling every 10s)... ✓ saved (explainer.mp4)
+[6/8] Generating social 1:1... ✓ saved (social-1x1.jpeg)
+[7/8] Generating social 16:9... ✓ saved (social-16x9.jpeg)
+[8/8] Generating social 9:16... ✓ saved (social-9x16.jpeg)
 
 📁 All assets saved to ./repo-media/lapis-memory-layer/
 ```
@@ -255,7 +284,7 @@ Progress example:
 |---|---|
 | `/media` | Opens interactive wizard |
 | `/media suite` | Generate full suite for current context |
-| `/media list` | List all generated media in `./repo-media/` |
+| `/media list` | List all generated media in table format: filename, type, size, date. Recursively scans `./repo-media/`. |
 | `/media clean` | Delete generated media — asks which subdirectory or `[All]` in confirm dialog |
 
 ## Output Structure
@@ -317,9 +346,7 @@ Providers can optionally check `ctx.modelRegistry` for a provider with a matchin
     ├── tools/
     │   ├── generate.ts       # generate_media tool
     │   └── generate_suite.ts # generate_media_suite tool
-    ├── prompts/
-    │   └── templates.ts      # Repo-aware prompt templates per asset type
-    ├── wizard.ts             # Interactive wizard for missing params
+    ├── wizard.ts             # Interactive wizard (for /media command) |
     └── package.json          # Pi extension metadata only — zero runtime dependencies
 ```
 
