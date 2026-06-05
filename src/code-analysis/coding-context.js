@@ -24,7 +24,7 @@ function getCodingContext(db, repoId, opts = {}) {
   }
 
   const target = symbolQuery
-    ? resolveSymbolTarget(db, repoId, symbolQuery)
+    ? resolveSymbolTarget(db, repoId, symbolQuery, fileQuery || null)
     : resolveFileTarget(db, repoId, fileQuery);
 
   if (target.error) {
@@ -95,7 +95,7 @@ function getCodingContext(db, repoId, opts = {}) {
   };
 }
 
-function resolveSymbolTarget(db, repoId, symbolQuery) {
+function resolveSymbolTarget(db, repoId, symbolQuery, fileHint) {
   const rows = db
     .prepare(
       `SELECT id, name, qualified_name, kind, file_path, file_id, start_line, end_line, signature
@@ -108,29 +108,63 @@ function resolveSymbolTarget(db, repoId, symbolQuery) {
   if (rows.length === 0) {
     return { error: `Symbol "${symbolQuery}" not found` };
   }
-  if (rows.length > 1) {
+  if (rows.length === 1) {
+    const row = rows[0];
     return {
-      error: `Multiple symbols matched "${symbolQuery}"`,
-      candidates: rows.slice(0, 20).map((row) => ({
-        symbol: row.name,
-        qualified_name: row.qualified_name,
-        file: row.file_path,
-        line: row.start_line,
-      })),
+      symbol: row.name,
+      qualified_name: row.qualified_name,
+      kind: row.kind,
+      file: row.file_path,
+      file_id: row.file_id,
+      symbol_id: row.id,
+      start_line: row.start_line,
+      end_line: row.end_line,
+      signature: row.signature || '',
     };
   }
 
-  const row = rows[0];
+  // Multiple matches — disambiguate by ranking candidates
+  const preferredKinds = new Set([
+    'function', 'method', 'class', 'interface', 'enum', 'type_alias',
+    'arrow_function', 'function_expression', 'constructor',
+  ]);
+  const normalizedHint = fileHint ? fileHint.replace(/\\/g, '/').toLowerCase() : null;
+
+  const ranked = rows.map((row) => {
+    let score = 0;
+    // Strongly prefer if in the hinted file
+    if (normalizedHint && row.file_path) {
+      const normPath = row.file_path.replace(/\\/g, '/').toLowerCase();
+      if (normPath === normalizedHint || normPath.endsWith('/' + normalizedHint) || normalizedHint.endsWith('/' + normPath)) {
+        score += 1000;
+      }
+    }
+    // Prefer function/method/class over variable/local
+    if (preferredKinds.has(row.kind)) {
+      score += 100;
+    }
+    // Prefer shorter qualified names (more specific, e.g. ClassName.method vs bare method)
+    score -= (row.qualified_name || '').length;
+    // Slightly prefer symbols earlier in the repo (lower file path)
+    score -= row.file_path.length * 0.01;
+    return { row, score };
+  });
+
+  ranked.sort((a, b) => b.score - a.score);
+  const best = ranked[0].row;
+
   return {
-    symbol: row.name,
-    qualified_name: row.qualified_name,
-    kind: row.kind,
-    file: row.file_path,
-    file_id: row.file_id,
-    symbol_id: row.id,
-    start_line: row.start_line,
-    end_line: row.end_line,
-    signature: row.signature || '',
+    symbol: best.name,
+    qualified_name: best.qualified_name,
+    kind: best.kind,
+    file: best.file_path,
+    file_id: best.file_id,
+    symbol_id: best.id,
+    start_line: best.start_line,
+    end_line: best.end_line,
+    signature: best.signature || '',
+    disambiguated: true,
+    alternative_count: rows.length - 1,
   };
 }
 

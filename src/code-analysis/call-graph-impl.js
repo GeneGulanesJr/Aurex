@@ -476,11 +476,11 @@ function getCallHierarchy(db, repoId, opts) {
   if (symRow.length === 0) {
     return { error: `Symbol "${symbol}" not found` };
   }
-  if (symRow.length > 1) {
-    return { error: `Multiple symbols named "${symbol}"`, candidates: symRow };
-  }
 
+  // If multiple matches, prefer the first one (already ordered by file_path)
+  // rather than hard-failing — callers can use --file to disambiguate
   const symbolId = symRow[0].id;
+  const ambiguous = symRow.length > 1;
 
   if (direction === 'callers') {
     const rows = db
@@ -496,7 +496,13 @@ function getCallHierarchy(db, repoId, opts) {
       ) SELECT * FROM upstream
     `)
       .all(symbolId, minConfidence, depth, minConfidence);
-    return { symbol: symRow[0].name, direction: 'callers', depth, callers: rows };
+    const result = { symbol: symRow[0].name, direction: 'callers', depth, callers: rows };
+    if (ambiguous) {
+      result.disambiguated = true;
+      result.alternative_count = symRow.length - 1;
+      result.resolved_file = symRow[0].file_path;
+    }
+    return result;
   }
 
   const rows = db
@@ -512,7 +518,13 @@ function getCallHierarchy(db, repoId, opts) {
     ) SELECT * FROM downstream
   `)
     .all(symbolId, minConfidence, depth, minConfidence);
-  return { symbol: symRow[0].name, direction: 'callees', depth, callees: rows };
+  const result = { symbol: symRow[0].name, direction: 'callees', depth, callees: rows };
+  if (ambiguous) {
+    result.disambiguated = true;
+    result.alternative_count = symRow.length - 1;
+    result.resolved_file = symRow[0].file_path;
+  }
+  return result;
 }
 
 module.exports = {

@@ -559,7 +559,8 @@ function chooseCodingContextTarget(prompt: string | null, preflightResult: any):
   const code = (preflightResult?.likely_existing_code || []) as Array<{ symbol?: string; file?: string }>;
   const firstCode = code.find((item) => item.symbol || item.file);
   if (firstCode?.symbol) {
-    return { symbol: firstCode.symbol };
+    // Pass both symbol and file when available — helps disambiguate common names
+    return firstCode.file ? { symbol: firstCode.symbol, file: firstCode.file } : { symbol: firstCode.symbol };
   }
   if (firstCode?.file) {
     return { file: firstCode.file };
