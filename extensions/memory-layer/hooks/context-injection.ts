@@ -245,7 +245,7 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: ContextDeps) {
     return {
       message: {
         customType: 'memory-context',
-        content: lines.join('\n'),
+        content: capInjectedContext(lines.join('\n')),
         display: false,
       },
     };
@@ -346,6 +346,15 @@ export function isNavigationPrompt(prompt: string | null): boolean {
     /\b(where|module|file|hook|wired|location|path|lives|implemented|implementation|identify)\b/.test(normalized) ||
     /\bcurrent\s+\w*\s*module\b/.test(normalized)
   );
+}
+
+function capInjectedContext(content: string): string {
+  const limit = CONTEXT.MAX_INJECTED_CONTEXT_CHARS || 1800;
+  if (content.length <= limit) {
+    return content;
+  }
+
+  return `${content.slice(0, limit - 1).trimEnd()}…`;
 }
 
 function truncateText(text: string, limit: number): string {
