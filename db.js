@@ -446,7 +446,7 @@ function runMigrations() {
     console.error('[db] Failed to read user_version:', e.message);
   }
 
-  if (version >= 15) {
+  if (version >= 17) {
     return { migrated: false, version };
   }
 
@@ -466,6 +466,7 @@ function runMigrations() {
     { to: 14, run: runMigrationV14 },
     { to: 15, run: runMigrationV15 },
     { to: 16, run: runMigrationV16 },
+    { to: 17, run: runMigrationV17 },
   ];
 
   const fromVersion = version;
@@ -1145,6 +1146,27 @@ function runMigrationV16() {
     });
   } catch (e) {
     errors.push(`V16: ${e.message}`);
+  }
+  return errors;
+}
+
+function runMigrationV17() {
+  const errors = [];
+  try {
+    withTransaction(() => {
+      // ALTER TABLE ADD COLUMN is not idempotent in SQLite — swallow the
+      // "duplicate column" error so re-running V17 against a DB that already
+      // got the column via schema.sql is a no-op (mirrors V5/V6 pattern).
+      try {
+        sqlRaw('ALTER TABLE observations ADD COLUMN expires_at TEXT DEFAULT NULL');
+      } catch (e) {
+        if (!/duplicate column/i.test(e.message)) throw e;
+      }
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_obs_expires ON observations(expires_at) WHERE expires_at IS NOT NULL');
+      sqlRaw('PRAGMA user_version = 17');
+    });
+  } catch (e) {
+    errors.push(`V17: ${e.message}`);
   }
   return errors;
 }

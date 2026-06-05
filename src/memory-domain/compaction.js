@@ -8,6 +8,9 @@ function runCompact(deps) {
   const report = { startedAt, steps: {} };
 
   try {
+    sqlRun("DELETE FROM observations WHERE expires_at IS NOT NULL AND expires_at < datetime('now')");
+    report.steps.expiredPurged = true;
+
     sqlRun(
       'DELETE FROM symbol_links WHERE memory_id NOT IN (SELECT CAST(id AS TEXT) FROM observations WHERE deleted_at IS NULL)',
     );
@@ -81,6 +84,17 @@ function dream(deps) {
   const report = { startedAt, phases: {} };
   let totalCleaned = 0;
   const cleanedIds = [];
+
+  // Pre-phase: hard-delete expired observations before any dream phases
+  // so expired rows don't get soft-deleted or consolidated unnecessarily
+  const expiredCount = deps.sqlJson(
+    "SELECT COUNT(*) as cnt FROM observations WHERE expires_at IS NOT NULL AND expires_at < datetime('now')",
+  );
+  if (expiredCount[0]?.cnt > 0) {
+    deps.sqlRun("DELETE FROM observations WHERE expires_at IS NOT NULL AND expires_at < datetime('now')");
+    report.phases.preExpiredPurge = { count: expiredCount[0].cnt };
+    totalCleaned += expiredCount[0].cnt;
+  }
 
   // Phase 1: Superseded memories
   const superseded = deps.sqlJson(`
