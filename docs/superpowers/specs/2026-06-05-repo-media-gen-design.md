@@ -25,29 +25,21 @@ Generates one media asset for the current repo.
 
 | Param | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `prompt` | string | yes | — | What to generate (free text) |
-| `asset_type` | enum | no | auto | `video_explainer`, `feature_showcase`, `architecture_diagram`, `screenshot_animation`, `voiceover`, `background_music`, `hero_image`, `social_asset`, `custom` |
-| `target` | string | no | whole repo | What part of the repo (file, feature, module) |
+| `prompt` | string | yes | — | Final generation-ready prompt (LLM crafts this from repo context before calling) |
+| `asset_type` | enum | yes | — | `video_explainer`, `feature_showcase`, `architecture_diagram`, `screenshot_animation`, `voiceover`, `background_music`, `hero_image`, `social_asset`, `custom` |
+| `target` | string | no | whole repo | What part of the repo (file, feature, module). Used for output subdirectory. |
 | `provider` | string | no | auto | Provider name (default: first available) |
 | `style` | enum | no | professional | `professional`, `playful`, `minimal`, `cinematic` |
 | `duration` | number | no | auto | Seconds (video/audio). 6 or 10 for video |
 | `resolution` | string | no | auto | `720p`, `768p`, `1080p` |
-| `voice_id` | string | no | English_expressive_narrator | Voice for speech |
+| `voice_id` | string | no | English_expressive_narrator | Voice for speech (default English; wizard offers full voice list) |
 | `reference_image` | string | no | — | URL/path for image-to-video or subject reference |
 | `output_name` | string | no | auto | Filename without extension |
-| `output_dir` | string | no | `./repo-media/` | Output directory |
-| `auto_confirm` | boolean | no | false | Skip confirmation/wizard |
+| `output_dir` | string | no | `./repo-media/{target-slug}/` | Output directory |
+| `skip_wizard` | boolean | no | false | Use defaults for missing params instead of wizard |
+| `confirm` | boolean | no | true | Show confirmation before generating (set false to skip) |
 
-**Asset type auto-detection:** When `asset_type` isn't specified, infer from prompt keywords:
-- "explain", "how it works", "walkthrough" → `video_explainer`
-- "showcase", "demo", "feature" → `feature_showcase`
-- "architecture", "diagram", "structure" → `architecture_diagram`
-- "animate", "animate this", "screenshot" → `screenshot_animation`
-- "narrate", "voiceover", "read" → `voiceover`
-- "music", "background", "soundtrack" → `background_music`
-- "hero", "banner", "cover" → `hero_image`
-- "social", "twitter", "og image", "thumbnail" → `social_asset`
-- Fallback → `custom` (raw prompt passthrough)
+**Asset type is always specified by the LLM.** No keyword auto-detection — the LLM reasons about what the user wants and picks the right `asset_type` before calling the tool. The `promptGuidelines` (below) help the LLM choose.
 
 **Resolution defaults by asset type:**
 - Video: 768p (1080p for feature_showcase)
@@ -65,8 +57,9 @@ Generates multiple assets at once for a unified theme.
 | `target` | string | no | whole repo | Feature, module, or "whole repo" |
 | `assets` | string[] | no | all | Which assets to generate |
 | `style` | enum | no | professional | Style for all assets |
-| `output_dir` | string | no | `./repo-media/{target}/` | Output directory |
-| `auto_confirm` | boolean | no | false | Skip plan review |
+| `output_dir` | string | no | `./repo-media/{target-slug}/` | Output directory |
+| `skip_wizard` | boolean | no | false | Use defaults for missing params |
+| `confirm` | boolean | no | true | Show plan review before generating |
 
 **Default suite assets (when `assets` omitted):**
 1. Architecture diagram (image)
@@ -158,38 +151,49 @@ interface VideoStatus {
 - Output: async → poll `/v1/query/video_generation` every 10s → download via `/v1/files/retrieve`
 - Camera control via `[command]` syntax in prompts
 
-## Repo-Aware Prompt Enhancement
+## Repo-Aware Prompt Crafting
 
-The LLM crafts generation-ready prompts using its repo knowledge. The extension provides style templates per asset type:
+The `prompt` parameter is the **final generation-ready prompt** — the LLM writes it using repo context before calling the tool. The extension provides `promptGuidelines` per tool so the LLM knows how to write good prompts for each asset type.
 
-### Templates
+### How It Works
+
+1. User says: "Make a feature showcase for the context injection system"
+2. LLM reads repo context (already in session) — knows the feature's purpose, components, data flow
+3. LLM picks `asset_type: "feature_showcase"`
+4. LLM writes a detailed prompt: "Dynamic demonstration of a context injection system. Show labeled modules connecting to a central injection pipeline. Camera zooms in on data flowing from AGENTS.md through a parser into session context..."
+5. LLM calls `generate_media` with that prompt
+
+The extension's `promptGuidelines` tell the LLM:
+
+### Prompt Writing Guidelines (per asset type)
 
 **`video_explainer`:**
-> "Clear, step-by-step animated walkthrough. Professional motion graphics style. Show data flowing through components with labeled connections. Smooth transitions between concepts. {style_modifier}"
+Write prompts describing clear step-by-step animated walkthroughs. Show data flowing through components with labeled connections. Use camera commands like `[Pan left]`, `[Zoom in]` for directed motion. Describe smooth transitions between concepts.
 
 **`feature_showcase`:**
-> "Dynamic, fast-paced demonstration. Highlight key interactions with zoom-in effects. Modern tech aesthetic. Show before/after where applicable. {style_modifier}"
+Write prompts describing dynamic, fast-paced demonstrations. Highlight key interactions with zoom-in effects. Describe before/after states where applicable. Use `[Tracking shot]` for feature reveals.
 
 **`architecture_diagram`:**
-> "Clean technical architecture diagram, isometric or top-down view. Dark theme. Labeled components with connection lines showing data flow. Professional software engineering style. {style_modifier}"
+Write prompts describing clean technical architecture diagrams. Specify isometric or top-down view, dark theme, labeled components with connection lines showing data flow. Professional software engineering style.
 
 **`screenshot_animation`:**
-> "Smooth pan and zoom animation revealing UI elements. Subtle motion effects bringing static screenshot to life. {style_modifier}"
+Write prompts describing smooth pan and zoom animations revealing UI elements. Describe subtle motion effects bringing static screenshots to life. Include `[Push in]` and `[Pan]` camera commands.
 
 **`voiceover`:**
-> (Text generated from repo docs/README by the LLM, passed as-is to TTS)
+The prompt IS the narration text. Write clear, well-structured narration based on repo docs/README. Use interjection tags like `(sighs)`, `(breaths)` for natural delivery with speech-2.8 models. Mark pauses with `<#0.5#>` between sections.
 
 **`background_music`:**
-> "Ambient, {style_modifier}, suitable as background for a technical video. Not distracting. Subtle electronic or orchestral."
+Write prompts describing style, mood, and instrumentation. Keep it suitable as background for a technical video — not distracting.
 
 **`hero_image`:**
-> "Professional hero banner image for a GitHub README. Clean, modern design. {style_modifier}. Aspect ratio 16:9."
+Write prompts describing professional hero banners for GitHub READMEs. Clean, modern design. Specify aspect ratio 16:9.
 
 **`social_asset`:**
-> "Eye-catching social media preview image. Bold typography-friendly layout. {style_modifier}."
+Write prompts describing eye-catching social media preview images. Bold, typography-friendly layout.
 
 ### Style Modifiers
 
+When the user specifies a style, the LLM incorporates these cues into the prompt:
 - `professional` → "corporate, polished, trustworthy"
 - `playful` → "vibrant, creative, approachable"
 - `minimal` → "clean, whitespace, understated"
@@ -252,7 +256,7 @@ Progress example:
 | `/media` | Opens interactive wizard |
 | `/media suite` | Generate full suite for current context |
 | `/media list` | List all generated media in `./repo-media/` |
-| `/media clean` | Delete all generated media (with confirm) |
+| `/media clean` | Delete generated media — asks which subdirectory or `[All]` in confirm dialog |
 
 ## Output Structure
 
@@ -273,14 +277,24 @@ Progress example:
 ```
 
 Auto-naming: `{asset-type}-{timestamp}.{ext}` when no `output_name` specified.
-Suite mode: `{target-slug}/{asset-type}.{ext}`.
+Both single and suite mode: `./repo-media/{target-slug}/{asset-type}.{ext}`.
+No target specified → `./repo-media/{asset-type}-{timestamp}.{ext}`.
 
 ## Authentication
 
-1. Try `ctx.modelRegistry` to find a MiniMax provider and get its resolved API key
-2. Fall back to `MINIMAX_API_KEY` environment variable
-3. If neither available, error with clear message:
-   > "No MiniMax API key found. Set MINIMAX_API_KEY env var or add a MiniMax provider to models.json."
+Each provider defines its own key resolution:
+
+**Primary — Environment variables (provider-specific):**
+- MiniMax: `MINIMAX_API_KEY`
+- Future Replicate: `REPLICATE_API_TOKEN`
+- Future ElevenLabs: `ELEVENLABS_API_KEY`
+- etc.
+
+**Secondary — models.json lookup:**
+Providers can optionally check `ctx.modelRegistry` for a provider with a matching baseUrl (e.g., any provider whose baseUrl contains `minimax.io`). This is a nicety, not the primary path.
+
+**Error when no key found:**
+> "No MiniMax API key found. Set MINIMAX_API_KEY env var or add a MiniMax provider to models.json."
 
 ## Error Handling
 
@@ -306,7 +320,7 @@ Suite mode: `{target-slug}/{asset-type}.{ext}`.
     ├── prompts/
     │   └── templates.ts      # Repo-aware prompt templates per asset type
     ├── wizard.ts             # Interactive wizard for missing params
-    └── package.json          # No external deps — uses node: fetch, Buffer
+    └── package.json          # Pi extension metadata only — zero runtime dependencies
 ```
 
 No npm dependencies required. Uses Node.js built-in `fetch`, `Buffer`, `fs`, `path`.
