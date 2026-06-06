@@ -629,10 +629,15 @@ function EventStream({ events, eventStreamCount = 8 }: { events: WsClientEvent[]
     mission_started: "START",
     mission_completed: "DONE",
     mission_error: "ERROR",
+    mission_log: "LOG",
+    mission_status: "STATUS",
+    milestones_set: "PLAN",
     agent_output: "OUTPUT",
     scan_started: "SCAN",
     scan_completed: "SCAN",
     scan_finding: "FINDING",
+    quota_update: "QUOTA",
+    quota_exhausted: "QUOTA",
   };
 
   const eventTypeColor: Record<string, string> = {
@@ -644,10 +649,15 @@ function EventStream({ events, eventStreamCount = 8 }: { events: WsClientEvent[]
     mission_started: "var(--success)",
     mission_completed: "var(--success)",
     mission_error: "var(--error)",
+    mission_log: "var(--text-secondary)",
+    mission_status: "var(--text-muted)",
+    milestones_set: "var(--info)",
     agent_output: "var(--info)",
     scan_started: "var(--accent)",
     scan_completed: "var(--success)",
     scan_finding: "var(--error)",
+    quota_update: "var(--warning)",
+    quota_exhausted: "var(--error)",
   };
 
   return (
@@ -693,17 +703,45 @@ function EventSummary({ event }: { event: WsClientEvent }) {
       return <>queued #{event.queuePosition}</>;
     case "mission_error":
       return <>{event.code}: {event.message}</>;
+    case "mission_log":
+      return <>{event.phase}{event.message && ` — ${event.message}`}</>;
+    case "mission_status":
+      return <>{event.status}</>;
+    case "milestones_set":
+      return <>{event.milestones.length} milestone{event.milestones.length !== 1 ? "s" : ""} planned</>;
+    case "quota_update":
+      return <>{event.providerId}: {event.status} ({Math.ceil(event.remainingBurnMs / 1000)}s remaining)</>;
+    case "quota_exhausted":
+      return <>{event.providerId} exhausted — resets {event.windowResetsAt}</>;
     case "agent_output": {
-      // Extract tool name and snippet from message (format: "toolName snippet")
-      const parts = event.message.split(" ");
-      const toolName = parts[0] || "";
-      const snippet = parts.slice(1).join(" ");
-      const isToolCall = event.eventType === "tool_call" && snippet;
+      if (event.eventType === "tool_call") {
+        // Message format: "toolName snippet" (e.g. "read src/App.tsx")
+        const parts = event.message.split(" ");
+        const toolName = parts[0] || "";
+        const snippet = parts.slice(1).join(" ");
+        return (
+          <>
+            <span style={{ color: "var(--accent)", fontFamily: '"JetBrains Mono", monospace', fontSize: "10px" }}>{toolName}</span>
+            {snippet && <span style={{ color: "var(--text-muted)", marginLeft: "4px" }}>{snippet}</span>}
+          </>
+        );
+      }
+      // Non-tool events (spawned, prompt_sent, timed_out, completed, failed, aborted, cost_update)
+      // Message is the full description — display directly with event type as label
+      const labelByEventType: Record<string, string> = {
+        spawned: "spawned",
+        prompt_sent: "prompt",
+        timed_out: "timed out",
+        completed: "done",
+        failed: "failed",
+        aborted: "aborted",
+        cost_update: "cost",
+      };
+      const label = labelByEventType[event.eventType];
       return (
         <>
-          <span style={{ color: "var(--accent)", fontFamily: '"JetBrains Mono", monospace', fontSize: "10px" }}>{toolName}</span>
-          {isToolCall && <span style={{ color: "var(--text-muted)", marginLeft: "4px" }}>{snippet}</span>}
-          {!isToolCall && <span style={{ color: "var(--text-secondary)", marginLeft: "4px" }}>{event.message}</span>}
+          {label && <span style={{ color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", marginRight: "6px" }}>{label}</span>}
+          <span style={{ color: "var(--text-secondary)" }}>{event.message}</span>
         </>
       );
     }
