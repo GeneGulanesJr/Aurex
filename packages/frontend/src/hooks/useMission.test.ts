@@ -91,4 +91,32 @@ describe("missionReducer", () => {
     expect(state.mission).toBeNull();
     expect(state.milestones).toHaveLength(0);
   });
+
+  it("updates mission status from mission_status websocket event", () => {
+    const state = missionReducer(seedState as any, {
+      type: "MISSION_STATUS",
+      status: "failed",
+    });
+    expect(state.mission?.status).toBe("failed");
+  });
+
+  it("ignores mission_status when no mission is loaded", () => {
+    const state = missionReducer(initialMissionState, {
+      type: "MISSION_STATUS",
+      status: "failed",
+    });
+    expect(state).toEqual(initialMissionState);
+  });
+
+  it("replaces milestones list from milestones_set websocket event", () => {
+    const newMilestones = [
+      { id: "ms3", missionId: "m1", title: "Rescoped", description: "Rescoped", orderIndex: 0, status: "in_progress" as MilestoneStatus, validationContractId: "c3" },
+    ];
+    const state = missionReducer(seedState as any, {
+      type: "MILESTONES_SET",
+      milestones: newMilestones as any,
+    });
+    expect(state.milestones).toHaveLength(1);
+    expect(state.milestones[0]?.id).toBe("ms3");
+  });
 });

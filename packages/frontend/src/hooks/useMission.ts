@@ -38,6 +38,8 @@ type Action =
   | { type: "MILESTONE_PROGRESS"; milestoneId: string; status: MilestoneStatus; completedUnits: number; totalUnits: number }
   | { type: "AGENT_STATUS"; agentId: string; agentType: AgentType; status: AgentStatus; milestoneId: string; workerSnapshot?: { declaredPaths: string[]; declaredModules: string[]; taskBranch: string; worktreePath: string; sessionId: string; description: string } }
   | { type: "MISSION_COMPLETED"; finalState: string }
+  | { type: "MISSION_STATUS"; status: string }
+  | { type: "MILESTONES_SET"; milestones: import("@aurex/shared").Milestone[] }
   | { type: "MISSION_LOG"; phase: string; message: string; data?: Record<string, unknown> }
   | { type: "MISSION_ERROR"; code: string; message: string; workerId?: string; milestoneId?: string; recoverable: boolean; details?: Record<string, unknown> }
   | { type: "AGENT_OUTPUT"; agentId: string; eventType: AgentOutputEventType; message: string; timestamp: string; data?: Record<string, unknown> }
@@ -104,6 +106,12 @@ export function missionReducer(state: MissionState, action: Action): MissionStat
     }
     case "CLEAR_ERRORS":
       return { ...state, errors: [] };
+    case "MISSION_STATUS": {
+      if (!state.mission) return state;
+      return { ...state, mission: { ...state.mission, status: action.status as import("@aurex/shared").Mission["status"] } };
+    }
+    case "MILESTONES_SET":
+      return { ...state, milestones: action.milestones };
     case "RESET":
       return initialMissionState;
     default:
@@ -154,6 +162,12 @@ export function useMission(missionId: string | null) {
         break;
       case "mission_completed":
         dispatch({ type: "MISSION_COMPLETED", finalState: event.finalState });
+        break;
+      case "mission_status":
+        dispatch({ type: "MISSION_STATUS", status: event.status });
+        break;
+      case "milestones_set":
+        dispatch({ type: "MILESTONES_SET", milestones: event.milestones });
         break;
       case "mission_log":
         dispatch({ type: "MISSION_LOG", phase: event.phase, message: event.message, data: event.data });

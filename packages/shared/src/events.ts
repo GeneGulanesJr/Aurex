@@ -20,6 +20,8 @@ export type WsClientEvent =
   | { type: "mission_queued"; missionId: string; queuePosition: number }
   | { type: "mission_started"; missionId: string }
   | { type: "mission_completed"; missionId: string; finalState: string }
+  | { type: "mission_status"; missionId: string; status: string }
+  | { type: "milestones_set"; missionId: string; milestones: Array<{ id: string; missionId: string; title: string; description: string; orderIndex: number; status: MilestoneStatus; validationContractId: string }> }
   | { type: "mission_log"; missionId: string; phase: string; message: string; data?: Record<string, unknown> }
   | { type: "mission_error"; missionId: string; code: string; message: string; workerId?: string; milestoneId?: string; recoverable: boolean; details?: Record<string, unknown> }
   | { type: "agent_output"; missionId: string; agentId: string; agentType: AgentType; eventType: AgentOutputEventType; message: string; timestamp: string; data?: Record<string, unknown> }
