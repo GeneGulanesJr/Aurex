@@ -33,6 +33,9 @@ function createAurexRepository(deps) {
     updateMilestoneStatus(id, status) {
       sqlRun('UPDATE milestones SET status = ? WHERE id = ?', [status, id]);
     },
+    listMilestonesForMission(missionId) {
+      return sqlJson('SELECT * FROM milestones WHERE mission_id = ? ORDER BY order_index ASC', [missionId]);
+    },
 
     // --- Working Units ---
     createWorkingUnit({
@@ -592,14 +595,14 @@ function createAurexRepository(deps) {
     getCheckpoint(id) {
       return sqlJson('SELECT * FROM checkpoints WHERE id = ?', [id]);
     },
-    resolveCheckpoint(id, decision, guidance, reason) {
+    resolveCheckpoint(id, decision, guidance, reason, rescopeGuidance) {
       const existing = sqlJson('SELECT * FROM checkpoints WHERE id = ?', [id]);
       if (existing.length > 0 && existing[0].status === 'resolved') {
         return existing;
       }
       sqlRun(
-        "UPDATE checkpoints SET status = 'resolved', decision = ?, guidance = ?, reason = ?, resolved_at = datetime('now') WHERE id = ?",
-        [decision, guidance || null, reason || null, id],
+        "UPDATE checkpoints SET status = 'resolved', decision = ?, guidance = ?, reason = ?, rescope_guidance = ?, resolved_at = datetime('now') WHERE id = ?",
+        [decision, guidance || null, reason || null, rescopeGuidance || null, id],
       );
       return sqlJson('SELECT * FROM checkpoints WHERE id = ?', [id]);
     },

@@ -24,7 +24,7 @@ function getCheckpoint(repo) {
 
 function resolveCheckpoint(repo) {
   return async (req, res, ctx) => {
-    const { decision, guidance, reason } = ctx.body;
+    const { decision, guidance, reason, rescopeGuidance } = ctx.body;
     if (!decision) {
       return jsonError(res, 400, 'bad_request', 'decision is required');
     }
@@ -35,7 +35,7 @@ function resolveCheckpoint(repo) {
     if (existing[0].status === 'resolved') {
       return jsonOk(res, existing[0]);
     }
-    const rows = repo.resolveCheckpoint(ctx.params.id, decision, guidance, reason);
+    const rows = repo.resolveCheckpoint(ctx.params.id, decision, guidance, reason, rescopeGuidance);
     jsonOk(res, rows[0]);
   };
 }

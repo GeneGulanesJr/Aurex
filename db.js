@@ -472,6 +472,7 @@ function runMigrations() {
     { to: 17, run: runMigrationV17 },
     { to: 18, run: runMigrationV18 },
     { to: 19, run: runMigrationV19 },
+    { to: 20, run: runMigrationV20 },
   ];
 
   const fromVersion = version;
@@ -1267,6 +1268,26 @@ function runMigrationV19() {
     });
   } catch (e) {
     errors.push(`V19: ${e.message}`);
+  }
+  return errors;
+}
+
+function runMigrationV20() {
+  const errors = [];
+  try {
+    withTransaction(() => {
+      // Add rescope_guidance to checkpoints so user-initiated re-plan
+      // requests can be persisted and read back by the polling runner.
+      // Nullable; old rows get NULL.
+      try {
+        sqlRaw('ALTER TABLE checkpoints ADD COLUMN rescope_guidance TEXT');
+      } catch (e) {
+        if (!/duplicate column/i.test(e.message)) throw e;
+      }
+      sqlRaw('PRAGMA user_version = 20');
+    });
+  } catch (e) {
+    errors.push(`V20: ${e.message}`);
   }
   return errors;
 }
