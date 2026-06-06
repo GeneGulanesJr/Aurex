@@ -503,6 +503,32 @@ git commit -m "feat: repo-scoped explore, summary, hotspots, and suggestions rou
 
 Note: The mission-runner is deeply integrated (constructor takes lapis, eventBus, agentDir, etc.) making isolated unit tests impractical. The existing test suite covers the full runner. We verify this change by running the full suite after the edit.
 
+In `packages/backend/src/orchestrator/mission-runner.ts`, replace lines 116-128 (the indexing try block) with:
+
+```ts
+      try {
+        const repoName = path.basename(missionRepoRoot);
+        // Check if already indexed by the explore endpoint
+        const existingSummary = await lapis.getCodeSummary(repoName).catch(() => null);
+        if (existingSummary && existingSummary.files > 0) {
+          eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Repo ${repoName} already indexed (${existingSummary.files} files), skipping…` });
+          await lapis.setSetting(`mission:${missionId}:repoName`, repoName);
+        } else {
+          eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexing repo ${repoName} for code context…` });
+          const indexResult = await lapis.indexRepo(missionRepoRoot, repoName);
+          if (indexResult.error) {
+            eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexing warning: ${indexResult.error}` });
+          } else {
+            eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexed ${indexResult.files ?? 0} files, ${indexResult.symbols ?? 0} symbols`, data: { indexingDone: true, files: indexResult.files ?? 0, symbols: indexResult.symbols ?? 0, edges: (indexResult as any).import_edges ?? 0 } });
+            await lapis.setSetting(`mission:${missionId}:repoName`, repoName);
+          }
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexing skipped: ${msg}` });
+      }
+```
+
 - [ ] **Step 2: Run full backend test suite**
 
 Run: `npx vitest run packages/backend --reporter=verbose 2>&1 | tail -30`
@@ -582,7 +608,20 @@ Expected: FAIL — functions not exported.
 
 - [ ] **Step 3: Add API functions and types**
 
-In `packages/frontend/src/api.ts`, add after the existing code context section (after line 260):
+In `packages/frontend/src/api.ts`, first update the existing `PrepareGitHubRepoResponse` interface (around line 154) to include `repoName`:
+
+```ts
+export interface PrepareGitHubRepoResponse {
+  fullName: string;
+  repoPath: string;
+  repoStatus: "cloned" | "updated";
+  repoName: string;       // NEW: derived from path.basename(repoPath) by backend
+  indexed: boolean;
+  indexingStatus: "completed" | "unavailable" | "failed";
+}
+```
+
+Then add after the existing code context section (after line 260):
 
 ```ts
 // Repo explore (auto-explore + suggestions)
@@ -1323,7 +1362,6 @@ git commit -m "feat: RepoOverviewPanel — repo map, hotspots, and suggested mis
 Add imports at the top (after existing imports):
 
 ```ts
-import { RepoOverviewPanel } from "./passive/RepoOverviewPanel";
 import { getRepoSummary, getRepoHotspots, getRepoSuggestions } from "./api";
 import type { CodeSummaryResponse, CodeHotspotsResponse, RepoSuggestion } from "./api";
 ```
