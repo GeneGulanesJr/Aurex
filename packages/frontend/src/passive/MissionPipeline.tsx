@@ -693,8 +693,20 @@ function EventSummary({ event }: { event: WsClientEvent }) {
       return <>queued #{event.queuePosition}</>;
     case "mission_error":
       return <>{event.code}: {event.message}</>;
-    case "agent_output":
-      return <>{event.agentId}: {event.message}</>;
+    case "agent_output": {
+      // Extract tool name and snippet from message (format: "toolName snippet")
+      const parts = event.message.split(" ");
+      const toolName = parts[0] || "";
+      const snippet = parts.slice(1).join(" ");
+      const isToolCall = event.eventType === "tool_call" && snippet;
+      return (
+        <>
+          <span style={{ color: "var(--accent)", fontFamily: '"JetBrains Mono", monospace', fontSize: "10px" }}>{toolName}</span>
+          {isToolCall && <span style={{ color: "var(--text-muted)", marginLeft: "4px" }}>{snippet}</span>}
+          {!isToolCall && <span style={{ color: "var(--text-secondary)", marginLeft: "4px" }}>{event.message}</span>}
+        </>
+      );
+    }
     case "scan_started":
       return <>supply chain scan started ({event.profile})</>;
     case "scan_completed":

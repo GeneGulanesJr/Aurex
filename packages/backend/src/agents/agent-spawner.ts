@@ -201,7 +201,9 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
           }
 
           const toolName = event.assistantMessageEvent?.toolCall?.name;
+          const toolInput = event.assistantMessageEvent?.toolCall?.input as Record<string, unknown> | undefined;
           if (toolName) {
+            const snippet = extractToolSnippet(toolName, toolInput || {});
             logger?.log({
               sessionId: session.sessionId,
               agentType: opts.agentType,
@@ -209,9 +211,9 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
               milestoneId: opts.milestoneId,
               unitId: opts.unitId,
               event: "tool_call",
-              data: { tool: toolName },
+              data: { tool: toolName, input: toolInput },
             });
-            emitOutput(opts, "tool_call", `Called tool: ${toolName}`, { tool: toolName });
+            emitOutput(opts, "tool_call", `${toolName} ${snippet}`, { tool: toolName, snippet });
           }
 
           const usage = event.assistantMessageEvent?.usage;
@@ -350,6 +352,56 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
       return [...activeHandles.keys()];
     },
   };
+}
+
+/**
+ * Extract a human-readable snippet from tool input for display.
+ */
+function extractToolSnippet(toolName: string, input: Record<string, unknown>): string {
+  switch (toolName) {
+    case "read": {
+      const path = input?.path as string;
+      const offset = input?.offset as number | undefined;
+      const limit = input?.limit as number | undefined;
+      if (offset !== undefined || limit !== undefined) {
+        return `${path || "?"}${offset !== undefined ? `:${offset}` : ""}${limit !== undefined ? `-${limit}` : ""}`;
+      }
+      return path || "?";
+    }
+    case "write": {
+      const path = input?.path as string;
+      const content = input?.content as string | undefined;
+      const preview = content?.slice(0, 60).replace(/\n/g, " ") || "";
+      return `${path || "?"}${preview ? ` — "${preview}${content && content.length > 60 ? "…" : ""}"` : ""}`;
+    }
+    case "edit": {
+      const path = input?.path as string;
+      const oldText = input?.oldText as string | undefined;
+      const preview = oldText?.slice(0, 40).replace(/\n/g, " ") || "";
+      return `${path || "?"}${preview ? ` — "${preview}${oldText && oldText.length > 40 ? "…" : ""}"` : ""}`;
+    }
+    case "bash": {
+      const command = input?.command as string | undefined;
+      const preview = command?.slice(0, 60).replace(/\n/g, " ") || "";
+      return `"${preview}${command && command.length > 60 ? "…" : ""}"`;
+    }
+    case "grep": {
+      const pattern = input?.pattern || input?.query || "?";
+      const path = input?.path as string | undefined;
+      return `\`${pattern}\`${path ? ` in ${path}` : ""}`;
+    }
+    case "find": {
+      const path = input?.path as string | undefined;
+      const name = input?.name as string | undefined;
+      return `${path || "."}${name ? ` -name "${name}"` : ""}`;
+    }
+    case "ls": {
+      const path = input?.path as string | undefined;
+      return path || ".";
+    }
+    default:
+      return Object.keys(input || {}).slice(0, 3).map(k => `${k}=${JSON.stringify(input?.[k])?.slice(0, 30)}`).join(" ") || "";
+  }
 }
 
 function createCustomTools(
