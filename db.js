@@ -134,10 +134,8 @@ function openDb() {
 
 /* ── SQLITE_BUSY retry ─────────────────────────────────────── */
 
-const SQLITE_BUSY_RAW_CODE = 5;
-
 function isBusyError(e) {
-  if (e && (e.rawCode === SQLITE_BUSY_RAW_CODE || e.code === 'SQLITE_BUSY')) {
+  if (e && e.code === 'SQLITE_BUSY') {
     return true;
   }
   const msg = (e && e.message) || '';
