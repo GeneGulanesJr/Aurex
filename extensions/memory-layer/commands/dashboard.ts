@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { mem } from '../host/memory-client';
 import { createDashboardComponent } from './dashboard-tui';
@@ -16,9 +17,14 @@ export function registerDashboardCommand(pi: ExtensionAPI) {
       if (data.codeIndex) {
         for (const repo of data.codeIndex) {
           try {
+            if (!existsSync(repo.path)) {
+              repo.isStale = true;
+              continue;
+            }
             const head = execFileSync('git', ['rev-parse', 'HEAD'], {
               cwd: repo.path,
               encoding: 'utf-8',
+              stdio: ['ignore', 'pipe', 'pipe'],
             }).trim();
             repo.isStale = head !== repo.base_head;
           } catch {
