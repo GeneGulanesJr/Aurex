@@ -1,7 +1,7 @@
 /**
  * Db.js — Database layer for Pi Memory Layer
  *
- * SQLite backend via libSQL, installed through @libsql/client.
+ * SQLite backend via better-sqlite3.
  * Zero external Python deps. Zero MCP servers.
  */
 
@@ -87,7 +87,7 @@ function findLapisRoot() {
   for (let i = 0; i < 10; i++) {
     try {
       const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf-8'));
-      if (pkg.name === 'lapis') {
+      if (pkg.name === '@genegulanesjr/lapis' || pkg.name === 'lapis') {
         return dir;
       }
     } catch {}
@@ -100,34 +100,34 @@ function findLapisRoot() {
   return __dirname;
 }
 
-function tryLibsql() {
+function openBetterSqlite3() {
   try {
     const cfg = getConfig();
-    const Database = require('libsql');
+    const Database = require('better-sqlite3');
     const d = new Database(cfg.db_path);
-    d.exec('PRAGMA journal_mode=WAL;');
-    d.exec('PRAGMA synchronous=NORMAL;');
-    d.exec('PRAGMA temp_store=MEMORY;');
-    d.exec(`PRAGMA busy_timeout=${safeInt(cfg.busy_timeout_ms, 30000)};`);
-    d.exec(`PRAGMA wal_autocheckpoint=${safeInt(cfg.wal_autocheckpoint, 1000)};`);
-    d.exec('PRAGMA foreign_keys=ON;');
+    d.pragma('journal_mode = WAL');
+    d.pragma('synchronous = NORMAL');
+    d.pragma('temp_store = MEMORY');
+    d.pragma(`busy_timeout = ${safeInt(cfg.busy_timeout_ms, 30000)}`);
+    d.pragma(`wal_autocheckpoint = ${safeInt(cfg.wal_autocheckpoint, 1000)}`);
+    d.pragma('foreign_keys = ON');
     return d;
   } catch (e) {
-    console.error(`[db] libsql failed: ${e.message}`);
+    console.error(`[db] better-sqlite3 failed: ${e.message}`);
     return null;
   }
 }
 
 function openDb() {
-  const libsqlDb = tryLibsql();
-  if (libsqlDb) {
-    _engine = 'libsql';
-    _db = libsqlDb;
-    return libsqlDb;
+  const db = openBetterSqlite3();
+  if (db) {
+    _engine = 'better-sqlite3';
+    _db = db;
+    return db;
   }
   const lapisRoot = findLapisRoot();
   const msg =
-    `No libSQL backend found. LaPis does not install dependencies at runtime.\n` +
+    `No SQLite backend found. LaPis does not install dependencies at runtime.\n` +
     `  Run: cd ${lapisRoot} && npm install\n`;
   throw new Error(msg);
 }
