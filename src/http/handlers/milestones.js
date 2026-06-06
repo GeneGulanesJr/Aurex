@@ -20,4 +20,11 @@ function updateMilestoneStatus(repo) {
   };
 }
 
-module.exports = { createMilestone, updateMilestoneStatus };
+function listMilestonesForMission(repo) {
+  return async (req, res, ctx) => {
+    const rows = repo.listMilestonesForMission(ctx.params.missionId);
+    jsonOk(res, rows);
+  };
+}
+
+module.exports = { createMilestone, updateMilestoneStatus, listMilestonesForMission };

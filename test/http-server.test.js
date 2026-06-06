@@ -535,6 +535,14 @@ describe('Aurex HTTP Server', () => {
       milestoneId = res.body.id;
     });
 
+    it('lists milestones for a mission', async () => {
+      const res = await req('GET', `/missions/${missionId}/milestones`);
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body.length).toBeGreaterThanOrEqual(1);
+      expect(res.body[0].title).toBe('Phase 1');
+    });
+
     it('updates milestone status', async () => {
       const res = await req('PATCH', `/milestones/${milestoneId}/status`, { status: 'in_progress' });
       expect(res.status).toBe(200);

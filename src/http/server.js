@@ -85,6 +85,7 @@ function buildRoutes(deps) {
 
     // Milestones
     { method: 'POST', pattern: '/missions/:missionId/milestones', handler: milestones.createMilestone(aurex) },
+    { method: 'GET', pattern: '/missions/:missionId/milestones', handler: milestones.listMilestonesForMission(aurex) },
     { method: 'PATCH', pattern: '/milestones/:id/status', handler: milestones.updateMilestoneStatus(aurex) },
 
     // Working units
