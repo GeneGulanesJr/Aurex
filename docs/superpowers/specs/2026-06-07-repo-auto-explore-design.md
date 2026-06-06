@@ -49,13 +49,23 @@ interface PrepareGitHubRepoResponse {
   fullName: string;
   repoPath: string;
   repoStatus: "cloned" | "updated";
-  repoName: string;       // NEW: derived from path, e.g. "GeneGulanesJr-Aurex"
+  repoName: string;       // NEW: derived via path.basename(repoPath)
   indexed: boolean;
   indexingStatus: "completed" | "unavailable" | "failed";
 }
 ```
 
 The `indexed` and `indexingStatus` fields remain for backward compatibility but will be `"unavailable"` from prepare. Indexing is a separate explicit step.
+
+The `github.ts` prepare handler currently does not import `path`. It needs:
+```ts
+import path from "node:path";
+```
+Then in the handler, derive the repoName:
+```ts
+const repoName = path.basename(prepared.repoPath);
+```
+This matches the convention in `mission-runner.ts` line 117 (`path.basename(missionRepoRoot)`) and produces names like `"GeneGulanesJr-Aurex"`.
 
 #### 2. New explore endpoint — `POST /api/repos/:repoName/explore`
 
@@ -105,12 +115,12 @@ Returns synthesized mission suggestions based on code analysis. Calls LaPis anal
 ```ts
 interface RepoSuggestion {
   id: string;
-  category: "test_gaps" | "high_complexity" | "dead_code" | "coupling" | "cycles" | "structure";
+  category: "high_complexity" | "cycles" | "structure";
   title: string;
   description: string;
   priority: "high" | "medium" | "low";
   affectedFiles: number;
-  detail: string;  // e.g. "14 untested symbols" or "Complexity score: 47"
+  detail: string;  // e.g. "Complexity score: 47"
   prefill: string; // mission description to prefill
 }
 
@@ -120,21 +130,23 @@ interface RepoSuggestionsResponse {
 }
 ```
 
-**Suggestion heuristics** (all from LaPis data):
+**v1 Suggestion heuristics** (derived from summary + hotspots data — no extra LaPis endpoints needed):
 
 | Category | Trigger | Generated Title | Priority |
 |---|---|---|---|
-| `test_gaps` | Untested symbols found | "Write tests for {module} — {n} untested symbols" | high if > 10 symbols, medium otherwise |
-| `high_complexity` | Files with complexity > 20 | "Refactor {file} — complexity score {n}" | high if > 30, medium if > 20 |
-| `dead_code` | Dead symbols found | "Remove dead code — {n} unused symbols in {files} files" | medium |
-| `coupling` | Files with high fan-in/out | "Decouple {file} from {n} consumers" | medium |
-| `cycles` | Dependency cycles > 0 | "Break {n} dependency cycles in {modules}" | high |
-| `structure` | Module with > 20 files | "Split {module} ({n} files) into focused packages" | low |
+| `high_complexity` | Hotspot file with complexity > 20 | "Refactor {file} — complexity score {n}" | high if > 30, medium if > 20 |
+| `cycles` | `summary.cycles.count > 0` | "Break {n} dependency cycles in {modules}" | high |
+| `structure` | Module with > 20 files (from `summary.modules`) | "Split {module} ({n} files) into focused packages" | low |
 
-For the initial implementation, suggestions derive from:
-- **Summary data**: modules, cycles, entryPoints
-- **Hotspot data**: complexity scores per file
-- **Dead code / untested**: via new LaPis proxy endpoints (if available) or skipped gracefully
+**Deferred to v2** (require exposing LaPis CLI-only analysis over HTTP):
+
+| Category | Data Source | Blocker |
+|---|---|---|
+| `test_gaps` | `analyzeGetUntestedSymbols` | No HTTP endpoint in LaPis |
+| `dead_code` | `analyzeGetDeadCode` | No HTTP endpoint in LaPis |
+| `coupling` | `coupling-impl.js` | No HTTP endpoint in LaPis |
+
+v2 work: add HTTP routes in LaPis for dead-code, untested-symbols, and coupling analysis, then add these categories to the suggestion pipeline.
 
 If a LaPis analysis call fails, that suggestion category is simply omitted. No partial failure cascades.
 
@@ -142,32 +154,46 @@ If a LaPis analysis call fails, that suggestion category is simply omitted. No p
 
 In `github.ts` prepare handler, after cloning:
 ```ts
-// Use the same name mission-runner would derive: path.basename(repoPath)
 const repoName = path.basename(prepared.repoPath);
 await lapis.setSetting(`repo:${repoName}:path`, prepared.repoPath);
 await lapis.setSetting(`repo:${repoName}:fullName`, repo.full_name);
 ```
 
-This matches the convention in `code-context.ts` and `mission-runner.ts` which both use `path.basename(repoPath)`. The repo-scoped routes resolve the path via this setting.
+This matches the convention in `code-context.ts` and `mission-runner.ts` which both use `path.basename(repoPath)`. The repo-scoped routes resolve the path via this setting. The `repoName` is also returned in the prepare response so the frontend can call `POST /api/repos/:repoName/explore`.
 
 #### 6. Mission-runner skip re-indexing
 
-In `mission-runner.ts`, before calling `lapis.indexRepo()`:
+The explore endpoint (`POST /api/repos/:repoName/explore`) stores `repo:<repoName>:path` in LaPis after indexing. The mission-runner stores `mission:${missionId}:repoName` after its own indexing. These are two separate settings — the skip check must use the right one.
+
+The correct check: try `lapis.getCodeSummary(repoName)` — if it returns `files > 0`, the repo is already indexed in LaPis and we can skip. Then set `mission:${missionId}:repoName` so the code-context routes work.
+
+In `mission-runner.ts`, replace the indexing block (lines 116–128) with:
 ```ts
-// Check if repo is already indexed
-const existingRepoName = await lapis.getSetting(`mission:${missionId}:repoName`);
-if (existingRepoName) {
-  // Already indexed during explore phase — skip
-  eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Repo ${existingRepoName} already indexed, skipping…` });
-} else {
-  // Index as before
+try {
   const repoName = path.basename(missionRepoRoot);
-  const indexResult = await lapis.indexRepo(missionRepoRoot, repoName);
-  // ...
+  // Check if already indexed by the explore endpoint
+  const existingSummary = await lapis.getCodeSummary(repoName).catch(() => null);
+  if (existingSummary && existingSummary.files > 0) {
+    eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Repo ${repoName} already indexed (${existingSummary.files} files), skipping…` });
+    await lapis.setSetting(`mission:${missionId}:repoName`, repoName);
+  } else {
+    // Index as before
+    eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexing repo ${repoName} for code context…` });
+    const indexResult = await lapis.indexRepo(missionRepoRoot, repoName);
+    if (indexResult.error) {
+      eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexing warning: ${indexResult.error}` });
+    } else {
+      eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexed ${indexResult.files ?? 0} files, ${indexResult.symbols ?? 0} symbols`, data: { indexingDone: true, files: indexResult.files ?? 0, symbols: indexResult.symbols ?? 0, edges: (indexResult as any).import_edges ?? 0 } });
+      await lapis.setSetting(`mission:${missionId}:repoName`, repoName);
+    }
+  }
+} catch (err) {
+  const msg = err instanceof Error ? err.message : String(err);
+  eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexing skipped: ${msg}` });
 }
 ```
 
-The repoName is stored as a LaPis setting during the explore phase. The mission-runner also stores `mission:${missionId}:repoName` after indexing. If the setting already exists (from a prior explore), indexing is skipped. If not (user bypassed explore), the existing indexing path runs unchanged.
+This preserves the existing error handling and log emission. If `getCodeSummary` fails (LaPis down, repo not found), it falls through to the normal indexing path. No behavior change for the non-explore path.
 
 ---
 
@@ -241,7 +267,9 @@ The modal no longer receives `preparing: boolean` — it receives a `phase` enum
 
 #### 8. RepoOverviewPanel in main view (Surface B)
 
-New component rendered in `<main>` when no mission is selected but a repo has been prepared. Replaces EmptyState.
+New component rendered in `<main>` when no mission is selected but a repo has been prepared. Replaces EmptyState inside StatusBoard.
+
+StatusBoard's `!mission` branch (line 45) currently renders only `<EmptyState>`. After this change, it also receives a `preparedRepo` prop and renders `<RepoOverviewPanel>` when it's set, falling back to `<EmptyState>` when it's null.
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -373,6 +401,7 @@ The parent (App) then fetches suggestions for the overview panel.
 - `packages/frontend/src/active/NewMissionForm.tsx` — explore flow + compact card
 - `packages/frontend/src/api.ts` — new API functions + types
 - `packages/frontend/src/App.tsx` — prepared repo state + pass to children
+- `packages/frontend/src/passive/StatusBoard.tsx` — render RepoOverviewPanel when preparedRepo is set
 
 ---
 
