@@ -8,6 +8,7 @@ import {
   calculatePrefireTime,
   buildPrefireTimeline,
   resetWindow,
+  createQuotaWindow,
   validateQuotaDurations,
 } from "../enforcement/quota-gate.js";
 import { acquireQuotaLock } from "../enforcement/quota-mutex.js";
