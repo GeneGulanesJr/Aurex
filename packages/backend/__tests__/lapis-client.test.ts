@@ -98,6 +98,37 @@ describe("LaPisClient (HTTP)", () => {
     );
   });
 
+  it("creates a mission todo ledger", async () => {
+    mockFetch.mockReturnValue(mockResponse({ missionId: "m-1", todos: [] }));
+    await client.createMissionLedger({
+      missionId: "m-1",
+      missionTitle: "Mission",
+      sourceMission: "Build feature",
+      plannerSummary: "Plan feature",
+      acceptanceCriteria: ["works"],
+    });
+    const call = mockFetch.mock.calls[0];
+    expect(call[0]).toBe("http://localhost:9100/todo-ledgers");
+    expect((call[1] as RequestInit).method).toBe("POST");
+    expect(JSON.parse((call[1] as RequestInit).body as string).missionId).toBe("m-1");
+  });
+
+  it("creates todos in bulk and fetches focused todo context", async () => {
+    mockFetch.mockReturnValueOnce(mockResponse([{ id: "td-1" }]));
+    await client.createTodos("m-1", [{ title: "Task", lapisContextQuery: "task context" }]);
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:9100/missions/m-1/todos/bulk",
+      expect.objectContaining({ method: "POST" }),
+    );
+
+    mockFetch.mockReturnValueOnce(mockResponse({ todoId: "td-1", query: "task context", context: [] }));
+    await client.getContextForTodo("td-1", { limit: 5 });
+    expect(mockFetch).toHaveBeenLastCalledWith(
+      "http://localhost:9100/todos/td-1/context?limit=5",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
   it("throws on non-2xx response", async () => {
     mockFetch.mockReturnValue(mockResponse({ error: "not found" }, 404));
     await expect(client.getMission("nonexistent")).rejects.toThrow();

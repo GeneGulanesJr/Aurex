@@ -86,6 +86,8 @@ function createMockLapis(): LaPisClient {
     registerAgentSession: vi.fn().mockResolvedValue(undefined),
     logCost: vi.fn().mockResolvedValue(undefined),
     searchMemory: vi.fn().mockResolvedValue([]),
+    createMissionLedger: vi.fn().mockResolvedValue({ missionId: "m-1", todos: [] }),
+    createTodo: vi.fn().mockResolvedValue({ id: "td-1" }),
     writeHandoff: vi.fn().mockResolvedValue({ accepted: true, errors: [] }),
     createCheckpoint: vi.fn().mockResolvedValue({ id: "cp-1", status: "pending" }),
     getCheckpoint: vi.fn().mockResolvedValue({ id: "cp-1", status: "resolved", decision: "approve" }),

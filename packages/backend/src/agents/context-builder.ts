@@ -160,6 +160,10 @@ export function buildValidatorContext(input: ValidatorContextInput): string {
     sections.push(`## Acceptance Behavior\n\n${input.acceptanceBehavior}`);
   }
 
+  if (input.validatorType === "validator_scrutiny") {
+    sections.push(buildScrutinyReviewInstructions());
+  }
+
   if (input.units.length > 0) {
     sections.push(
       [
@@ -184,10 +188,83 @@ export function buildValidatorContext(input: ValidatorContextInput): string {
   }
 
   sections.push(
-    `## VERDICT\n\nWhen complete, use the \`write_verdict\` tool. Submit \`verdict\`, \`findings\`, and \`failedUnitIds\`. The milestone, contract, validator type, timestamp, and session are filled automatically.`,
+    [
+      "## VERDICT",
+      "",
+      "When complete, use the `write_verdict` tool. Submit `verdict`, `findings`, and `failedUnitIds`. The milestone, contract, validator type, timestamp, and session are filled automatically.",
+      "",
+      input.validatorType === "validator_scrutiny"
+        ? "For scrutiny review, put the full structured Markdown review in `findings` and use `failedUnitIds` only for units with confirmed failures."
+        : "For user testing, describe the broken user-visible behavior in `findings` and list affected units in `failedUnitIds`.",
+    ].join("\n"),
   );
 
   return sections.join("\n\n");
+}
+
+function buildScrutinyReviewInstructions(): string {
+  return [
+    "## Single Scoped Feature Review",
+    "",
+    "Review only the provided milestone context, validation criteria, handoffs, changed worker code, and test output. Do not invent requirements. If context is missing, name it in `Missing context` instead of turning it into an issue.",
+    "",
+    "Do not introduce new requirements. If something is outside the mission or acceptance criteria, mark it as an optional suggestion, not a blocker.",
+    "",
+    "False positives are costly. Do not report speculative issues as bugs. Only put confirmed, code-grounded failures under `Issues`.",
+    "",
+    "Inputs available to this validator:",
+    "- Original mission and current milestone",
+    "- Validation criteria and acceptance behavior",
+    "- Worker branches, declared scope, handoffs, and relevant test commands",
+    "- Known constraints included in the mission, contract, or handoffs",
+    "",
+    "Check for:",
+    "- Correctness against the feature goal and validation criteria",
+    "- Edge cases and error handling",
+    "- Security, authorization, and data validation issues",
+    "- State consistency and API contract mismatches",
+    "- Performance and backwards compatibility concerns",
+    "- Test coverage gaps and maintainability problems",
+    "",
+    "Decision model:",
+    "- `pass`: Criteria are satisfied and there are no merge-blocking issues",
+    "- `needs changes`: Confirmed issues require worker fixes; submit `verdict: fail`",
+    "- `escalate`: Human judgment is required for scope changes, ambiguous product decisions, cost/time tradeoffs, repeated failures, or risky merges; submit `verdict: fail` and explain the decision needed",
+    "",
+    "Use this exact `findings` structure:",
+    "",
+    "```markdown",
+    "## Verdict",
+    "One of: Looks good / Looks good with nits / Needs changes / Escalate / Blocked / unsafe to merge",
+    "",
+    "## Issues",
+    "",
+    "### [Severity: Blocker / Important / Nit] Short title",
+    "Evidence:",
+    "Quote the exact relevant code snippet or line reference.",
+    "",
+    "Why it matters:",
+    "Explain the concrete failure mode.",
+    "",
+    "Suggested fix:",
+    "Give a practical fix.",
+    "",
+    "Confidence:",
+    "High / Medium / Low",
+    "",
+    "## Possible risks",
+    "List risks that depend on uncertain external behavior. Keep speculative items here, not in Issues.",
+    "",
+    "## Optional suggestions",
+    "List ideas outside the mission or acceptance criteria. These must not block merge.",
+    "",
+    "## Missing context",
+    "List anything needed to verify uncertain points.",
+    "",
+    "## Tests to add or update",
+    "List specific tests that would increase confidence.",
+    "```",
+  ].join("\n");
 }
 
 function formatHandoff(handoff: HandoffRecord): string {

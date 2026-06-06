@@ -21,7 +21,8 @@ export function createValidatorTools(lapis: LaPisClient, context: ValidatorToolC
         description: "Whether the milestone passed validation",
       }),
       findings: Type.String({
-        description: "Detailed validation findings. For pass, summarize what was checked.",
+        description:
+          "Detailed validation findings. Scrutiny validators must use the structured review Markdown from their instructions. For pass, summarize what was checked.",
       }),
       failedUnitIds: Type.Array(Type.String(), {
         description: "Working unit IDs that failed validation. Empty when passing.",

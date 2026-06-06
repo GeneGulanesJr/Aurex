@@ -99,6 +99,53 @@ describe("buildResearchContext", () => {
 });
 
 describe("buildValidatorContext", () => {
+  it("adds anti-hallucination review instructions for scrutiny validators", () => {
+    const ctx = buildValidatorContext({
+      validatorType: "validator_scrutiny",
+      missionDescription: "Ship review flow",
+      milestoneTitle: "Review prompt",
+      milestoneDescription: "Make validators stricter",
+      contractId: "contract-1",
+      contractCriteria: ["Only grounded issues are reported"],
+      testCommands: [],
+      acceptanceBehavior: "",
+      baseBranch: "develop",
+      units: [],
+    });
+
+    expect(ctx).toContain("Single Scoped Feature Review");
+    expect(ctx).toContain("Do not introduce new requirements");
+    expect(ctx).toContain("False positives are costly");
+    expect(ctx).toContain("Do not report speculative issues as bugs");
+    expect(ctx).toContain("Inputs available to this validator");
+    expect(ctx).toContain("Decision model");
+    expect(ctx).toContain("needs changes");
+    expect(ctx).toContain("escalate");
+    expect(ctx).toContain("## Possible risks");
+    expect(ctx).toContain("## Optional suggestions");
+    expect(ctx).toContain("## Missing context");
+    expect(ctx).toContain("## Tests to add or update");
+    expect(ctx).toContain("use `failedUnitIds` only for units with confirmed failures");
+  });
+
+  it("does not add scrutiny review instructions for user-testing validators", () => {
+    const ctx = buildValidatorContext({
+      validatorType: "validator_user_testing",
+      missionDescription: "Ship review flow",
+      milestoneTitle: "Review prompt",
+      milestoneDescription: "Make validators stricter",
+      contractId: "contract-1",
+      contractCriteria: [],
+      testCommands: [],
+      acceptanceBehavior: "User can complete checkout",
+      baseBranch: "develop",
+      units: [],
+    });
+
+    expect(ctx).not.toContain("Single Scoped Feature Review");
+    expect(ctx).toContain("describe the broken user-visible behavior");
+  });
+
   it("includes full handoff records from LaPis", () => {
     const ctx = buildValidatorContext({
       validatorType: "validator_scrutiny",
