@@ -28,13 +28,13 @@ export async function ensureNativeModules(): Promise<void> {
   state.nativeChecked = true;
 
   try {
-    require.resolve('@libsql/client');
+    require.resolve('better-sqlite3');
     return;
   } catch {}
 
   const lapisRoot = findLapisRoot();
   console.warn(
-    `[memory-layer] Missing @libsql/client. LaPis will not install dependencies at runtime. ` +
+    `[memory-layer] Missing better-sqlite3. LaPis will not install dependencies at runtime. ` +
       `Run manually: cd ${lapisRoot} && npm install`,
   );
 }
