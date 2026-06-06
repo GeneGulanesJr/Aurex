@@ -38,7 +38,7 @@ describe('db.js (database layer)', () => {
       const result = dbModule.ensureDb();
       expect(result.ok).toBe(true);
       expect(result.db).toBeTruthy();
-      expect(['libsql']).toContain(result.engine);
+      expect(['better-sqlite3']).toContain(result.engine);
     });
 
     it('ensureDb() should be idempotent', () => {
@@ -56,7 +56,7 @@ describe('db.js (database layer)', () => {
 
     it('getEngine() should return a known engine', () => {
       const engine = dbModule.getEngine();
-      expect(['libsql']).toContain(engine);
+      expect(['better-sqlite3']).toContain(engine);
     });
 
     it('runMigrations should not throw on version 5 schema', () => {
