@@ -11,6 +11,12 @@ import { buildValidatorContext, buildWorkerContext, buildResearchContext, type V
 import { createIntegrationLifecycle } from "./integration-lifecycle.js";
 import { validateHandoff } from "../enforcement/handoff-validator.js";
 import { checkPreSpawnOverlap } from "./overlap.js";
+import {
+  applyValidatorVerdictsToTodos,
+  markMergedTodos,
+  markWorkerTodoProgress,
+  reconcileMissionLedger,
+} from "./ledger-reconciler.js";
 
 export type MilestoneLoopResult =
   | { status: "completed" }
@@ -80,6 +86,12 @@ export function createMilestoneLoop(
         // Update milestone status
         await lapis.updateMilestoneStatus(milestone.id, "in_progress");
         callbacks.onMilestoneProgress(milestone.id, "in_progress", 0, 0);
+        await reconcileMissionLedger(lapis, {
+          missionId: mission.id,
+          milestoneId: milestone.id,
+          reason: "milestone started",
+          actorId: "orchestrator",
+        });
 
         // --- WORKER + VALIDATION + NEGOTIATION LOOP ---
         // Retries re-spawn failed workers and re-validate.
@@ -157,6 +169,21 @@ export function createMilestoneLoop(
                 sessionId: "",
                 description: unit.description,
               });
+              await markWorkerTodoProgress(lapis, {
+                missionId: mission.id,
+                unit: { ...unit, taskBranch, worktreePath },
+                workerId: agentId,
+                status: "in_progress",
+                reason: "worker spawned and claimed unit",
+                branch: taskBranch,
+                notes: [`Worker ${agentId} started in ${worktreePath}`],
+              });
+              await reconcileMissionLedger(lapis, {
+                missionId: mission.id,
+                milestoneId: milestone.id,
+                reason: "worker spawned",
+                actorId: "orchestrator",
+              });
               const handle = await spawner.spawn({
                 agentType: "worker",
                 agentId,
@@ -180,6 +207,15 @@ export function createMilestoneLoop(
               activeHandles.delete(handle);
               if (result.status === "completed") {
                 await lapis.updateWorkingUnitStatus(unit.id, "completed");
+                await markWorkerTodoProgress(lapis, {
+                  missionId: mission.id,
+                  unit: { ...unit, taskBranch, worktreePath },
+                  workerId: agentId,
+                  status: "implemented",
+                  reason: "worker completed successfully",
+                  branch: taskBranch,
+                  notes: [`Worker ${agentId} completed unit ${unit.id}`],
+                });
                 callbacks.onAgentStatus(agentId, "worker", "completed", milestone.id);
                 completedCount++;
                 integrationUnits.push({ ...unit, taskBranch, worktreePath });
@@ -190,15 +226,39 @@ export function createMilestoneLoop(
                 });
               } else if (result.status === "timed_out") {
                 await lapis.updateWorkingUnitStatus(unit.id, "timed_out");
+                await markWorkerTodoProgress(lapis, {
+                  missionId: mission.id,
+                  unit: { ...unit, taskBranch, worktreePath },
+                  workerId: agentId,
+                  status: "blocked",
+                  reason: "worker timed out",
+                  branch: taskBranch,
+                  notes: [`Worker ${agentId} timed out before completing unit ${unit.id}`],
+                });
                 callbacks.onAgentStatus(agentId, "worker", "timed_out", milestone.id);
                 callbacks.onError(mission.id, "worker_timeout", `Worker "${unit.description}" timed out`, { workerId: agentId, milestoneId: milestone.id, recoverable: true });
                 failedCount++;
               } else {
                 await lapis.updateWorkingUnitStatus(unit.id, "failed");
+                await markWorkerTodoProgress(lapis, {
+                  missionId: mission.id,
+                  unit: { ...unit, taskBranch, worktreePath },
+                  workerId: agentId,
+                  status: "blocked",
+                  reason: "worker failed",
+                  branch: taskBranch,
+                  notes: [`Worker ${agentId} failed unit ${unit.id}`],
+                });
                 callbacks.onAgentStatus(agentId, "worker", "failed", milestone.id);
                 callbacks.onError(mission.id, "worker_failed", `Worker "${unit.description}" failed`, { workerId: agentId, milestoneId: milestone.id, recoverable: true });
                 failedCount++;
               }
+              await reconcileMissionLedger(lapis, {
+                missionId: mission.id,
+                milestoneId: milestone.id,
+                reason: `worker ${result.status}`,
+                actorId: "orchestrator",
+              });
               handle.dispose();
             }));
 
@@ -206,6 +266,12 @@ export function createMilestoneLoop(
           }
 
           if (failedCount > 0) {
+            await reconcileMissionLedger(lapis, {
+              missionId: mission.id,
+              milestoneId: milestone.id,
+              reason: "worker failure before validation",
+              actorId: "orchestrator",
+            });
             const trigger: CheckpointTrigger = "unclassifiable_error";
             const summary = `${failedCount} worker unit(s) failed before validation`;
             callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary });
@@ -272,6 +338,15 @@ export function createMilestoneLoop(
               if (!validation.valid) {
                 console.warn(`[enforcement] Invalid handoff for unit ${unit.id}:`, validation.errors);
                 await lapis.updateWorkingUnitStatus(unit.id, "failed").catch(() => {});
+                await markWorkerTodoProgress(lapis, {
+                  missionId: mission.id,
+                  unit: unit as WorkingUnit,
+                  workerId: "handoff-validator",
+                  status: "blocked",
+                  reason: `invalid worker handoff: ${validation.errors.join("; ")}`,
+                  branch: unit.taskBranch,
+                  notes: validation.errors,
+                });
                 invalidHandoffUnitIds.push(unit.id);
               }
             }
@@ -296,6 +371,12 @@ export function createMilestoneLoop(
 
           await lapis.updateMilestoneStatus(milestone.id, "validating");
           callbacks.onMilestoneProgress(milestone.id, "validating", completedCount, units.length);
+          await reconcileMissionLedger(lapis, {
+            missionId: mission.id,
+            milestoneId: milestone.id,
+            reason: "validation started",
+            actorId: "orchestrator",
+          });
 
           const validatorTypes: Array<"validator_scrutiny" | "validator_user_testing"> = ["validator_scrutiny"];
           if (acceptanceBehavior.trim().length > 0 && acceptanceBehavior.trim().toLowerCase() !== "none") {
@@ -330,10 +411,23 @@ export function createMilestoneLoop(
           }
 
           // --- NEGOTIATION PHASE ---
+          const verdicts = await lapis.getVerdicts(milestone.id).catch(() => [] as import("@aurex/shared").ValidationVerdict[]);
+          await applyValidatorVerdictsToTodos(lapis, {
+            missionId: mission.id,
+            verdicts,
+            reason: "validator verdicts recorded",
+          });
+          await reconcileMissionLedger(lapis, {
+            missionId: mission.id,
+            milestoneId: milestone.id,
+            reason: "validator verdicts completed",
+            actorId: "orchestrator",
+          });
+
           const retryCounter = await lapis.incrementRetry(milestone.id);
           const decision = await negotiator.negotiate(
             milestone.id, retryCounter.retries, retryCounter.rescopes,
-            config.maxValidatorRetries, config.maxRescopes,
+            config.maxValidatorRetries, config.maxRescopes, verdicts,
           );
 
           if (decision.decision === "escalate") {
@@ -348,6 +442,12 @@ export function createMilestoneLoop(
             for (const uid of failedIds) {
               await lapis.updateWorkingUnitStatus(uid, "planned");
             }
+            await reconcileMissionLedger(lapis, {
+              missionId: mission.id,
+              milestoneId: milestone.id,
+              reason: "retry selected after validation",
+              actorId: "orchestrator",
+            });
             // Reset validator verdicts by creating a fresh contract snapshot
             // Then loop again
             loopActive = true;
@@ -403,6 +503,19 @@ export function createMilestoneLoop(
               missionId: mission.id, milestoneId: milestone.id,
               milestoneOrderIndex: milestone.orderIndex,
               baseBranch: loopConfig.gitMainBranch, units: integrationUnits,
+            });
+            await markMergedTodos(lapis, {
+              missionId: mission.id,
+              units: integrationUnits,
+              sourceBranches: integration.mergedBranches,
+              targetBranch: integration.integrationBranch,
+              reason: "integration branch merge completed after validation pass",
+            });
+            await reconcileMissionLedger(lapis, {
+              missionId: mission.id,
+              milestoneId: milestone.id,
+              reason: "integration merge completed",
+              actorId: "orchestrator",
             });
           } catch (error) {
             const trigger: CheckpointTrigger = "unclassifiable_error";

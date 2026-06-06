@@ -43,6 +43,7 @@ services:
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-Iv23lijYF4sZMcU62MjT}
       GITHUB_CALLBACK_URL: ${GITHUB_CALLBACK_URL:-http://localhost:3000/api/github/callback}
       GITHUB_FRONTEND_URL: ${GITHUB_FRONTEND_URL:-http://localhost:8080}
+      ZAI_API_KEY: ${ZAI_API_KEY:-}
     volumes:
       - ${REPO_ROOT:-/tmp}:/workspace
     extra_hosts:
