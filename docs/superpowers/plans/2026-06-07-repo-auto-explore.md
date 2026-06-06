@@ -18,7 +18,19 @@
 
 - [ ] **Step 1: Write the failing test**
 
-Update the existing test at line 407 to expect `repoName` in the response and verify `setSetting` calls for repo metadata:
+Update the existing `buildApp` helper to return `lapis` for assertions (currently it only returns `{ app }`). Then update the test at line 407:
+
+First, change the `buildApp` function to return `{ app, lapis }`:
+```ts
+function buildApp(settings: Record<string, unknown> = {}) {
+  const lapis = createMockLapis(settings);
+  const app = Fastify();
+  registerGitHubRoutes(app, { lapis, repoRoot: "/workspace" });
+  return { app, lapis };
+}
+```
+
+Then update the test at line 407:
 
 ```ts
     it("prepares a repo and returns repo + indexing status", async () => {
@@ -343,132 +355,6 @@ interface RepoSuggestion {
   prefill: string;
 }
 
-function generateSuggestions(
-  summary: { files: number; symbols: number; edges: number; modules: Array<{ name: string; fileCount: number }>; cycles: { count: number; paths: string[][] } },
-  hotspots: { files: Array<{ path: string; module: string; complexity: number; symbols: number }> },
-): RepoSuggestion[] {
-  const suggestions: RepoSuggestion[] = [];
-
-  // High complexity from hotspots
-  for (const file of hotspots.files) {
-    if (file.complexity > 20) {
-      suggestions.push({
-        id: `complexity-${file.path}`,
-        category: "high_complexity",
-        title: `Refactor ${file.path.split("/").pop()} — complexity score ${file.complexity}`,
-        description: `${file.path} has a complexity of ${file.complexity}, which is above the threshold of 20. High complexity makes code harder to understand, test, and maintain.`,
-        priority: file.complexity > 30 ? "high" : "medium",
-        affectedFiles: 1,
-        detail: `Complexity: ${file.complexity} · ${file.symbols} symbols`,
-        prefill: `Refactor ${file.path} to reduce complexity (currently ${file.complexity}). Break into smaller, focused functions.`,
-      });
-    }
-  }
-
-  // Dependency cycles
-  if (summary.cycles.count > 0) {
-    const moduleNames = [...new Set(summary.cycles.paths.flat())].slice(0, 3).join(", ");
-    suggestions.push({
-      id: "cycles",
-      category: "cycles",
-      title: `Break ${summary.cycles.count} dependency cycle${summary.cycles.count > 1 ? "s" : ""}`,
-      description: `${summary.cycles.count} circular dependenc${summary.cycles.count > 1 ? "ies" : "y"} detected. Cycles make modules harder to test independently and can cause build issues.`,
-      priority: "high",
-      affectedFiles: summary.cycles.paths.flat().length,
-      detail: `${summary.cycles.count} cycle${summary.cycles.count > 1 ? "s" : ""} involving: ${moduleNames}`,
-      prefill: `Break the ${summary.cycles.count} dependency cycle${summary.cycles.count > 1 ? "s" : ""} in this codebase. Introduce interfaces or extract shared types to decouple the circular imports.`,
-    });
-  }
-
-  // Large modules
-  for (const mod of summary.modules) {
-    if (mod.fileCount > 20) {
-      suggestions.push({
-        id: `structure-${mod.name}`,
-        category: "structure",
-        title: `Split ${mod.name} (${mod.fileCount} files) into focused packages`,
-        description: `Module ${mod.name} contains ${mod.fileCount} files, which suggests it may handle multiple responsibilities. Splitting it would improve maintainability.`,
-        priority: "low",
-        affectedFiles: mod.fileCount,
-        detail: `${mod.fileCount} files in ${mod.name}`,
-        prefill: `Split the ${mod.name} module (${mod.fileCount} files) into smaller, more focused packages with clear responsibilities.`,
-      });
-    }
-  }
-
-  return suggestions;
-}
-
-export function registerRepoExploreRoutes(app: FastifyInstance, deps: RepoExploreDeps) {
-  const { lapis } = deps;
-
-  app.post("/api/repos/:repoName/explore", async (request, reply) => {
-    const { repoName } = request.params as { repoName: string };
-    const repoPath = await lapis.getSetting<string>(`repo:${repoName}:path`);
-    if (!repoPath) {
-      return reply.status(404).send({ error: "Repository not found. Run prepare first." });
-    }
-
-    try {
-      await lapis.indexRepo(repoPath, repoName);
-      const summary = await lapis.getCodeSummary(repoName);
-      return { repoName, status: "completed" as const, summary };
-    } catch (err) {
-      const error = err instanceof Error ? err.message : "Indexing failed";
-      return { repoName, status: "failed" as const, error };
-    }
-  });
-
-  app.get("/api/repos/:repoName/summary", async (request) => {
-    const { repoName } = request.params as { repoName: string };
-    return lapis.getCodeSummary(repoName);
-  });
-
-  app.get("/api/repos/:repoName/hotspots", async (request) => {
-    const { repoName } = request.params as { repoName: string };
-    return lapis.getCodeHotspots(repoName);
-  });
-
-  app.get("/api/repos/:repoName/suggestions", async () => {
-    let summary = { files: 0, symbols: 0, edges: 0, modules: [] as Array<{ name: string; fileCount: number }>, entryPoints: [] as string[], cycles: { count: 0, paths: [] as string[][] } };
-    let hotspots = { files: [] as Array<{ path: string; module: string; complexity: number; symbols: number }> };
-
-    try { summary = await lapis.getCodeSummary("") as typeof summary; } catch { /* partial failure ok */ }
-    try { hotspots = await lapis.getCodeHotspots("") as typeof hotspots; } catch { /* partial failure ok */ }
-
-    // These calls use the repoName — re-fetch with correct param
-    // (the mock above uses empty string, real calls need repoName from params)
-    return { suggestions: [] as RepoSuggestion[], analysisVersion: "1.0" };
-  });
-
-  // Replace the suggestions handler with the correct one that uses params:
-  // Remove the stub above and use this in the actual implementation:
-}
-```
-
-Wait — the suggestions handler above has a bug. Let me fix it. The correct implementation for the suggestions route needs the `repoName` from params:
-
-Replace the entire file content with:
-
-```ts
-import type { FastifyInstance } from "fastify";
-import type { LaPisClient } from "../clients/lapis-client.js";
-
-interface RepoExploreDeps {
-  lapis: LaPisClient;
-}
-
-interface RepoSuggestion {
-  id: string;
-  category: "high_complexity" | "cycles" | "structure";
-  title: string;
-  description: string;
-  priority: "high" | "medium" | "low";
-  affectedFiles: number;
-  detail: string;
-  prefill: string;
-}
-
 interface RepoSuggestionsResponse {
   suggestions: RepoSuggestion[];
   analysisVersion: string;
@@ -613,103 +499,20 @@ git commit -m "feat: repo-scoped explore, summary, hotspots, and suggestions rou
 **Files:**
 - Modify: `packages/backend/src/orchestrator/mission-runner.ts:116-128`
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Modify mission-runner.ts**
 
-Add a test in an existing mission-runner test file or create a focused test. Check if there's already a mission-runner test:
+Note: The mission-runner is deeply integrated (constructor takes lapis, eventBus, agentDir, etc.) making isolated unit tests impractical. The existing test suite covers the full runner. We verify this change by running the full suite after the edit.
 
-If `packages/backend/__tests__/mission-runner.test.ts` exists, add to it. Otherwise create it:
-
-```ts
-import { describe, it, expect, vi } from "vitest";
-
-describe("mission-runner indexing skip", () => {
-  it("skips indexing when repo already indexed via explore", async () => {
-    // This tests the logic inline — the actual integration is tested
-    // by the mission-runner behavior with a pre-indexed repo.
-    // The key: getCodeSummary returns files > 0 → skip indexRepo call.
-    const mockGetCodeSummary = vi.fn().mockResolvedValue({ files: 10, symbols: 50, edges: 30, modules: [], entryPoints: [], cycles: { count: 0, paths: [] } });
-    const mockIndexRepo = vi.fn();
-    const mockSetSetting = vi.fn();
-
-    const repoName = "test-repo";
-    const existingSummary = await mockGetCodeSummary(repoName);
-    if (existingSummary && existingSummary.files > 0) {
-      await mockSetSetting(`mission:m-1:repoName`, repoName);
-    } else {
-      await mockIndexRepo("/workspace/repos/test-repo", repoName);
-    }
-
-    expect(mockIndexRepo).not.toHaveBeenCalled();
-    expect(mockSetSetting).toHaveBeenCalledWith("mission:m-1:repoName", "test-repo");
-  });
-
-  it("falls through to indexing when repo not yet indexed", async () => {
-    const mockGetCodeSummary = vi.fn().mockRejectedValue(new Error("not found"));
-    const mockIndexRepo = vi.fn().mockResolvedValue({ files: 10, symbols: 50, error: null });
-    const mockSetSetting = vi.fn();
-
-    const repoName = "test-repo";
-    let indexed = false;
-    try {
-      const existingSummary = await mockGetCodeSummary(repoName);
-      if (existingSummary && existingSummary.files > 0) {
-        indexed = true;
-      }
-    } catch { /* not indexed */ }
-
-    if (!indexed) {
-      await mockIndexRepo("/workspace/repos/test-repo", repoName);
-      await mockSetSetting(`mission:m-1:repoName`, repoName);
-    }
-
-    expect(mockIndexRepo).toHaveBeenCalled();
-    expect(mockSetSetting).toHaveBeenCalledWith("mission:m-1:repoName", "test-repo");
-  });
-});
-```
-
-- [ ] **Step 2: Run test to verify it passes** (logic-only test, not testing actual mission-runner)
-
-Run: `npx vitest run packages/backend/__tests__/mission-runner.test.ts --reporter=verbose 2>&1 | tail -15`
-Expected: PASS (tests the skip logic pattern, not the full runner)
-
-- [ ] **Step 3: Modify mission-runner.ts**
-
-In `packages/backend/src/orchestrator/mission-runner.ts`, replace lines 116-128 (the indexing try block) with:
-
-```ts
-      try {
-        const repoName = path.basename(missionRepoRoot);
-        // Check if already indexed by the explore endpoint
-        const existingSummary = await lapis.getCodeSummary(repoName).catch(() => null);
-        if (existingSummary && existingSummary.files > 0) {
-          eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Repo ${repoName} already indexed (${existingSummary.files} files), skipping…` });
-          await lapis.setSetting(`mission:${missionId}:repoName`, repoName);
-        } else {
-          eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexing repo ${repoName} for code context…` });
-          const indexResult = await lapis.indexRepo(missionRepoRoot, repoName);
-          if (indexResult.error) {
-            eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexing warning: ${indexResult.error}` });
-          } else {
-            eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexed ${indexResult.files ?? 0} files, ${indexResult.symbols ?? 0} symbols`, data: { indexingDone: true, files: indexResult.files ?? 0, symbols: indexResult.symbols ?? 0, edges: (indexResult as any).import_edges ?? 0 } });
-            await lapis.setSetting(`mission:${missionId}:repoName`, repoName);
-          }
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexing skipped: ${msg}` });
-      }
-```
-
-- [ ] **Step 4: Run full backend test suite**
+- [ ] **Step 2: Run full backend test suite**
 
 Run: `npx vitest run packages/backend --reporter=verbose 2>&1 | tail -30`
 Expected: All tests pass.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add packages/backend/src/orchestrator/mission-runner.ts packages/backend/__tests__/mission-runner.test.ts
+git add packages/backend/src/orchestrator/mission-runner.ts
+
 git commit -m "feat: mission-runner skips re-indexing when repo already indexed"
 ```
 
@@ -1060,14 +863,17 @@ interface NewMissionFormProps {
   onSubmit: (description: string, cloneUrl?: string) => Promise<void>;
   github?: UseGitHubReturn;
   preparedRepo?: PreparedRepoInfo | null;
+  onRepoPrepared?: (info: PreparedRepoInfo) => void;
+  suggestedDescription?: string;
 }
 
-export function NewMissionForm({ onSubmit, github, preparedRepo }: NewMissionFormProps) {
-  const { state, open, close, setDescription, setRepo, handleSubmit, handleKeyDown, canSubmit } = useNewMissionForm(onSubmit);
+export function NewMissionForm({ onSubmit, github, preparedRepo, onRepoPrepared, suggestedDescription }: NewMissionFormProps) {
+  const { state, open, close, setDescription, setRepo, handleSubmit, handleKeyDown, canSubmit } = useNewMissionForm(onSubmit, suggestedDescription);
   const [pendingRepo, setPendingRepo] = useState<GitHubRepoResponse | null>(null);
   const [preparePhase, setPreparePhase] = useState<"confirm" | "cloning" | "indexing" | "complete" | "error">("confirm");
   const [exploreSummary, setExploreSummary] = useState<CodeSummaryResponse | null>(null);
   const [prepareError, setPrepareError] = useState<string | null>(null);
+  const [preparedRepoName, setPreparedRepoName] = useState<string>("");
 
   const handleRepoSelect = (repo: GitHubRepoResponse) => {
     setPrepareError(null);
@@ -1097,6 +903,9 @@ export function NewMissionForm({ onSubmit, github, preparedRepo }: NewMissionFor
       return;
     }
 
+    // Store repoName from prepare response for later use
+    setPreparedRepoName(prepared.repoName);
+
     // Phase 2: Explore (index)
     setPreparePhase("indexing");
     try {
@@ -1114,6 +923,12 @@ export function NewMissionForm({ onSubmit, github, preparedRepo }: NewMissionFor
   function handleUseRepo() {
     if (!pendingRepo) return;
     setRepo(pendingRepo.clone_url, pendingRepo.id, pendingRepo.full_name);
+    // Notify parent to fetch hotspots + suggestions and show overview
+    onRepoPrepared?.({
+      repoName: preparedRepoName,
+      fullName: pendingRepo.full_name,
+      summary: exploreSummary,
+    });
     setPendingRepo(null);
   }
 
@@ -1529,7 +1344,8 @@ Add state after the existing state declarations (after `const [quotaOpen, setQuo
 Add a callback for when a repo is prepared and needs overview data (after `handleCreateMission`):
 
 ```ts
-  const handleRepoPrepared = useCallback(async (repoName: string, fullName: string, summary: CodeSummaryResponse | null) => {
+  const handleRepoPrepared = useCallback(async (info: { repoName: string; fullName: string; summary: CodeSummaryResponse | null }) => {
+    const { repoName, fullName, summary } = info;
     setPreparedRepo({ repoName, fullName, summary, hotspots: null, suggestions: [], loading: true });
     try {
       const [hotspots, suggestionsRes] = await Promise.all([
@@ -1578,16 +1394,37 @@ Find the `<StatusBoard` component usage and add the new props:
             onTriggerScan={triggerSupplyChainScan}
             preparedRepo={preparedRepo}
             onStartFromSuggestion={(prefill: string) => {
+              // Open the form with the suggestion pre-filled — user can edit before submitting
+              setSuggestedMission(prefill);
               window.dispatchEvent(new CustomEvent("aurex:focus-new-mission"));
-              // Pre-fill is handled via the mission form event
-              handleCreateMission(prefill, preparedRepo?.repoName ? `https://github.com/${preparedRepo.fullName}.git` : undefined);
             }}
           />
 ```
 
-Pass `preparedRepo` to `MissionSidebar` (both desktop and mobile versions):
+Add state for suggested mission description (after the `preparedRepo` state):
 
-Add `preparedRepo={preparedRepo}` to both `<MissionSidebar>` usages.
+```ts
+  const [suggestedMission, setSuggestedMission] = useState<string | undefined>(undefined);
+
+  // Clear suggested mission after form picks it up
+  useEffect(() => {
+    if (suggestedMission) {
+      const timer = setTimeout(() => setSuggestedMission(undefined), 100);
+      return () => clearTimeout(timer);
+    }
+  }, [suggestedMission]);
+```
+
+Pass `preparedRepo` and `onRepoPrepared` to `MissionSidebar` (both desktop and mobile versions):
+
+```tsx
+<MissionSidebar
+  ...
+  preparedRepo={preparedRepo ? { repoName: preparedRepo.repoName, fullName: preparedRepo.fullName, summary: preparedRepo.summary } : null}
+  onRepoPrepared={handleRepoPrepared}
+  suggestedDescription={suggestedMission}
+/>
+```
 
 - [ ] **Step 2: Update StatusBoard.tsx**
 
@@ -1647,7 +1484,7 @@ Update the `!mission` branch to show RepoOverviewPanel:
 
 - [ ] **Step 3: Update MissionSidebar.tsx**
 
-The `MissionSidebar` needs to pass `preparedRepo` to `NewMissionForm`. Add to `MissionSidebarProps`:
+The `MissionSidebar` needs to pass `preparedRepo`, `onRepoPrepared`, and `suggestedDescription` to `NewMissionForm`. Add to `MissionSidebarProps`:
 
 ```ts
   preparedRepo?: {
@@ -1655,6 +1492,8 @@ The `MissionSidebar` needs to pass `preparedRepo` to `NewMissionForm`. Add to `M
     fullName: string;
     summary: CodeSummaryResponse | null;
   } | null;
+  onRepoPrepared?: (info: { repoName: string; fullName: string; summary: CodeSummaryResponse | null }) => void;
+  suggestedDescription?: string;
 ```
 
 Import:
@@ -1663,10 +1502,10 @@ Import:
 import type { CodeSummaryResponse } from "../api";
 ```
 
-Destructure `preparedRepo` and pass to `NewMissionForm`:
+Destructure `preparedRepo`, `onRepoPrepared`, and `suggestedDescription` and pass to every `<NewMissionForm>` usage:
 
 ```tsx
-<NewMissionForm onSubmit={onCreateMission} github={github} preparedRepo={preparedRepo} />
+<NewMissionForm onSubmit={onCreateMission} github={github} preparedRepo={preparedRepo} onRepoPrepared={onRepoPrepared} suggestedDescription={suggestedDescription} />
 ```
 
 Do this for both the empty state and non-empty state sidebar sections where `NewMissionForm` appears.
@@ -1719,5 +1558,7 @@ No TBD, TODO, or "implement later" patterns found. All code blocks contain compl
 
 - `RepoSuggestion` category: `"high_complexity" | "cycles" | "structure"` — consistent across `repo-explore.ts`, `api.ts`, `RepoOverviewPanel.tsx`. ✓
 - `CodeSummaryResponse` — used consistently across all files. ✓
-- `PreparedRepo` shape — consistent between App.tsx, StatusBoard.tsx, MissionSidebar.tsx. ✓
+- `PreparedRepo` shape — consistent between App.tsx, StatusBoard.tsx, MissionSidebar.tsx. MissionSidebar receives a subset `{ repoName, fullName, summary }` from App. ✓
 - `phase` enum: `"confirm" | "cloning" | "indexing" | "complete" | "error"` — consistent between RepoPrepareModal and NewMissionForm. ✓
+- `onRepoPrepared` callback — flows from App → MissionSidebar → NewMissionForm, called when user clicks "Use Repo". ✓
+- `suggestedDescription` — flows from App → MissionSidebar → NewMissionForm, used by `useNewMissionForm` to pre-fill. ✓
