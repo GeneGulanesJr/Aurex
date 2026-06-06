@@ -1,9 +1,11 @@
 // packages/backend/src/routes/missions.ts
 import type { FastifyInstance } from "fastify";
-import type { MissionConfig } from "@aurex/shared";
+import type { MissionConfig, QuotaWindow, QuotaConfig } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { MissionRunnerPool } from "../orchestrator/mission-runner-pool.js";
 import type { AgentLogger } from "../agents/agent-logger.js";
+import type { AppConfig } from "../config.js";
+import { checkQuota, resetWindow, getEffectiveProviderConfig } from "../enforcement/quota-gate.js";
 
 const defaultMissionConfig: Omit<MissionConfig, "modelHints"> = {
   workerTimeouts: { simple: 120000, build: 300000, testHeavy: 600000 },
@@ -14,11 +16,12 @@ const defaultMissionConfig: Omit<MissionConfig, "modelHints"> = {
 
 export async function missionRoutes(
   app: FastifyInstance,
-  { lapis, pool, agentLogger, missionConfig = defaultMissionConfig }: {
+  { lapis, pool, agentLogger, missionConfig = defaultMissionConfig, appConfig }: {
     lapis: LaPisClient;
     pool: MissionRunnerPool;
     agentLogger?: AgentLogger;
     missionConfig?: typeof defaultMissionConfig;
+    appConfig?: AppConfig;
   },
 ) {
   async function hydrateMissionPayload(missionId: string) {
@@ -60,6 +63,31 @@ export async function missionRoutes(
     if (!description) {
       return reply.status(400).send({ error: "description is required" });
     }
+
+    const quotaConfig = await lapis.getSetting<QuotaConfig>("quota_config");
+    if (quotaConfig?.enabled) {
+      const allWindows = (await lapis.getSetting<Record<string, QuotaWindow>>("quota_windows")) ?? {};
+      const now = new Date();
+      for (const providerEntry of quotaConfig.providers) {
+        if (!providerEntry.tracked) continue;
+        const window = allWindows[providerEntry.providerId];
+        if (!window) continue;
+        const result = checkQuota(window, now);
+        if (result.reason === "window_expired") {
+          const reset = resetWindow(window, now);
+          allWindows[providerEntry.providerId] = reset;
+          await lapis.setSetting("quota_windows", allWindows);
+        } else if (!result.ok) {
+          return reply.status(429).send({
+            error: "quota_exhausted",
+            providerId: providerEntry.providerId,
+            remainingMs: result.remainingWindowMs,
+            windowResetsAt: result.windowResetsAt,
+          });
+        }
+      }
+    }
+
     const pinyxConfig = await lapis.getSetting<{ modelHints?: Partial<MissionConfig["modelHints"]>; endpoint?: string }>("pinyx_config");
     const savedHints = pinyxConfig?.modelHints ?? {};
     const allStub = Object.values(savedHints).every((v) => !v || v === FALLBACK_MODEL);

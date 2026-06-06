@@ -25,7 +25,9 @@ export type WsClientEvent =
   | { type: "agent_output"; missionId: string; agentId: string; agentType: AgentType; eventType: AgentOutputEventType; message: string; timestamp: string; data?: Record<string, unknown> }
   | { type: "scan_started"; missionId: string; scanId: string; profile: string }
   | { type: "scan_completed"; missionId: string; scanId: string; summary: BumblebeeScanSummary }
-  | { type: "scan_finding"; missionId: string; scanId: string; finding: BumblebeeFinding };
+  | { type: "scan_finding"; missionId: string; scanId: string; finding: BumblebeeFinding }
+  | { type: "quota_update"; providerId: string; status: string; remainingBurnMs: number; remainingWindowMs: number; burnExpiresAt: string | null }
+  | { type: "quota_exhausted"; providerId: string; windowResetsAt: string };
 
 export type StreamingChunk = {
   delta: string;
@@ -38,7 +40,8 @@ export type EscalationTrigger =
   | { kind: "milestone_complete"; milestoneId: string; releaseBranch?: string }
   | { kind: "rescope_limit"; milestoneId: string; attemptHistory?: AttemptSummary[] }
   | { kind: "unclassifiable_error"; milestoneId: string; error?: string; lastAttempt?: string }
-  | { kind: "cost_cap_exceeded"; milestoneId: string };
+  | { kind: "cost_cap_exceeded"; milestoneId: string }
+  | { kind: "quota_exhausted"; milestoneId: string; windowResetsAt: string };
 
 export interface WsServerMessage {
   event: WsClientEvent;

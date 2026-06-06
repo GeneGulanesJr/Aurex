@@ -46,6 +46,13 @@ export function DecisionActions({ onDecision, trigger }: DecisionActionsProps) {
         </>
       )}
 
+      {trigger.kind === "quota_exhausted" && (
+        <>
+          <button onClick={() => onDecision("approve")} style={{ ...btnBase, background: "var(--accent)", color: "var(--bg-deep)" }}>Resume After Reset</button>
+          <button onClick={() => onDecision("reject", undefined, "quota_exhausted")} style={{ ...btnBase, background: "var(--error)", color: "#fff" }}>Abort Mission</button>
+        </>
+      )}
+
       {showGuidance && (
         <div style={{ width: "100%", marginTop: "12px" }}>
           <textarea

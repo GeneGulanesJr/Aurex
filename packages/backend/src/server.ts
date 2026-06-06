@@ -15,6 +15,7 @@ import { registerCodeContextRoutes } from "./routes/code-context.js";
 import { createBumblebeeClient } from "./clients/bumblebee-client.js";
 import { createBumblebeeRunner } from "./orchestrator/bumblebee-runner.js";
 import { bumblebeeRoutes } from "./routes/bumblebee.js";
+import { quotaRoutes } from "./routes/quota.js";
 
 async function main() {
   const config = loadConfig();
@@ -66,6 +67,22 @@ async function main() {
     console.warn("[startup] Could not check for paused missions:", err instanceof Error ? err.message : err);
   }
 
+  // Seed quota config from env vars if not already present in LaPis
+  try {
+    const existingQuotaConfig = await lapis.getSetting("quota_config");
+    if (!existingQuotaConfig) {
+      await lapis.setSetting("quota_config", {
+        enabled: config.quotaEnabled,
+        windowDurationMs: config.quotaWindowDurationMs,
+        burnDurationMs: config.quotaBurnDurationMs,
+        providers: [],
+      });
+      console.log("[startup] Seeded initial quota_config from env vars");
+    }
+  } catch (err) {
+    console.warn("[startup] Could not seed quota_config:", err instanceof Error ? err.message : err);
+  }
+
   const app = Fastify({ logger: true });
   await app.register(websocket);
 
@@ -99,6 +116,7 @@ async function main() {
     lapis,
     pool,
     agentLogger,
+    appConfig: config,
     missionConfig: {
       workerTimeouts: config.workerTimeouts,
       costCap: config.missionCostCap,
@@ -119,6 +137,9 @@ async function main() {
 
   // Bumblebee routes
   await app.register(bumblebeeRoutes, { lapis, bumblebeeClient, bumblebeeRunner });
+
+  // Quota / coding plan routes
+  await app.register(quotaRoutes, { lapis, config });
 
   // Start
   try {
