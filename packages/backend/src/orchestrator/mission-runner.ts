@@ -34,12 +34,13 @@ export interface MissionRunnerConfig {
   logger?: AgentLogger;
   agentDir: string;
   repoRoot: string;
+  aurexRoot: string;
   gitMainBranch: string;
   onPostMilestoneScan?: (missionId: string, root: string) => Promise<void>;
 }
 
 export function createMissionRunner(config: MissionRunnerConfig): MissionRunner {
-  const { lapis, eventBus, agentDir, repoRoot, gitMainBranch } = config;
+  const { lapis, eventBus, agentDir, repoRoot, aurexRoot, gitMainBranch } = config;
   const checkpointManager = createCheckpointManager(lapis);
   const compression = createCompressionService(lapis, eventBus);
 
@@ -137,6 +138,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
 
       await lapis.updateMissionStatus(missionId, "running");
       setStatus("executing", missionId);
+      eventBus.emit({ type: "mission_status", missionId, status: "running" });
 
       loop = createMilestoneLoop(
         lapis,
@@ -164,7 +166,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
             eventBus.emit({ type: "mission_error", missionId: mId, code, message, workerId: opts?.workerId, milestoneId: opts?.milestoneId, recoverable: opts?.recoverable ?? false, details: opts?.details });
           },
         },
-        { agentDir, repoRoot: missionRepoRoot, gitMainBranch, eventBus, logger: config.logger, onCompression: (mId, trigger) => compression.run(mId, trigger), onPostMilestoneScan: config.onPostMilestoneScan },
+        { agentDir, repoRoot: missionRepoRoot, aurexRoot, gitMainBranch, eventBus, logger: config.logger, onCompression: (mId, trigger) => compression.run(mId, trigger), onPostMilestoneScan: config.onPostMilestoneScan },
       );
 
       const contractLookup = new Map<string, string>();
@@ -185,6 +187,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         status: "planned" as const,
         validationContractId: contractLookup.get(ms.id) ?? "",
       }));
+      eventBus.emit({ type: "milestones_set", missionId, milestones: currentMilestones });
 
       let refreshedMission = await lapis.getMission(missionId);
       let loopResult = await loop.run(refreshedMission, currentMilestones, abortController?.signal);
@@ -193,11 +196,13 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         if (abortController?.signal.aborted) {
           await lapis.updateMissionStatus(missionId, "aborted");
           setStatus("failed", missionId);
+          eventBus.emit({ type: "mission_status", missionId, status: "aborted" });
           return;
         }
 
         setStatus("waiting_checkpoint", missionId);
         await lapis.updateMissionStatus(missionId, "paused");
+        eventBus.emit({ type: "mission_status", missionId, status: "paused" });
 
         const checkpointId = await checkpointManager.create({
           missionId,
@@ -218,8 +223,10 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         const decision = resolved.decision as CheckpointDecision | undefined;
 
         if (decision === "reject" || decision === "rescope") {
+          const finalStatus = decision === "reject" ? "aborted" : "failed";
           await lapis.updateMissionStatus(missionId, decision === "reject" ? "aborted" : "failed");
           setStatus("failed", missionId);
+          eventBus.emit({ type: "mission_status", missionId, status: finalStatus });
           return;
         }
 
@@ -230,6 +237,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
           currentMilestones = currentMilestones.map((ms) =>
             ms.id === cpResult.milestoneId ? { ...ms, status: "completed" as const } : ms,
           );
+          eventBus.emit({ type: "milestones_set", missionId, milestones: currentMilestones });
         }
         if (cpResult.trigger === "cost_cap_exceeded") {
           costCapApproved = true;
@@ -237,6 +245,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
 
         await lapis.updateMissionStatus(missionId, "running");
         setStatus("executing", missionId);
+        eventBus.emit({ type: "mission_status", missionId, status: "running" });
 
         const baseMission = await lapis.getMission(missionId);
         const nextMission = costCapApproved
@@ -248,11 +257,13 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
       if (loopResult.status === "failed") {
         await lapis.updateMissionStatus(missionId, "failed");
         setStatus("failed", missionId);
+        eventBus.emit({ type: "mission_status", missionId, status: "failed" });
         return;
       }
 
       await lapis.updateMissionStatus(missionId, "completed");
       setStatus("completed", missionId);
+      eventBus.emit({ type: "mission_status", missionId, status: "completed" });
     } catch (error) {
       if (error instanceof QuotaExhaustedError) {
         const currentMilestoneId = status.missionId
@@ -263,6 +274,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
 
         setStatus("waiting_checkpoint", missionId);
         await lapis.updateMissionStatus(missionId, "paused");
+        eventBus.emit({ type: "mission_status", missionId, status: "paused" });
 
         const checkpointId = await checkpointManager.create({
           missionId,
@@ -291,6 +303,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         if (decision === "reject") {
           await lapis.updateMissionStatus(missionId, "aborted");
           setStatus("failed", missionId);
+          eventBus.emit({ type: "mission_status", missionId, status: "aborted" });
           return;
         }
 
@@ -303,6 +316,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
 
         await lapis.updateMissionStatus(missionId, "running");
         setStatus("executing", missionId);
+        eventBus.emit({ type: "mission_status", missionId, status: "running" });
 
         if (loop && currentMilestones.length > 0) {
           const refreshedMission = await lapis.getMission(missionId);
@@ -315,11 +329,13 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
             if (abortController?.signal.aborted) {
               await lapis.updateMissionStatus(missionId, "aborted");
               setStatus("failed", missionId);
+              eventBus.emit({ type: "mission_status", missionId, status: "aborted" });
               return;
             }
 
             setStatus("waiting_checkpoint", missionId);
             await lapis.updateMissionStatus(missionId, "paused");
+            eventBus.emit({ type: "mission_status", missionId, status: "paused" });
 
             const cpId = await checkpointManager.create({
               missionId,
@@ -340,8 +356,10 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
             const cpDecision = cpResolved.decision as CheckpointDecision | undefined;
 
             if (cpDecision === "reject" || cpDecision === "rescope") {
+              const cpFinalStatus = cpDecision === "reject" ? "aborted" : "failed";
               await lapis.updateMissionStatus(missionId, cpDecision === "reject" ? "aborted" : "failed");
               setStatus("failed", missionId);
+              eventBus.emit({ type: "mission_status", missionId, status: cpFinalStatus });
               return;
             }
 
@@ -352,11 +370,13 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
               currentMilestones = currentMilestones.map((ms) =>
                 ms.id === cp.milestoneId ? { ...ms, status: "completed" as const } : ms,
               );
+              eventBus.emit({ type: "milestones_set", missionId, milestones: currentMilestones });
             }
             if (cp.trigger === "cost_cap_exceeded") costCapApproved = true;
 
             await lapis.updateMissionStatus(missionId, "running");
             setStatus("executing", missionId);
+            eventBus.emit({ type: "mission_status", missionId, status: "running" });
 
             const baseMission = await lapis.getMission(missionId);
             const next = costCapApproved
@@ -368,11 +388,13 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
           if (loopResult.status === "failed") {
             await lapis.updateMissionStatus(missionId, "failed");
             setStatus("failed", missionId);
+            eventBus.emit({ type: "mission_status", missionId, status: "failed" });
             return;
           }
 
           await lapis.updateMissionStatus(missionId, "completed");
           setStatus("completed", missionId);
+          eventBus.emit({ type: "mission_status", missionId, status: "completed" });
         } else {
           void runMission(missionId);
           return;
@@ -383,6 +405,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         eventBus.emit({ type: "mission_error", missionId, code: "mission_crash", message: `Mission crashed: ${msg}`, recoverable: false });
         await lapis.updateMissionStatus(missionId, "failed").catch(() => {});
         setStatus("failed", missionId);
+        eventBus.emit({ type: "mission_status", missionId, status: "failed" });
       }
     } finally {
       completeWaiters();

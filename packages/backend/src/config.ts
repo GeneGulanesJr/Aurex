@@ -20,6 +20,10 @@ export interface AppConfig {
 
   // Git
   repoRoot: string;
+  // Aurex install root — where the orchestrator's own skill files live
+  // (packages/backend/src/skills/*.md). Distinct from repoRoot, which is
+  // the parent directory of cloned mission target repos.
+  aurexRoot: string;
   gitMainBranch: string;
 
   // Server
@@ -79,6 +83,7 @@ export function loadConfig(): AppConfig {
     missionCostCap: envFloat("MISSION_COST_CAP", 50.0),
 
     repoRoot: env("REPO_ROOT"),
+    aurexRoot: env("AUREX_ROOT", env("REPO_ROOT")),
     gitMainBranch: env("GIT_MAIN_BRANCH", "main"),
 
     port: envInt("PORT", 3000),

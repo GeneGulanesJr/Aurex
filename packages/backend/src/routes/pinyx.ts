@@ -77,6 +77,8 @@ function providerApi(providerId: string): string {
     case "google":
     case "gemini":
       return "google-generative-ai";
+    case "minimax":
+      return "openai-completions";
     default:
       return "openai-completions";
   }

@@ -91,8 +91,10 @@ Three color themes are built in: **Solar Flare** (amber), **Frost Command** (cya
 One command runs the full stack:
 
 ```bash
-docker compose up --build
+docker compose build && docker compose up
 ```
+
+> **Why two steps?** `docker compose build` rebuilds all images — including the bundled LaPis (shared state DB) and PiNyx (LLM gateway) services — pulling in the latest updates before starting the stack. Run `build` each time you pull new code or update provider keys.
 
 | Service | URL |
 |---|---|
@@ -145,6 +147,18 @@ All config is via environment variables. Key ones:
 | `MAX_VALIDATOR_RETRIES` | `2` | How many times a failed milestone can retry |
 
 Full list in `.env.example`.
+
+### Built-in PiNyx providers
+
+PiNyx (the LLM gateway) is configured via **Integrations → Keys** in the dashboard. Three providers are built-in:
+
+| Provider | Base URL | Protocol | Notes |
+|---|---|---|---|
+| Kilo Code | `https://api.kilo.ai/v1` | OpenAI-compatible | Default for first-run; free tier available (`/free` suffix). |
+| Z.AI Coding | `https://api.z.ai/api/coding/paas/v4` | OpenAI-compatible | Anthropic-aliased coding models. |
+| MiniMax | `https://api.minimax.io/v1` | OpenAI-compatible | Model: `MiniMax-M3`; enter your Subscription Key in the Keys tab. |
+
+Custom providers are also supported — add any base URL and the gateway will use the OpenAI-compatible adapter.
 
 ---
 

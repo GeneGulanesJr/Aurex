@@ -34,6 +34,7 @@ export interface MilestoneLoopCallbacks {
 export interface MilestoneLoopConfig {
   agentDir: string;
   repoRoot: string;
+  aurexRoot: string;
   gitMainBranch: string;
   eventBus: EventBus;
   logger?: AgentLogger;
@@ -191,7 +192,7 @@ export function createMilestoneLoop(
                 missionId: mission.id,
                 milestoneId: milestone.id,
                 cwd: worktreePath,
-                skillFilePath: `${loopConfig.repoRoot}/packages/backend/src/skills/worker.md`,
+                skillFilePath: `${loopConfig.aurexRoot}/packages/backend/src/skills/worker.md`,
                 contextContent,
                 taskPrompt: `Implement: ${unit.description}\n\nFollow your skill instructions carefully. Use write_handoff when done.`,
                 timeout: config.workerTimeouts.simple,
@@ -305,7 +306,7 @@ export function createMilestoneLoop(
             missionId: mission.id,
             milestoneId: milestone.id,
             cwd: loopConfig.repoRoot,
-            skillFilePath: `${loopConfig.repoRoot}/packages/backend/src/skills/research.md`,
+            skillFilePath: `${loopConfig.aurexRoot}/packages/backend/src/skills/research.md`,
             contextContent: researchContext,
             taskPrompt: `Research domain knowledge for milestone "${milestone.title}". Investigate the codebase areas relevant to the declared paths and modules. Submit findings using write_finding.`,
             timeout: config.workerTimeouts.build,
@@ -396,7 +397,7 @@ export function createMilestoneLoop(
             const handle = await spawner.spawn({
               agentType: validatorType, agentId, missionId: mission.id, milestoneId: milestone.id,
               contractId, cwd: loopConfig.repoRoot,
-              skillFilePath: `${loopConfig.repoRoot}/packages/backend/src/skills/validator.md`,
+              skillFilePath: `${loopConfig.aurexRoot}/packages/backend/src/skills/validator.md`,
               contextContent,
               taskPrompt: `Validate milestone "${milestone.title}" as ${validatorType}. Use write_verdict when done.`,
               timeout: config.workerTimeouts.testHeavy,

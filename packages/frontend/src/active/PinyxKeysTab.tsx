@@ -19,6 +19,7 @@ const EMPTY_DRAFT: ProviderDraft = { id: "", name: "", baseUrl: "", apiKey: "" }
 const BUILT_IN_PROVIDERS = [
   { id: "kilo", name: "Kilo Code", baseUrl: "https://api.kilo.ai/v1" },
   { id: "zai", name: "Z.AI Coding", baseUrl: "https://api.z.ai/api/coding/paas/v4" },
+  { id: "minimax", name: "MiniMax", baseUrl: "https://api.minimax.io/v1" },
 ];
 
 export function PinyxKeysTab({ config, onConfigUpdate }: PinyxKeysTabProps) {

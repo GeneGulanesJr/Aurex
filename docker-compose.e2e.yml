@@ -34,9 +34,11 @@ services:
     environment:
       - LAPIS_ENDPOINT=http://lapis:9100
       - REPO_ROOT=/workspace
+      - AUREX_ROOT=/aurex
       - GIT_MAIN_BRANCH=main
     volumes:
       - ${REPO_ROOT:-/tmp}:/workspace
+      - .:/aurex:ro
     depends_on:
       lapis:
         condition: service_healthy

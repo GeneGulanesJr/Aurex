@@ -274,4 +274,47 @@ describe("PiNyx integration routes", () => {
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({ error: "PiNyx is not configured" });
   });
+
+  it("accepts a MiniMax provider and tags it openai-completions", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [] }) });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const app = Fastify();
+    const lapis = createMockLapis();
+    registerPinyxRoutes(app, { lapis });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/pinyx/config",
+      payload: {
+        endpoint: "http://pinyx.example:7331",
+        modelHints: defaultModelHints,
+        providers: [
+          { id: "minimax", name: "MiniMax", baseUrl: "https://api.minimax.io/v1", apiKey: "sk-test" },
+        ],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.providers).toEqual([
+      expect.objectContaining({ id: "minimax", name: "MiniMax", baseUrl: "https://api.minimax.io/v1", hasApiKey: true }),
+    ]);
+    expect(lapis.setSetting).toHaveBeenCalledWith("pinyx_config", expect.objectContaining({
+      providers: [expect.objectContaining({ id: "minimax", apiKey: "sk-test" })],
+    }));
+
+    // Verify PiNyx receives openai-completions for minimax
+    const putCall = mockFetch.mock.calls.find(
+      ([url, init]) =>
+        typeof url === "string" && url.endsWith("/api/config") && (init as RequestInit)?.method === "PUT",
+    );
+    expect(putCall).toBeDefined();
+    const putBody = JSON.parse((putCall![1] as RequestInit).body as string);
+    expect(putBody.providers.minimax).toMatchObject({
+      api: "openai-completions",
+      baseUrl: "https://api.minimax.io/v1",
+      apiKey: "sk-test",
+    });
+  });
 });

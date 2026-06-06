@@ -46,6 +46,7 @@ async function main() {
     logger: agentLogger,
     agentDir: process.env.PI_AGENT_DIR || `${process.env.HOME}/.pi/agent`,
     repoRoot: config.repoRoot,
+    aurexRoot: config.aurexRoot,
     gitMainBranch: config.gitMainBranch,
     maxConcurrent: config.maxConcurrentMissions,
     onPostMilestoneScan: async (missionId: string, root: string) => {

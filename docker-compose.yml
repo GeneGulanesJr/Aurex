@@ -1,5 +1,5 @@
 # Aurex — Full Stack
-# Usage:  docker compose up --build
+# Usage:  docker compose build && docker compose up
 # Stops:  Ctrl+C  or  docker compose down
 
 services:
@@ -38,6 +38,7 @@ services:
     environment:
       LAPIS_ENDPOINT: http://lapis:9100
       REPO_ROOT: /workspace
+      AUREX_ROOT: /aurex
       GIT_MAIN_BRANCH: main
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-Iv23lijYF4sZMcU62MjT}
@@ -46,6 +47,7 @@ services:
       ZAI_API_KEY: ${ZAI_API_KEY:-}
     volumes:
       - ${REPO_ROOT:-/tmp}:/workspace
+      - .:/aurex:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
