@@ -2,7 +2,7 @@
 import type { FastifyInstance } from "fastify";
 import type { MissionConfig, QuotaWindow, QuotaConfig } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
-import type { MissionRunnerPool } from "../orchestrator/mission-runner-pool.js";
+import type { MissionRunnerPool, PoolMissionStatus } from "../orchestrator/mission-runner-pool.js";
 import type { AgentLogger } from "../agents/agent-logger.js";
 import type { AppConfig } from "../config.js";
 import { checkQuota, resetWindow, getEffectiveProviderConfig } from "../enforcement/quota-gate.js";
@@ -124,8 +124,39 @@ export async function missionRoutes(
     }
   });
 
-  app.get("/api/missions/active", async () => {
-    return { missions: pool.getActiveMissions() };
+  app.get("/api/missions/active", async (request) => {
+    const query = request.query as { includeHistory?: string };
+    const includeHistory = Math.max(0, Math.min(50, Number.parseInt(query.includeHistory ?? "10", 10) || 0));
+
+    const active = pool.getActiveMissions();
+
+    if (includeHistory === 0) {
+      return { missions: active };
+    }
+
+    // Pull recent terminal missions from LaPis so the sidebar can survive
+    // page refreshes and server restarts. We exclude any ids already in the
+    // pool (the in-flight entries are authoritative for current state).
+    const activeIds = new Set(active.map((m) => m.missionId));
+    let history: Array<PoolMissionStatus & { description?: string }> = [];
+    try {
+      const [completed, failed] = await Promise.all([
+        lapis.listMissions({ status: "completed" }),
+        lapis.listMissions({ status: "failed" }),
+      ]);
+      const merged = [
+        ...completed.map((m) => ({ missionId: m.id, state: m.status as PoolMissionStatus["state"], description: m.description })),
+        ...failed.map((m) => ({ missionId: m.id, state: m.status as PoolMissionStatus["state"], description: m.description })),
+      ];
+      history = merged
+        .filter((m) => !activeIds.has(m.missionId))
+        .sort((a, b) => (a.missionId < b.missionId ? 1 : -1)) // newest-first by id (uuid-ish); LaPis returns insertion order but we cap so the tail is fine
+        .slice(0, includeHistory);
+    } catch {
+      // LaPis unavailable for history: return pool-only rather than 500ing
+    }
+
+    return { missions: [...active, ...history] };
   });
 
   app.post("/api/missions/:id/abort", async (request, reply) => {

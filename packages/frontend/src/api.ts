@@ -7,6 +7,7 @@ export interface ActiveMission {
   missionId: string;
   state: string;
   queuePosition?: number;
+  description?: string;
 }
 
 function authHeaders(): HeadersInit {
@@ -38,7 +39,7 @@ export async function getCurrentMission(): Promise<CurrentMissionPayload | null>
 }
 
 export async function getActiveMissions(): Promise<{ missions: ActiveMission[] }> {
-  const res = await apiFetch("/api/missions/active");
+  const res = await apiFetch("/api/missions/active?includeHistory=10");
   if (!res.ok) throw new Error(`Failed to fetch active missions: ${res.status}`);
   return res.json() as Promise<{ missions: ActiveMission[] }>;
 }
