@@ -132,7 +132,7 @@ The paired benchmark also reports behavior counters. In the latest run, memory-o
 ## Requirements
 
 - Node.js
-- `@libsql/client` for async local SQLite/libSQL access
+- `better-sqlite3` for local SQLite access
 - No Python dependency
 - No API keys or cloud services
 
