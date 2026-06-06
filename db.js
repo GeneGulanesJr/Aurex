@@ -27,7 +27,7 @@ const SCHEMA_PATH = path.resolve(__dirname, 'schema.sql');
 
 /* ── module state ─────────────────────────────────────────── */
 let _db = null;
-let _engine = null; // 'libsql'
+let _engine = null; // 'better-sqlite3'
 
 function getDb() {
   return _db;

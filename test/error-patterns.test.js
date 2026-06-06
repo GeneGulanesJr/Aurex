@@ -81,7 +81,7 @@ describe('Error patterns and DB isolation', () => {
       const tmpPath = path.join(os.tmpdir(), `pi-mem-test-createdb-${Date.now()}.db`);
       const result = dbModule.createDb({ db_path: tmpPath });
       expect(result.ok).toBe(true);
-      expect(result.engine).toMatch(/libsql/);
+      expect(result.engine).toMatch(/better-sqlite3/);
 
       // Cleanup: close the created DB and delete temp file
       dbModule.resetDb();

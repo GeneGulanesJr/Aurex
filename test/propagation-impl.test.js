@@ -1,7 +1,7 @@
 // Tests for propagation-impl: getAffectedGraph
 const path = require('path');
 const fs = require('fs');
-const Database = require('libsql');
+const Database = require('better-sqlite3');
 
 const TMP_DB = path.join('/tmp', 'propagation-test.db');
 

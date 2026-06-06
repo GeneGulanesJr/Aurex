@@ -1,7 +1,7 @@
 // Tests for relation-builder: buildExtendsEdges and buildImplementsEdges
 const path = require('path');
 const fs = require('fs');
-const Database = require('libsql');
+const Database = require('better-sqlite3');
 const { buildExtendsEdges, buildImplementsEdges } = require('../src/code-analysis/relation-builder');
 
 const TMP_DB = path.join('/tmp', 'relation-builder-test.db');
