@@ -24,6 +24,7 @@ describe("validator tools", () => {
     const tool = tools.find((t) => t.name === "write_verdict");
     expect(tool).toBeDefined();
     expect(tool!.description).toContain("validation verdict");
+    expect(JSON.stringify((tool as any).parameters)).toContain("structured review Markdown");
   });
 
   it("writes verdict with automatic validator context", async () => {

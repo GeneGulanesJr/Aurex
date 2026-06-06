@@ -206,6 +206,114 @@ export interface MemoryResult {
   topicKey: string | null;
 }
 
+export type TodoLedgerStatus = "planning" | "ready" | "in_progress" | "blocked" | "validating" | "completed" | "cancelled";
+export type TodoStatus = "pending" | "ready" | "in_progress" | "blocked" | "implemented" | "validating" | "needs_changes" | "passed" | "merged" | "cancelled";
+export type TodoType = "discovery" | "implementation" | "test" | "refactor" | "validation" | "documentation";
+export type TodoPriority = "low" | "medium" | "high";
+export type TodoRiskLevel = "low" | "medium" | "high";
+export type TodoConfidence = "low" | "medium" | "high";
+
+export interface TodoEvidence {
+  branch: string | null;
+  commits: string[];
+  changedFiles: string[];
+  testsRun: Array<{ command: string; exitCode?: number; output?: string } | string>;
+  testResults: unknown[];
+  validatorVerdict: unknown | null;
+  notes: string[];
+}
+
+export interface MissionTodo {
+  id: string;
+  missionId: string;
+  title: string;
+  status: TodoStatus;
+  type: TodoType;
+  priority: TodoPriority;
+  dependsOn: string[];
+  goal: string;
+  scope: { in: string[]; out: string[] };
+  likelyFiles: string[];
+  lapisContextQuery: string;
+  acceptanceCriteria: string[];
+  validationCriteria: string[];
+  testCommands: string[];
+  riskLevel: TodoRiskLevel;
+  workerInstructions: string[];
+  validatorInstructions: string[];
+  escalationRules: string[];
+  evidence: TodoEvidence;
+  confidence: TodoConfidence;
+  assignedWorkerId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MissionTodoInput {
+  id?: string;
+  title: string;
+  status?: TodoStatus;
+  type?: TodoType;
+  priority?: TodoPriority;
+  dependsOn?: string[];
+  goal?: string;
+  scope?: { in: string[]; out: string[] };
+  likelyFiles?: string[];
+  lapisContextQuery?: string;
+  acceptanceCriteria?: string[];
+  validationCriteria?: string[];
+  testCommands?: string[];
+  riskLevel?: TodoRiskLevel;
+  workerInstructions?: string[];
+  validatorInstructions?: string[];
+  escalationRules?: string[];
+  evidence?: Partial<TodoEvidence>;
+  confidence?: TodoConfidence;
+}
+
+export interface MissionTodoLedger {
+  missionId: string;
+  missionTitle: string;
+  status: TodoLedgerStatus;
+  sourceMission: string;
+  plannerSummary: string;
+  acceptanceCriteria: string[];
+  constraints: string[];
+  assumptions: string[];
+  humanQuestions: string[];
+  todos: MissionTodo[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MissionTodoLedgerInput {
+  missionId: string;
+  missionTitle: string;
+  status?: TodoLedgerStatus;
+  sourceMission: string;
+  plannerSummary: string;
+  acceptanceCriteria?: string[];
+  constraints?: string[];
+  assumptions?: string[];
+  humanQuestions?: string[];
+}
+
+export interface TodoEvent {
+  id: string;
+  missionId: string;
+  todoId: string | null;
+  eventType: string;
+  actorId: string | null;
+  payload: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface TodoContextResult {
+  todoId: string;
+  query: string;
+  context: MemoryResult[];
+}
+
 export interface StandingContext {
   taskId: string;
   workerSessionId: string;

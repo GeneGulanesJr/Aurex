@@ -7,6 +7,8 @@ import type {
   AgentSessionRecord, CostSummary,
   RetryCounter, RescopeEvent, MemoryResult,
   ValidationVerdict, CheckpointRecord,
+  MissionTodoLedger, MissionTodoLedgerInput,
+  MissionTodo, MissionTodoInput, TodoEvent, TodoContextResult,
 } from "@aurex/shared";
 import type { AgentType, CheckpointDecision, CompressionTrigger } from "@aurex/shared";
 
@@ -59,6 +61,33 @@ export interface LaPisClient {
 
   // Memory
   searchMemory(query: string, opts?: { limit?: number }): Promise<MemoryResult[]>;
+
+  // Todo ledgers
+  createMissionLedger(input: MissionTodoLedgerInput): Promise<MissionTodoLedger>;
+  getMissionLedger(missionId: string): Promise<MissionTodoLedger>;
+  listMissionLedgers(opts?: { status?: string }): Promise<MissionTodoLedger[]>;
+  updateMissionLedger(missionId: string, patch: Partial<MissionTodoLedgerInput>): Promise<MissionTodoLedger>;
+  setMissionLedgerStatus(missionId: string, status: MissionTodoLedger["status"]): Promise<MissionTodoLedger>;
+  recordMissionTodoEvent(missionId: string, event: { eventType: string; actorId?: string | null; payload?: Record<string, unknown> }): Promise<TodoEvent>;
+  listMissionTodoEvents(missionId: string): Promise<TodoEvent[]>;
+
+  // Todo items
+  createTodo(missionId: string, todo: MissionTodoInput): Promise<MissionTodo>;
+  createTodos(missionId: string, todos: MissionTodoInput[]): Promise<MissionTodo[]>;
+  getTodo(todoId: string): Promise<MissionTodo>;
+  listTodos(opts?: { missionId?: string; status?: string; type?: string }): Promise<MissionTodo[]>;
+  listTodosByMission(missionId: string): Promise<MissionTodo[]>;
+  searchTodos(query: string, opts?: { missionId?: string }): Promise<MissionTodo[]>;
+  updateTodo(todoId: string, patch: Partial<MissionTodoInput>): Promise<MissionTodo>;
+  setTodoStatus(todoId: string, status: MissionTodo["status"]): Promise<MissionTodo>;
+  addTodoEvidence(todoId: string, evidence: Partial<MissionTodo["evidence"]>): Promise<MissionTodo>;
+  addTodoNote(todoId: string, note: string): Promise<MissionTodo>;
+  assignTodo(todoId: string, workerId: string | null): Promise<MissionTodo>;
+  claimNextReadyTodo(missionId: string, workerId: string | null): Promise<MissionTodo>;
+  getTodoContextQuery(todoId: string): Promise<{ todoId: string; lapisContextQuery: string }>;
+  getContextForTodo(todoId: string, opts?: { limit?: number }): Promise<TodoContextResult>;
+  recordTodoEvent(todoId: string, event: { eventType: string; actorId?: string | null; payload?: Record<string, unknown> }): Promise<TodoEvent>;
+  listTodoEvents(todoId: string): Promise<TodoEvent[]>;
 
   // Cost tracking
   logCost(entry: { missionId: string; agentSessionId: string; model: string; promptTokens: number; completionTokens: number; cost: number; timestamp: string }): Promise<void>;
@@ -237,6 +266,90 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
     // Memory
     searchMemory(query, opts) {
       return post("/memory/search", { query, ...opts });
+    },
+
+    // Todo ledgers
+    createMissionLedger(input) {
+      return post("/todo-ledgers", input);
+    },
+    getMissionLedger(missionId) {
+      return get(`/missions/${missionId}/todo-ledger`);
+    },
+    listMissionLedgers(opts) {
+      const params = new URLSearchParams();
+      if (opts?.status) params.set("status", opts.status);
+      const qs = params.toString();
+      return get(`/todo-ledgers${qs ? `?${qs}` : ""}`);
+    },
+    updateMissionLedger(missionId, patchBody) {
+      return patch(`/missions/${missionId}/todo-ledger`, patchBody);
+    },
+    setMissionLedgerStatus(missionId, status) {
+      return patch(`/missions/${missionId}/todo-ledger/status`, { status });
+    },
+    recordMissionTodoEvent(missionId, event) {
+      return post(`/missions/${missionId}/todo-events`, event);
+    },
+    listMissionTodoEvents(missionId) {
+      return get(`/missions/${missionId}/todo-events`);
+    },
+
+    // Todo items
+    createTodo(missionId, todo) {
+      return post(`/missions/${missionId}/todos`, todo);
+    },
+    createTodos(missionId, todos) {
+      return post(`/missions/${missionId}/todos/bulk`, { todos });
+    },
+    getTodo(todoId) {
+      return get(`/todos/${todoId}`);
+    },
+    listTodos(opts) {
+      const params = new URLSearchParams();
+      if (opts?.missionId) params.set("missionId", opts.missionId);
+      if (opts?.status) params.set("status", opts.status);
+      if (opts?.type) params.set("type", opts.type);
+      const qs = params.toString();
+      return get(`/todos${qs ? `?${qs}` : ""}`);
+    },
+    listTodosByMission(missionId) {
+      return get(`/missions/${missionId}/todos`);
+    },
+    searchTodos(query, opts) {
+      return post("/todos/search", { query, ...opts });
+    },
+    updateTodo(todoId, patchBody) {
+      return patch(`/todos/${todoId}`, patchBody);
+    },
+    setTodoStatus(todoId, status) {
+      return patch(`/todos/${todoId}/status`, { status });
+    },
+    addTodoEvidence(todoId, evidence) {
+      return post(`/todos/${todoId}/evidence`, evidence);
+    },
+    addTodoNote(todoId, note) {
+      return post(`/todos/${todoId}/notes`, { note });
+    },
+    assignTodo(todoId, workerId) {
+      return patch(`/todos/${todoId}/assignment`, { workerId });
+    },
+    claimNextReadyTodo(missionId, workerId) {
+      return post(`/missions/${missionId}/todos/claim-next`, { workerId });
+    },
+    getTodoContextQuery(todoId) {
+      return get(`/todos/${todoId}/context-query`);
+    },
+    getContextForTodo(todoId, opts) {
+      const params = new URLSearchParams();
+      if (opts?.limit) params.set("limit", String(opts.limit));
+      const qs = params.toString();
+      return get(`/todos/${todoId}/context${qs ? `?${qs}` : ""}`);
+    },
+    recordTodoEvent(todoId, event) {
+      return post(`/todos/${todoId}/events`, event);
+    },
+    listTodoEvents(todoId) {
+      return get(`/todos/${todoId}/events`);
     },
 
     // Cost tracking

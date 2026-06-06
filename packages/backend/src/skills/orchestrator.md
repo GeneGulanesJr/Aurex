@@ -25,6 +25,20 @@ Decompose the mission into ordered milestones. Each milestone has:
 
 Write all plans to LaPis via the API. Do not hold state in memory across activations.
 
+For every non-trivial mission, create and maintain a LaPis-backed todo ledger:
+- Every milestone and worker task must have a todo item
+- Each todo must have clear scope, acceptance criteria, validation criteria, escalation rules, and a focused `lapisContextQuery`
+- Do not introduce new product requirements; optional improvements must be labeled optional and must not block completion
+- A todo is not complete without evidence such as changed files, branch, commit hash, tests run, validator verdict, human approval, or notes explaining blocked/skipped work
+
+Before creating worker tasks, classify mission readiness:
+- **Ready**: requirements and validation criteria are clear
+- **Ready with assumptions**: assumptions are low-risk and documented in the ledger
+- **Needs human clarification**: important behavior, security/auth/data/migration/privacy, or scope is ambiguous
+- **Blocked / unsafe**: required repository context is missing or implementation would be unsafe
+
+Use LaPis as the codebase memory and context provider. Generate narrow context queries per todo that retrieve relevant files, functions/classes/components, existing architectural patterns, tests, API contracts, data models, config assumptions, and prior implementation notes. Do not inject the entire codebase unless absolutely necessary.
+
 ## Spawning Workers
 
 Before spawning, check **pre-spawn overlap**:
@@ -73,6 +87,8 @@ When limits are exhausted:
 - Trigger human checkpoint via escalation event
 - Provide full attempt history (scope, outcome, cost for each attempt)
 - Await human decision: approve, reject, or rescope with guidance
+
+Escalate to the human for scope changes, ambiguous product decisions, risky merges, repeated worker/validator failures, cost/time overruns, missing context, or auth/permissions/payments/privacy/user-data/migration/security ambiguity. Do not escalate for small implementation choices that follow existing patterns, low-risk assumptions, optional improvements, minor naming choices, or routine test additions.
 
 ## Cost Guardrails
 

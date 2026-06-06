@@ -28,6 +28,8 @@ describe("planner", () => {
       createWorkingUnit: vi.fn().mockResolvedValue({ id: "unit-1", description: "Login endpoint" }),
       createContract: vi.fn().mockResolvedValue({ id: "c-1" }),
       getContractHistory: vi.fn().mockResolvedValue([]),
+      createMissionLedger: vi.fn().mockResolvedValue({ missionId: "m-1", todos: [] }),
+      createTodo: vi.fn().mockResolvedValue({ id: "td-1" }),
     } as unknown as LaPisClient;
 
     const mockPinyx = createMockPinyx(JSON.stringify({
@@ -49,6 +51,20 @@ describe("planner", () => {
     expect(result.milestones[0].title).toBe("Auth module");
     expect(mockLapis.createMilestone).toHaveBeenCalled();
     expect(mockLapis.createContract).toHaveBeenCalled();
+    expect(mockLapis.createMissionLedger).toHaveBeenCalledWith(expect.objectContaining({
+      missionId: "m-1",
+      sourceMission: "Build authentication system",
+    }));
+    expect(mockLapis.createTodo).toHaveBeenCalledTimes(2);
+    expect(mockLapis.createTodo).toHaveBeenCalledWith("m-1", expect.objectContaining({
+      title: "Milestone 1: Auth module",
+      lapisContextQuery: expect.stringContaining("Auth"),
+    }));
+    expect(mockLapis.createTodo).toHaveBeenCalledWith("m-1", expect.objectContaining({
+      title: "Login endpoint",
+      scope: expect.objectContaining({ in: ["src/auth/**", "auth"] }),
+      validatorInstructions: expect.arrayContaining([expect.stringContaining("Treat outside-scope suggestions as optional")]),
+    }));
   });
 
   it("uses the configured orchestrator model for PiNyx planning", async () => {
@@ -58,6 +74,8 @@ describe("planner", () => {
       createWorkingUnit: vi.fn(),
       createContract: vi.fn().mockResolvedValue({ id: "c-1" }),
       getContractHistory: vi.fn().mockResolvedValue([]),
+      createMissionLedger: vi.fn().mockResolvedValue({ missionId: "m-1", todos: [] }),
+      createTodo: vi.fn().mockResolvedValue({ id: "td-1" }),
     } as unknown as LaPisClient;
 
     const mockPinyx = createMockPinyx(JSON.stringify({
@@ -80,6 +98,8 @@ describe("planner", () => {
       createWorkingUnit: vi.fn(),
       createContract: vi.fn(),
       getContractHistory: vi.fn(),
+      createMissionLedger: vi.fn(),
+      createTodo: vi.fn(),
     } as unknown as LaPisClient;
     const mockPinyx = createMockPinyx("Here is a broken object: { definitely not json }");
     const eventBus = { emit: vi.fn() };
