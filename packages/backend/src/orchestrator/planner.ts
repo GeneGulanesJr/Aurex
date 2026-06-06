@@ -2,7 +2,11 @@
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { PinyxClient } from "../clients/pinyx-client.js";
 import type { EventBus } from "../ws/events.js";
-import { validateContractAppend } from "../enforcement/contract-immutability.js";
+// Note: validateContractAppend is intentionally NOT called here. The planner
+// *supersedes* the previous contract (replacing it with a new version), it
+// does not *append* a new version on top of an active one. The misnamed
+// earlier call was logging a warning for a scenario that didn't apply to
+// this code path.
 
 interface PlannedUnit {
   title?: string;
@@ -315,22 +319,35 @@ export function createPlanner(
           });
         }
 
-        await lapis.createContract(milestone.id, {
-          content: {
-            criteria: ms.criteria,
-            testCommands: ms.testCommands,
-            acceptanceBehavior: ms.criteria.join("; "),
-          },
-        });
-
-        // Enforce contract immutability — validate append
+        // Enforce contract immutability: if a previous un-superseded contract
+        // exists, supersede it before creating a new one. Validation contracts
+        // are append-only; the previous version must be retired via rescope.
         const existingContracts = await lapis.getContractHistory(milestone.id);
-        const appendCheck = validateContractAppend(existingContracts as any[], {
-          milestoneId: milestone.id,
-          content: { criteria: ms.criteria, testCommands: ms.testCommands, acceptanceBehavior: ms.criteria.join("; ") },
-        });
-        if (!appendCheck.valid) {
-          console.warn(`[enforcement] Contract append blocked for milestone ${milestone.id}: ${appendCheck.reason}`);
+        const newContractContent = {
+          criteria: ms.criteria,
+          testCommands: ms.testCommands,
+          acceptanceBehavior: ms.criteria.join("; "),
+        };
+        const latest = (existingContracts as any[]).reduce<any>(
+          (a, b) => (a && a.version > b.version ? a : b),
+          undefined as any,
+        );
+        if (latest && latest.supersededBy === null) {
+          // Supersede the previous contract; this also creates the new one
+          // and links them via supersedes/superseded_by. This is the
+          // enforcement: contracts are append-only, so a new version is
+          // only ever born by retiring the old one through a rescope.
+          await lapis.supersedeContract(latest.id, { content: newContractContent }, {
+            milestoneId: milestone.id,
+            contractId: latest.id,
+            reason: `Planner re-creating contract for milestone ${milestone.title}`,
+            previousScope: JSON.stringify((latest as any).content ?? {}),
+            newScope: JSON.stringify(newContractContent),
+          });
+        } else {
+          await lapis.createContract(milestone.id, {
+            content: newContractContent,
+          });
         }
 
         result.push({ id: milestone.id, title: ms.title, units });

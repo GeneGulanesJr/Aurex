@@ -12,6 +12,7 @@ import { createMilestoneLoop } from "./milestone-loop.js";
 import { createPlanner } from "./planner.js";
 import { createCompressionService } from "./compression.js";
 import { prepareRepoForMission } from "./repo-prep.js";
+import { rescopeMilestone } from "./rescope.js";
 import { checkQuota, resetWindow } from "../enforcement/quota-gate.js";
 import path from "path";
 
@@ -222,15 +223,44 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         const resolved = await checkpointManager.waitForResolution(checkpointId);
         const decision = resolved.decision as CheckpointDecision | undefined;
 
-        if (decision === "reject" || decision === "rescope") {
-          const finalStatus = decision === "reject" ? "aborted" : "failed";
-          await lapis.updateMissionStatus(missionId, decision === "reject" ? "aborted" : "failed");
+        if (decision === "reject") {
+          await lapis.updateMissionStatus(missionId, "aborted");
           setStatus("failed", missionId);
-          eventBus.emit({ type: "mission_status", missionId, status: finalStatus });
+          eventBus.emit({ type: "mission_status", missionId, status: "aborted" });
           return;
         }
 
         const cpResult = loopResult as { status: "checkpoint_needed"; trigger: CheckpointTrigger; milestoneId: string; summary: string };
+
+        // User-initiated re-plan: triggered when the user approves AND provides
+        // rescopeGuidance in the request body. The old "rescope" decision value
+        // is gone; this is now an orthogonal signal on the request.
+        if (resolved.rescopeGuidance && cpResult.status === "checkpoint_needed") {
+          // Re-plan the failing milestone via PiNyx and create fresh working
+          // units. The auto-rescope path inside the milestone-loop does the
+          // same work; here we mirror it for user-initiated rescope decisions.
+          const rescopeTarget = currentMilestones.find((ms) => ms.id === cpResult.milestoneId);
+          if (rescopeTarget) {
+            eventBus.emit({ type: "mission_log", missionId, phase: "rescope", message: `Re-planning milestone "${rescopeTarget.title}" after user rescope` });
+            const result = await rescopeMilestone({
+              pinyx,
+              lapis,
+              mission,
+              milestone: { id: rescopeTarget.id, title: rescopeTarget.title, description: rescopeTarget.description },
+              model: mission.configJson.modelHints.orchestrator,
+              reason: resolved.rescopeGuidance,
+            });
+            if (!result.ok) {
+              const msg = result.error === "pinyx_threw" ? result.message : `Rescope re-planning failed: ${result.content}`;
+              eventBus.emit({ type: "mission_error", missionId, code: "rescope_failed", message: msg, recoverable: false });
+              await lapis.updateMissionStatus(missionId, "failed").catch(() => {});
+              setStatus("failed", missionId);
+              eventBus.emit({ type: "mission_status", missionId, status: "failed" });
+              return;
+            }
+            eventBus.emit({ type: "milestone_progress", milestoneId: cpResult.milestoneId, status: "rescoping" as MilestoneStatus, completedUnits: 0, totalUnits: result.units.length });
+          }
+        }
 
         if (cpResult.trigger === "milestone_complete") {
           await lapis.updateMilestoneStatus(cpResult.milestoneId, "completed");
@@ -355,11 +385,10 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
             const cpResolved = await checkpointManager.waitForResolution(cpId);
             const cpDecision = cpResolved.decision as CheckpointDecision | undefined;
 
-            if (cpDecision === "reject" || cpDecision === "rescope") {
-              const cpFinalStatus = cpDecision === "reject" ? "aborted" : "failed";
-              await lapis.updateMissionStatus(missionId, cpDecision === "reject" ? "aborted" : "failed");
+            if (cpDecision === "reject") {
+              await lapis.updateMissionStatus(missionId, "aborted");
               setStatus("failed", missionId);
-              eventBus.emit({ type: "mission_status", missionId, status: cpFinalStatus });
+              eventBus.emit({ type: "mission_status", missionId, status: "aborted" });
               return;
             }
 

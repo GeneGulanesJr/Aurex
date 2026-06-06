@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { EscalationTrigger, CheckpointDecision } from "@aurex/shared";
 
 interface DecisionActionsProps {
-  onDecision: (decision: CheckpointDecision, guidance?: string, reason?: string) => void;
+  onDecision: (decision: CheckpointDecision, opts?: { guidance?: string; reason?: string; rescopeGuidance?: string }) => void;
   trigger: EscalationTrigger;
 }
 
@@ -25,14 +25,14 @@ export function DecisionActions({ onDecision, trigger }: DecisionActionsProps) {
       {trigger.kind === "milestone_complete" && (
         <>
           <button onClick={() => onDecision("approve")} style={{ ...btnBase, background: "var(--success)", color: "var(--bg-deep)" }}>Approve</button>
-          <button onClick={() => onDecision("reject", undefined, "abandon")} style={{ ...btnBase, background: "var(--error)", color: "#fff" }}>Reject</button>
+          <button onClick={() => onDecision("reject", { reason: "abandon" })} style={{ ...btnBase, background: "var(--error)", color: "#fff" }}>Reject</button>
         </>
       )}
 
       {(trigger.kind === "rescope_limit" || trigger.kind === "unclassifiable_error") && (
         <>
-          <button onClick={() => onDecision("rescope", guidance || undefined)} style={{ ...btnBase, background: "var(--info)", color: "var(--bg-deep)" }}>Review & Rescope</button>
-          <button onClick={() => onDecision("reject", undefined, "abort")} style={{ ...btnBase, background: "var(--error)", color: "#fff" }}>Abort Mission</button>
+          <button onClick={() => onDecision("approve", { rescopeGuidance: guidance || "Re-plan this milestone to address the failure." })} style={{ ...btnBase, background: "var(--info)", color: "var(--bg-deep)" }}>Review & Rescope</button>
+          <button onClick={() => onDecision("reject", { reason: "abort" })} style={{ ...btnBase, background: "var(--error)", color: "#fff" }}>Abort Mission</button>
           {trigger.kind === "unclassifiable_error" && (
             <button onClick={() => setShowGuidance(!showGuidance)} style={{ ...btnBase, background: "var(--bg-elevated)", color: "var(--text-primary)" }}>Provide Guidance</button>
           )}
@@ -42,14 +42,14 @@ export function DecisionActions({ onDecision, trigger }: DecisionActionsProps) {
       {trigger.kind === "cost_cap_exceeded" && (
         <>
           <button onClick={() => onDecision("approve")} style={{ ...btnBase, background: "var(--warning)", color: "var(--bg-deep)" }}>Approve Over Budget</button>
-          <button onClick={() => onDecision("reject", undefined, "cost_exceeded")} style={{ ...btnBase, background: "var(--error)", color: "#fff" }}>Abort Mission</button>
+          <button onClick={() => onDecision("reject", { reason: "cost_exceeded" })} style={{ ...btnBase, background: "var(--error)", color: "#fff" }}>Abort Mission</button>
         </>
       )}
 
       {trigger.kind === "quota_exhausted" && (
         <>
           <button onClick={() => onDecision("approve")} style={{ ...btnBase, background: "var(--accent)", color: "var(--bg-deep)" }}>Resume After Reset</button>
-          <button onClick={() => onDecision("reject", undefined, "quota_exhausted")} style={{ ...btnBase, background: "var(--error)", color: "#fff" }}>Abort Mission</button>
+          <button onClick={() => onDecision("reject", { reason: "quota_exhausted" })} style={{ ...btnBase, background: "var(--error)", color: "#fff" }}>Abort Mission</button>
         </>
       )}
 
@@ -73,7 +73,7 @@ export function DecisionActions({ onDecision, trigger }: DecisionActionsProps) {
             }}
             rows={3}
           />
-          <button onClick={() => onDecision("rescope", guidance)} style={{ ...btnBase, background: "var(--info)", color: "var(--bg-deep)", marginTop: "8px" }}>Submit Guidance</button>
+          <button onClick={() => onDecision("approve", { rescopeGuidance: guidance })} style={{ ...btnBase, background: "var(--info)", color: "var(--bg-deep)", marginTop: "8px" }}>Submit Guidance</button>
         </div>
       )}
     </div>

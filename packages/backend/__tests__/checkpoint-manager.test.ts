@@ -86,8 +86,8 @@ describe("CheckpointManager", () => {
   it("resolves a checkpoint", async () => {
     const lapis = createMockLapis();
     const manager = createCheckpointManager(lapis);
-    await manager.resolve("cp-1", "rescope", "Try smaller units");
-    expect(lapis.resolveCheckpoint).toHaveBeenCalledWith("cp-1", "rescope", "Try smaller units", undefined);
+    await manager.resolve("cp-1", "approve", "Looks good");
+    expect(lapis.resolveCheckpoint).toHaveBeenCalledWith("cp-1", "approve", "Looks good", undefined, undefined);
   });
 
   it("gets pending checkpoints for a mission", async () => {

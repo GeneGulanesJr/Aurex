@@ -113,9 +113,7 @@ function createMockLapis(): LaPisClient {
     getMilestonesForMission: vi.fn().mockResolvedValue([
       { id: "ms-1", missionId: "m-1", title: "M1", description: "First", orderIndex: 0, status: "planned", validationContractId: "" },
     ]),
-    getContractHistory: vi.fn().mockResolvedValue([
-      { id: "c-1", version: 1, supersededBy: null, supersedes: null, rescopeEventId: null, content: { criteria: [], testCommands: [], acceptanceBehavior: "" } },
-    ]),
+    getContractHistory: vi.fn().mockResolvedValue([]),
     getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
     getVerdicts: vi.fn().mockResolvedValue([
       { verdict: "pass", validatorType: "validator_scrutiny" },
@@ -319,6 +317,58 @@ describe("MissionRunner", () => {
     
     // Should have marked the milestone as completed after approval
     expect(lapis.updateMilestoneStatus).toHaveBeenCalledWith(expect.any(String), "completed");
+  });
+
+  it("rescope checkpoint decision re-plans the milestone instead of failing the mission", async () => {
+    const lapis = createMockLapis();
+    const mockPinyx = createPinyxClient({ endpoint: "http://pinyx:7331" });
+
+    // 1) Planner: 1 milestone, no units (default plan shape is fine)
+    (mockPinyx.chatStream as any).mockImplementation(async (_req: unknown, onChunk: (text: string) => void) => {
+      const content = JSON.stringify({
+        milestones: [{ title: "M1", description: "First", units: [], criteria: [], testCommands: [] }],
+      });
+      onChunk(content);
+      return { content, finishReason: "stop", usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 } };
+    });
+
+    // 2) Rescope re-plan: pinyx.chat must return the rescope JSON shape `{ units: [...] }`
+    (mockPinyx.chat as any).mockResolvedValue({
+      content: JSON.stringify({ units: [{ description: "Re-planned unit", declaredPaths: ["src/x.ts"], declaredModules: ["x"] }] }),
+      finishReason: "stop",
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+    });
+
+    // 3) Checkpoint poll: first call returns "approve" + rescopeGuidance, second returns plain "approve"
+    (lapis.getCheckpoint as any)
+      .mockResolvedValueOnce({ id: "cp-1", status: "resolved", decision: "approve", rescopeGuidance: "try a different approach" })
+      .mockResolvedValue({ id: "cp-2", status: "resolved", decision: "approve" });
+
+    const runner = createMissionRunner({
+      lapis,
+      eventBus: mockEventBus as any,
+      agentDir: "/test/.pi/agent",
+      repoRoot: "/test/repo",
+      gitMainBranch: "main",
+    });
+
+    const done = runner.waitForCompletion();
+    runner.start("m-1");
+    await done;
+
+    // The mission must NOT be marked failed. It should reach "completed" because
+    // the rescope branch should re-plan, fall through to loop again, and the
+    // second milestone_complete checkpoint is approved.
+    expect(runner.getStatus().state).toBe("completed");
+    expect(lapis.updateMissionStatus).toHaveBeenCalledWith("m-1", "completed");
+    expect(lapis.updateMissionStatus).not.toHaveBeenCalledWith("m-1", "failed");
+
+    // Re-planning must have happened: a new working unit was created for the
+    // rescope re-plan output.
+    expect(lapis.createWorkingUnit).toHaveBeenCalledWith(
+      "ms-1",
+      expect.objectContaining({ description: "Re-planned unit" }),
+    );
   });
 
   it("approval of cost_cap_exceeded checkpoint lets the mission continue", async () => {

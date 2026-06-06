@@ -1,5 +1,5 @@
 // packages/shared/src/events.ts
-import type { AgentType, AgentStatus, MilestoneStatus } from "./enums.js";
+import type { AgentType, AgentStatus, MilestoneStatus, CheckpointDecision } from "./enums.js";
 import type { AttemptSummary, EscalationContext, BumblebeeFinding, BumblebeeScanSummary } from "./types.js";
 
 export type AgentOutputEventType =
@@ -53,7 +53,8 @@ export interface WsClientMessage {
   event: "subscribe_mission" | "checkpoint_decision";
   missionId: string;
   checkpointId?: string;
-  decision?: "approve" | "reject" | "rescope";
+  decision?: CheckpointDecision;
   guidance?: string;
   reason?: string;
+  rescopeGuidance?: string;
 }

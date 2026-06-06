@@ -8,6 +8,7 @@ interface CheckpointBody {
   decision: CheckpointDecision;
   guidance?: string;
   reason?: string;
+  rescopeGuidance?: string;
 }
 
 export async function checkpointRoutes(
@@ -29,7 +30,7 @@ export async function checkpointRoutes(
       return { accepted: true, duplicate: true };
     }
 
-    await lapis.resolveCheckpoint(body.checkpointId, body.decision, body.guidance, body.reason);
+    await lapis.resolveCheckpoint(body.checkpointId, body.decision, body.guidance, body.reason, body.rescopeGuidance);
     processed.set(body.checkpointId, true);
 
     return { accepted: true };

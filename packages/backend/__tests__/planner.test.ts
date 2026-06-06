@@ -91,6 +91,51 @@ describe("planner", () => {
     );
   });
 
+  it("supersedes the previous contract before creating a new one when a contract already exists", async () => {
+    const existingContract = {
+      id: "c-old",
+      milestoneId: "ms-1",
+      version: 1,
+      supersededBy: null,
+      supersedes: null,
+      rescopeEventId: null,
+      content: { criteria: ["old"], testCommands: ["npm test"], acceptanceBehavior: "old" },
+    };
+    const mockLapis = {
+      searchMemory: vi.fn().mockResolvedValue([]),
+      createMilestone: vi.fn().mockResolvedValue({ id: "ms-1", title: "Auth" }),
+      createWorkingUnit: vi.fn().mockResolvedValue({ id: "unit-1", description: "Login" }),
+      createContract: vi.fn().mockResolvedValue({ id: "c-new", version: 2 }),
+      supersedeContract: vi.fn().mockResolvedValue({ id: "c-new", version: 2 }),
+      getContractHistory: vi.fn().mockResolvedValue([existingContract]),
+      createMissionLedger: vi.fn().mockResolvedValue({ missionId: "m-1", todos: [] }),
+      createTodo: vi.fn().mockResolvedValue({ id: "td-1" }),
+      logRescope: vi.fn().mockResolvedValue({ id: "r-1" }),
+    } as unknown as LaPisClient;
+
+    const mockPinyx = createMockPinyx(JSON.stringify({
+      milestones: [{
+        title: "Auth",
+        description: "Implement JWT",
+        units: [{ description: "Login", declaredPaths: ["src/auth/**"], declaredModules: ["auth"] }],
+        criteria: ["Tests pass"],
+        testCommands: ["npm test"],
+      }],
+    }));
+
+    const planner = createPlanner(mockLapis, mockPinyx as never);
+    await planner.plan("Build auth", "m-1");
+
+    // The old contract must be superseded, not silently overwritten.
+    expect(mockLapis.supersedeContract).toHaveBeenCalledWith(
+      "c-old",
+      expect.objectContaining({ content: expect.objectContaining({ criteria: ["Tests pass"] }) }),
+      expect.objectContaining({ reason: expect.any(String) }),
+    );
+    // And the new contract must come from supersede, not from a plain create.
+    expect(mockLapis.createContract).not.toHaveBeenCalled();
+  });
+
   it("emits planner_parse_error when fallback JSON extraction also fails", async () => {
     const mockLapis = {
       searchMemory: vi.fn().mockResolvedValue([]),

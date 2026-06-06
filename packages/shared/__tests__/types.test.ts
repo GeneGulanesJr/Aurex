@@ -40,9 +40,9 @@ describe("Enums", () => {
     expect(types).toHaveLength(5);
   });
 
-  it("CheckpointDecision has exactly three values", () => {
-    const decisions: CheckpointDecision[] = ["approve", "reject", "rescope"];
-    expect(decisions).toHaveLength(3);
+  it("CheckpointDecision has exactly two values", () => {
+    const decisions: CheckpointDecision[] = ["approve", "reject"];
+    expect(decisions).toHaveLength(2);
   });
 });
 

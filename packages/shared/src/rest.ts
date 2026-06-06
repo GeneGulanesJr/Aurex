@@ -20,8 +20,14 @@ export interface GetMissionResponse {
 
 export interface CheckpointRequest {
   checkpointId: string;
-  decision: "approve" | "reject" | "rescope";
-  guidance?: string;
+  decision: "approve" | "reject";
+  /**
+   * Optional re-plan request. When present alongside decision: "approve",
+   * the orchestrator re-plans the failing milestone via PiNyx before
+   * continuing the loop. The string is passed as guidance to the model.
+   */
+  rescopeGuidance?: string;
+  /** Free-form reason, surfaced in the mission log. */
   reason?: string;
 }
 

@@ -350,6 +350,7 @@ export interface CheckpointRecord {
   decision?: CheckpointDecision;
   guidance?: string;
   reason?: string;
+  rescopeGuidance?: string;
   createdAt: string;
   resolvedAt?: string;
 }

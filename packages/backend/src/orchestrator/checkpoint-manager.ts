@@ -9,7 +9,7 @@ export interface CheckpointManager {
     summary: string;
   }): Promise<string>;
   waitForResolution(checkpointId: string): Promise<CheckpointRecord>;
-  resolve(checkpointId: string, decision: CheckpointDecision, guidance?: string, reason?: string): Promise<void>;
+  resolve(checkpointId: string, decision: CheckpointDecision, guidance?: string, reason?: string, rescopeGuidance?: string): Promise<void>;
   getPendingForMission(missionId: string): Promise<CheckpointRecord[]>;
 }
 
@@ -54,8 +54,8 @@ export function createCheckpointManager(
       });
     },
 
-    async resolve(checkpointId, decision, guidance, reason) {
-      await lapis.resolveCheckpoint(checkpointId, decision, guidance, reason);
+    async resolve(checkpointId, decision, guidance, reason, rescopeGuidance) {
+      await lapis.resolveCheckpoint(checkpointId, decision, guidance, reason, rescopeGuidance);
     },
 
     async getPendingForMission(missionId) {

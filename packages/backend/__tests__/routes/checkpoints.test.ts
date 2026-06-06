@@ -23,7 +23,7 @@ describe("POST /api/missions/:id/checkpoints", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().accepted).toBe(true);
-    expect(lapis.resolveCheckpoint).toHaveBeenCalledWith("cp-uuid-1", "approve", undefined, undefined);
+    expect(lapis.resolveCheckpoint).toHaveBeenCalledWith("cp-uuid-1", "approve", undefined, undefined, undefined);
   });
 
   it("returns duplicate for re-submission", async () => {
@@ -49,7 +49,7 @@ describe("POST /api/missions/:id/checkpoints", () => {
     expect(response.json().duplicate).toBe(true);
   });
 
-  it("passes guidance for rescope", async () => {
+  it("forwards rescopeGuidance to LaPis alongside the other optional fields", async () => {
     const app = Fastify();
     const lapis = createMockLapis();
 
@@ -58,10 +58,21 @@ describe("POST /api/missions/:id/checkpoints", () => {
     await app.inject({
       method: "POST",
       url: "/api/missions/m-1/checkpoints",
-      payload: { checkpointId: "cp-uuid-2", decision: "rescope", guidance: "Focus on auth only" },
+      payload: {
+        checkpointId: "cp-uuid-rg",
+        decision: "approve",
+        rescopeGuidance: "Use a different module structure",
+        reason: "patchable issues",
+      },
     });
 
-    expect(lapis.resolveCheckpoint).toHaveBeenCalledWith("cp-uuid-2", "rescope", "Focus on auth only", undefined);
+    expect(lapis.resolveCheckpoint).toHaveBeenCalledWith(
+      "cp-uuid-rg",
+      "approve",
+      undefined,
+      "patchable issues",
+      "Use a different module structure",
+    );
   });
 
   it("rejects missing checkpointId or decision", async () => {

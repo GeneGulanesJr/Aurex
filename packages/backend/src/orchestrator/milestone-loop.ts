@@ -11,6 +11,7 @@ import { buildValidatorContext, buildWorkerContext, buildResearchContext, type V
 import { createIntegrationLifecycle } from "./integration-lifecycle.js";
 import { validateHandoff } from "../enforcement/handoff-validator.js";
 import { checkPreSpawnOverlap } from "./overlap.js";
+import { rescopeMilestone } from "./rescope.js";
 import {
   applyValidatorVerdictsToTodos,
   markMergedTodos,
@@ -461,12 +462,13 @@ export function createMilestoneLoop(
 
             let resp;
             try {
-              resp = await pinyx.chat({
+              resp = await rescopeMilestone({
+                pinyx,
+                lapis,
+                mission,
+                milestone: { id: milestone.id, title: milestone.title, description: milestone.description },
                 model: config.modelHints.orchestrator,
-                messages: [
-                  { role: "system", content: "You are a mission planner. Re-plan this milestone given the validation failures. Respond with JSON: { units: [{ description, declaredPaths, declaredModules }] }" },
-                  { role: "user", content: `Milestone: ${milestone.title}\nDescription: ${milestone.description}\nFailed units: ${decision.reason}\nMission: ${mission.description}` },
-                ],
+                reason: decision.reason,
               });
             } catch (err) {
               if (err instanceof QuotaExhaustedError) {
@@ -478,16 +480,11 @@ export function createMilestoneLoop(
               throw err;
             }
 
-            try {
-              const newPlan = JSON.parse(resp.content) as { units: Array<{ description: string; declaredPaths: string[]; declaredModules: string[] }> };
-              // Delete old units and create new ones
-              // (LaPis handles this — we just create new units against the same milestone)
-              for (const newUnit of newPlan.units) {
-                await lapis.createWorkingUnit(milestone.id, newUnit);
-              }
-            } catch {
+            if (!resp.ok) {
               const trigger: CheckpointTrigger = "rescope_limit";
-              const summary = `Rescope re-planning failed: ${resp.content}`;
+              const summary = resp.error === "pinyx_threw"
+                ? `Rescope re-planning failed: ${resp.message}`
+                : `Rescope re-planning failed: ${resp.content}`;
               callbacks.onError(mission.id, "rescope_failed", summary, { milestoneId: milestone.id, recoverable: false });
               callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary });
               return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };

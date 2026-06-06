@@ -26,7 +26,16 @@ export type ResearchRelevance = "high" | "medium" | "low";
 export type CheckpointTrigger = "milestone_complete" | "rescope_limit" | "unclassifiable_error" | "cost_cap_exceeded" | "quota_exhausted";
 
 export type QuotaStatus = "unlimited" | "active" | "exhausted" | "window_expired";
-export type CheckpointDecision = "approve" | "reject" | "rescope";
+/**
+ * User-initiated decision on a checkpoint.
+ *
+ * To re-plan the failing milestone, the user approves AND provides
+ * `rescopeGuidance` in the request body. The previous "rescope" union
+ * member was overloaded — it conflated user re-plan requests with the
+ * negotiator's internal re-plan verdict, and led to the mission-runner
+ * killing missions on user rescope (see #12436).
+ */
+export type CheckpointDecision = "approve" | "reject";
 
 // Compression
 export type CompressionTrigger = "post_milestone" | "manual" | "budget_threshold";

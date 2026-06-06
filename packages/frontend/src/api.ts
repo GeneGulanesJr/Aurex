@@ -65,13 +65,12 @@ export async function submitCheckpoint(
   missionId: string,
   checkpointId: string,
   decision: CheckpointDecision,
-  guidance?: string,
-  reason?: string,
+  opts?: { guidance?: string; reason?: string; rescopeGuidance?: string },
 ): Promise<CheckpointResponse> {
   const res = await apiFetch(`/api/missions/${missionId}/checkpoints`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ checkpointId, decision, guidance, reason }),
+    body: JSON.stringify({ checkpointId, decision, ...opts }),
   });
   return res.json() as Promise<CheckpointResponse>;
 }

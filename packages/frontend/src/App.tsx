@@ -101,11 +101,11 @@ export function App() {
     return () => clearInterval(id);
   }, [connected]);
 
-  const handleDecision = useCallback(async (decision: CheckpointDecision, guidance?: string, reason?: string) => {
+  const handleDecision = useCallback(async (decision: CheckpointDecision, opts?: { guidance?: string; reason?: string; rescopeGuidance?: string }) => {
     if (!state.mission) return;
     const escalation = state.escalation;
     if (escalation?.type !== "escalation" || !escalation.checkpointId) return;
-    await submitCheckpoint(state.mission.id, escalation.checkpointId, decision, guidance, reason);
+    await submitCheckpoint(state.mission.id, escalation.checkpointId, decision, opts);
     dispatch({ type: "CLEAR_ESCALATION" });
   }, [state.mission, state.escalation, dispatch]);
 

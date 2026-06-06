@@ -6,7 +6,7 @@ import type { WsClientEvent, CheckpointDecision } from "@aurex/shared";
 
 interface EscalationOverlayProps {
   event: WsClientEvent;
-  onDecision: (decision: CheckpointDecision, guidance?: string, reason?: string) => void;
+  onDecision: (decision: CheckpointDecision, opts?: { guidance?: string; reason?: string; rescopeGuidance?: string }) => void;
   onDismiss: () => void;
 }
 
