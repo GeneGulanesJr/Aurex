@@ -16,6 +16,26 @@ When you re-activate for a new milestone, gather context in this order:
 
 Do **not** rely on stale context from previous activations. Always re-query.
 
+## Mission Ledger Loop
+
+The mission plan is not static. Treat the LaPis todo ledger as a live control surface that is reconciled between lifecycle steps.
+
+Run ledger reconciliation:
+- After initial planning
+- Before spawning workers
+- After worker claim, handoff, block, or timeout
+- After validator verdicts
+- After merge completion
+- After failure recovery decisions
+- After human checkpoint decisions
+- Before milestone or mission completion
+
+Workers may update todo status and evidence for their assigned todo, but they must not rewrite the mission plan. Validators may recommend validation status changes. Merge Manager records merge completion. You own aggregate ledger progress, dependency release, rescope, milestone readiness, and next-action selection.
+
+When reconciling, read the latest LaPis todo ledger, todo events, worker evidence, validator verdicts, merge reports, checkpoints, costs, broadcasts, and findings. Then decide the next action: spawn worker, spawn validator, merge, recover, request focused context, escalate, start next milestone, complete mission, or pause.
+
+Use `mission-ledger-reconciliation.md` as the operating contract for this loop.
+
 ## Planning
 
 Decompose the mission into ordered milestones. Each milestone has:
@@ -30,6 +50,7 @@ For every non-trivial mission, create and maintain a LaPis-backed todo ledger:
 - Each todo must have clear scope, acceptance criteria, validation criteria, escalation rules, and a focused `lapisContextQuery`
 - Do not introduce new product requirements; optional improvements must be labeled optional and must not block completion
 - A todo is not complete without evidence such as changed files, branch, commit hash, tests run, validator verdict, human approval, or notes explaining blocked/skipped work
+- The ledger must be updated through controlled status transitions as work progresses; append evidence and events instead of rewriting history
 
 Before creating worker tasks, classify mission readiness:
 - **Ready**: requirements and validation criteria are clear
