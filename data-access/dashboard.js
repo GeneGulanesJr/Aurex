@@ -73,14 +73,19 @@ function getDashboard(deps) {
   };
 
   // ── Dream Cycle ───────────────────────────────────────────
-  const dreamLastRun = sqlJson("SELECT value FROM settings WHERE key = 'dream_last_run'");
-  const dreamTotalCleaned = sqlJson("SELECT value FROM settings WHERE key = 'dream_total_cleaned'");
-  const dreamRunCount = sqlJson("SELECT value FROM settings WHERE key = 'dream_run_count'");
-  const dream = {
-    lastRun: dreamLastRun[0]?.value || null,
-    totalCleaned: dreamTotalCleaned[0]?.value || null,
-    runCount: dreamRunCount[0]?.value || null,
-  };
+  let dream = { lastRun: null, totalCleaned: null, runCount: null };
+  try {
+    const dreamLastRun = sqlJson("SELECT value FROM settings WHERE key = 'dream_last_run'");
+    const dreamTotalCleaned = sqlJson("SELECT value FROM settings WHERE key = 'dream_total_cleaned'");
+    const dreamRunCount = sqlJson("SELECT value FROM settings WHERE key = 'dream_run_count'");
+    dream = {
+      lastRun: dreamLastRun[0]?.value || null,
+      totalCleaned: dreamTotalCleaned[0]?.value || null,
+      runCount: dreamRunCount[0]?.value || null,
+    };
+  } catch (_e) {
+    // settings table may not exist in older DBs — dream stats unavailable
+  }
 
   // ── Code Index ────────────────────────────────────────────
   const codeIndexRaw = sqlJson(

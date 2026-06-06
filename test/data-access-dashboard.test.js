@@ -174,5 +174,28 @@ describe('data-access/dashboard', () => {
       const result = getDashboard(deps);
       expect(result.overview.expiringSoon).toBe(0);
     });
+
+    it('should gracefully handle missing settings table', () => {
+      const deps = mockDeps();
+      deps.sqlJson
+        .mockReturnValueOnce([{ cnt: 0 }])
+        .mockReturnValueOnce([{ cnt: 0 }])
+        .mockReturnValueOnce([{ cnt: 0 }])
+        .mockReturnValueOnce([{ cnt: 0 }])
+        .mockReturnValueOnce([{ avg: null }])
+        .mockReturnValueOnce([{ cnt: 0 }])
+        .mockReturnValueOnce([{ cnt: 0 }])
+        .mockReturnValueOnce([])
+        .mockReturnValueOnce([{ high: 0, medium: 0, low: 0, total: 0 }])
+        .mockReturnValueOnce([{ totalRecalls: 0, usefulRate: null, uniqueMemoriesHit: 0 }])
+        .mockImplementationOnce(() => { throw new Error('no such table: settings'); })
+        .mockReturnValueOnce([])
+        .mockReturnValueOnce([]);
+
+      const result = getDashboard(deps);
+      expect(result.dream.lastRun).toBeNull();
+      expect(result.dream.totalCleaned).toBeNull();
+      expect(result.dream.runCount).toBeNull();
+    });
   });
 });

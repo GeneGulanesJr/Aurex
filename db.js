@@ -283,6 +283,11 @@ function ensureDb() {
 
 // Critical tables that must exist for code analysis + doc indexing
 const _CRITICAL_TABLES = [
+  // KV store — used by HTTP /api/settings, dashboard dream stats, integrations
+  [
+    'settings',
+    `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+  ],
   // V3: code indexing
   [
     'code_repos',
