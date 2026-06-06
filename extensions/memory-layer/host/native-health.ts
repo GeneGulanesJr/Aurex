@@ -8,7 +8,7 @@ function findLapisRoot(): string {
     const pkgPath = path.join(dir, 'package.json');
     try {
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-      if (pkg.name === 'lapis') {
+      if (pkg.name === '@genegulanesjr/lapis' || pkg.name === 'lapis') {
         return dir;
       }
     } catch {}
