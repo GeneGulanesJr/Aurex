@@ -77,7 +77,7 @@
     "check": "oxlint && oxfmt --check"
   },
   "dependencies": {
-    "@libsql/client": "^0.17.3",
+    "better-sqlite3": "^12.9.0",
     "ignore": "^7.0.5",
     "web-tree-sitter": "^0.26.9"
   },
@@ -108,5 +108,8 @@
     "themes": [
       "./themes"
     ]
+  },
+  "allowScripts": {
+    "better-sqlite3@12.10.0": true
   }
 }
