@@ -201,7 +201,7 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
           }
 
           const toolName = event.assistantMessageEvent?.toolCall?.name;
-          const toolInput = event.assistantMessageEvent?.toolCall?.input as Record<string, unknown> | undefined;
+          const toolInput = (event.assistantMessageEvent?.toolCall?.arguments ?? event.assistantMessageEvent?.toolCall?.input) as Record<string, unknown> | undefined;
           if (toolName) {
             const snippet = extractToolSnippet(toolName, toolInput || {});
             logger?.log({

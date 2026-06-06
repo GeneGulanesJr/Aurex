@@ -70,6 +70,23 @@ export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: Use
         scheduleReconnect();
       };
 
+      // Micro-batch agent_output events to prevent UI freeze during rapid tool calls
+      let batchQueue: WsClientEvent[] = [];
+      let batchTimer: ReturnType<typeof setTimeout> | null = null;
+
+      function flushBatch() {
+        batchTimer = null;
+        if (batchQueue.length === 0) return;
+        const events = batchQueue;
+        batchQueue = [];
+        // Dispatch each event; the reducer handles them individually but
+        // batching via setTimeout(0) coalesces multiple rapid dispatches
+        // into a single React render cycle.
+        for (const evt of events) {
+          onEventRef.current(evt);
+        }
+      }
+
       ws.onmessage = (msg) => {
         const parsed = parseWsMessage(msg.data);
         if (!parsed) return;
@@ -87,7 +104,21 @@ export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: Use
 
         // Only dispatch actual events
         if (parsed.event) {
-          onEventRef.current(parsed.event);
+          const eventType = (parsed.event as any).type;
+          if (eventType === "agent_output") {
+            // Batch rapid agent_output events
+            batchQueue.push(parsed.event);
+            if (!batchTimer) {
+              batchTimer = setTimeout(flushBatch, 0);
+            }
+          } else {
+            // Flush any pending batch first, then dispatch immediately
+            if (batchTimer) {
+              clearTimeout(batchTimer);
+              flushBatch();
+            }
+            onEventRef.current(parsed.event);
+          }
         }
       };
 
