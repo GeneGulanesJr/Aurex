@@ -155,6 +155,7 @@ export interface PrepareGitHubRepoResponse {
   fullName: string;
   repoPath: string;
   repoStatus: "cloned" | "updated";
+  repoName: string;
   indexed: boolean;
   indexingStatus: "completed" | "unavailable" | "failed";
 }
@@ -258,6 +259,54 @@ export async function getCodeHotspots(missionId: string): Promise<CodeHotspotsRe
   const res = await apiFetch(`/api/missions/${missionId}/code/hotspots`);
   if (!res.ok) throw new Error(`Failed to fetch code hotspots: ${res.status}`);
   return res.json() as Promise<CodeHotspotsResponse>;
+}
+
+// Repo explore (auto-explore + suggestions)
+export interface ExploreRepoResponse {
+  repoName: string;
+  status: "completed" | "failed";
+  summary?: CodeSummaryResponse;
+  error?: string;
+}
+
+export interface RepoSuggestion {
+  id: string;
+  category: "high_complexity" | "cycles" | "structure";
+  title: string;
+  description: string;
+  priority: "high" | "medium" | "low";
+  affectedFiles: number;
+  detail: string;
+  prefill: string;
+}
+
+export interface RepoSuggestionsResponse {
+  suggestions: RepoSuggestion[];
+  analysisVersion: string;
+}
+
+export async function exploreRepo(repoName: string): Promise<ExploreRepoResponse> {
+  const res = await apiFetch(`/api/repos/${repoName}/explore`, { method: "POST" });
+  if (!res.ok) throw new Error(`Failed to explore repo: ${res.status}`);
+  return res.json() as Promise<ExploreRepoResponse>;
+}
+
+export async function getRepoSummary(repoName: string): Promise<CodeSummaryResponse> {
+  const res = await apiFetch(`/api/repos/${repoName}/summary`);
+  if (!res.ok) throw new Error(`Failed to fetch repo summary: ${res.status}`);
+  return res.json() as Promise<CodeSummaryResponse>;
+}
+
+export async function getRepoHotspots(repoName: string): Promise<CodeHotspotsResponse> {
+  const res = await apiFetch(`/api/repos/${repoName}/hotspots`);
+  if (!res.ok) throw new Error(`Failed to fetch repo hotspots: ${res.status}`);
+  return res.json() as Promise<CodeHotspotsResponse>;
+}
+
+export async function getRepoSuggestions(repoName: string): Promise<RepoSuggestionsResponse> {
+  const res = await apiFetch(`/api/repos/${repoName}/suggestions`);
+  if (!res.ok) throw new Error(`Failed to fetch repo suggestions: ${res.status}`);
+  return res.json() as Promise<RepoSuggestionsResponse>;
 }
 
 // Bumblebee supply-chain scanner

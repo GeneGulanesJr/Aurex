@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getCurrentMission, createMission, getGitHubConnectUrl, saveGitHubConfig, getGitHubConfig, getPinyxConfig, savePinyxConfig, getPinyxModels, getPinyxStatus } from "./api";
+import { getCurrentMission, createMission, getGitHubConnectUrl, saveGitHubConfig, getGitHubConfig, getPinyxConfig, savePinyxConfig, getPinyxModels, getPinyxStatus, exploreRepo, getRepoSummary, getRepoHotspots, getRepoSuggestions } from "./api";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
@@ -119,6 +119,47 @@ describe("frontend api", () => {
     await expect(getPinyxModels()).resolves.toEqual(payload);
     expect(mockFetch).toHaveBeenCalledWith("/api/pinyx/models", expect.objectContaining({ headers: expect.any(Object) }));
   });
+});
 
+describe("repo explore API", () => {
+  beforeEach(() => mockFetch.mockReset());
 
+  it("exploreRepo calls explore endpoint and returns result", async () => {
+    const response = { repoName: "my-repo", status: "completed", summary: { files: 10, symbols: 50 } };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => response });
+
+    const result = await exploreRepo("my-repo");
+    expect(result).toEqual(response);
+    expect(mockFetch).toHaveBeenCalledWith("/api/repos/my-repo/explore", expect.objectContaining({ method: "POST" }));
+  });
+
+  it("exploreRepo throws on failure", async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 500 });
+    await expect(exploreRepo("bad")).rejects.toThrow("Failed to explore repo: 500");
+  });
+
+  it("getRepoSummary fetches repo summary", async () => {
+    const summary = { files: 10, symbols: 50, edges: 30, modules: [], entryPoints: [], cycles: { count: 0, paths: [] } };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => summary });
+
+    const result = await getRepoSummary("my-repo");
+    expect(result).toEqual(summary);
+    expect(mockFetch).toHaveBeenCalledWith("/api/repos/my-repo/summary", expect.objectContaining({ headers: expect.any(Object) }));
+  });
+
+  it("getRepoHotspots fetches repo hotspots", async () => {
+    const hotspots = { files: [{ path: "a.ts", module: "core", complexity: 25, symbols: 5 }] };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => hotspots });
+
+    const result = await getRepoHotspots("my-repo");
+    expect(result).toEqual(hotspots);
+  });
+
+  it("getRepoSuggestions fetches suggestions", async () => {
+    const suggestions = { suggestions: [{ id: "complexity-a", category: "high_complexity", title: "Refactor a" }], analysisVersion: "1.0" };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => suggestions });
+
+    const result = await getRepoSuggestions("my-repo");
+    expect(result.suggestions).toHaveLength(1);
+  });
 });
