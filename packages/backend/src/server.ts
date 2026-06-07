@@ -12,6 +12,7 @@ import { registerGlobalAuth } from "./routes/auth.js";
 import { registerGitHubRoutes } from "./routes/github.js";
 import { registerPinyxRoutes } from "./routes/pinyx.js";
 import { registerCodeContextRoutes } from "./routes/code-context.js";
+import { registerRepoExploreRoutes } from "./routes/repo-explore.js";
 import { createBumblebeeClient } from "./clients/bumblebee-client.js";
 import { createBumblebeeRunner } from "./orchestrator/bumblebee-runner.js";
 import { bumblebeeRoutes } from "./routes/bumblebee.js";
@@ -135,6 +136,9 @@ async function main() {
 
   // Code context proxy (summary, graph, hotspots)
   registerCodeContextRoutes(app, { lapis });
+
+  // Repo explore (auto-explore + suggestions)
+  registerRepoExploreRoutes(app, { lapis });
 
   // Bumblebee routes
   await app.register(bumblebeeRoutes, { lapis, bumblebeeClient, bumblebeeRunner });
