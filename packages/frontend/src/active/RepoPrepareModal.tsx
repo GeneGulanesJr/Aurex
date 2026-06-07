@@ -1,14 +1,30 @@
 import type { GitHubRepoResponse } from "../api";
+import type { CodeSummaryResponse } from "../api";
 
 interface RepoPrepareModalProps {
   repo: GitHubRepoResponse;
-  preparing: boolean;
+  phase: "confirm" | "cloning" | "indexing" | "complete" | "error";
+  summary?: CodeSummaryResponse | null;
   error: string | null;
   onCancel: () => void;
   onConfirm: () => void;
 }
 
-export function RepoPrepareModal({ repo, preparing, error, onCancel, onConfirm }: RepoPrepareModalProps) {
+const phases = [
+  { key: "cloning", label: "Clone or update the repository" },
+  { key: "indexing", label: "Index code for AI context" },
+  { key: "complete", label: "Ready for mission work" },
+] as const;
+
+function phaseIndex(phase: RepoPrepareModalProps["phase"]): number {
+  if (phase === "confirm") return -1;
+  return phases.findIndex((p) => p.key === phase);
+}
+
+export function RepoPrepareModal({ repo, phase, summary, error, onCancel, onConfirm }: RepoPrepareModalProps) {
+  const currentIdx = phaseIndex(phase);
+  const isWorking = phase === "cloning" || phase === "indexing";
+
   return (
     <div
       style={{
@@ -21,7 +37,7 @@ export function RepoPrepareModal({ repo, preparing, error, onCancel, onConfirm }
         justifyContent: "center",
         padding: "16px",
       }}
-      onClick={preparing ? undefined : onCancel}
+      onClick={isWorking ? undefined : onCancel}
     >
       <section
         onClick={(e) => e.stopPropagation()}
@@ -34,6 +50,7 @@ export function RepoPrepareModal({ repo, preparing, error, onCancel, onConfirm }
           padding: "16px",
         }}
       >
+        {/* Header */}
         <h3
           style={{
             margin: 0,
@@ -44,16 +61,13 @@ export function RepoPrepareModal({ repo, preparing, error, onCancel, onConfirm }
             textTransform: "uppercase",
           }}
         >
-          Use this repository?
+          {phase === "confirm" && "Use this repository?"}
+          {isWorking && "PREPARING REPOSITORY"}
+          {phase === "complete" && "REPOSITORY READY ✓"}
+          {phase === "error" && "PREPARATION FAILED"}
         </h3>
-        <p style={{ color: "var(--text-secondary)", fontSize: "13px", lineHeight: 1.5 }}>
-          Aurex will prepare this repository before starting your mission.
-        </p>
-        <ul style={{ color: "var(--text-secondary)", fontSize: "13px", lineHeight: 1.7, paddingLeft: "18px" }}>
-          <li>Clone or update the repository in the Docker workspace</li>
-          <li>Prepare the repo for LaPis indexing when the endpoint is available</li>
-          <li>Use it as the working repo for this mission</li>
-        </ul>
+
+        {/* Repo identity */}
         <div
           style={{
             background: "var(--bg-inset)",
@@ -69,19 +83,77 @@ export function RepoPrepareModal({ repo, preparing, error, onCancel, onConfirm }
           </div>
         </div>
 
+        {/* Confirm state: show checklist */}
+        {phase === "confirm" && (
+          <>
+            <p style={{ color: "var(--text-secondary)", fontSize: "13px", lineHeight: 1.5, marginTop: "12px" }}>
+              Aurex will prepare this repository before starting your mission.
+            </p>
+            <ul style={{ color: "var(--text-secondary)", fontSize: "13px", lineHeight: 1.7, paddingLeft: "18px" }}>
+              {phases.map((p) => (
+                <li key={p.key}>{p.label}</li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        {/* Working state: show progress checklist */}
+        {isWorking && (
+          <div style={{ marginTop: "12px" }}>
+            {phases.map((p, i) => {
+              const done = i < currentIdx;
+              const active = i === currentIdx;
+              return (
+                <div key={p.key} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "4px 0", color: done ? "var(--success)" : active ? "var(--accent)" : "var(--text-muted)", fontSize: "13px" }}>
+                  <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "12px" }}>
+                    {done ? "✓" : active ? "◌" : "○"}
+                  </span>
+                  <span>{p.label}</span>
+                  {active && (
+                    <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", color: "var(--text-muted)", marginLeft: "auto" }}>
+                      {phase === "indexing" ? "Indexing…" : "Cloning…"}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Complete state: show summary */}
+        {phase === "complete" && summary && (
+          <div style={{ marginTop: "12px" }}>
+            <div style={{ color: "var(--text-primary)", fontSize: "13px", fontFamily: '"JetBrains Mono", monospace' }}>
+              {summary.files} files · {summary.symbols} symbols · {summary.modules.length} modules
+            </div>
+            {summary.modules.length > 0 && (
+              <div style={{ color: "var(--text-muted)", fontSize: "11px", marginTop: "4px" }}>
+                Top modules: {summary.modules.slice(0, 3).map((m) => m.name).join(", ")}
+              </div>
+            )}
+            <div style={{ color: "var(--text-muted)", fontSize: "11px", marginTop: "2px" }}>
+              Entry points: {summary.entryPoints.length} · Cycles: {summary.cycles.count}
+            </div>
+          </div>
+        )}
+
+        {/* Error state */}
         {error && (
-          <div className="pinyx-error-bar">
+          <div className="pinyx-error-bar" style={{ marginTop: "12px" }}>
             <span>{error}</span>
           </div>
         )}
 
-        <div className="pinyx-btn-group" style={{ justifyContent: "flex-end" }}>
-          <button className="pinyx-btn-outline" onClick={onCancel} disabled={preparing}>
-            Cancel
+        {/* Actions */}
+        <div className="pinyx-btn-group" style={{ justifyContent: "flex-end", marginTop: "12px" }}>
+          <button className="pinyx-btn-outline" onClick={onCancel} disabled={isWorking}>
+            {phase === "complete" ? "Cancel" : "Cancel"}
           </button>
-          <button className="pinyx-btn-primary" onClick={onConfirm} disabled={preparing}>
-            {preparing ? "Preparing..." : "Use This Repo"}
-          </button>
+          {(phase === "confirm" || phase === "complete") && (
+            <button className="pinyx-btn-primary" onClick={onConfirm} disabled={isWorking}>
+              {phase === "confirm" ? "Prepare & Scan" : "Use Repo"}
+            </button>
+          )}
         </div>
       </section>
     </div>
