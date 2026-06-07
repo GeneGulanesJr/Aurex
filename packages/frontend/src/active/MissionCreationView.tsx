@@ -30,7 +30,6 @@ interface MissionCreationViewProps {
     loading: boolean;
   } | null;
   onRepoPrepared?: (info: PreparedRepoInfo) => void;
-  suggestedDescription?: string;
   systemReady?: boolean;
   onStartFromSuggestion?: (prefill: string) => void;
 }
@@ -46,11 +45,10 @@ export function MissionCreationView({
   github,
   preparedRepo,
   onRepoPrepared,
-  suggestedDescription,
   systemReady,
   onStartFromSuggestion,
 }: MissionCreationViewProps) {
-  const form = useNewMissionForm(onSubmit, suggestedDescription);
+  const form = useNewMissionForm(onSubmit);
   const [pendingRepo, setPendingRepo] = useState<GitHubRepoResponse | null>(null);
   const [preparePhase, setPreparePhase] = useState<"confirm" | "cloning" | "indexing" | "complete" | "error">("confirm");
   const [exploreSummary, setExploreSummary] = useState<CodeSummaryResponse | null>(null);
@@ -163,9 +161,9 @@ export function MissionCreationView({
       onStartFromSuggestion(prefill);
     } else {
       form.openWithSuggestion(prefill);
+      setActiveTab("create");
+      setTimeout(() => textareaRef.current?.focus(), 50);
     }
-    setActiveTab("create");
-    setTimeout(() => textareaRef.current?.focus(), 50);
   };
 
   const handleExampleClick = (text: string) => {
