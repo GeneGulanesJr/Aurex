@@ -7,13 +7,18 @@
     "typecheck": "pnpm --filter @aurex/shared exec tsc -b --force && pnpm -r run typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "bash scripts/e2e-docker.sh"
+    "test:e2e": "bash scripts/e2e-docker.sh",
+    "test:mutation": "stryker run",
+    "test:mutation:diff": "stryker run --mutate \"packages/backend/src/**/*.ts\" --incremental"
   },
   "engines": {
     "node": ">=20.0.0",
     "pnpm": ">=9.0.0"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "9.6.1",
+    "@stryker-mutator/typescript-checker": "9.6.1",
+    "@stryker-mutator/vitest-runner": "9.6.1",
     "minimatch": "^10.2.5",
     "vitest": "^4.1.7"
   }

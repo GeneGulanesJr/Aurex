@@ -18,6 +18,10 @@ describe("enforcement gate", () => {
       // worker-2 cannot supersede worker-1's broadcast (not creator, not orchestrator, not human)
       const result = enforceBroadcastTransition("active", "superseded", "worker-2", "worker-1");
       expect(result.ok).toBe(false);
+      // Kills L16:33 StringLiteral → "" mutant: assert the reason contains
+      // the actor ID and transition details.
+      expect(result.reason).toContain("worker-2");
+      expect(result.reason).toContain("not authorized");
     });
   });
 

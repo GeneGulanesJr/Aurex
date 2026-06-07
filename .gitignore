@@ -5,3 +5,5 @@ dist/
 packages/*/dist/
 *.tsbuildinfo
 .aurex-workspace/
+.stryker-tmp/
+reports/

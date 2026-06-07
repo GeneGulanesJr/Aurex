@@ -1,0 +1,159 @@
+name: Mutation Testing
+
+# Runs Stryker mutation testing on P0 (high-risk) files.
+# - Full baseline on push to main (nightly schedule + manual dispatch)
+# - Incremental (changed files only) on pull requests that touch P0 paths
+#
+# P0 files = security-critical + financial + public-API decision logic.
+# See `stryker.config.mjs` for the current mutate[] list.
+
+on:
+  pull_request:
+    paths:
+      - "packages/backend/src/orchestrator/negotiator.ts"
+      - "packages/backend/src/enforcement/**"
+      - "packages/backend/src/orchestrator/milestone-loop.ts"
+      - "packages/backend/src/orchestrator/mission-runner.ts"
+      - "stryker.config.mjs"
+      - "package.json"
+      - ".github/workflows/mutation.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/backend/src/orchestrator/negotiator.ts"
+      - "packages/backend/src/enforcement/**"
+      - "packages/backend/src/orchestrator/milestone-loop.ts"
+      - "packages/backend/src/orchestrator/mission-runner.ts"
+      - "stryker.config.mjs"
+  schedule:
+    # Mondays at 06:00 UTC — full P0 baseline
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+# Cancel in-progress runs for the same PR/branch.
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutation:
+    name: Stryker mutation test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need full history for incremental diff
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Run regular tests (baseline must pass before mutation)
+        run: pnpm test
+
+      # Incremental mode on PRs (faster — only mutates files in the PR).
+      # Full P0 baseline on push to main and on schedule.
+      - name: Stryker mutation test
+        id: stryker
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "Running incremental mutation test (changed files only)..."
+            pnpm exec stryker run --incremental
+          else
+            echo "Running full P0 mutation test..."
+            pnpm test:mutation
+          fi
+
+      - name: Upload Stryker HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stryker-report-${{ github.run_id }}
+          path: reports/stryker-report.html
+          retention-days: 14
+
+      - name: Upload Stryker JSON report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stryker-json-${{ github.run_id }}
+          path: reports/stryker-report.json
+          retention-days: 90
+
+      - name: Comment on PR with mutation summary
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'reports/stryker-report.json';
+            if (!fs.existsSync(path)) {
+              console.log('No Stryker report found — skipping PR comment');
+              return;
+            }
+            const report = JSON.parse(fs.readFileSync(path, 'utf8'));
+            const fileSummaries = Object.entries(report.files || {}).map(([filePath, file]) => {
+              const score = (file.metrics?.mutationScore ?? 0).toFixed(2);
+              const killed = file.metrics?.killed ?? 0;
+              const survived = file.metrics?.survived ?? 0;
+              const noCov = file.metrics?.noCoverage ?? 0;
+              const total = file.metrics?.totalMutants ?? 0;
+              return `\`${filePath}\`: **${score}%** (${killed} killed / ${survived} survived / ${noCov} nocov / ${total} total)`;
+            });
+
+            const overallScore = (report.metrics?.mutationScore ?? 0).toFixed(2);
+            const summary = [
+              `## 🧬 Mutation Test Report`,
+              ``,
+              `**Overall mutation score: ${overallScore}%**`,
+              ``,
+              ...fileSummaries,
+              ``,
+              `Full HTML report is in the workflow artifacts.`,
+              `Local command: \`pnpm test:mutation\``,
+            ].join('\n');
+
+            // Find previous bot comment to update, otherwise create new
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const botComment = comments.find(c =>
+              c.user?.type === 'Bot' &&
+              c.body?.includes('🧬 Mutation Test Report')
+            );
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: summary,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: summary,
+              });
+            }

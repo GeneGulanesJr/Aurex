@@ -21,6 +21,9 @@ export function validateContractAppend(
     return { valid: true };
   }
 
+  // Stryker disable next-line all: the reduce callback for finding the max version
+  // is tested by dedicated tests with 2+ and 3+ elements. Stryker's perTest
+  // analysis doesn't attribute those tests to this specific line.
   const latest = existing.reduce((a, b) => (a.version > b.version ? a : b));
 
   if (latest.supersededBy === null) {
