@@ -269,12 +269,28 @@ export interface ExploreRepoResponse {
   error?: string;
 }
 
+export type SuggestionTier = "P0" | "P1" | "P2" | "P3" | "P4" | "P5";
+
+export type SuggestionCategory =
+  | "critical_path"
+  | "security"
+  | "dead_code"
+  | "complexity"
+  | "coupling"
+  | "layer_violation"
+  | "test_coverage"
+  | "documentation"
+  | "performance"
+  | "structure"
+  | "naming"
+  | "style";
+
 export interface RepoSuggestion {
   id: string;
-  category: "high_complexity" | "cycles" | "structure";
+  tier: SuggestionTier;
+  category: SuggestionCategory;
   title: string;
   description: string;
-  priority: "high" | "medium" | "low";
   affectedFiles: number;
   detail: string;
   prefill: string;

@@ -123,10 +123,11 @@ describe("Repo explore routes", () => {
       expect(res.statusCode).toBe(200);
       const body = res.json();
       expect(body.suggestions).toBeInstanceOf(Array);
-      // Should include high_complexity suggestion for main.ts (complexity 25)
-      const complexitySuggestion = body.suggestions.find((s: any) => s.category === "high_complexity");
+      // main.ts has complexity 25 → falls in P4 complexity tier (20-30 range)
+      const complexitySuggestion = body.suggestions.find((s: any) => s.category === "complexity");
       expect(complexitySuggestion).toBeDefined();
       expect(complexitySuggestion.title).toContain("main.ts");
+      expect(complexitySuggestion.tier).toBe("P4");
     });
 
     it("includes cycle suggestion when cycles detected", async () => {
@@ -144,9 +145,9 @@ describe("Repo explore routes", () => {
       });
 
       const body = res.json();
-      const cycleSuggestion = body.suggestions.find((s: any) => s.category === "cycles");
+      const cycleSuggestion = body.suggestions.find((s: any) => s.category === "critical_path");
       expect(cycleSuggestion).toBeDefined();
-      expect(cycleSuggestion.priority).toBe("high");
+      expect(cycleSuggestion.tier).toBe("P0");
       expect(cycleSuggestion.detail).toContain("2");
     });
 

@@ -21,25 +21,50 @@ interface NewMissionFormProps {
 }
 
 export function NewMissionForm({ onSubmit, github, preparedRepo, onRepoPrepared, suggestedDescription }: NewMissionFormProps) {
-  const { state, open, close, setDescription, setRepo, handleSubmit, handleKeyDown, canSubmit } = useNewMissionForm(onSubmit, suggestedDescription);
+  const form = useNewMissionForm(onSubmit, suggestedDescription);
   const [pendingRepo, setPendingRepo] = useState<GitHubRepoResponse | null>(null);
   const [preparePhase, setPreparePhase] = useState<"confirm" | "cloning" | "indexing" | "complete" | "error">("confirm");
   const [exploreSummary, setExploreSummary] = useState<CodeSummaryResponse | null>(null);
   const [prepareError, setPrepareError] = useState<string | null>(null);
   const [preparedRepoName, setPreparedRepoName] = useState<string>("");
 
+  // Track previously-prepared repos so the user doesn't have to re-clone when
+  // switching back to a repo that was already scanned.
+  const [preparedRepoCache, setPreparedRepoCache] = useState<Map<number, { repoName: string; summary: CodeSummaryResponse | null }>>(new Map());
+
   const handleRepoSelect = (repo: GitHubRepoResponse) => {
     setPrepareError(null);
+    // If we already prepared this repo, skip the modal and use cached data
+    const cached = preparedRepoCache.get(repo.id);
+    if (cached) {
+      setPendingRepo(null);
+      form.setRepo(repo.clone_url, repo.id, repo.full_name);
+      onRepoPrepared?.({
+        repoName: cached.repoName,
+        fullName: repo.full_name,
+        summary: cached.summary,
+      });
+      return;
+    }
     setExploreSummary(null);
     setPreparePhase("confirm");
     setPendingRepo(repo);
   };
 
   useEffect(() => {
-    const handler = () => open();
+    const handler = (e: Event) => {
+      // The suggestion text is passed in the event detail so it's available
+      // synchronously — no need to wait for React state to propagate.
+      const detail = (e as CustomEvent).detail as string | undefined;
+      if (detail) {
+        form.openWithSuggestion(detail);
+      } else {
+        form.open();
+      }
+    };
     window.addEventListener("aurex:focus-new-mission", handler);
     return () => window.removeEventListener("aurex:focus-new-mission", handler);
-  }, [open]);
+  }, [form.open, form.openWithSuggestion]);
 
   async function handleConfirmRepo() {
     if (!pendingRepo) return;
@@ -75,7 +100,13 @@ export function NewMissionForm({ onSubmit, github, preparedRepo, onRepoPrepared,
 
   function handleUseRepo() {
     if (!pendingRepo) return;
-    setRepo(pendingRepo.clone_url, pendingRepo.id, pendingRepo.full_name);
+    // Cache the prepared repo data so switching back doesn't require re-cloning
+    setPreparedRepoCache((prev) => {
+      const next = new Map(prev);
+      next.set(pendingRepo.id, { repoName: preparedRepoName, summary: exploreSummary });
+      return next;
+    });
+    form.setRepo(pendingRepo.clone_url, pendingRepo.id, pendingRepo.full_name);
     // Notify parent to fetch hotspots + suggestions and show overview
     onRepoPrepared?.({
       repoName: preparedRepoName,
@@ -85,10 +116,10 @@ export function NewMissionForm({ onSubmit, github, preparedRepo, onRepoPrepared,
     setPendingRepo(null);
   }
 
-  if (!state.open) {
+  if (!form.state.open) {
     return (
       <button
-        onClick={open}
+        onClick={form.open}
         style={{
           width: "calc(100% - 32px)",
           padding: "8px 16px",
@@ -114,10 +145,10 @@ export function NewMissionForm({ onSubmit, github, preparedRepo, onRepoPrepared,
   return (
     <div style={{ padding: "8px 16px", borderBottom: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: "8px" }}>
       {github?.connected && github.repos.length > 0 && (
-        <RepoPicker repos={github.repos} selectedRepoId={state.selectedRepoId} onSelect={handleRepoSelect} />
+        <RepoPicker repos={github.repos} selectedRepoId={form.state.selectedRepoId} onSelect={handleRepoSelect} />
       )}
       {/* Compact repo card (Surface C) */}
-      {(state.selectedRepoFullName && preparedRepo) ? (
+      {(form.state.selectedRepoFullName && preparedRepo) ? (
         <div style={{
           background: "var(--bg-inset)",
           border: "1px solid var(--border)",
@@ -125,7 +156,7 @@ export function NewMissionForm({ onSubmit, github, preparedRepo, onRepoPrepared,
           padding: "8px 10px",
         }}>
           <div style={{ color: "var(--success)", fontFamily: '"JetBrains Mono", monospace', fontSize: "11px", display: "flex", alignItems: "center", gap: "4px" }}>
-            ✓ {state.selectedRepoFullName}
+            ✓ {form.state.selectedRepoFullName}
           </div>
           {preparedRepo.summary ? (
             <div style={{ color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", marginTop: "2px" }}>
@@ -137,18 +168,18 @@ export function NewMissionForm({ onSubmit, github, preparedRepo, onRepoPrepared,
             </div>
           )}
         </div>
-      ) : state.selectedRepoFullName ? (
+      ) : form.state.selectedRepoFullName ? (
         <div style={{ color: "var(--accent)", fontSize: "10px", fontFamily: '"JetBrains Mono", monospace' }}>
-          REPO READY · {state.selectedRepoFullName}
+          REPO READY · {form.state.selectedRepoFullName}
         </div>
       ) : null}
       {github?.error && (
         <p style={{ fontSize: "12px", color: "var(--error)", margin: 0 }}>{github.error}</p>
       )}
       <textarea
-        value={state.description}
-        onChange={(e) => setDescription(e.target.value)}
-        onKeyDown={handleKeyDown}
+        value={form.state.description}
+        onChange={(e) => form.setDescription(e.target.value)}
+        onKeyDown={form.handleKeyDown}
         placeholder="Describe what you want done..."
         style={{
           width: "100%",
@@ -164,27 +195,27 @@ export function NewMissionForm({ onSubmit, github, preparedRepo, onRepoPrepared,
         }}
         rows={3}
         autoFocus
-        disabled={state.submitting}
+        disabled={form.state.submitting}
       />
       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
         <button
-          onClick={handleSubmit}
-          disabled={!canSubmit}
+          onClick={form.handleSubmit}
+          disabled={!form.canSubmit}
           style={{
             padding: "4px 12px",
             fontSize: "12px",
-            background: canSubmit ? "var(--accent)" : "var(--bg-elevated)",
-            color: canSubmit ? "var(--bg-deep)" : "var(--text-muted)",
+            background: form.canSubmit ? "var(--accent)" : "var(--bg-elevated)",
+            color: form.canSubmit ? "var(--bg-deep)" : "var(--text-muted)",
             border: "none",
             borderRadius: "4px",
-            cursor: canSubmit ? "pointer" : "default",
+            cursor: form.canSubmit ? "pointer" : "default",
             fontFamily: '"JetBrains Mono", monospace',
           }}
         >
-          {state.submitting ? "Creating..." : "Create"}
+          {form.state.submitting ? "Creating..." : "Create"}
         </button>
         <button
-          onClick={close}
+          onClick={form.close}
           style={{
             padding: "4px 12px",
             fontSize: "12px",
@@ -198,7 +229,7 @@ export function NewMissionForm({ onSubmit, github, preparedRepo, onRepoPrepared,
           Cancel
         </button>
       </div>
-      {state.error && <p style={{ fontSize: "12px", color: "var(--error)", marginTop: "4px" }}>{state.error}</p>}
+      {form.state.error && <p style={{ fontSize: "12px", color: "var(--error)", marginTop: "4px" }}>{form.state.error}</p>}
       {pendingRepo && (
         <RepoPrepareModal
           repo={pendingRepo}

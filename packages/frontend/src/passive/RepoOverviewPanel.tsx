@@ -1,6 +1,6 @@
 import { useRef, useEffect } from "react";
 import { staggerEntrance } from "../animations/stagger";
-import type { CodeSummaryResponse, CodeHotspotsResponse, RepoSuggestion } from "../api";
+import type { CodeSummaryResponse, CodeHotspotsResponse, RepoSuggestion, SuggestionTier, SuggestionCategory } from "../api";
 
 interface RepoOverviewPanelProps {
   repoName: string;
@@ -12,16 +12,28 @@ interface RepoOverviewPanelProps {
   onStartMission: (prefill: string) => void;
 }
 
-const categoryIcons: Record<string, string> = {
-  high_complexity: "🔥",
-  cycles: "⚠️",
-  structure: "📐",
+const tierConfig: Record<SuggestionTier, { color: string; bg: string; border: string; label: string }> = {
+  P0: { color: "var(--error)",     bg: "rgba(239,68,68,0.08)",  border: "var(--error)",      label: "P0 CRITICAL" },
+  P1: { color: "#f97316",          bg: "rgba(249,115,22,0.06)", border: "rgba(249,115,22,0.3)", label: "P1 HIGH" },
+  P2: { color: "var(--warning)",   bg: "rgba(250,204,21,0.05)", border: "rgba(250,204,21,0.2)", label: "P2 MEDIUM" },
+  P3: { color: "var(--info)",      bg: "rgba(129,140,248,0.05)", border: "rgba(129,140,248,0.2)", label: "P3 STANDARD" },
+  P4: { color: "var(--text-secondary)", bg: "rgba(155,142,122,0.05)", border: "var(--border)", label: "P4 LOW" },
+  P5: { color: "var(--text-muted)",     bg: "transparent",              border: "var(--border)", label: "P5 POLISH" },
 };
 
-const priorityColors: Record<string, string> = {
-  high: "var(--error)",
-  medium: "var(--warning)",
-  low: "var(--text-muted)",
+const categoryIcons: Record<SuggestionCategory, string> = {
+  critical_path: "🔴",
+  security: "🔒",
+  dead_code: "💀",
+  complexity: "🔥",
+  coupling: "🔗",
+  layer_violation: "📐",
+  test_coverage: "🧪",
+  documentation: "📝",
+  performance: "⚡",
+  structure: "📦",
+  naming: "🏷️",
+  style: "✨",
 };
 
 export function RepoOverviewPanel({ fullName, summary, hotspots, suggestions, loading, onStartMission }: RepoOverviewPanelProps) {
@@ -128,66 +140,109 @@ export function RepoOverviewPanel({ fullName, summary, hotspots, suggestions, lo
         </div>
       )}
 
-      {/* Suggestions */}
-      {suggestions.length > 0 && (
-        <div className="overview-section" style={{ opacity: 0 }}>
-          <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", letterSpacing: "2px", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span>SUGGESTED MISSIONS</span>
-            <span style={{ fontSize: "9px", letterSpacing: "1px" }}>BASED ON CODE</span>
-          </div>
-          {suggestions.map((suggestion) => (
-            <div
-              key={suggestion.id}
-              style={{
-                background: "var(--bg-surface)",
-                border: "1px solid var(--border)",
-                borderRadius: "6px",
-                padding: "12px 16px",
-                marginBottom: "8px",
-                display: "flex",
-                alignItems: "center",
-                gap: "12px",
-                transition: "border-color 0.15s, background 0.15s, box-shadow 0.15s",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = "var(--accent-dim)";
-                e.currentTarget.style.background = "var(--bg-elevated)";
-                e.currentTarget.style.boxShadow = "0 0 12px var(--accent-glow)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = "var(--border)";
-                e.currentTarget.style.background = "var(--bg-surface)";
-                e.currentTarget.style.boxShadow = "none";
-              }}
-            >
-              <span style={{ fontSize: "16px", flexShrink: 0 }}>{categoryIcons[suggestion.category] ?? "•"}</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: "13px", color: "var(--text-primary)", fontFamily: '"JetBrains Mono", monospace' }}>{suggestion.title}</div>
-                <div style={{ fontSize: "11px", color: priorityColors[suggestion.priority] ?? "var(--text-muted)", marginTop: "2px" }}>{suggestion.detail}</div>
-              </div>
-              <button
-                onClick={() => onStartMission(suggestion.prefill)}
-                style={{
-                  color: "var(--accent)",
-                  background: "none",
-                  border: "1px solid var(--accent-dim)",
-                  borderRadius: "3px",
-                  cursor: "pointer",
-                  fontSize: "10px",
-                  padding: "4px 8px",
-                  fontFamily: '"JetBrains Mono", monospace',
-                  textTransform: "uppercase",
-                  letterSpacing: "1px",
-                  whiteSpace: "nowrap" as const,
-                  flexShrink: 0,
-                }}
-              >
-                Start Mission →
-              </button>
+      {/* Suggestions grouped by tier */}
+      {suggestions.length > 0 && (() => {
+        // Group suggestions by tier
+        const tiers: SuggestionTier[] = ["P0", "P1", "P2", "P3", "P4", "P5"];
+        const grouped = new Map<SuggestionTier, RepoSuggestion[]>();
+        for (const s of suggestions) {
+          const group = grouped.get(s.tier) ?? [];
+          group.push(s);
+          grouped.set(s.tier, group);
+        }
+        const activeTiers = tiers.filter((t) => (grouped.get(t)?.length ?? 0) > 0);
+
+        return (
+          <div className="overview-section" style={{ opacity: 0 }}>
+            <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", letterSpacing: "2px", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span>SUGGESTED MISSIONS</span>
+              <span style={{ fontSize: "9px", letterSpacing: "1px" }}>{suggestions.length} FOUND · {activeTiers.length} TIERS</span>
             </div>
-          ))}
-        </div>
-      )}
+            {activeTiers.map((tier) => {
+              const cfg = tierConfig[tier];
+              const items = grouped.get(tier)!;
+              return (
+                <div key={tier} style={{ marginBottom: "16px" }}>
+                  {/* Tier header */}
+                  <div style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    marginBottom: "8px",
+                    paddingBottom: "4px",
+                    borderBottom: `1px solid ${cfg.border}`,
+                  }}>
+                    <span style={{
+                      fontFamily: '"JetBrains Mono", monospace',
+                      fontSize: "10px",
+                      letterSpacing: "1px",
+                      color: cfg.color,
+                      fontWeight: 600,
+                    }}>
+                      {cfg.label}
+                    </span>
+                    <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>
+                      {items.length} mission{items.length > 1 ? "s" : ""}
+                    </span>
+                  </div>
+                  {/* Tier items */}
+                  {items.map((suggestion) => (
+                    <div
+                      key={suggestion.id}
+                      style={{
+                        background: cfg.bg,
+                        border: `1px solid ${cfg.border}`,
+                        borderRadius: "6px",
+                        padding: "10px 14px",
+                        marginBottom: "6px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                        transition: "border-color 0.15s, background 0.15s, box-shadow 0.15s",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = "var(--accent-dim)";
+                        e.currentTarget.style.background = "var(--bg-elevated)";
+                        e.currentTarget.style.boxShadow = "0 0 12px var(--accent-glow)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = cfg.border;
+                        e.currentTarget.style.background = cfg.bg;
+                        e.currentTarget.style.boxShadow = "none";
+                      }}
+                    >
+                      <span style={{ fontSize: "14px", flexShrink: 0 }}>{categoryIcons[suggestion.category] ?? "•"}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: "12px", color: "var(--text-primary)", fontFamily: '"JetBrains Mono", monospace' }}>{suggestion.title}</div>
+                        <div style={{ fontSize: "10px", color: "var(--text-muted)", marginTop: "2px", lineHeight: 1.4 }}>{suggestion.description}</div>
+                      </div>
+                      <button
+                        onClick={() => onStartMission(suggestion.prefill)}
+                        style={{
+                          color: "var(--accent)",
+                          background: "none",
+                          border: "1px solid var(--accent-dim)",
+                          borderRadius: "3px",
+                          cursor: "pointer",
+                          fontSize: "10px",
+                          padding: "4px 8px",
+                          fontFamily: '"JetBrains Mono", monospace',
+                          textTransform: "uppercase",
+                          letterSpacing: "1px",
+                          whiteSpace: "nowrap" as const,
+                          flexShrink: 0,
+                        }}
+                      >
+                        Start Mission →
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
     </div>
   );
 }

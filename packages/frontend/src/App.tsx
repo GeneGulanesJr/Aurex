@@ -285,7 +285,7 @@ export function App() {
             preparedRepo={preparedRepo}
             onStartFromSuggestion={(prefill: string) => {
               setSuggestedMission(prefill);
-              window.dispatchEvent(new CustomEvent("aurex:focus-new-mission"));
+              window.dispatchEvent(new CustomEvent("aurex:focus-new-mission", { detail: prefill }));
             }}
           />
         </main>

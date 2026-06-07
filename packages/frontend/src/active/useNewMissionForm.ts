@@ -1,4 +1,4 @@
-import { useReducer, useCallback, useEffect } from "react";
+import { useReducer, useCallback, useEffect, useRef } from "react";
 
 export interface FormState {
   open: boolean;
@@ -12,6 +12,7 @@ export interface FormState {
 
 export type FormAction =
   | { type: "OPEN" }
+  | { type: "OPEN_WITH_SUGGESTION"; description: string }
   | { type: "CLOSE" }
   | { type: "SET_DESCRIPTION"; value: string }
   | { type: "SET_REPO"; cloneUrl: string; repoId: number; fullName: string }
@@ -33,6 +34,10 @@ export function formReducer(state: FormState, action: FormAction): FormState {
   switch (action.type) {
     case "OPEN":
       return { ...initialFormState, open: true };
+    case "OPEN_WITH_SUGGESTION":
+      // Opens the form with a pre-filled description but preserves the
+      // selected repo so missions started from suggestions keep their clone URL.
+      return { ...initialFormState, open: true, description: action.description, selectedCloneUrl: state.selectedCloneUrl, selectedRepoId: state.selectedRepoId, selectedRepoFullName: state.selectedRepoFullName };
     case "CLOSE":
       return initialFormState;
     case "SET_DESCRIPTION":
@@ -70,10 +75,14 @@ export async function submitIfValid(
 export function useNewMissionForm(onSubmit: (description: string, cloneUrl?: string) => Promise<void>, suggestedDescription?: string) {
   const [state, dispatch] = useReducer(formReducer, initialFormState);
 
+  // Track the latest suggested description so the focus-new-mission event
+  // handler can apply it even if the effect hasn't run yet.
+  const suggestedRef = useRef(suggestedDescription);
+  suggestedRef.current = suggestedDescription;
+
   useEffect(() => {
     if (suggestedDescription && !state.open) {
-      dispatch({ type: "OPEN" });
-      dispatch({ type: "SET_DESCRIPTION", value: suggestedDescription });
+      dispatch({ type: "OPEN_WITH_SUGGESTION", description: suggestedDescription });
     }
   }, [suggestedDescription]);
 
@@ -93,6 +102,7 @@ export function useNewMissionForm(onSubmit: (description: string, cloneUrl?: str
   );
 
   const open = useCallback(() => dispatch({ type: "OPEN" }), []);
+  const openWithSuggestion = useCallback((description: string) => dispatch({ type: "OPEN_WITH_SUGGESTION", description }), []);
   const close = useCallback(() => dispatch({ type: "CLOSE" }), []);
   const setDescription = useCallback((value: string) => dispatch({ type: "SET_DESCRIPTION", value }), []);
   const setRepo = useCallback((cloneUrl: string, repoId: number, fullName: string) => dispatch({ type: "SET_REPO", cloneUrl, repoId, fullName }), []);
@@ -100,11 +110,13 @@ export function useNewMissionForm(onSubmit: (description: string, cloneUrl?: str
   return {
     state,
     open,
+    openWithSuggestion,
     close,
     setDescription,
     setRepo,
     handleSubmit,
     handleKeyDown,
     canSubmit: state.description.trim().length > 0 && !state.submitting,
+    suggestedRef,
   };
 }
