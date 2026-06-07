@@ -98,6 +98,7 @@ describe("milestone loop validator E2E", () => {
       incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-e2e", retries: 0, rescopes: 0 }),
       registerAgentSession: vi.fn().mockResolvedValue(undefined),
       searchMemory: vi.fn().mockResolvedValue([]),
+      getFindings: vi.fn().mockResolvedValue([]),
       runCompression: vi.fn().mockResolvedValue(undefined),
 
     } as unknown as LaPisClient;
@@ -256,6 +257,7 @@ describe("milestone loop validator E2E", () => {
       incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-e2e", retries: 0, rescopes: 0 }),
       registerAgentSession: vi.fn().mockResolvedValue(undefined),
       searchMemory: vi.fn().mockResolvedValue([]),
+      getFindings: vi.fn().mockResolvedValue([]),
       runCompression: vi.fn().mockResolvedValue(undefined),
 
     } as unknown as LaPisClient;

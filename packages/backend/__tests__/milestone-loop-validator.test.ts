@@ -85,6 +85,7 @@ function createMockLapis(units: WorkingUnit[] = [], verdicts: ValidationVerdict[
     incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
     writeVerdict: vi.fn().mockResolvedValue({}),
     getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
+    getFindings: vi.fn().mockResolvedValue([]),
     runCompression: vi.fn().mockResolvedValue(undefined),
   } as unknown as LaPisClient;
 }

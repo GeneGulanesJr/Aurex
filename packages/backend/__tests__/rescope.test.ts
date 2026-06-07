@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { rescopeMilestone } from "../src/orchestrator/rescope";
 import type { LaPisClient } from "../src/clients/lapis-client";
 import type { PinyxClient } from "../src/clients/pinyx-client";
-import type { Mission } from "@aurex/shared";
+import type { Mission, ValidationVerdict, ResearchFinding } from "@aurex/shared";
 
 function makeMission(): Mission {
   return {
@@ -77,7 +77,7 @@ describe("rescopeMilestone", () => {
       expect.objectContaining({
         model: "reasoning-strong",
         messages: expect.arrayContaining([
-          expect.objectContaining({ role: "system", content: expect.stringContaining("Re-plan this milestone") }),
+          expect.objectContaining({ role: "system", content: expect.stringContaining("re-planning") }),
           expect.objectContaining({ role: "user", content: expect.stringContaining("Implement auth") }),
         ]),
       }),
@@ -147,5 +147,102 @@ describe("rescopeMilestone", () => {
       expect(result.error).toBe("invalid_plan");
     }
     expect(lapis.createWorkingUnit).not.toHaveBeenCalled();
+  });
+
+  it("includes validator verdicts in the rescope prompt when provided", async () => {
+    const plan = JSON.stringify({
+      units: [{ description: "Fixed unit", declaredPaths: ["src/a.ts"], declaredModules: ["a"] }],
+    });
+    const pinyx = makePinyx(plan);
+    const lapis = makeLapis();
+
+    const verdicts: ValidationVerdict[] = [
+      { id: "v-1", milestoneId: "ms-1", contractId: "c-1", validatorType: "validator_scrutiny", sessionId: "s-1", verdict: "fail", findings: "Missing error handling in auth flow", classification: "blocking", failedUnitIds: ["u-1"], timestamp: "" },
+    ];
+
+    await rescopeMilestone({
+      pinyx,
+      lapis,
+      mission: makeMission(),
+      milestone: { id: "ms-1", title: "Implement auth", description: "Add login + signup" },
+      model: "reasoning-strong",
+      reason: "scrutiny failed",
+      verdicts,
+    });
+
+    const userMessage = (pinyx.chat as any).mock.calls[0][0].messages.find((m: any) => m.role === "user").content;
+    expect(userMessage).toContain("Missing error handling in auth flow");
+    expect(userMessage).toContain("validator_scrutiny");
+  });
+
+  it("includes completed unit summaries in the rescope prompt so they are not re-planned", async () => {
+    const plan = JSON.stringify({
+      units: [{ description: "New unit", declaredPaths: ["src/b.ts"], declaredModules: ["b"] }],
+    });
+    const pinyx = makePinyx(plan);
+    const lapis = makeLapis();
+
+    await rescopeMilestone({
+      pinyx,
+      lapis,
+      mission: makeMission(),
+      milestone: { id: "ms-1", title: "Implement auth", description: "Add login + signup" },
+      model: "reasoning-strong",
+      reason: "scrutiny failed",
+      completedUnitSummaries: [
+        { description: "Login endpoint", declaredPaths: ["src/auth/login.ts"], declaredModules: ["auth"] },
+      ],
+    });
+
+    const userMessage = (pinyx.chat as any).mock.calls[0][0].messages.find((m: any) => m.role === "user").content;
+    expect(userMessage).toContain("Already Completed Units");
+    expect(userMessage).toContain("Login endpoint");
+  });
+
+  it("includes research findings in the rescope prompt when provided", async () => {
+    const plan = JSON.stringify({
+      units: [{ description: "Fixed unit", declaredPaths: ["src/a.ts"], declaredModules: ["a"] }],
+    });
+    const pinyx = makePinyx(plan);
+    const lapis = makeLapis();
+
+    const findings: ResearchFinding[] = [
+      { id: "f-1", missionId: "m-1", authorId: "research-1", domain: ["auth"], title: "Auth middleware pattern", content: "Uses JWT with refresh tokens", relevance: "high", status: "unverified", verifiedTaskId: null, ttl: null, expiresAt: null, createdAt: "" },
+    ];
+
+    await rescopeMilestone({
+      pinyx,
+      lapis,
+      mission: makeMission(),
+      milestone: { id: "ms-1", title: "Implement auth", description: "Add login + signup" },
+      model: "reasoning-strong",
+      reason: "scrutiny failed",
+      researchFindings: findings,
+    });
+
+    const userMessage = (pinyx.chat as any).mock.calls[0][0].messages.find((m: any) => m.role === "user").content;
+    expect(userMessage).toContain("Research Findings");
+    expect(userMessage).toContain("Auth middleware pattern");
+  });
+
+  it("uses the enriched system prompt with analysis instructions", async () => {
+    const plan = JSON.stringify({
+      units: [{ description: "Fixed unit", declaredPaths: ["src/a.ts"], declaredModules: ["a"] }],
+    });
+    const pinyx = makePinyx(plan);
+    const lapis = makeLapis();
+
+    await rescopeMilestone({
+      pinyx,
+      lapis,
+      mission: makeMission(),
+      milestone: { id: "ms-1", title: "M", description: "D" },
+      model: "reasoning-strong",
+      reason: "x",
+    });
+
+    const systemMessage = (pinyx.chat as any).mock.calls[0][0].messages.find((m: any) => m.role === "system").content;
+    expect(systemMessage).toContain("WHY the previous plan failed");
+    expect(systemMessage).toContain("Do NOT re-plan units that have already been successfully completed");
   });
 });

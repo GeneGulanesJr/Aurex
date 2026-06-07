@@ -106,6 +106,7 @@ function createMockLapis(units: WorkingUnit[], verdicts: ValidationVerdict[]): L
     createWorkingUnit: vi.fn().mockImplementation(async (_msId: string, unit: any) => ({
       id: `new-${Date.now()}`, ...unit, milestoneId: _msId, status: "planned", taskBranch: "", worktreePath: "", sessionId: "",
     })),
+    getFindings: vi.fn().mockResolvedValue([]),
     runCompression: vi.fn().mockResolvedValue(undefined),
   } as unknown as LaPisClient;
 }

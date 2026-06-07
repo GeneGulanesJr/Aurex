@@ -1,4 +1,4 @@
-import type { CheckpointTrigger, CompressionTrigger, Mission, Milestone, WorkingUnit, EscalationTrigger, EscalationContext, AgentType, AgentStatus, MilestoneStatus } from "@aurex/shared";
+import type { CheckpointTrigger, CompressionTrigger, Mission, Milestone, WorkingUnit, EscalationTrigger, EscalationContext, AgentType, AgentStatus, MilestoneStatus, ResearchFinding } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { PinyxClient } from "../clients/pinyx-client.js";
 import { QuotaExhaustedError } from "../clients/pinyx-quota-wrapper.js";
@@ -101,6 +101,7 @@ export function createMilestoneLoop(
         // Retries re-spawn failed workers and re-validate.
         // Rescopes re-plan the milestone via PiNyx and start fresh.
         let loopActive = true;
+        let researchFindings: ResearchFinding[] = await lapis.getFindings(mission.id).catch(() => [] as ResearchFinding[]);
         while (loopActive) {
           loopActive = false;
 
@@ -163,6 +164,7 @@ export function createMilestoneLoop(
                 unitDeclaredModules: unit.declaredModules,
                 contractCriteria: contract?.content?.criteria ?? [],
                 testCommands: contract?.content?.testCommands ?? [],
+                researchFindings,
               });
 
               callbacks.onAgentStatus(agentId, "worker", "spawned", milestone.id, {
@@ -327,6 +329,8 @@ export function createMilestoneLoop(
           );
           researchHandle.dispose();
 
+          researchFindings = await lapis.getFindings(mission.id).catch(() => researchFindings);
+
           // --- VALIDATOR PHASE ---
           const handoffs = await lapis.getHandoffsForMilestone(milestone.id).catch(() => [] as any[]);
           const handoffsByUnitId = new Map(handoffs.map((handoff: any) => [handoff.unitId, handoff]));
@@ -394,6 +398,7 @@ export function createMilestoneLoop(
               milestoneTitle: milestone.title, milestoneDescription: milestone.description,
               contractId, contractCriteria: criteria, testCommands, acceptanceBehavior,
               baseBranch: loopConfig.gitMainBranch, units: validatorUnits,
+              researchFindings,
             });
 
             callbacks.onAgentStatus(agentId, validatorType, "spawned", milestone.id);
@@ -472,6 +477,13 @@ export function createMilestoneLoop(
                 milestone: { id: milestone.id, title: milestone.title, description: milestone.description },
                 model: config.modelHints.orchestrator,
                 reason: decision.reason,
+                verdicts,
+                researchFindings,
+                completedUnitSummaries: integrationUnits.map((u) => ({
+                  description: u.description,
+                  declaredPaths: u.declaredPaths,
+                  declaredModules: u.declaredModules,
+                })),
               });
             } catch (err) {
               if (err instanceof QuotaExhaustedError) {

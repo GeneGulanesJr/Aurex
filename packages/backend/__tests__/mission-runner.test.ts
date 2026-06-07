@@ -126,6 +126,8 @@ function createMockLapis(): LaPisClient {
     createMissionLedger: vi.fn().mockResolvedValue({ missionId: "m-1", todos: [] }),
     createTodo: vi.fn().mockResolvedValue({ id: "td-1" }),
     indexRepo: vi.fn().mockResolvedValue({ files: 10, symbols: 100 }),
+    getCodeSummary: vi.fn().mockResolvedValue({ files: 10, symbols: 100, edges: 20, modules: [], entryPoints: [], cycles: { count: 0, paths: [] } }),
+    getFindings: vi.fn().mockResolvedValue([]),
     writeHandoff: vi.fn().mockResolvedValue({ accepted: true, errors: [] }),
     createCheckpoint: vi.fn().mockResolvedValue({ id: "cp-1", status: "pending" }),
     getCheckpoint: vi.fn().mockResolvedValue({ id: "cp-1", status: "resolved", decision: "approve" }),
@@ -339,7 +341,12 @@ describe("MissionRunner", () => {
       usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
     });
 
-    // 3) Checkpoint poll: first call returns "approve" + rescopeGuidance, second returns plain "approve"
+    // 3) Mock completed working units so completedUnitSummaries is passed to rescope
+    (lapis.getWorkingUnitsForMilestone as any).mockResolvedValue([
+      { id: "u-done", description: "Already done unit", declaredPaths: ["src/done.ts"], declaredModules: ["done"], status: "completed", milestoneId: "ms-1", taskBranch: "", worktreePath: "", sessionId: "" },
+    ]);
+
+    // 4) Checkpoint poll: first call returns "approve" + rescopeGuidance, second returns plain "approve"
     (lapis.getCheckpoint as any)
       .mockResolvedValueOnce({ id: "cp-1", status: "resolved", decision: "approve", rescopeGuidance: "try a different approach" })
       .mockResolvedValue({ id: "cp-2", status: "resolved", decision: "approve" });
@@ -369,6 +376,15 @@ describe("MissionRunner", () => {
       "ms-1",
       expect.objectContaining({ description: "Re-planned unit" }),
     );
+
+    // The rescope prompt must include the completed unit summary so it is not re-planned
+    const rescopeCall = (mockPinyx.chat as any).mock.calls.find((call: any) => {
+      const userMsg = call[0]?.messages?.find((m: any) => m.role === "user");
+      return userMsg?.content?.includes("Already Completed Units");
+    });
+    expect(rescopeCall).toBeDefined();
+    const userMessage = rescopeCall[0].messages.find((m: any) => m.role === "user").content;
+    expect(userMessage).toContain("Already done unit");
   });
 
   it("approval of cost_cap_exceeded checkpoint lets the mission continue", async () => {

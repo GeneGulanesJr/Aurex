@@ -76,14 +76,24 @@ export interface PlanResult {
   }>;
 }
 
+export interface CodeSummary {
+  files: number;
+  symbols: number;
+  edges: number;
+  modules: Array<{ name: string; fileCount: number }>;
+  entryPoints: string[];
+  cycles: { count: number; paths: string[][] };
+}
+
 export function createPlanner(
   lapis: LaPisClient,
   pinyx: PinyxClient,
-  opts?: { model?: string; eventBus?: EventBus; missionId?: string },
+  opts?: { model?: string; eventBus?: EventBus; missionId?: string; codeSummary?: CodeSummary },
 ) {
   const model = opts?.model ?? "kilo/kilo-auto/free";
   const eventBus = opts?.eventBus;
   const missionId = opts?.missionId;
+  const codeSummary = opts?.codeSummary;
 
   function emitLog(phase: string, message: string) {
     if (eventBus && missionId) {
@@ -109,19 +119,24 @@ export function createPlanner(
       let lastEmittedTitle = "";
       let response;
       try {
+        const codebaseSection = buildCodebaseContextSection(codeSummary);
+        const systemPrompt = `You are a mission planner. Decompose the mission into ordered milestones. Each milestone has working units with declared paths and modules, validation criteria, and test commands. Respond with JSON only. Keep the plan concise — at most 4 milestones, each with at most 4 working units.
+
+IMPORTANT: Use the codebase structure below to ensure your declared paths and modules match the actual project layout. Working units must reference real directories and modules. Plan milestones that are achievable and well-scoped based on the actual codebase architecture.`;
+
+        const userParts = [`Mission: ${missionDescription}`];
+        if (codebaseSection) {
+          userParts.push(`\n## Codebase Structure\n${codebaseSection}`);
+        }
+        userParts.push(`\nRelevant context: ${memories.slice(0, 5).map((m) => m.content).join("\n")}`);
+
         response = await pinyx.chatStream(
         {
           model,
           max_tokens: 8192,
           messages: [
-            {
-              role: "system",
-              content: "You are a mission planner. Decompose the mission into ordered milestones. Each milestone has working units with declared paths and modules, validation criteria, and test commands. Respond with JSON only. Keep the plan concise — at most 4 milestones, each with at most 4 working units.",
-            },
-            {
-              role: "user",
-              content: `Mission: ${missionDescription}\n\nRelevant context: ${memories.slice(0, 5).map((m) => m.content).join("\n")}`,
-            },
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userParts.join("\n") },
           ],
         },
         (delta) => {
@@ -411,4 +426,21 @@ function buildContextQuery(input: {
   return [...new Set(tokens.flatMap((part) => String(part).split(/[^A-Za-z0-9_./-]+/).filter((token) => token.length > 2)))]
     .slice(0, 32)
     .join(" ");
+}
+
+function buildCodebaseContextSection(summary: CodeSummary | undefined): string {
+  if (!summary) return "";
+  const parts: string[] = [];
+  parts.push(`Total files: ${summary.files}, Symbols: ${summary.symbols}, Import edges: ${summary.edges}`);
+  if (summary.modules.length > 0) {
+    parts.push(`Modules:\n${summary.modules.map((m) => `  - ${m.name} (${m.fileCount} files)`).join("\n")}`);
+  }
+  if (summary.entryPoints.length > 0) {
+    parts.push(`Entry points: ${summary.entryPoints.join(", ")}`);
+  }
+  if (summary.cycles.count > 0) {
+    const cyclePaths = summary.cycles.paths.slice(0, 3).map((p) => p.join(" → ")).join("; ");
+    parts.push(`Dependency cycles (${summary.cycles.count}): ${cyclePaths}`);
+  }
+  return parts.join("\n\n");
 }

@@ -80,6 +80,7 @@ function createMockLapis(units: WorkingUnit[]): LaPisClient {
     searchMemory: vi.fn().mockResolvedValue([]),
     writeVerdict: vi.fn().mockResolvedValue({}),
     getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
+    getFindings: vi.fn().mockResolvedValue([]),
     runCompression: vi.fn().mockResolvedValue(undefined),
   } as unknown as LaPisClient;
 }
