@@ -5,6 +5,7 @@ import type { FastifyInstance } from "fastify";
 import type { BumblebeeFinding, BumblebeeScanResult, BumblebeeScanSummary } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { BumblebeeClient } from "../clients/bumblebee-client.js";
+import { scanRepoForMutation } from "../scanner/mutation-scanner.js";
 
 interface RepoExploreDeps {
   lapis: LaPisClient;
@@ -685,10 +686,12 @@ export function registerRepoExploreRoutes(app: FastifyInstance, deps: RepoExplor
     try {
       await lapis.indexRepo(repoPath, repoName);
       const summary = await lapis.getCodeSummary(repoName);
-      return { repoName, status: "completed" as const, summary };
+      const mutation = await scanRepoForMutation(repoPath);
+      return { repoName, status: "completed" as const, summary, mutation };
     } catch (err) {
       const error = err instanceof Error ? err.message : "Indexing failed";
-      return { repoName, status: "failed" as const, error };
+      const mutation = await scanRepoForMutation(repoPath);
+      return { repoName, status: "failed" as const, error, mutation };
     }
   });
 

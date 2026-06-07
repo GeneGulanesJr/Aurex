@@ -120,6 +120,27 @@ describe("Repo explore routes", () => {
       expect(res.statusCode).toBe(200);
       expect(res.json()).toMatchObject({ status: "failed", error: "disk full" });
     });
+
+    it("includes a mutation field in the response", async () => {
+      // Create a temp repo with a Stryker config so the scanner finds it
+      const repoDir = await mkdtemp(join(tmpdir(), "aurex-explore-mutation-"));
+      await writeFile(join(repoDir, "stryker.config.mjs"), "export default {};");
+      const { app } = buildApp({
+        "repo:my-repo:path": repoDir,
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/repos/my-repo/explore",
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.mutation).toBeDefined();
+      expect(body.mutation.strykerConfigured).toBe(true);
+      expect(body.mutation.configPath).toBe("stryker.config.mjs");
+      expect(body.mutation.score).toBeNull();
+    });
   });
 
   describe("GET /api/repos/:repoName/summary", () => {
