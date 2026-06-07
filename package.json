@@ -68,6 +68,8 @@
   "scripts": {
     "postinstall": "node postinstall.js",
     "test": "vitest run",
+    "test:mutation": "stryker run",
+    "test:mutation:diff": "stryker run --mutate \"src/**/*.js\" --incremental",
     "bench:pi-paired": "node bench/bench-pi-paired.js",
     "bench:pi-realworld": "node bench/realworld/bench-pi-realworld.js",
     "lint": "oxlint",
@@ -83,7 +85,11 @@
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.72.1",
+    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/typescript-checker": "^9.6.1",
+    "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/node": "^25.8.0",
+    "@vitest/coverage-v8": "^4.1.8",
     "oxfmt": "^0.47.0",
     "oxlint": "^1.62.0",
     "tree-sitter-cli": "^0.26.8",

@@ -317,4 +317,4 @@ function applyTokenBudget(observations, budget) {
   return result;
 }
 
-module.exports = { context };
+module.exports = { context, topicQueryNeedles, buildTopicQueryMatch, applyTokenBudget };

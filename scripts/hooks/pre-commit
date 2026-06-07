@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Stryker mutation testing pre-commit hook.
+# Runs incremental mutation tests on changed files.
+# Bypass with: git commit --no-verify
+set -euo pipefail
+
+# Only run on commits that touch P0 mutation scope files
+P0_PATTERNS=(
+  "src/memory-domain/"
+  "src/platform/storage/repositories/memory.js"
+)
+
+# Check if any staged file matches P0 scope
+STAGED=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null || true)
+if [ -z "$STAGED" ]; then
+  exit 0
+fi
+
+MUTATE_NEEDED=false
+for file in $STAGED; do
+  for pattern in "${P0_PATTERNS[@]}"; do
+    if [[ "$file" == *"$pattern"* ]]; then
+      MUTATE_NEEDED=true
+      break 2
+    fi
+  done
+done
+
+if [ "$MUTATE_NEEDED" = false ]; then
+  echo "ℹ️  No P0 mutation files changed, skipping mutation tests."
+  exit 0
+fi
+
+echo "🧬 P0 mutation files changed — running incremental Stryker..."
+echo "   (bypass with git commit --no-verify)"
+
+# Run incremental mutation test. Uses reports/stryker-incremental.json
+# to skip already-killed mutants, so subsequent runs are fast.
+npx stryker run \
+  --concurrency 2 \
+  --reporters clear-text,progress,json,html \
+  2>&1
+
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -ne 0 ]; then
+  echo ""
+  echo "❌ Mutation test failed! New mutants survived."
+  echo "   Check reports/stryker-report.html for details."
+  echo "   Bypass with: git commit --no-verify"
+  exit 1
+fi
+
+echo "✅ Mutation tests passed!"
+exit 0

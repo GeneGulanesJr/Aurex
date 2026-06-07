@@ -11,3 +11,4 @@ jobs/
 .kilo/
 bench/results/
 bench/realworld/results/
+reports/

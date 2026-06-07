@@ -12,12 +12,17 @@ async function getInProcessDispatch() {
     return _inProcessDispatch;
   }
   try {
-    const gateway = require('../../src/cli/gateway');
-    if (typeof gateway.dispatch === 'function') {
+    // Resolve relative to THIS source file, not the compiled output.
+    // Path: host/ → memory-layer/ → extensions/ → repo root → src/cli/gateway
+    const gateway = require('../../../src/cli/gateway');
+    if (gateway && typeof gateway.dispatch === 'function') {
       _inProcessDispatch = gateway.dispatch;
       return _inProcessDispatch;
     }
-  } catch {}
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[memory-layer] failed to load in-process gateway, will fall back to child process:`, msg);
+  }
   return null;
 }
 
