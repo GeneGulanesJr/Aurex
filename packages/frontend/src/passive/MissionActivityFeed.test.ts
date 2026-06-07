@@ -12,6 +12,18 @@ describe("MissionActivityFeed", () => {
     expect(html).toContain("Awaiting mission activity");
   });
 
+  it("shows live for timestamp-less websocket events without logs", () => {
+    const html = renderToStaticMarkup(createElement(MissionActivityFeed, {
+      logs: [],
+      events: [{ type: "mission_started", missionId: "m1" } as WsClientEvent],
+      active: true,
+      limit: 1,
+    }));
+
+    expect(html).toContain("live");
+    expect(html).toContain("mission started");
+  });
+
   it("renders normalized logs and websocket events", () => {
     const events: WsClientEvent[] = [
       { type: "mission_started", missionId: "m1" },

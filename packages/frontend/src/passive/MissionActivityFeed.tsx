@@ -42,7 +42,7 @@ export function MissionActivityFeed({ logs, events, active, limit = 12 }: Missio
             <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "3px" }}>
               <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "9px", letterSpacing: "1px", color: item.color, minWidth: "58px" }}>{item.label}</span>
               <span style={{ marginLeft: "auto", fontFamily: '"JetBrains Mono", monospace', fontSize: "9px", color: "var(--text-muted)" }}>
-                {new Date(item.timestamp).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                {formatActivityTime(item.timestamp)}
               </span>
             </div>
             <div style={{ fontSize: "12px", color: "var(--text-secondary)", lineHeight: 1.45, wordBreak: "break-word" }}>{item.message}</div>
@@ -51,4 +51,11 @@ export function MissionActivityFeed({ logs, events, active, limit = 12 }: Missio
       </div>
     </section>
   );
+}
+
+function formatActivityTime(timestamp: number): string {
+  // Synthetic timestamps preserve stable ordering for WsClientEvent variants that
+  // do not carry a timestamp. Do not render those as 1970-era wall-clock times.
+  if (timestamp < 946_684_800_000) return "live";
+  return new Date(timestamp).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
