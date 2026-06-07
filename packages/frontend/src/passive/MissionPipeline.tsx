@@ -5,8 +5,8 @@ import { staggerEntrance } from "../animations/stagger";
 import { animateProgress } from "../animations/counters";
 import type { Milestone, WorkingUnit, WsClientEvent, MilestoneStatus, BumblebeeFinding, BumblebeeScanResult } from "@aurex/shared";
 import type { MissionError, AgentLogEntry } from "../hooks/useMission";
-import { CodeContextPanel } from "./CodeContextPanel";
-import { SupplyChainPanel } from "./SupplyChainPanel";
+import { MissionInspectorPanel } from "./MissionInspectorPanel";
+import { MissionSummaryHeader } from "./MissionSummaryHeader";
 
 interface MissionPipelineProps {
   mission: { id: string; description: string; status: string };
@@ -101,56 +101,19 @@ export function MissionPipeline({ mission, milestones, workers, cost, events, lo
   }, [workers.length]);
 
   const activeMilestone = milestones.find((m) => m.status === "in_progress" || m.status === "validating");
-  const completedCount = milestones.filter((m) => m.status === "completed").length;
 
   return (
-    <div style={{ padding: "20px 24px" }}>
-      {/* Mission header */}
-      <div style={{ marginBottom: "24px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
-          <span
-            style={{
-              fontFamily: '"JetBrains Mono", monospace',
-              fontSize: "10px",
-              letterSpacing: "2px",
-              textTransform: "uppercase",
-              color: mission.status === "running" || mission.status === "planning" ? "var(--accent)" : "var(--text-muted)",
-              background: "var(--bg-elevated)",
-              padding: "3px 8px",
-              borderRadius: "3px",
-              border: "1px solid var(--border)",
-            }}
-          >
-            {mission.status === "running" ? "EXECUTING" : mission.status === "planning" ? "PLANNING" : mission.status.toUpperCase()}
-          </span>
-          {cost && (
-            <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "11px", color: "var(--text-muted)" }}>
-              {completedCount}/{milestones.length} milestones · ${cost.totalCost.toFixed(2)} · {cost.totalTokens.toLocaleString()} tokens
-            </span>
-          )}
-        </div>
-        <div style={{ fontSize: "16px", fontWeight: 500, color: "var(--text-primary)", lineHeight: 1.4 }}>
-          {mission.description}
-        </div>
-      </div>
+    <div className="mission-pipeline-shell">
+      <div className="mission-primary-column">
+        <MissionSummaryHeader
+          mission={mission}
+          milestones={milestones}
+          workers={workers}
+          cost={cost}
+        />
 
-      {/* Code Context Panel */}
-      <CodeContextPanel
-        missionId={mission.id}
-        logs={logs}
-        milestones={milestones}
-      />
-
-      {/* Supply Chain Panel */}
-      <SupplyChainPanel
-        findings={scanFindings}
-        scans={scans}
-        isScanning={isScanning}
-        onTriggerScan={onTriggerScan}
-      />
-
-      {/* Milestone pipeline */}
-      <div ref={pipelineRef} style={{ display: "flex", flexDirection: "column", gap: "0" }}>
+        {/* Milestone pipeline */}
+        <div ref={pipelineRef} style={{ display: "flex", flexDirection: "column", gap: "0" }}>
         {milestones.length === 0 && (
           <PlanningPhase missionStatus={mission.status} errors={errors} onRetry={onRetry} />
         )}
@@ -243,15 +206,21 @@ export function MissionPipeline({ mission, milestones, workers, cost, events, lo
             </div>
           );
         })}
+        </div>
       </div>
 
-      {/* Planning log — shown when mission is in planning phase or has planning logs */}
-      {(mission.status === "planning" || logs.length > 0) && (
-        <PlanningLog logs={logs} active={mission.status === "planning" || mission.status === "running"} />
-      )}
-
-      {/* Live event stream */}
-      <EventStream events={events} eventStreamCount={eventStreamCount} />
+      <MissionInspectorPanel
+        missionId={mission.id}
+        missionStatus={mission.status}
+        milestones={milestones}
+        logs={logs}
+        events={events}
+        eventStreamCount={eventStreamCount}
+        scanFindings={scanFindings}
+        isScanning={isScanning}
+        scans={scans}
+        onTriggerScan={onTriggerScan}
+      />
     </div>
   );
 }
@@ -383,104 +352,6 @@ function WorkerChip({ worker, errors, logs }: { worker: WorkingUnit; errors: Mis
   );
 }
 
-function PlanningLog({ logs, active }: { logs: Array<{ phase: string; message: string; timestamp: number }>; active: boolean }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [elapsed, setElapsed] = useState("");
-
-  // Elapsed timer — counts from first log timestamp
-  useEffect(() => {
-    if (!active || logs.length === 0) { setElapsed(""); return; }
-    const start = logs[0].timestamp;
-    const tick = () => {
-      const diff = Date.now() - start;
-      const s = Math.floor(diff / 1000);
-      const m = Math.floor(s / 60);
-      const h = Math.floor(m / 60);
-      setElapsed(h > 0 ? `${h}h ${m % 60}m ${s % 60}s` : m > 0 ? `${m}m ${s % 60}s` : `${s}s`);
-    };
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [active, logs.length]);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [logs.length]);
-
-  if (logs.length === 0) return null;
-
-  const lastIdx = logs.length - 1;
-  const lastTimestamp = logs[lastIdx].timestamp;
-  const timeSinceLast = Math.floor((Date.now() - lastTimestamp) / 1000);
-  const lastRelative = timeSinceLast < 5 ? "just now" : timeSinceLast < 60 ? `${timeSinceLast}s ago` : `${Math.floor(timeSinceLast / 60)}m ago`;
-
-  return (
-    <div style={{ marginTop: "20px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
-        <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", letterSpacing: "2px", textTransform: "uppercase", color: "var(--text-muted)" }}>
-          Mission Log
-        </span>
-        {active && (
-          <>
-            <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--accent)", animation: "pulse 1.5s infinite" }} />
-            <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", color: "var(--accent)", letterSpacing: "1px" }}>
-              {elapsed}
-            </span>
-          </>
-        )}
-        <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "9px", color: "var(--text-muted)", marginLeft: "auto" }}>
-          last: {active ? lastRelative : new Date(lastTimestamp).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-        </span>
-      </div>
-      <div
-        ref={containerRef}
-        style={{
-          background: "var(--bg-inset)",
-          border: "1px solid var(--border)",
-          borderRadius: "6px",
-          padding: "12px 16px",
-          maxHeight: "300px",
-          overflowY: "auto",
-          fontFamily: '"JetBrains Mono", monospace',
-          fontSize: "12px",
-          lineHeight: 1.6,
-        }}
-      >
-        {logs.map((log, i) => {
-          const isLatest = i === lastIdx;
-          return (
-            <div key={i} style={{
-              display: "flex",
-              gap: "8px",
-              padding: isLatest ? "6px 8px" : "2px 0",
-              borderRadius: "3px",
-              background: isLatest ? "var(--bg-elevated)" : "transparent",
-              border: isLatest ? "1px solid var(--border)" : "1px solid transparent",
-              color: isLatest ? "var(--text-primary)" : "var(--text-secondary)",
-              wordBreak: "break-word",
-              transition: "background 0.2s, border-color 0.2s",
-            }}>
-              <span style={{ color: "var(--text-muted)", flexShrink: 0, fontSize: "10px", paddingTop: "3px" }}>
-                {new Date(log.timestamp).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-              </span>
-              <span>
-                <span style={{ color: "var(--accent)", fontSize: "9px", textTransform: "uppercase", letterSpacing: "1px", marginRight: "4px" }}>
-                  {log.phase}
-                </span>
-                {log.message}
-                {isLatest && active && (
-                  <span style={{ color: "var(--accent)", fontSize: "9px", marginLeft: "8px", letterSpacing: "1px" }}>● LATEST</span>
-                )}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 function PlanningSpinner() {
   const ref = useRef<HTMLDivElement>(null);
@@ -596,160 +467,4 @@ function PlanningPhase({ missionStatus, errors, onRetry }: { missionStatus: stri
       <PlanningSpinner />
     </div>
   );
-}
-
-function EventStream({ events, eventStreamCount = 8 }: { events: WsClientEvent[]; eventStreamCount?: number }) {
-  const listRef = useRef<HTMLDivElement>(null);
-  const recentEvents = events.slice(-eventStreamCount);
-
-  useEffect(() => {
-    const el = listRef.current;
-    if (!el) return;
-    const items = el.querySelectorAll<HTMLElement>(".evt-item");
-    const newItems = Array.from(items).slice(-3);
-    if (newItems.length > 0) {
-      animate(newItems, {
-        opacity: [0, 1],
-        translateX: [-8, 0],
-        delay: stagger(40),
-        duration: 300,
-        ease: "outExpo",
-      });
-    }
-  }, [events.length]);
-
-  if (recentEvents.length === 0) return null;
-
-  const eventTypeLabel: Record<string, string> = {
-    agent_status: "AGENT",
-    milestone_progress: "MILESTONE",
-    cost_update: "COST",
-    escalation: "ESCALATION",
-    mission_queued: "QUEUE",
-    mission_started: "START",
-    mission_completed: "DONE",
-    mission_error: "ERROR",
-    mission_log: "LOG",
-    mission_status: "STATUS",
-    milestones_set: "PLAN",
-    agent_output: "OUTPUT",
-    scan_started: "SCAN",
-    scan_completed: "SCAN",
-    scan_finding: "FINDING",
-    quota_update: "QUOTA",
-    quota_exhausted: "QUOTA",
-  };
-
-  const eventTypeColor: Record<string, string> = {
-    agent_status: "var(--accent)",
-    milestone_progress: "var(--info)",
-    cost_update: "var(--text-muted)",
-    escalation: "var(--warning)",
-    mission_queued: "var(--text-muted)",
-    mission_started: "var(--success)",
-    mission_completed: "var(--success)",
-    mission_error: "var(--error)",
-    mission_log: "var(--text-secondary)",
-    mission_status: "var(--text-muted)",
-    milestones_set: "var(--info)",
-    agent_output: "var(--info)",
-    scan_started: "var(--accent)",
-    scan_completed: "var(--success)",
-    scan_finding: "var(--error)",
-    quota_update: "var(--warning)",
-    quota_exhausted: "var(--error)",
-  };
-
-  return (
-    <div style={{ marginTop: "24px", borderTop: "1px solid var(--border)", paddingTop: "16px" }}>
-      <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", letterSpacing: "2px", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: "12px" }}>
-        Live Feed
-      </div>
-      <div ref={listRef} style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-        {recentEvents.map((evt, i) => (
-          <div
-            key={i}
-            className="evt-item"
-            style={{ display: "flex", alignItems: "center", gap: "8px", padding: "3px 0", fontSize: "12px" }}
-          >
-            <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "9px", letterSpacing: "1px", color: eventTypeColor[evt.type] || "var(--text-muted)", minWidth: "72px" }}>
-              {eventTypeLabel[evt.type] || evt.type.toUpperCase()}
-            </span>
-            <span style={{ color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              <EventSummary event={evt} />
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function EventSummary({ event }: { event: WsClientEvent }) {
-  switch (event.type) {
-    case "agent_status":
-      return <>{event.agentType} → {event.status.replace("_", " ")}</>;
-    case "milestone_progress":
-      return <>progress: {event.completedUnits}/{event.totalUnits} units</>;
-    case "cost_update":
-      return <>${event.totalCost.toFixed(2)} ({event.totalTokens.toLocaleString()} tokens)</>;
-    case "escalation":
-      return <>checkpoint: {event.trigger.kind.replace(/_/g, " ")}</>;
-    case "mission_started":
-      return <>mission started</>;
-    case "mission_completed":
-      return <>mission {event.finalState}</>;
-    case "mission_queued":
-      return <>queued #{event.queuePosition}</>;
-    case "mission_error":
-      return <>{event.code}: {event.message}</>;
-    case "mission_log":
-      return <>{event.phase}{event.message && ` — ${event.message}`}</>;
-    case "mission_status":
-      return <>{event.status}</>;
-    case "milestones_set":
-      return <>{event.milestones.length} milestone{event.milestones.length !== 1 ? "s" : ""} planned</>;
-    case "quota_update":
-      return <>{event.providerId}: {event.status} ({Math.ceil(event.remainingBurnMs / 1000)}s remaining)</>;
-    case "quota_exhausted":
-      return <>{event.providerId} exhausted — resets {event.windowResetsAt}</>;
-    case "agent_output": {
-      if (event.eventType === "tool_call") {
-        // Message format: "toolName snippet" (e.g. "read src/App.tsx")
-        const parts = event.message.split(" ");
-        const toolName = parts[0] || "";
-        const snippet = parts.slice(1).join(" ");
-        return (
-          <>
-            <span style={{ color: "var(--accent)", fontFamily: '"JetBrains Mono", monospace', fontSize: "10px" }}>{toolName}</span>
-            {snippet && <span style={{ color: "var(--text-muted)", marginLeft: "4px" }}>{snippet}</span>}
-          </>
-        );
-      }
-      // Non-tool events (spawned, prompt_sent, timed_out, completed, failed, aborted, cost_update)
-      // Message is the full description — display directly with event type as label
-      const labelByEventType: Record<string, string> = {
-        spawned: "spawned",
-        prompt_sent: "prompt",
-        timed_out: "timed out",
-        completed: "done",
-        failed: "failed",
-        aborted: "aborted",
-        cost_update: "cost",
-      };
-      const label = labelByEventType[event.eventType];
-      return (
-        <>
-          {label && <span style={{ color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", marginRight: "6px" }}>{label}</span>}
-          <span style={{ color: "var(--text-secondary)" }}>{event.message}</span>
-        </>
-      );
-    }
-    case "scan_started":
-      return <>supply chain scan started ({event.profile})</>;
-    case "scan_completed":
-      return <>scan complete: {event.summary.totalFindings} findings, {event.summary.totalPackages} packages</>;
-    case "scan_finding":
-      return <>{event.finding.severity}: {event.finding.packageName}@{event.finding.version}</>;
-  }
 }

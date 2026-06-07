@@ -17,6 +17,9 @@ interface CodeContextPanelProps {
   missionId: string;
   logs: LogEntry[];
   milestones: { status?: string }[];
+  variant?: "inline" | "inspector";
+  autoCollapse?: boolean;
+  showCollapsedSummary?: boolean;
 }
 
 const COLLAPSED_BG: CSSProperties = {
@@ -28,7 +31,14 @@ const COLLAPSED_BG: CSSProperties = {
   padding: "8px 0",
 };
 
-export function CodeContextPanel({ missionId, logs, milestones }: CodeContextPanelProps) {
+export function CodeContextPanel({
+  missionId,
+  logs,
+  milestones,
+  variant = "inline",
+  autoCollapse = true,
+  showCollapsedSummary = true,
+}: CodeContextPanelProps) {
   const [summary, setSummary] = useState<CodeSummaryResponse | null>(null);
   const [graph, setGraph] = useState<CodeGraphResponse | null>(null);
   const [hotspots, setHotspots] = useState<CodeHotspotsResponse | null>(null);
@@ -59,16 +69,25 @@ export function CodeContextPanel({ missionId, logs, milestones }: CodeContextPan
   }, [indexingDone]);
 
   useEffect(() => {
-    if (milestones.length > 0 && indexingDone && !collapsed) {
+    if (autoCollapse && milestones.length > 0 && indexingDone && !collapsed) {
       setCollapsed(true);
     }
-  }, [milestones.length, indexingDone]);
+  }, [autoCollapse, milestones.length, indexingDone, collapsed]);
 
   const toggleCollapse = () => setCollapsed((c) => !c);
 
-  if (!indexingDone) return null;
+  if (!indexingDone) {
+    if (variant === "inspector") {
+      return (
+        <div style={{ border: "1px dashed var(--border)", borderRadius: "6px", padding: "16px", textAlign: "center", color: "var(--text-muted)", fontFamily: '\"JetBrains Mono\", monospace', fontSize: "11px", lineHeight: 1.5 }}>
+          Code context pending indexing…
+        </div>
+      );
+    }
+    return null;
+  }
 
-  if (collapsed) {
+  if (collapsed && showCollapsedSummary) {
     return (
       <div style={COLLAPSED_BG} onClick={toggleCollapse}>
         ▸ Code Context ({indexCounts.files} files, {indexCounts.symbols} symbols)
@@ -76,8 +95,14 @@ export function CodeContextPanel({ missionId, logs, milestones }: CodeContextPan
     );
   }
 
+  if (collapsed && !showCollapsedSummary) return null;
+
+  const rootStyle: CSSProperties = variant === "inspector"
+    ? { opacity: 0 }
+    : { borderBottom: "1px solid var(--border)", marginBottom: "16px", opacity: 0 };
+
   return (
-    <div ref={panelRef} style={{ borderBottom: "1px solid var(--border)", marginBottom: "16px", opacity: 0 }}>
+    <div ref={panelRef} style={rootStyle}>
       <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
         <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", letterSpacing: "2px", textTransform: "uppercase", color: "var(--text-muted)" }}>
           Code Context

@@ -6,6 +6,8 @@ interface SupplyChainPanelProps {
   scans: BumblebeeScanResult[];
   isScanning: boolean;
   onTriggerScan?: (profile?: "baseline" | "project" | "deep") => void;
+  variant?: "inline" | "inspector";
+  hideWhenEmpty?: boolean;
 }
 
 const severityConfig: Record<string, { color: string; bg: string; label: string }> = {
@@ -15,7 +17,7 @@ const severityConfig: Record<string, { color: string; bg: string; label: string 
   low: { color: "var(--text-muted)", bg: "var(--bg-inset)", label: "LOW" },
 };
 
-export function SupplyChainPanel({ findings, scans, isScanning, onTriggerScan }: SupplyChainPanelProps) {
+export function SupplyChainPanel({ findings, scans, isScanning, onTriggerScan, variant = "inline", hideWhenEmpty = false }: SupplyChainPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
   const toggle = useCallback(() => setCollapsed((v) => !v), []);
 
@@ -34,6 +36,8 @@ export function SupplyChainPanel({ findings, scans, isScanning, onTriggerScan }:
     };
   }, [isScanning]);
 
+  if (hideWhenEmpty && !isScanning && !hasFindings && !latestScan?.summary) return null;
+
   const headerColor = hasFindings
     ? criticalCount > 0 ? "var(--error)" : "var(--warning)"
     : "var(--text-muted)";
@@ -44,7 +48,7 @@ export function SupplyChainPanel({ findings, scans, isScanning, onTriggerScan }:
   });
 
   return (
-    <div style={{ marginTop: "20px" }}>
+    <div style={{ marginTop: variant === "inspector" ? 0 : "20px" }}>
       <div
         onClick={toggle}
         style={{
