@@ -3,26 +3,38 @@ import { useNewMissionForm } from "./useNewMissionForm";
 import { RepoPicker } from "./RepoPicker";
 import { RepoPrepareModal } from "./RepoPrepareModal";
 import type { UseGitHubReturn } from "../hooks/useGitHub";
-import { prepareGitHubRepo } from "../api";
-import type { GitHubRepoResponse } from "../api";
+import { prepareGitHubRepo, exploreRepo } from "../api";
+import type { GitHubRepoResponse, CodeSummaryResponse } from "../api";
+
+interface PreparedRepoInfo {
+  repoName: string;
+  fullName: string;
+  summary: CodeSummaryResponse | null;
+}
 
 interface NewMissionFormProps {
   onSubmit: (description: string, cloneUrl?: string) => Promise<void>;
   github?: UseGitHubReturn;
+  preparedRepo?: PreparedRepoInfo | null;
+  onRepoPrepared?: (info: PreparedRepoInfo) => void;
+  suggestedDescription?: string;
 }
 
-export function NewMissionForm({ onSubmit, github }: NewMissionFormProps) {
-  const { state, open, close, setDescription, setRepo, handleSubmit, handleKeyDown, canSubmit } = useNewMissionForm(onSubmit);
+export function NewMissionForm({ onSubmit, github, preparedRepo, onRepoPrepared, suggestedDescription }: NewMissionFormProps) {
+  const { state, open, close, setDescription, setRepo, handleSubmit, handleKeyDown, canSubmit } = useNewMissionForm(onSubmit, suggestedDescription);
   const [pendingRepo, setPendingRepo] = useState<GitHubRepoResponse | null>(null);
-  const [preparingRepo, setPreparingRepo] = useState(false);
+  const [preparePhase, setPreparePhase] = useState<"confirm" | "cloning" | "indexing" | "complete" | "error">("confirm");
+  const [exploreSummary, setExploreSummary] = useState<CodeSummaryResponse | null>(null);
   const [prepareError, setPrepareError] = useState<string | null>(null);
+  const [preparedRepoName, setPreparedRepoName] = useState<string>("");
 
   const handleRepoSelect = (repo: GitHubRepoResponse) => {
     setPrepareError(null);
+    setExploreSummary(null);
+    setPreparePhase("confirm");
     setPendingRepo(repo);
   };
 
-  // Listen for keyboard shortcut to focus/open the form
   useEffect(() => {
     const handler = () => open();
     window.addEventListener("aurex:focus-new-mission", handler);
@@ -31,17 +43,46 @@ export function NewMissionForm({ onSubmit, github }: NewMissionFormProps) {
 
   async function handleConfirmRepo() {
     if (!pendingRepo) return;
-    setPreparingRepo(true);
     setPrepareError(null);
+
+    // Phase 1: Clone
+    setPreparePhase("cloning");
+    let prepared;
     try {
-      const prepared = await prepareGitHubRepo(pendingRepo.clone_url);
-      setRepo(pendingRepo.clone_url, pendingRepo.id, prepared.fullName);
-      setPendingRepo(null);
+      prepared = await prepareGitHubRepo(pendingRepo.clone_url);
     } catch {
-      setPrepareError("Could not prepare repository. Check GitHub permissions and try again.");
-    } finally {
-      setPreparingRepo(false);
+      setPrepareError("Could not clone repository. Check GitHub permissions and try again.");
+      setPreparePhase("error");
+      return;
     }
+
+    // Store repoName from prepare response for later use
+    setPreparedRepoName(prepared.repoName);
+
+    // Phase 2: Explore (index)
+    setPreparePhase("indexing");
+    try {
+      const explored = await exploreRepo(prepared.repoName);
+      if (explored.status === "completed" && explored.summary) {
+        setExploreSummary(explored.summary);
+      }
+      setPreparePhase("complete");
+    } catch {
+      // Indexing failed — still usable, just no code map
+      setPreparePhase("complete");
+    }
+  }
+
+  function handleUseRepo() {
+    if (!pendingRepo) return;
+    setRepo(pendingRepo.clone_url, pendingRepo.id, pendingRepo.full_name);
+    // Notify parent to fetch hotspots + suggestions and show overview
+    onRepoPrepared?.({
+      repoName: preparedRepoName,
+      fullName: pendingRepo.full_name,
+      summary: exploreSummary,
+    });
+    setPendingRepo(null);
   }
 
   if (!state.open) {
@@ -75,11 +116,32 @@ export function NewMissionForm({ onSubmit, github }: NewMissionFormProps) {
       {github?.connected && github.repos.length > 0 && (
         <RepoPicker repos={github.repos} selectedRepoId={state.selectedRepoId} onSelect={handleRepoSelect} />
       )}
-      {state.selectedRepoFullName && (
+      {/* Compact repo card (Surface C) */}
+      {(state.selectedRepoFullName && preparedRepo) ? (
+        <div style={{
+          background: "var(--bg-inset)",
+          border: "1px solid var(--border)",
+          borderRadius: "4px",
+          padding: "8px 10px",
+        }}>
+          <div style={{ color: "var(--success)", fontFamily: '"JetBrains Mono", monospace', fontSize: "11px", display: "flex", alignItems: "center", gap: "4px" }}>
+            ✓ {state.selectedRepoFullName}
+          </div>
+          {preparedRepo.summary ? (
+            <div style={{ color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", marginTop: "2px" }}>
+              {preparedRepo.summary.files} files · {preparedRepo.summary.symbols} symbols · {preparedRepo.summary.modules.length} modules
+            </div>
+          ) : (
+            <div style={{ color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", marginTop: "2px" }}>
+              Status: READY
+            </div>
+          )}
+        </div>
+      ) : state.selectedRepoFullName ? (
         <div style={{ color: "var(--accent)", fontSize: "10px", fontFamily: '"JetBrains Mono", monospace' }}>
           REPO READY · {state.selectedRepoFullName}
         </div>
-      )}
+      ) : null}
       {github?.error && (
         <p style={{ fontSize: "12px", color: "var(--error)", margin: 0 }}>{github.error}</p>
       )}
@@ -140,15 +202,23 @@ export function NewMissionForm({ onSubmit, github }: NewMissionFormProps) {
       {pendingRepo && (
         <RepoPrepareModal
           repo={pendingRepo}
-          preparing={preparingRepo}
+          phase={preparePhase}
+          summary={exploreSummary}
           error={prepareError}
           onCancel={() => {
-            if (!preparingRepo) {
+            if (preparePhase !== "cloning" && preparePhase !== "indexing") {
               setPendingRepo(null);
               setPrepareError(null);
+              setPreparePhase("confirm");
             }
           }}
-          onConfirm={() => void handleConfirmRepo()}
+          onConfirm={() => {
+            if (preparePhase === "confirm") {
+              void handleConfirmRepo();
+            } else if (preparePhase === "complete") {
+              handleUseRepo();
+            }
+          }}
         />
       )}
     </div>
