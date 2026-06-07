@@ -14,6 +14,7 @@ import { registerPinyxRoutes } from "./routes/pinyx.js";
 import { registerCodeContextRoutes } from "./routes/code-context.js";
 import { registerRepoExploreRoutes } from "./routes/repo-explore.js";
 import { createBumblebeeClient } from "./clients/bumblebee-client.js";
+import type { ExposureCatalog } from "@aurex/shared";
 import { createBumblebeeRunner } from "./orchestrator/bumblebee-runner.js";
 import { bumblebeeRoutes } from "./routes/bumblebee.js";
 import { quotaRoutes } from "./routes/quota.js";
@@ -33,8 +34,11 @@ async function main() {
     process.exit(1);
   }
 
-  // Bumblebee supply-chain scanner
-  const bumblebeeClient = createBumblebeeClient();
+  // Bumblebee supply-chain scanner (falls back to native JS scanner if binary missing)
+  const bumblebeeClient = createBumblebeeClient(async () => {
+    const stored = await lapis.getSetting<ExposureCatalog>("bumblebee_catalog");
+    return stored ?? null;
+  });
   const bumblebeeRunner = createBumblebeeRunner({
     lapis,
     bumblebee: bumblebeeClient,

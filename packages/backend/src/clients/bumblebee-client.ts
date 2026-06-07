@@ -1,6 +1,7 @@
 import { spawn } from "child_process";
 import { randomUUID } from "crypto";
-import type { BumblebeePackage, BumblebeeFinding } from "@aurex/shared";
+import type { BumblebeePackage, BumblebeeFinding, ExposureCatalog } from "@aurex/shared";
+import { nativeScan } from "./native-scanner.js";
 
 export interface BumblebeeScanOptions {
   root: string;
@@ -78,9 +79,14 @@ function processRecord(
   }
 }
 
-export function createBumblebeeClient(): BumblebeeClient {
+export function createBumblebeeClient(catalogLoader?: () => Promise<ExposureCatalog | null>): BumblebeeClient {
+  let _nativeFallback = false;
+
   return {
     async isAvailable() {
+      if (_nativeFallback) {
+        return { available: true, version: "native-fallback", path: "builtin" };
+      }
       const bin = findBinary();
       return new Promise((resolve) => {
         const proc = spawn(bin, ["version"], { stdio: ["ignore", "pipe", "pipe"] });
@@ -93,16 +99,32 @@ export function createBumblebeeClient(): BumblebeeClient {
             const versionMatch = stdout.match(/v?\d+\.\d+\.\d+/);
             resolve({ available: true, version: versionMatch?.[0] ?? "unknown", path: bin });
           } else {
-            resolve({ available: false });
+            // Binary exists but returned non-zero — still mark native fallback
+            _nativeFallback = true;
+            resolve({ available: true, version: "native-fallback", path: "builtin" });
           }
         });
-        proc.on("error", () => {
-          resolve({ available: false });
+        proc.on("error", (err: NodeJS.ErrnoException) => {
+          // Binary not found (ENOENT) — switch to native JS scanner
+          if (err.code === "ENOENT") {
+            _nativeFallback = true;
+            resolve({ available: true, version: "native-fallback", path: "builtin" });
+          } else {
+            resolve({ available: false });
+          }
         });
       });
     },
 
     async scan(options, onProgress, signal) {
+      // If we already know the binary is missing, go straight to native
+      if (_nativeFallback) {
+        const catalog = catalogLoader ? await catalogLoader().catch(() => null) : null;
+        const result = await nativeScan(options.root, options.scanId || randomUUID(), catalog, options.ecosystems);
+        onProgress?.(result);
+        return result;
+      }
+
       const bin = findBinary();
       const args = ["scan", "--profile", options.profile, "--root", options.root];
 
@@ -166,9 +188,22 @@ export function createBumblebeeClient(): BumblebeeClient {
           }
         });
 
-        proc.on("error", (err) => {
+        proc.on("error", async (err: NodeJS.ErrnoException) => {
           signal?.removeEventListener("abort", abortHandler);
-          reject(new Error(`Failed to run bumblebee: ${err.message}`));
+          // ENOENT = binary not found — fall back to native JS scanner
+          if (err.code === "ENOENT") {
+            _nativeFallback = true;
+            try {
+              const catalog = catalogLoader ? await catalogLoader().catch(() => null) : null;
+              const result = await nativeScan(options.root, options.scanId || randomUUID(), catalog, options.ecosystems);
+              onProgress?.(result);
+              resolve(result);
+            } catch (nativeErr) {
+              reject(new Error(`Native fallback also failed: ${nativeErr instanceof Error ? nativeErr.message : String(nativeErr)}`));
+            }
+          } else {
+            reject(new Error(`Failed to run bumblebee: ${err.message}`));
+          }
         });
       });
     },
