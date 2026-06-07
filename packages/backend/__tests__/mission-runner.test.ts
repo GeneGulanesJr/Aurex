@@ -126,6 +126,8 @@ function createMockLapis(): LaPisClient {
     createMissionLedger: vi.fn().mockResolvedValue({ missionId: "m-1", todos: [] }),
     createTodo: vi.fn().mockResolvedValue({ id: "td-1" }),
     indexRepo: vi.fn().mockResolvedValue({ files: 10, symbols: 100 }),
+    getCodeSummary: vi.fn().mockResolvedValue({ files: 10, symbols: 100, edges: 20, modules: [], entryPoints: [], cycles: { count: 0, paths: [] } }),
+    getFindings: vi.fn().mockResolvedValue([]),
     writeHandoff: vi.fn().mockResolvedValue({ accepted: true, errors: [] }),
     createCheckpoint: vi.fn().mockResolvedValue({ id: "cp-1", status: "pending" }),
     getCheckpoint: vi.fn().mockResolvedValue({ id: "cp-1", status: "resolved", decision: "approve" }),

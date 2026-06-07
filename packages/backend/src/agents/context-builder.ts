@@ -1,5 +1,5 @@
 // packages/backend/src/agents/context-builder.ts
-import type { HandoffRecord } from "@aurex/shared";
+import type { HandoffRecord, ResearchFinding } from "@aurex/shared";
 
 export interface WorkerContextInput {
   missionDescription: string;
@@ -10,6 +10,7 @@ export interface WorkerContextInput {
   unitDeclaredModules: string[];
   contractCriteria: string[];
   testCommands: string[];
+  researchFindings?: ResearchFinding[];
 }
 
 export interface ValidatorUnitContext {
@@ -33,6 +34,7 @@ export interface ValidatorContextInput {
   acceptanceBehavior: string;
   baseBranch: string;
   units: ValidatorUnitContext[];
+  researchFindings?: ResearchFinding[];
 }
 
 export interface ResearchContextInput {
@@ -123,6 +125,10 @@ export function buildWorkerContext(input: WorkerContextInput): string {
     `## HANDOFF\n\nWhen complete, use the \`write_handoff\` tool to submit your work. Include all required fields: featureName, description, implemented, remaining, rationale, assumptions, unresolvedUncertainties, errorsEncountered, commandsRun, gitCommitHash.`,
   );
 
+  if (input.researchFindings && input.researchFindings.length > 0) {
+    sections.push(buildResearchFindingsSection(input.researchFindings));
+  }
+
   return sections.join("\n\n");
 }
 
@@ -199,6 +205,10 @@ export function buildValidatorContext(input: ValidatorContextInput): string {
     ].join("\n"),
   );
 
+  if (input.researchFindings && input.researchFindings.length > 0) {
+    sections.push(buildResearchFindingsSection(input.researchFindings));
+  }
+
   return sections.join("\n\n");
 }
 
@@ -265,6 +275,14 @@ function buildScrutinyReviewInstructions(): string {
     "List specific tests that would increase confidence.",
     "```",
   ].join("\n");
+}
+
+function buildResearchFindingsSection(findings: ResearchFinding[]): string {
+  const items = findings
+    .filter((f) => f.status !== "rejected" && f.status !== "expired")
+    .map((f) => `### ${f.title} [${f.relevance}]\nDomain: ${f.domain.join(", ")}\n${f.content}`)
+    .join("\n\n");
+  return `## Research Findings\n\nThe following findings were gathered by the research agent. Use them to inform your work.\n\n${items}`;
 }
 
 function formatHandoff(handoff: HandoffRecord): string {

@@ -9,7 +9,7 @@ import type { AgentLogger } from "../agents/agent-logger.js";
 import type { AppConfig } from "../config.js";
 import { createCheckpointManager } from "./checkpoint-manager.js";
 import { createMilestoneLoop } from "./milestone-loop.js";
-import { createPlanner } from "./planner.js";
+import { createPlanner, type CodeSummary } from "./planner.js";
 import { createCompressionService } from "./compression.js";
 import { prepareRepoForMission } from "./repo-prep.js";
 import { rescopeMilestone } from "./rescope.js";
@@ -111,15 +111,15 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
       } catch { /* discovery failed, use configured model */ }
 
       eventBus.emit({ type: "mission_log", missionId, phase: "planning", message: `Calling ${model} to plan milestones…` });
-      const planner = createPlanner(lapis, pinyx, { model, eventBus, missionId });
 
+      let codeSummary: CodeSummary | undefined;
       try {
         const repoName = path.basename(missionRepoRoot);
-        // Check if already indexed by the explore endpoint
         const existingSummary = await lapis.getCodeSummary(repoName).catch(() => null);
         if (existingSummary && existingSummary.files > 0) {
           eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Repo ${repoName} already indexed (${existingSummary.files} files), skipping…` });
           await lapis.setSetting(`mission:${missionId}:repoName`, repoName);
+          codeSummary = existingSummary;
         } else {
           eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexing repo ${repoName} for code context…` });
           const indexResult = await lapis.indexRepo(missionRepoRoot, repoName);
@@ -128,12 +128,15 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
           } else {
             eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexed ${indexResult.files ?? 0} files, ${indexResult.symbols ?? 0} symbols`, data: { indexingDone: true, files: indexResult.files ?? 0, symbols: indexResult.symbols ?? 0, edges: (indexResult as any).import_edges ?? 0 } });
             await lapis.setSetting(`mission:${missionId}:repoName`, repoName);
+            codeSummary = await lapis.getCodeSummary(repoName).catch(() => undefined);
           }
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexing skipped: ${msg}` });
       }
+
+      const planner = createPlanner(lapis, pinyx, { model, eventBus, missionId, codeSummary });
 
       const planResult = await planner.plan(mission.description, missionId).catch(async (err) => {
         const msg = err instanceof Error ? err.message : String(err);
@@ -249,6 +252,10 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
           const rescopeTarget = currentMilestones.find((ms) => ms.id === cpResult.milestoneId);
           if (rescopeTarget) {
             eventBus.emit({ type: "mission_log", missionId, phase: "rescope", message: `Re-planning milestone "${rescopeTarget.title}" after user rescope` });
+            const [rescopeVerdicts, rescopeFindings] = await Promise.all([
+              lapis.getVerdicts(rescopeTarget.id).catch(() => []),
+              lapis.getFindings(missionId).catch(() => []),
+            ]);
             const result = await rescopeMilestone({
               pinyx,
               lapis,
@@ -256,6 +263,8 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
               milestone: { id: rescopeTarget.id, title: rescopeTarget.title, description: rescopeTarget.description },
               model: mission.configJson.modelHints.orchestrator,
               reason: resolved.rescopeGuidance,
+              verdicts: rescopeVerdicts,
+              researchFindings: rescopeFindings,
             });
             if (!result.ok) {
               const msg = result.error === "pinyx_threw" ? result.message : `Rescope re-planning failed: ${result.content}`;

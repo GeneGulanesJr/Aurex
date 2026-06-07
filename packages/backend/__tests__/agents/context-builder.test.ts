@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildValidatorContext, buildWorkerContext, buildResearchContext } from "../../src/agents/context-builder";
+import type { ResearchFinding } from "@aurex/shared";
 
 describe("buildWorkerContext", () => {
   it("includes mission description", () => {
@@ -194,5 +195,83 @@ describe("buildValidatorContext", () => {
     expect(ctx).toContain("Rationale: JWT keeps the API stateless");
     expect(ctx).toContain("Commands run: npm test (exit 0)");
     expect(ctx).toContain("Git commit: abc123");
+  });
+
+  it("includes research findings in worker context when provided", () => {
+    const findings: ResearchFinding[] = [
+      { id: "f-1", missionId: "m-1", authorId: "r-1", domain: ["auth"], title: "JWT pattern", content: "Uses RS256 signing", relevance: "high", status: "unverified", verifiedTaskId: null, ttl: null, expiresAt: null, createdAt: "" },
+    ];
+    const ctx = buildWorkerContext({
+      missionDescription: "Build auth",
+      milestoneTitle: "Auth",
+      milestoneDescription: "Auth module",
+      unitDescription: "Login",
+      unitDeclaredPaths: [],
+      unitDeclaredModules: [],
+      contractCriteria: [],
+      testCommands: [],
+      researchFindings: findings,
+    });
+    expect(ctx).toContain("Research Findings");
+    expect(ctx).toContain("JWT pattern");
+    expect(ctx).toContain("Uses RS256 signing");
+  });
+
+  it("excludes rejected and expired research findings", () => {
+    const findings: ResearchFinding[] = [
+      { id: "f-1", missionId: "m-1", authorId: "r-1", domain: ["auth"], title: "Active finding", content: "Useful info", relevance: "high", status: "unverified", verifiedTaskId: null, ttl: null, expiresAt: null, createdAt: "" },
+      { id: "f-2", missionId: "m-1", authorId: "r-1", domain: ["auth"], title: "Rejected finding", content: "Bad info", relevance: "low", status: "rejected", verifiedTaskId: null, ttl: null, expiresAt: null, createdAt: "" },
+      { id: "f-3", missionId: "m-1", authorId: "r-1", domain: ["auth"], title: "Expired finding", content: "Old info", relevance: "low", status: "expired", verifiedTaskId: null, ttl: null, expiresAt: null, createdAt: "" },
+    ];
+    const ctx = buildWorkerContext({
+      missionDescription: "Build auth",
+      milestoneTitle: "Auth",
+      milestoneDescription: "Auth module",
+      unitDescription: "Login",
+      unitDeclaredPaths: [],
+      unitDeclaredModules: [],
+      contractCriteria: [],
+      testCommands: [],
+      researchFindings: findings,
+    });
+    expect(ctx).toContain("Active finding");
+    expect(ctx).not.toContain("Rejected finding");
+    expect(ctx).not.toContain("Expired finding");
+  });
+
+  it("includes research findings in validator context when provided", () => {
+    const findings: ResearchFinding[] = [
+      { id: "f-1", missionId: "m-1", authorId: "r-1", domain: ["api"], title: "API contract", content: "Response format is JSON", relevance: "medium", status: "unverified", verifiedTaskId: null, ttl: null, expiresAt: null, createdAt: "" },
+    ];
+    const ctx = buildValidatorContext({
+      validatorType: "validator_scrutiny",
+      missionDescription: "Build API",
+      milestoneTitle: "API",
+      milestoneDescription: "API module",
+      contractId: "c-1",
+      contractCriteria: [],
+      testCommands: [],
+      acceptanceBehavior: "",
+      baseBranch: "main",
+      units: [],
+      researchFindings: findings,
+    });
+    expect(ctx).toContain("Research Findings");
+    expect(ctx).toContain("API contract");
+    expect(ctx).toContain("Response format is JSON");
+  });
+
+  it("omits research findings section when no findings are provided", () => {
+    const ctx = buildWorkerContext({
+      missionDescription: "Build auth",
+      milestoneTitle: "Auth",
+      milestoneDescription: "Auth module",
+      unitDescription: "Login",
+      unitDeclaredPaths: [],
+      unitDeclaredModules: [],
+      contractCriteria: [],
+      testCommands: [],
+    });
+    expect(ctx).not.toContain("Research Findings");
   });
 });

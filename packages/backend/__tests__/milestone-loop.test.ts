@@ -77,6 +77,7 @@ describe("milestone loop", () => {
       ]),
       getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
       registerAgentSession: vi.fn(),
+      getFindings: vi.fn().mockResolvedValue([]),
       runCompression: vi.fn().mockResolvedValue(undefined),
     } as unknown as LaPisClient;
 
@@ -123,6 +124,7 @@ describe("milestone loop", () => {
       ]),
       getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
       registerAgentSession: vi.fn(),
+      getFindings: vi.fn().mockResolvedValue([]),
       runCompression: vi.fn().mockResolvedValue(undefined),
     } as unknown as LaPisClient;
 
@@ -176,6 +178,7 @@ describe("milestone loop", () => {
       ]),
       getHandoffsForMilestone: vi.fn().mockResolvedValue([invalidHandoff]),
       registerAgentSession: vi.fn(),
+      getFindings: vi.fn().mockResolvedValue([]),
       runCompression: vi.fn().mockResolvedValue(undefined),
       updateWorkingUnitStatus: vi.fn(),
     } as unknown as LaPisClient;

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createPlanner } from "../src/orchestrator/planner";
+import { createPlanner, type CodeSummary } from "../src/orchestrator/planner";
 import type { LaPisClient } from "../src/clients/lapis-client";
 
 function createMockPinyx(responseContent: string) {
@@ -158,5 +158,78 @@ describe("planner", () => {
       code: "planner_parse_error",
       recoverable: true,
     }));
+  });
+
+  it("includes codebase structure in the planning prompt when codeSummary is provided", async () => {
+    const mockLapis = {
+      searchMemory: vi.fn().mockResolvedValue([]),
+      createMilestone: vi.fn().mockResolvedValue({ id: "ms-1", title: "Auth" }),
+      createWorkingUnit: vi.fn().mockResolvedValue({ id: "u-1", description: "Login" }),
+      createContract: vi.fn().mockResolvedValue({ id: "c-1" }),
+      getContractHistory: vi.fn().mockResolvedValue([]),
+      createMissionLedger: vi.fn().mockResolvedValue({ missionId: "m-1", todos: [] }),
+      createTodo: vi.fn().mockResolvedValue({ id: "td-1" }),
+    } as unknown as LaPisClient;
+
+    const codeSummary: CodeSummary = {
+      files: 120,
+      symbols: 450,
+      edges: 230,
+      modules: [
+        { name: "auth", fileCount: 15 },
+        { name: "api", fileCount: 22 },
+      ],
+      entryPoints: ["src/index.ts", "src/server.ts"],
+      cycles: { count: 1, paths: [["src/auth/jwt.ts", "src/auth/middleware.ts", "src/auth/jwt.ts"]] },
+    };
+
+    const mockPinyx = createMockPinyx(JSON.stringify({
+      milestones: [{
+        title: "Auth module",
+        description: "Implement JWT auth",
+        units: [{ description: "Login endpoint", declaredPaths: ["src/auth/**"], declaredModules: ["auth"] }],
+        criteria: ["Tests pass"],
+        testCommands: ["npm test"],
+      }],
+    }));
+
+    const planner = createPlanner(mockLapis, mockPinyx as never, { codeSummary });
+    await planner.plan("Build auth", "m-1");
+
+    const callArgs = (mockPinyx.chatStream as any).mock.calls[0][0];
+    const userMessage = callArgs.messages.find((m: any) => m.role === "user").content;
+    expect(userMessage).toContain("Codebase Structure");
+    expect(userMessage).toContain("auth (15 files)");
+    expect(userMessage).toContain("api (22 files)");
+    expect(userMessage).toContain("src/index.ts");
+  });
+
+  it("works without codeSummary (backwards compatible)", async () => {
+    const mockLapis = {
+      searchMemory: vi.fn().mockResolvedValue([]),
+      createMilestone: vi.fn().mockResolvedValue({ id: "ms-1", title: "Auth" }),
+      createWorkingUnit: vi.fn().mockResolvedValue({ id: "u-1", description: "Login" }),
+      createContract: vi.fn().mockResolvedValue({ id: "c-1" }),
+      getContractHistory: vi.fn().mockResolvedValue([]),
+      createMissionLedger: vi.fn().mockResolvedValue({ missionId: "m-1", todos: [] }),
+      createTodo: vi.fn().mockResolvedValue({ id: "td-1" }),
+    } as unknown as LaPisClient;
+
+    const mockPinyx = createMockPinyx(JSON.stringify({
+      milestones: [{
+        title: "Auth",
+        description: "Auth",
+        units: [],
+        criteria: [],
+        testCommands: [],
+      }],
+    }));
+
+    const planner = createPlanner(mockLapis, mockPinyx as never);
+    await planner.plan("Build auth", "m-1");
+
+    const callArgs = (mockPinyx.chatStream as any).mock.calls[0][0];
+    const userMessage = callArgs.messages.find((m: any) => m.role === "user").content;
+    expect(userMessage).not.toContain("Codebase Structure");
   });
 });
