@@ -13,6 +13,7 @@ import { registerGitHubRoutes } from "./routes/github.js";
 import { registerPinyxRoutes } from "./routes/pinyx.js";
 import { registerCodeContextRoutes } from "./routes/code-context.js";
 import { registerRepoExploreRoutes } from "./routes/repo-explore.js";
+import { registerMutationRoutes } from "./routes/mutation-routes.js";
 import { createBumblebeeClient } from "./clients/bumblebee-client.js";
 import type { ExposureCatalog } from "@aurex/shared";
 import { createBumblebeeRunner } from "./orchestrator/bumblebee-runner.js";
@@ -143,6 +144,9 @@ async function main() {
 
   // Repo explore (auto-explore + suggestions)
   registerRepoExploreRoutes(app, { lapis, bumblebeeClient });
+
+  // Mutation testing routes (Stryker on scanned repos)
+  registerMutationRoutes(app, { lapis, eventBus });
 
   // Bumblebee routes
   await app.register(bumblebeeRoutes, { lapis, bumblebeeClient, bumblebeeRunner });

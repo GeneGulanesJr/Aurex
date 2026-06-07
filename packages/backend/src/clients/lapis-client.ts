@@ -117,6 +117,14 @@ export interface LaPisClient {
   setSetting(key: string, value: unknown): Promise<void>;
   deleteSetting(key: string): Promise<void>;
 
+  /**
+   * Look up the local filesystem path for a previously-prepared repo.
+   * Returns null if the repo has not been prepared.
+   * Setting key convention: "repo:<repoName>:path" (matches the writer at
+   * github.ts:253: `lapis.setSetting(\`repo:${repoName}:path\`, prepared.repoPath)`).
+   */
+  getRepoPath(repoName: string): Promise<string | null>;
+
   // Code indexing
   indexRepo(repoPath: string, repoName?: string): Promise<Record<string, unknown>>;
 
@@ -414,6 +422,9 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
     },
     deleteSetting(key) {
       return del(`/settings/${encodeURIComponent(key)}`);
+    },
+    async getRepoPath(repoName: string): Promise<string | null> {
+      return this.getSetting<string>(`repo:${repoName}:path`);
     },
 
     // Code indexing

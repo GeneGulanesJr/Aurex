@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0",
+  "thresholds": { "high": 80, "low": 60, "break": 50 },
+  "files": {
+    "src/payments/charge.ts": {
+      "language": "ts",
+      "mutants": [
+        { "id": "0", "mutatorName": "ArithmeticOperator", "status": "Survived", "replacement": "-", "location": { "start": { "line": 5, "column": 20 } } },
+        { "id": "1", "mutatorName": "BlockStatement", "status": "Survived", "replacement": "{}", "location": { "start": { "line": 8, "column": 4 } } },
+        { "id": "2", "mutatorName": "EqualityOperator", "status": "Killed", "replacement": "!=", "location": { "start": { "line": 14, "column": 12 } } }
+      ]
+    }
+  }
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getCurrentMission, createMission, getGitHubConnectUrl, saveGitHubConfig, getGitHubConfig, getPinyxConfig, savePinyxConfig, getPinyxModels, getPinyxStatus, exploreRepo, getRepoSummary, getRepoHotspots, getRepoSuggestions } from "./api";
+import { getCurrentMission, createMission, getGitHubConnectUrl, saveGitHubConfig, getGitHubConfig, getPinyxConfig, savePinyxConfig, getPinyxModels, getPinyxStatus, exploreRepo, getRepoSummary, getRepoHotspots, getRepoSuggestions, getMutationSummary, runMutationTests, getMutationRunStatus } from "./api";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
@@ -161,5 +161,45 @@ describe("repo explore API", () => {
 
     const result = await getRepoSuggestions("my-repo");
     expect(result.suggestions).toHaveLength(1);
+  });
+
+  // --- Mutation testing ---
+
+  it("getMutationSummary fetches the mutation summary", async () => {
+    const summary = {
+      strykerConfigured: true,
+      configPath: "stryker.config.mjs",
+      reportPath: "reports/stryker-report.json",
+      score: 87.5,
+      generatedAt: "2026-06-01T12:00:00Z",
+      counts: { killed: 87, survived: 10, timeout: 2, noCoverage: 1, ignored: 0, total: 100 },
+    };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => summary });
+
+    const result = await getMutationSummary("my-repo");
+    expect(result).toEqual(summary);
+    expect(mockFetch).toHaveBeenCalledWith("/api/repos/my-repo/mutation", expect.objectContaining({ headers: expect.any(Object) }));
+  });
+
+  it("runMutationTests POSTs and returns the runId", async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 202, json: async () => ({ runId: "abc-123", status: "starting", startedAt: "2026-06-01T12:00:00Z" }) });
+
+    const result = await runMutationTests("my-repo");
+    expect(result.runId).toBe("abc-123");
+    expect(mockFetch).toHaveBeenCalledWith("/api/repos/my-repo/mutation/run", expect.objectContaining({ method: "POST" }));
+  });
+
+  it("getMutationRunStatus fetches the run status", async () => {
+    const status = { state: "completed" as const, runId: "abc-123", summary: { strykerConfigured: true, configPath: "stryker.config.mjs", reportPath: null, score: 87.5, generatedAt: null, counts: { killed: 10, survived: 1, timeout: 0, noCoverage: 0, ignored: 0, total: 11 } } };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => status });
+
+    const result = await getMutationRunStatus("my-repo", "abc-123");
+    expect(result).toEqual(status);
+    expect(mockFetch).toHaveBeenCalledWith("/api/repos/my-repo/mutation/abc-123", expect.objectContaining({ headers: expect.any(Object) }));
+  });
+
+  it("runMutationTests throws on non-OK response", async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 400, json: async () => ({ error: "Stryker is not configured" }) });
+    await expect(runMutationTests("my-repo")).rejects.toThrow("Failed to start mutation run: 400");
   });
 });

@@ -1,4 +1,4 @@
-import type { CheckpointDecision, CostSummary, Milestone, Mission, WorkingUnit, MissionStatus, BumblebeeScanResult, BumblebeeFinding, ExposureCatalog } from "@aurex/shared";
+import type { CheckpointDecision, CostSummary, Milestone, Mission, WorkingUnit, MissionStatus, BumblebeeScanResult, BumblebeeFinding, ExposureCatalog, MutationReportSummary, MutationRunStatus } from "@aurex/shared";
 import type { CreateMissionResponse, GetMissionResponse, CheckpointResponse, HealthResponse, AgentLogResponse, TriggerScanResponse, ListScansResponse, GetScanResultsResponse, BumblebeeStatusResponse, QuotaStatusResponse, PrefireRequest, PrefireResponse, CalculatePrefireRequest, CalculatePrefireResponse, QuotaConfigUpdateRequest } from "@aurex/shared";
 
 export type CurrentMissionPayload = GetMissionResponse;
@@ -471,4 +471,24 @@ export async function calculatePrefire(opts: CalculatePrefireRequest): Promise<C
   });
   if (!res.ok) throw new Error(`Failed to calculate prefire: ${res.status}`);
   return res.json() as Promise<CalculatePrefireResponse>;
+}
+
+// --- Mutation testing (Stryker on scanned repos) ---
+
+export async function getMutationSummary(repoName: string): Promise<MutationReportSummary> {
+  const res = await apiFetch(`/api/repos/${repoName}/mutation`);
+  if (!res.ok) throw new Error(`Failed to get mutation summary: ${res.status}`);
+  return res.json() as Promise<MutationReportSummary>;
+}
+
+export async function runMutationTests(repoName: string): Promise<{ runId: string; status: string; startedAt: string }> {
+  const res = await apiFetch(`/api/repos/${repoName}/mutation/run`, { method: "POST" });
+  if (!res.ok) throw new Error(`Failed to start mutation run: ${res.status}`);
+  return res.json() as Promise<{ runId: string; status: string; startedAt: string }>;
+}
+
+export async function getMutationRunStatus(repoName: string, runId: string): Promise<MutationRunStatus> {
+  const res = await apiFetch(`/api/repos/${repoName}/mutation/${runId}`);
+  if (!res.ok) throw new Error(`Failed to get mutation run status: ${res.status}`);
+  return res.json() as Promise<MutationRunStatus>;
 }
