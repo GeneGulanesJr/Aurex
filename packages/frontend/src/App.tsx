@@ -19,8 +19,9 @@ import { SettingsPanel } from "./active/SettingsPanel";
 import { QuotaPanel } from "./active/QuotaPanel";
 import { TopBar } from "./frame/TopBar";
 import { TelemetryBar } from "./frame/TelemetryBar";
-import { submitCheckpoint, createMission, restartMission } from "./api";
+import { submitCheckpoint, createMission, restartMission, getRepoHotspots, getRepoSuggestions } from "./api";
 import type { WsClientEvent, CheckpointDecision } from "@aurex/shared";
+import type { CodeSummaryResponse, CodeHotspotsResponse, RepoSuggestion } from "./api";
 
 export function App() {
   const { theme, setTheme } = useTheme();
@@ -30,6 +31,15 @@ export function App() {
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [quotaOpen, setQuotaOpen] = useState(false);
+  const [preparedRepo, setPreparedRepo] = useState<{
+    repoName: string;
+    fullName: string;
+    summary: CodeSummaryResponse | null;
+    hotspots: CodeHotspotsResponse | null;
+    suggestions: RepoSuggestion[];
+    loading: boolean;
+  } | null>(null);
+  const [suggestedMission, setSuggestedMission] = useState<string | undefined>(undefined);
   const { settings, setSettings, resetSettings } = useSettings();
   const { state: missionsState, selectMission, removeMission, addOptimisticMission, markMissionRestarted, handleWsEvent: missionsWsHandler } = useMissions();
   const { state, dispatch, handleWsEvent: missionWsHandler } = useMission(missionsState.selectedMissionId);
@@ -112,7 +122,30 @@ export function App() {
   const handleCreateMission = useCallback(async (description: string, cloneUrl?: string) => {
     const { missionId } = await createMission(description, cloneUrl);
     addOptimisticMission(missionId, description);
+    setPreparedRepo(null); // Clear overview when mission starts
   }, [addOptimisticMission]);
+
+  const handleRepoPrepared = useCallback(async (info: { repoName: string; fullName: string; summary: CodeSummaryResponse | null }) => {
+    const { repoName, fullName, summary } = info;
+    setPreparedRepo({ repoName, fullName, summary, hotspots: null, suggestions: [], loading: true });
+    try {
+      const [hotspots, suggestionsRes] = await Promise.all([
+        getRepoHotspots(repoName).catch(() => null),
+        getRepoSuggestions(repoName).catch(() => ({ suggestions: [], analysisVersion: "1.0" })),
+      ]);
+      setPreparedRepo({ repoName, fullName, summary, hotspots, suggestions: suggestionsRes.suggestions, loading: false });
+    } catch {
+      setPreparedRepo((prev) => prev ? { ...prev, loading: false } : null);
+    }
+  }, []);
+
+  // Clear suggested mission after form picks it up
+  useEffect(() => {
+    if (suggestedMission) {
+      const timer = setTimeout(() => setSuggestedMission(undefined), 100);
+      return () => clearTimeout(timer);
+    }
+  }, [suggestedMission]);
 
   const handleRetryMission = useCallback(async () => {
     if (!state.mission) return;
@@ -220,6 +253,9 @@ export function App() {
             systemReady={systemReady}
             totalCost={state.cost?.totalCost}
             collapsed={sidebarCollapsed}
+            preparedRepo={preparedRepo ? { repoName: preparedRepo.repoName, fullName: preparedRepo.fullName, summary: preparedRepo.summary } : null}
+            onRepoPrepared={handleRepoPrepared}
+            suggestedDescription={suggestedMission}
           />
         )}
         <main style={{ overflowY: "auto", background: "var(--bg-deep)" }}>
@@ -241,6 +277,11 @@ export function App() {
             isScanning={supplyChainState.isScanning}
             scans={supplyChainState.scans}
             onTriggerScan={triggerSupplyChainScan}
+            preparedRepo={preparedRepo}
+            onStartFromSuggestion={(prefill: string) => {
+              setSuggestedMission(prefill);
+              window.dispatchEvent(new CustomEvent("aurex:focus-new-mission"));
+            }}
           />
         </main>
         <div style={{ gridColumn: "1 / -1" }}>
@@ -273,6 +314,9 @@ export function App() {
               systemReady={systemReady}
               totalCost={state.cost?.totalCost}
               collapsed={false}
+              preparedRepo={preparedRepo ? { repoName: preparedRepo.repoName, fullName: preparedRepo.fullName, summary: preparedRepo.summary } : null}
+              onRepoPrepared={handleRepoPrepared}
+              suggestedDescription={suggestedMission}
             />
           </div>
         </>

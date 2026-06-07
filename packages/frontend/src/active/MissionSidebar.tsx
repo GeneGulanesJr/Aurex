@@ -3,6 +3,7 @@ import type { MissionListItem } from "../hooks/useMissions";
 import type { UseGitHubReturn } from "../hooks/useGitHub";
 import { abortMission, restartMission } from "../api";
 import { NewMissionForm } from "./NewMissionForm";
+import type { CodeSummaryResponse } from "../api";
 
 interface MissionSidebarProps {
   missions: MissionListItem[];
@@ -16,6 +17,13 @@ interface MissionSidebarProps {
   systemReady?: boolean;
   totalCost?: number;
   collapsed?: boolean;
+  preparedRepo?: {
+    repoName: string;
+    fullName: string;
+    summary: CodeSummaryResponse | null;
+  } | null;
+  onRepoPrepared?: (info: { repoName: string; fullName: string; summary: CodeSummaryResponse | null }) => void;
+  suggestedDescription?: string;
 }
 
 function statusBadge(state: string): { label: string; style: React.CSSProperties } {
@@ -119,7 +127,7 @@ export function MissionSidebar({ missions, selectedMissionId, escalationMissionI
         <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)" }}>
           <h2 style={{ fontSize: "11px", fontWeight: 500, color: "var(--text-secondary)", fontFamily: '"JetBrains Mono", monospace', textTransform: "uppercase", letterSpacing: "2px", margin: 0 }}>Missions</h2>
         </div>
-        <NewMissionForm onSubmit={onCreateMission} github={github} />
+        <NewMissionForm onSubmit={onCreateMission} github={github} preparedRepo={preparedRepo} onRepoPrepared={onRepoPrepared} suggestedDescription={suggestedDescription} />
         <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "8px" }}>
           <div style={{ width: "32px", height: "32px", border: "1px dashed var(--border)", borderRadius: "4px", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--border-bright)", fontSize: "16px" }}>◎</div>
           <span style={{ fontSize: "11px", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace' }}>NO ACTIVE MISSIONS</span>
@@ -152,7 +160,7 @@ export function MissionSidebar({ missions, selectedMissionId, escalationMissionI
           <span style={{ color: "var(--text-muted)", fontSize: "10px" }}>Configure GitHub & PiNyx in Integrations panel before creating missions.</span>
         </div>
       ) : (
-        <NewMissionForm onSubmit={onCreateMission} github={github} />
+        <NewMissionForm onSubmit={onCreateMission} github={github} preparedRepo={preparedRepo} onRepoPrepared={onRepoPrepared} suggestedDescription={suggestedDescription} />
       )}
       <div style={{ flex: 1, overflowY: "auto" }}>
         {missions.map((mission) => {

@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { MissionPipeline } from "./MissionPipeline";
 import { MissionComplete } from "./MissionComplete";
 import { EmptyState } from "../frame/EmptyState";
+import { RepoOverviewPanel } from "./RepoOverviewPanel";
 import { dimPassive, restorePassive } from "../animations/state-transitions";
 import type { Mission, Milestone, WorkingUnit, CostSummary, WsClientEvent, BumblebeeFinding, BumblebeeScanResult } from "@aurex/shared";
 import type { MissionError, AgentLogEntry } from "../hooks/useMission";
+import type { CodeSummaryResponse, CodeHotspotsResponse, RepoSuggestion } from "../api";
 
 interface StatusBoardProps {
   mission: Mission | null;
@@ -24,9 +26,18 @@ interface StatusBoardProps {
   isScanning?: boolean;
   scans?: BumblebeeScanResult[];
   onTriggerScan?: (profile?: "baseline" | "project" | "deep") => void;
+  preparedRepo?: {
+    repoName: string;
+    fullName: string;
+    summary: CodeSummaryResponse | null;
+    hotspots: CodeHotspotsResponse | null;
+    suggestions: RepoSuggestion[];
+    loading: boolean;
+  } | null;
+  onStartFromSuggestion?: (prefill: string) => void;
 }
 
-export function StatusBoard({ mission, milestones, workers, cost, events, logs, errors, agentLogs, blurred, eventStreamCount, onExampleClick, onRetryMission, onDismissErrors, scanFindings = [], isScanning = false, scans = [], onTriggerScan }: StatusBoardProps) {
+export function StatusBoard({ mission, milestones, workers, cost, events, logs, errors, agentLogs, blurred, eventStreamCount, onExampleClick, onRetryMission, onDismissErrors, scanFindings = [], isScanning = false, scans = [], onTriggerScan, preparedRepo, onStartFromSuggestion }: StatusBoardProps) {
   const boardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -43,6 +54,21 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
   const [errorBannerExpanded, setErrorBannerExpanded] = useState(false);
 
   if (!mission) {
+    if (preparedRepo) {
+      return (
+        <div style={{ display: "flex", height: "100%" }}>
+          <RepoOverviewPanel
+            repoName={preparedRepo.repoName}
+            fullName={preparedRepo.fullName}
+            summary={preparedRepo.summary}
+            hotspots={preparedRepo.hotspots}
+            suggestions={preparedRepo.suggestions}
+            loading={preparedRepo.loading}
+            onStartMission={onStartFromSuggestion ?? (() => {})}
+          />
+        </div>
+      );
+    }
     return (
       <div style={{ display: "flex", height: "100%" }}>
         <EmptyState onExampleClick={onExampleClick} />
