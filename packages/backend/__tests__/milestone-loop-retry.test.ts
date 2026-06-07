@@ -211,6 +211,35 @@ describe("milestone loop — retry/rescope handling", () => {
     expect((pinyx.chat as any).mock.calls.length).toBeGreaterThanOrEqual(1);
   });
 
+  it("asks for human direction after two automatic rescopes even when configured higher", async () => {
+    const units = [makeUnit("u-1", ["src/auth/"], ["auth"] )];
+    const verdicts = [failVerdict(["u-1"] )];
+    const lapis = createMockLapis(units, verdicts);
+    (lapis.incrementRetry as any).mockResolvedValue({ milestoneId: "ms-1", retries: 2, rescopes: 2 });
+
+    const pinyx = createMockPinyx();
+    const callbacks = {
+      onEscalation: vi.fn(),
+      onAgentStatus: vi.fn(),
+      onMilestoneProgress: vi.fn(),
+      onCostUpdate: vi.fn(),
+      onError: vi.fn(),
+    };
+
+    const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
+      agentDir: "/test/.pi/agent", repoRoot: "/test/repo", gitMainBranch: "main",
+    });
+
+    const result = await loop.run(makeMission(), [makeMilestone()]);
+
+    expect(result.status).toBe("checkpoint_needed");
+    if (result.status === "checkpoint_needed") {
+      expect(result.trigger).toBe("rescope_limit");
+      expect(result.summary).toContain("at most 2 times");
+    }
+    expect(pinyx.chat).not.toHaveBeenCalled();
+  });
+
   it("escalates when all retries and rescopes exhausted", async () => {
     const units = [makeUnit("u-1", ["src/auth/"], ["auth"])];
     const verdicts = [failVerdict(["u-1"])];

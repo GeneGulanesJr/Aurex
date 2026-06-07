@@ -19,9 +19,10 @@ import { SettingsPanel } from "./active/SettingsPanel";
 import { QuotaPanel } from "./active/QuotaPanel";
 import { TopBar } from "./frame/TopBar";
 import { TelemetryBar } from "./frame/TelemetryBar";
-import { submitCheckpoint, createMission, restartMission, getRepoHotspots, getRepoSuggestions } from "./api";
+import { submitCheckpoint, createMission, restartMission, getRepoHotspots, getRepoSuggestions, getRepoReadiness, triggerRepoScan } from "./api";
 import type { WsClientEvent, CheckpointDecision } from "@aurex/shared";
-import type { CodeSummaryResponse, CodeHotspotsResponse, RepoSuggestion } from "./api";
+import type { CodeSummaryResponse, CodeHotspotsResponse, RepoSuggestion, RepoReadinessProfile } from "./api";
+import type { BumblebeeScanResult, BumblebeeFinding } from "@aurex/shared";
 
 export function App() {
   const { theme, setTheme } = useTheme();
@@ -37,6 +38,9 @@ export function App() {
     summary: CodeSummaryResponse | null;
     hotspots: CodeHotspotsResponse | null;
     suggestions: RepoSuggestion[];
+    readiness: RepoReadinessProfile | null;
+    packageScan: BumblebeeScanResult | null;
+    packageFindings: BumblebeeFinding[];
     loading: boolean;
   } | null>(null);
   const [suggestedMission, setSuggestedMission] = useState<string | undefined>(undefined);
@@ -128,16 +132,28 @@ export function App() {
   const handleRepoPrepared = useCallback(async (info: { repoName: string; fullName: string; summary: CodeSummaryResponse | null }) => {
     const { repoName, fullName, summary } = info;
     const version = Date.now();
-    setPreparedRepo({ repoName, fullName, summary, hotspots: null, suggestions: [], loading: true, _version: version } as any);
+    setPreparedRepo({ repoName, fullName, summary, hotspots: null, suggestions: [], readiness: null, packageScan: null, packageFindings: [], loading: true, _version: version } as any);
     try {
-      const [hotspots, suggestionsRes] = await Promise.all([
+      const [hotspots, readiness, scanRes] = await Promise.all([
         getRepoHotspots(repoName).catch(() => null),
-        getRepoSuggestions(repoName).catch(() => ({ suggestions: [], analysisVersion: "1.0" })),
+        getRepoReadiness(repoName).catch(() => null),
+        triggerRepoScan(repoName, { profile: "project" }).catch(() => null),
       ]);
+      const suggestionsRes = await getRepoSuggestions(repoName).catch(() => ({ suggestions: [], analysisVersion: "2.0" }));
       setPreparedRepo((prev) => {
         // Don't overwrite if cleared (e.g., mission created while loading)
         if (!prev || (prev as any)._version !== version) return prev;
-        return { repoName, fullName, summary, hotspots, suggestions: suggestionsRes.suggestions, loading: false };
+        return {
+          repoName,
+          fullName,
+          summary,
+          hotspots,
+          suggestions: suggestionsRes.suggestions,
+          readiness,
+          packageScan: scanRes?.scan ?? null,
+          packageFindings: scanRes?.findings ?? [],
+          loading: false,
+        };
       });
     } catch {
       setPreparedRepo((prev) => prev ? { ...prev, loading: false } : null);

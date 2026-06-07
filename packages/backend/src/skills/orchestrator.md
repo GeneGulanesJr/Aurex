@@ -99,8 +99,8 @@ Merge `develop` to `release/milestone-N`, trigger escalation.
 
 ### Retry limits
 - ≤2 validator retries per milestone
-- ≤5 rescopes per milestone
-- 6th rescope → **escalate to human**
+- ≤2 automatic rescopes per milestone before human direction
+- 3rd automatic rescope request → **escalate to human**
 
 ## Escalation
 

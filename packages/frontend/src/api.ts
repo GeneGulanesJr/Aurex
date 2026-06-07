@@ -294,11 +294,40 @@ export interface RepoSuggestion {
   affectedFiles: number;
   detail: string;
   prefill: string;
+  confidence?: "high" | "medium" | "low";
+  estimatedEffort?: "small" | "medium" | "large";
+  estimatedRisk?: "low" | "medium" | "high";
+  evidence?: Array<{ type: string; message: string; file?: string }>;
+  labels?: string[];
 }
 
 export interface RepoSuggestionsResponse {
   suggestions: RepoSuggestion[];
   analysisVersion: string;
+  recommended?: { highestImpact?: string; safestFirst?: string };
+}
+
+export interface RepoReadinessCommand {
+  name: "install" | "test" | "typecheck" | "lint" | "build" | "dev" | "e2e";
+  command: string;
+  confidence: "high" | "medium" | "low";
+  source: string;
+  warning?: string;
+}
+
+export interface RepoReadinessProfile {
+  repoName: string;
+  profile: string;
+  packageManager: string | null;
+  languages: string[];
+  frameworks: string[];
+  monorepo: boolean;
+  lockfiles: string[];
+  commands: RepoReadinessCommand[];
+  blockers: string[];
+  warnings: string[];
+  confidence: "high" | "medium" | "low";
+  generatedAt: string;
 }
 
 export async function exploreRepo(repoName: string): Promise<ExploreRepoResponse> {
@@ -323,6 +352,31 @@ export async function getRepoSuggestions(repoName: string): Promise<RepoSuggesti
   const res = await apiFetch(`/api/repos/${repoName}/suggestions`);
   if (!res.ok) throw new Error(`Failed to fetch repo suggestions: ${res.status}`);
   return res.json() as Promise<RepoSuggestionsResponse>;
+}
+
+export async function getRepoReadiness(repoName: string): Promise<RepoReadinessProfile> {
+  const res = await apiFetch(`/api/repos/${repoName}/readiness`);
+  if (!res.ok) throw new Error(`Failed to fetch repo readiness: ${res.status}`);
+  return res.json() as Promise<RepoReadinessProfile>;
+}
+
+export async function triggerRepoScan(
+  repoName: string,
+  options?: { profile?: "baseline" | "project" | "deep"; ecosystems?: string[] },
+): Promise<GetScanResultsResponse> {
+  const res = await apiFetch(`/api/repos/${repoName}/scans`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(options || {}),
+  });
+  if (!res.ok) throw new Error(`Failed to trigger repo package scan: ${res.status}`);
+  return res.json() as Promise<GetScanResultsResponse>;
+}
+
+export async function listRepoScans(repoName: string): Promise<ListScansResponse> {
+  const res = await apiFetch(`/api/repos/${repoName}/scans`);
+  if (!res.ok) throw new Error(`Failed to list repo scans: ${res.status}`);
+  return res.json() as Promise<ListScansResponse>;
 }
 
 // Bumblebee supply-chain scanner
