@@ -85,6 +85,19 @@ function buildRescopeUserMessage(input: RescopeInput): string {
   return parts.join("\n");
 }
 
+/**
+ * Re-plan a milestone via the orchestrator model and create fresh working
+ * units against the same milestone id. Used by both the auto-rescope path
+ * inside the milestone loop and the user-initiated rescope decision in the
+ * mission runner.
+ *
+ * The rescope receives validator verdicts, research findings, and completed
+ * unit summaries so the LLM can understand *why* the previous plan failed
+ * and avoid re-planning work that already succeeded.
+ *
+ * Returns a discriminated result so each caller can handle failures in its
+ * own way (loop escalates with a new checkpoint; runner marks mission failed).
+ */
 export async function rescopeMilestone(input: RescopeInput): Promise<RescopeResult> {
   const { pinyx, lapis, milestone } = input;
   let resp: { content: string };
@@ -104,6 +117,9 @@ export async function rescopeMilestone(input: RescopeInput): Promise<RescopeResu
   let plan: { units?: RescopeUnit[] };
   try {
     plan = JSON.parse(resp.content);
+  // Stryker disable next-line BlockStatement: equivalent mutant — emptying
+  // the catch block produces the same result because the `if (!plan)`
+  // check below handles the undefined `plan` and returns the same error.
   } catch {
     return { ok: false, error: "invalid_plan", content: resp.content };
   }
