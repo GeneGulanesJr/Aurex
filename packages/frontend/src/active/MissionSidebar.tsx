@@ -68,7 +68,7 @@ function statusIconColor(state: string): string {
   }
 }
 
-export function MissionSidebar({ missions, selectedMissionId, escalationMissionId, onSelect, onRemove, onRestart, onCreateMission, github, systemReady, totalCost, collapsed = false }: MissionSidebarProps) {
+export function MissionSidebar({ missions, selectedMissionId, escalationMissionId, onSelect, onRemove, onRestart, onCreateMission, github, systemReady, totalCost, collapsed = false, preparedRepo, onRepoPrepared, suggestedDescription }: MissionSidebarProps) {
   const handleAbort = useCallback(async (e: React.MouseEvent, missionId: string) => {
     e.stopPropagation();
     try {
