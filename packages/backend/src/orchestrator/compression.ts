@@ -23,6 +23,8 @@ export function createCompressionService(
           milestoneId: missionId,
         } as any);
         console.warn(
+          // Stryker disable next-line StringLiteral: the error message
+          // string is only used for logging and doesn't affect behavior.
           `[compression] ${trigger} failed for ${missionId}:`,
           error instanceof Error ? error.message : error,
         );

@@ -29,8 +29,10 @@ export default {
   incrementalFile: "reports/stryker-incremental.json",
   thresholds: { high: 80, low: 60, break: 50 },
   timeoutMS: 60_000,
-  // Only mutate P0 files. P1/P2 added later.
+  // P0: security-critical, financial, decision-logic (all at 100%)
+  // P1: important decision logic with existing tests
   mutate: [
+    // P0
     "packages/backend/src/orchestrator/negotiator.ts",
     "packages/backend/src/enforcement/branch-guard.ts",
     "packages/backend/src/enforcement/contract-immutability.ts",
@@ -40,6 +42,16 @@ export default {
     "packages/backend/src/enforcement/research-lifecycle.ts",
     "packages/backend/src/enforcement/enforcement-gate.ts",
     "packages/backend/src/enforcement/quota-gate.ts",
+    // P1
+    "packages/backend/src/orchestrator/checkpoint-manager.ts",
+    "packages/backend/src/orchestrator/compression.ts",
+    "packages/backend/src/orchestrator/rescope.ts",
+    "packages/backend/src/orchestrator/planner.ts",
+    "packages/backend/src/orchestrator/worktree.ts",
+    "packages/backend/src/orchestrator/bumblebee-runner.ts",
+    "packages/backend/src/clients/pinyx-client.ts",
+    "packages/backend/src/clients/pinyx-quota-wrapper.ts",
+    "packages/backend/src/config.ts",
   ],
   // Don't try to mutate generated files or types-only files.
   // Also exclude pnpm virtual store and worktrees from sandbox copy

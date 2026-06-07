@@ -100,4 +100,95 @@ describe("CheckpointManager", () => {
     expect(pending.length).toBe(1);
     expect(lapis.getPendingCheckpoints).toHaveBeenCalledWith("m-1");
   });
+
+  it("retries when getCheckpoint returns null (LaPis not ready)", async () => {
+    // Kills L36:17 ConditionalExpression → false (skips retry)
+    // and L36:30 NoCoverage BlockStatement (retry body never covered)
+    vi.useFakeTimers();
+    const lapis = createMockLapis();
+    const manager = createCheckpointManager(lapis, { pollIntervalMs: 100 });
+
+    let pollCount = 0;
+    (lapis.getCheckpoint as any).mockImplementation(async () => {
+      pollCount++;
+      if (pollCount < 2) {
+        // First poll: LaPis doesn't have the route yet
+        return null;
+      }
+      return { id: "cp-1", status: "resolved", decision: "rescope" };
+    });
+
+    const promise = manager.waitForResolution("cp-1");
+    await vi.advanceTimersByTimeAsync(100); // first poll returns null
+    await vi.advanceTimersByTimeAsync(100); // second poll returns resolved
+    const result = await promise;
+    expect(result.status).toBe("resolved");
+    expect(pollCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it("retries when getCheckpoint throws", async () => {
+    // Kills L35:78 ArrowFunction → () => undefined and L33:15 ConditionalExpression → false
+    vi.useFakeTimers();
+    const lapis = createMockLapis();
+    const manager = createCheckpointManager(lapis, { pollIntervalMs: 100 });
+
+    let pollCount = 0;
+    (lapis.getCheckpoint as any).mockImplementation(async () => {
+      pollCount++;
+      if (pollCount < 2) {
+        throw new Error("LaPis offline");
+      }
+      return { id: "cp-1", status: "resolved", decision: "approve" };
+    });
+
+    const promise = manager.waitForResolution("cp-1");
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(100);
+    const result = await promise;
+    expect(result.status).toBe("resolved");
+    expect(pollCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it("stops polling after resolution (kills L42 BooleanLiteral → false)", async () => {
+    // After resolution, stopped=true prevents further polls.
+    // If mutant disables stopped=true, polling continues.
+    vi.useFakeTimers();
+    const lapis = createMockLapis();
+    const manager = createCheckpointManager(lapis, { pollIntervalMs: 100 });
+
+    let pollCount = 0;
+    (lapis.getCheckpoint as any).mockImplementation(async () => {
+      pollCount++;
+      return { id: "cp-1", status: "resolved", decision: "approve" };
+    });
+
+    const promise = manager.waitForResolution("cp-1");
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(100);
+    await promise;
+    // If stopped is set properly, polling stops after first resolved response
+    expect(pollCount).toBe(1);
+  });
+
+  it("returns empty array when getPendingCheckpoints fails (kills L62 ArrowFunction)", async () => {
+    // Kills L62:59 ArrowFunction → () => undefined.
+    // Mutant returns undefined instead of [].
+    const lapis = createMockLapis();
+    (lapis.getPendingCheckpoints as any).mockRejectedValue(new Error("db down"));
+    const manager = createCheckpointManager(lapis);
+    const pending = await manager.getPendingForMission("m-1");
+    expect(Array.isArray(pending)).toBe(true);
+    expect(pending).toEqual([]);
+  });
+
+  it("resolves with all optional parameters", async () => {
+    // Kills L47:27 NoCoverage BlockStatement and L48:23 BooleanLiteral → false
+    const lapis = createMockLapis();
+    const manager = createCheckpointManager(lapis);
+    await manager.resolve("cp-1", "rescope", "try again", "too many failures", "split into smaller units");
+    expect(lapis.resolveCheckpoint).toHaveBeenCalledWith(
+      "cp-1", "rescope", "try again", "too many failures", "split into smaller units"
+    );
+  });
 });

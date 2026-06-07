@@ -57,6 +57,9 @@ export async function rescopeMilestone(input: RescopeInput): Promise<RescopeResu
   let plan: { units?: RescopeUnit[] };
   try {
     plan = JSON.parse(resp.content);
+  // Stryker disable next-line BlockStatement: equivalent mutant — emptying
+  // the catch block produces the same result because the `if (!plan)`
+  // check below handles the undefined `plan` and returns the same error.
   } catch {
     return { ok: false, error: "invalid_plan", content: resp.content };
   }

@@ -216,4 +216,66 @@ describe("createQuotaAwarePinyxClient", () => {
 
     vi.useRealTimers();
   });
+
+  it("passes through when quota is disabled", async () => {
+    // Kills L28:9 ConditionalExpression → false (skips enabled check)
+    const inner = mockPinyxClient();
+    const disabledConfig: QuotaConfig = { ...defaultConfig, enabled: false };
+
+    const client = createQuotaAwarePinyxClient(inner, {
+      getQuotaConfig: async () => disabledConfig,
+      getQuotaWindow: async () => null,
+      saveQuotaWindow: async () => {},
+    });
+
+    const result = await client.chat({ model: "kilo/kilo-auto/free", messages: [{ role: "user", content: "hi" }] });
+    expect(result.content).toBe("test response");
+    expect(inner.chat).toHaveBeenCalledOnce();
+  });
+
+  it("passes through when provider is not tracked", async () => {
+    // Kills L31:9 ConditionalExpression → false (skips tracked check)
+    const inner = mockPinyxClient();
+    const configWithUntracked: QuotaConfig = {
+      ...defaultConfig,
+      providers: [{ providerId: "kilo", tracked: false }],
+    };
+
+    const client = createQuotaAwarePinyxClient(inner, {
+      getQuotaConfig: async () => configWithUntracked,
+      getQuotaWindow: async () => null,
+      saveQuotaWindow: async () => {},
+    });
+
+    const result = await client.chat({ model: "kilo/kilo-auto/free", messages: [{ role: "user", content: "hi" }] });
+    expect(result.content).toBe("test response");
+    expect(inner.chat).toHaveBeenCalledOnce();
+  });
+
+  it("includes windowResetsAt in QuotaExhaustedError", async () => {
+    // Kills L39:36 ObjectLiteral → {} (error loses fields)
+    const inner = mockPinyxClient();
+    const now = new Date();
+    const window = createQuotaWindow({ now, burnDurationMs: HOUR });
+    const withCall = recordFirstLLMCall(window, now);
+
+    const client = createQuotaAwarePinyxClient(inner, {
+      getQuotaConfig: async () => defaultConfig,
+      getQuotaWindow: async () => withCall,
+      saveQuotaWindow: async () => {},
+    });
+
+    const afterBurn = new Date(now.getTime() + HOUR + 1000);
+    vi.setSystemTime(afterBurn);
+
+    try {
+      await client.chat({ model: "kilo/kilo-auto/free", messages: [{ role: "user", content: "hi" }] });
+      expect.unreachable("Should have thrown");
+    } catch (e) {
+      expect(e).toBeInstanceOf(QuotaExhaustedError);
+      expect((e as QuotaExhaustedError).windowResetsAt).toBeTruthy();
+    }
+
+    vi.useRealTimers();
+  });
 });
