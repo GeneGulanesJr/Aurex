@@ -15,6 +15,7 @@ import { MissionSidebar } from "./active/MissionSidebar";
 import { StatusBoard } from "./passive/StatusBoard";
 import { EscalationOverlay } from "./active/EscalationOverlay";
 import { IntegrationsPanel } from "./active/IntegrationsPanel";
+import { getSessionState, clearSessionState } from "./lib/sessionState";
 import { SettingsPanel } from "./active/SettingsPanel";
 import { QuotaPanel } from "./active/QuotaPanel";
 import { TopBar } from "./frame/TopBar";
@@ -29,7 +30,15 @@ export function App() {
   const github = useGitHub();
   const pinyxStatus = usePinyxStatus();
   const systemReady = github.connected && pinyxStatus.configured;
-  const [integrationsOpen, setIntegrationsOpen] = useState(false);
+  const [integrationsOpen, setIntegrationsOpen] = useState(() => {
+    const ret = getSessionState<{ open: boolean; pinyxTab: string }>("integrations_return");
+    return ret?.open ?? false;
+  });
+  const [restoredPinyxTab, setRestoredPinyxTab] = useState<string | null>(() => {
+    const ret = getSessionState<{ open: boolean; pinyxTab: string }>("integrations_return");
+    clearSessionState("integrations_return");
+    return ret?.open ? (ret.pinyxTab ?? null) : null;
+  });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [quotaOpen, setQuotaOpen] = useState(false);
   const [preparedRepo, setPreparedRepo] = useState<{
@@ -343,7 +352,7 @@ export function App() {
           </div>
         </>
       )}
-      <IntegrationsPanel open={integrationsOpen} github={github} onClose={() => setIntegrationsOpen(false)} onPinyxConfigUpdate={() => void pinyxStatus.refresh()} />
+      <IntegrationsPanel open={integrationsOpen} github={github} onClose={() => setIntegrationsOpen(false)} onPinyxConfigUpdate={() => void pinyxStatus.refresh()} initialPinyxTab={restoredPinyxTab ?? undefined} />
       <QuotaPanel open={quotaOpen} onClose={() => setQuotaOpen(false)} />
       <SettingsPanel
         open={settingsOpen}

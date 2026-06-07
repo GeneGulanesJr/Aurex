@@ -6,12 +6,14 @@ import { TabBar } from "./TabBar";
 import { PinyxConnectionTab } from "./PinyxConnectionTab";
 import { PinyxModelsTab } from "./PinyxModelsTab";
 import { PinyxKeysTab } from "./PinyxKeysTab";
+import { setSessionState } from "../lib/sessionState";
 
 interface IntegrationsPanelProps {
   open: boolean;
   github: UseGitHubReturn;
   onClose: () => void;
   onPinyxConfigUpdate?: () => void;
+  initialPinyxTab?: string;
 }
 
 const PINYX_TABS = [
@@ -20,9 +22,9 @@ const PINYX_TABS = [
   { id: "keys", label: "Keys" },
 ];
 
-export function IntegrationsPanel({ open, github, onClose, onPinyxConfigUpdate }: IntegrationsPanelProps) {
+export function IntegrationsPanel({ open, github, onClose, onPinyxConfigUpdate, initialPinyxTab }: IntegrationsPanelProps) {
   const [connecting, setConnecting] = useState(false);
-  const [pinyxTab, setPinyxTab] = useState("connection");
+  const [pinyxTab, setPinyxTab] = useState(initialPinyxTab ?? "connection");
   const [pinyx, setPinyx] = useState<PinyxConfigResponse | null>(null);
   const [pinyxError, setPinyxError] = useState<string | null>(null);
 
@@ -45,6 +47,7 @@ export function IntegrationsPanel({ open, github, onClose, onPinyxConfigUpdate }
   async function handleConnect() {
     setConnecting(true);
     try {
+      setSessionState("integrations_return", { open: true, pinyxTab });
       await github.connect();
     } finally {
       setConnecting(false);
