@@ -6,7 +6,7 @@ import { RepoOverviewPanel } from "./RepoOverviewPanel";
 import { dimPassive, restorePassive } from "../animations/state-transitions";
 import type { Mission, Milestone, WorkingUnit, CostSummary, WsClientEvent, BumblebeeFinding, BumblebeeScanResult } from "@aurex/shared";
 import type { MissionError, AgentLogEntry } from "../hooks/useMission";
-import type { CodeSummaryResponse, CodeHotspotsResponse, RepoSuggestion } from "../api";
+import type { CodeSummaryResponse, CodeHotspotsResponse, RepoSuggestion, RepoReadinessProfile } from "../api";
 
 interface StatusBoardProps {
   mission: Mission | null;
@@ -32,6 +32,9 @@ interface StatusBoardProps {
     summary: CodeSummaryResponse | null;
     hotspots: CodeHotspotsResponse | null;
     suggestions: RepoSuggestion[];
+    readiness: RepoReadinessProfile | null;
+    packageScan: BumblebeeScanResult | null;
+    packageFindings: BumblebeeFinding[];
     loading: boolean;
   } | null;
   onStartFromSuggestion?: (prefill: string) => void;
@@ -63,6 +66,9 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
             summary={preparedRepo.summary}
             hotspots={preparedRepo.hotspots}
             suggestions={preparedRepo.suggestions}
+            readiness={preparedRepo.readiness}
+            packageScan={preparedRepo.packageScan}
+            packageFindings={preparedRepo.packageFindings}
             loading={preparedRepo.loading}
             onStartMission={onStartFromSuggestion ?? (() => {})}
           />

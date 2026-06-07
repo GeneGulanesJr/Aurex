@@ -54,7 +54,7 @@ Default limits:
 
 - Maximum 2 serious worker attempts for the same todo before recovery review.
 - Maximum 2 validator retries per milestone before recovery review.
-- Maximum 5 rescopes per milestone; the next rescope requires human escalation.
+- Maximum 2 automatic rescopes per milestone before asking the user for direction; do not rescope endlessly.
 - Any repeated identical failure after recovery requires escalation or rescope, not another blind retry.
 
 ## Output

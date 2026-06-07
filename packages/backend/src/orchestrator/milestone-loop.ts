@@ -19,6 +19,8 @@ import {
   reconcileMissionLedger,
 } from "./ledger-reconciler.js";
 
+const AUTO_RESCOPE_BATCH_LIMIT = 2;
+
 export type MilestoneLoopResult =
   | { status: "completed" }
   | { status: "checkpoint_needed"; trigger: CheckpointTrigger; milestoneId: string; summary: string }
@@ -427,15 +429,16 @@ export function createMilestoneLoop(
           });
 
           const retryCounter = await lapis.incrementRetry(milestone.id);
+          const effectiveMaxRescopes = Math.min(config.maxRescopes, AUTO_RESCOPE_BATCH_LIMIT);
           const decision = await negotiator.negotiate(
             milestone.id, retryCounter.retries, retryCounter.rescopes,
-            config.maxValidatorRetries, config.maxRescopes, verdicts,
+            config.maxValidatorRetries, effectiveMaxRescopes, verdicts,
           );
 
           if (decision.decision === "escalate") {
             const trigger: CheckpointTrigger = "rescope_limit";
             callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, {});
-            return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary: decision.reason };
+            return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary: `${decision.reason}. Aurex auto-rescopes at most ${AUTO_RESCOPE_BATCH_LIMIT} times before asking for direction so missions do not rescope endlessly.` };
           }
 
           if (decision.decision === "retry") {

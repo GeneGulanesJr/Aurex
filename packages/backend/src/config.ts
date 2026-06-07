@@ -79,7 +79,7 @@ export function loadConfig(): AppConfig {
     researchTimeout: envInt("RESEARCH_TIMEOUT", 120_000),
 
     maxValidatorRetries: envInt("MAX_VALIDATOR_RETRIES", 2),
-    maxRescopes: envInt("MAX_RESCOPES_PER_MILESTONE", 5),
+    maxRescopes: envInt("MAX_RESCOPES_PER_MILESTONE", 2),
     missionCostCap: envFloat("MISSION_COST_CAP", 50.0),
 
     repoRoot: env("REPO_ROOT"),

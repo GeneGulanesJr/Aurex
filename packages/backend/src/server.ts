@@ -142,7 +142,7 @@ async function main() {
   registerCodeContextRoutes(app, { lapis });
 
   // Repo explore (auto-explore + suggestions)
-  registerRepoExploreRoutes(app, { lapis });
+  registerRepoExploreRoutes(app, { lapis, bumblebeeClient });
 
   // Bumblebee routes
   await app.register(bumblebeeRoutes, { lapis, bumblebeeClient, bumblebeeRunner });
