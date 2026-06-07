@@ -131,7 +131,7 @@ function generateSuggestions(
   };
   for (const finding of findings) {
     suggestions.push(withMeta({
-      id: `package-${finding.severity}-${finding.packageName}-${finding.version}`,
+      id: `package-${finding.severity}-${finding.packageName}-${finding.version}-${finding.catalogId ?? finding.findingType ?? finding.id}`,
       tier: severityTier[finding.severity],
       category: "security",
       title: `${finding.severity === "critical" ? "Remove or upgrade" : "Audit"} ${finding.packageName}@${finding.version}`,
@@ -471,10 +471,12 @@ async function readJson(path: string): Promise<Record<string, unknown> | null> {
   }
 }
 
-async function listFiles(root: string, maxDepth = 3): Promise<string[]> {
+const MAX_READINESS_FILES = 2000;
+
+async function listFiles(root: string, maxDepth = 3, maxFiles = MAX_READINESS_FILES): Promise<string[]> {
   const out: string[] = [];
   async function walk(dir: string, depth: number) {
-    if (depth > maxDepth) return;
+    if (depth > maxDepth || out.length >= maxFiles) return;
     let entries;
     try {
       entries = await readdir(dir, { withFileTypes: true });
@@ -482,6 +484,7 @@ async function listFiles(root: string, maxDepth = 3): Promise<string[]> {
       return;
     }
     for (const entry of entries) {
+      if (out.length >= maxFiles) break;
       if (entry.name.startsWith(".git") || entry.name === "node_modules" || entry.name === "dist" || entry.name === "build") continue;
       const full = join(dir, entry.name);
       if (entry.isDirectory()) await walk(full, depth + 1);
@@ -655,6 +658,14 @@ async function resolveRepoPath(lapis: LaPisClient, repoName: string): Promise<st
   return lapis.getSetting<string>(`repo:${repoName}:path`);
 }
 
+// NOTE: This read-then-write is NOT atomic. Concurrent scans for the same repo
+// could lose a scanId. Acceptable for single-user local dashboard use; add a
+// mutex or atomic append if multi-user concurrency is needed.
+async function appendToScanIndex(lapis: LaPisClient, repoName: string, scanId: string): Promise<void> {
+  const index = await lapis.getSetting<{ scanIds: string[] }>(`repo:${repoName}:bumblebee_scans`);
+  await lapis.setSetting(`repo:${repoName}:bumblebee_scans`, { scanIds: [...(index?.scanIds ?? []), scanId] });
+}
+
 async function getLatestRepoScan(lapis: LaPisClient, repoName: string): Promise<BumblebeeScanResult | null> {
   const index = await lapis.getSetting<{ scanIds: string[] }>(`repo:${repoName}:bumblebee_scans`);
   const latestId = index?.scanIds?.at(-1);
@@ -733,8 +744,7 @@ export function registerRepoExploreRoutes(app: FastifyInstance, deps: RepoExplor
         findings,
       };
       await lapis.setSetting(`bumblebee_scan:${scan.id}`, scan);
-      const index = await lapis.getSetting<{ scanIds: string[] }>(`repo:${repoName}:bumblebee_scans`);
-      await lapis.setSetting(`repo:${repoName}:bumblebee_scans`, { scanIds: [...(index?.scanIds ?? []), scan.id] });
+      await appendToScanIndex(lapis, repoName, scan.id);
       return reply.code(201).send({ scan, findings, packageCount: result.packages.length } satisfies RepoPackageScanResponse);
     } catch (err) {
       const scan: BumblebeeScanResult = {
@@ -746,8 +756,7 @@ export function registerRepoExploreRoutes(app: FastifyInstance, deps: RepoExplor
         completedAt: new Date().toISOString(),
       };
       await lapis.setSetting(`bumblebee_scan:${scan.id}`, scan);
-      const index = await lapis.getSetting<{ scanIds: string[] }>(`repo:${repoName}:bumblebee_scans`);
-      await lapis.setSetting(`repo:${repoName}:bumblebee_scans`, { scanIds: [...(index?.scanIds ?? []), scan.id] });
+      await appendToScanIndex(lapis, repoName, scan.id);
       return reply.code(500).send({ error: err instanceof Error ? err.message : "Package scan failed", scan });
     }
   });

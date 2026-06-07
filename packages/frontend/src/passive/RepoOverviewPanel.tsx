@@ -18,7 +18,7 @@ interface RepoOverviewPanelProps {
 
 const tierConfig: Record<SuggestionTier, { color: string; bg: string; border: string; label: string }> = {
   P0: { color: "var(--error)",     bg: "rgba(239,68,68,0.08)",  border: "var(--error)",      label: "P0 CRITICAL" },
-  P1: { color: "#f97316",          bg: "rgba(249,115,22,0.06)", border: "rgba(249,115,22,0.3)", label: "P1 HIGH" },
+  P1: { color: "var(--accent)",  bg: "rgba(232,146,13,0.06)",  border: "var(--accent-dim)",  label: "P1 HIGH" },
   P2: { color: "var(--warning)",   bg: "rgba(250,204,21,0.05)", border: "rgba(250,204,21,0.2)", label: "P2 MEDIUM" },
   P3: { color: "var(--info)",      bg: "rgba(129,140,248,0.05)", border: "rgba(129,140,248,0.2)", label: "P3 STANDARD" },
   P4: { color: "var(--text-secondary)", bg: "rgba(155,142,122,0.05)", border: "var(--border)", label: "P4 LOW" },
@@ -122,7 +122,7 @@ export function RepoOverviewPanel({ fullName, summary, hotspots, suggestions, re
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "6px", marginBottom: "10px" }}>
                 {[
                   ["CRIT", packageScan.summary.criticalCount, "var(--error)"],
-                  ["HIGH", packageScan.summary.highCount, "#f97316"],
+                  ["HIGH", packageScan.summary.highCount, "var(--accent)"],
                   ["MED", packageScan.summary.mediumCount, "var(--warning)"],
                   ["LOW", packageScan.summary.lowCount, "var(--text-muted)"],
                 ].map(([label, count, color]) => (
@@ -137,7 +137,7 @@ export function RepoOverviewPanel({ fullName, summary, hotspots, suggestions, re
               </div>
               {packageFindings.slice(0, 3).map((finding) => (
                 <div key={finding.id} style={{ fontSize: "10px", color: "var(--text-muted)", lineHeight: 1.5 }}>
-                  <span style={{ color: finding.severity === "critical" ? "var(--error)" : finding.severity === "high" ? "#f97316" : "var(--warning)" }}>{finding.severity.toUpperCase()}</span> · {finding.packageName}@{finding.version}
+                  <span style={{ color: finding.severity === "critical" ? "var(--error)" : finding.severity === "high" ? "var(--accent)" : "var(--warning)" }}>{finding.severity.toUpperCase()}</span> · {finding.packageName}@{finding.version}
                 </div>
               ))}
             </>
