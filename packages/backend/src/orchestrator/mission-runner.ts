@@ -252,10 +252,14 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
           const rescopeTarget = currentMilestones.find((ms) => ms.id === cpResult.milestoneId);
           if (rescopeTarget) {
             eventBus.emit({ type: "mission_log", missionId, phase: "rescope", message: `Re-planning milestone "${rescopeTarget.title}" after user rescope` });
-            const [rescopeVerdicts, rescopeFindings] = await Promise.all([
+            const [rescopeVerdicts, rescopeFindings, rescopeUnits] = await Promise.all([
               lapis.getVerdicts(rescopeTarget.id).catch(() => []),
               lapis.getFindings(missionId).catch(() => []),
+              lapis.getWorkingUnitsForMilestone(rescopeTarget.id).catch(() => [] as import("@aurex/shared").WorkingUnit[]),
             ]);
+            const rescopeCompletedSummaries = rescopeUnits
+              .filter((u) => u.status === "completed")
+              .map((u) => ({ description: u.description, declaredPaths: u.declaredPaths, declaredModules: u.declaredModules }));
             const result = await rescopeMilestone({
               pinyx,
               lapis,
@@ -265,6 +269,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
               reason: resolved.rescopeGuidance,
               verdicts: rescopeVerdicts,
               researchFindings: rescopeFindings,
+              completedUnitSummaries: rescopeCompletedSummaries,
             });
             if (!result.ok) {
               const msg = result.error === "pinyx_threw" ? result.message : `Rescope re-planning failed: ${result.content}`;
