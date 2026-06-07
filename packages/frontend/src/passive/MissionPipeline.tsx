@@ -6,6 +6,7 @@ import { animateProgress } from "../animations/counters";
 import type { Milestone, WorkingUnit, WsClientEvent, MilestoneStatus, BumblebeeFinding, BumblebeeScanResult } from "@aurex/shared";
 import type { MissionError, AgentLogEntry } from "../hooks/useMission";
 import { CodeContextPanel } from "./CodeContextPanel";
+import { MissionSummaryHeader } from "./MissionSummaryHeader";
 import { SupplyChainPanel } from "./SupplyChainPanel";
 
 interface MissionPipelineProps {
@@ -101,38 +102,15 @@ export function MissionPipeline({ mission, milestones, workers, cost, events, lo
   }, [workers.length]);
 
   const activeMilestone = milestones.find((m) => m.status === "in_progress" || m.status === "validating");
-  const completedCount = milestones.filter((m) => m.status === "completed").length;
 
   return (
     <div style={{ padding: "20px 24px" }}>
-      {/* Mission header */}
-      <div style={{ marginBottom: "24px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
-          <span
-            style={{
-              fontFamily: '"JetBrains Mono", monospace',
-              fontSize: "10px",
-              letterSpacing: "2px",
-              textTransform: "uppercase",
-              color: mission.status === "running" || mission.status === "planning" ? "var(--accent)" : "var(--text-muted)",
-              background: "var(--bg-elevated)",
-              padding: "3px 8px",
-              borderRadius: "3px",
-              border: "1px solid var(--border)",
-            }}
-          >
-            {mission.status === "running" ? "EXECUTING" : mission.status === "planning" ? "PLANNING" : mission.status.toUpperCase()}
-          </span>
-          {cost && (
-            <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "11px", color: "var(--text-muted)" }}>
-              {completedCount}/{milestones.length} milestones · ${cost.totalCost.toFixed(2)} · {cost.totalTokens.toLocaleString()} tokens
-            </span>
-          )}
-        </div>
-        <div style={{ fontSize: "16px", fontWeight: 500, color: "var(--text-primary)", lineHeight: 1.4 }}>
-          {mission.description}
-        </div>
-      </div>
+      <MissionSummaryHeader
+        mission={mission}
+        milestones={milestones}
+        workers={workers}
+        cost={cost}
+      />
 
       {/* Code Context Panel */}
       <CodeContextPanel
