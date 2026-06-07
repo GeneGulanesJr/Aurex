@@ -19,7 +19,7 @@ interface StatusBoardProps {
   agentLogs: Record<string, AgentLogEntry[]>;
   blurred: boolean;
   eventStreamCount?: number;
-  onExampleClick?: (text: string) => Promise<void>;
+  onExampleClick?: (text: string, cloneUrl?: string) => Promise<void>;
   onRetryMission?: () => void;
   onDismissErrors?: () => void;
   scanFindings?: BumblebeeFinding[];
@@ -62,7 +62,7 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
   if (!mission) {
     return (
       <MissionCreationView
-        onSubmit={async (description, cloneUrl) => { if (onExampleClick) await onExampleClick(description); }}
+        onSubmit={async (description, cloneUrl) => { if (onExampleClick) await onExampleClick(description, cloneUrl); }}
         github={github}
         preparedRepo={preparedRepo ? { repoName: preparedRepo.repoName, fullName: preparedRepo.fullName, summary: preparedRepo.summary, hotspots: preparedRepo.hotspots, suggestions: preparedRepo.suggestions, readiness: preparedRepo.readiness, packageScan: preparedRepo.packageScan, packageFindings: preparedRepo.packageFindings, loading: preparedRepo.loading } : undefined}
         onRepoPrepared={onRepoPrepared}

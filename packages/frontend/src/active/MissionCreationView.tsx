@@ -5,7 +5,7 @@ import { RepoPrepareModal } from "./RepoPrepareModal";
 import { RepoOverviewPanel } from "../passive/RepoOverviewPanel";
 import type { UseGitHubReturn } from "../hooks/useGitHub";
 import { prepareGitHubRepo, exploreRepo } from "../api";
-import type { GitHubRepoResponse, CodeSummaryResponse } from "../api";
+import type { GitHubRepoResponse, CodeSummaryResponse, CodeHotspotsResponse, RepoSuggestion, RepoReadinessProfile } from "../api";
 import type { BumblebeeFinding, BumblebeeScanResult } from "@aurex/shared";
 import { animate, stagger } from "animejs";
 
@@ -22,9 +22,9 @@ interface MissionCreationViewProps {
     repoName: string;
     fullName: string;
     summary: CodeSummaryResponse | null;
-    hotspots: import("../api").CodeHotspotsResponse | null;
-    suggestions: import("../api").RepoSuggestion[];
-    readiness: import("../api").RepoReadinessProfile | null;
+    hotspots: CodeHotspotsResponse | null;
+    suggestions: RepoSuggestion[];
+    readiness: RepoReadinessProfile | null;
     packageScan: BumblebeeScanResult | null;
     packageFindings: BumblebeeFinding[];
     loading: boolean;
@@ -337,7 +337,7 @@ export function MissionCreationView({
                 {!showTabs && (
                   <div style={{ marginTop: "12px" }}>
                     <div style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "2px", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', marginBottom: "12px" }}>
-                      Example MissIONS
+                      EXAMPLE MISSIONS
                     </div>
                     {examples.map((text) => (
                       <div
