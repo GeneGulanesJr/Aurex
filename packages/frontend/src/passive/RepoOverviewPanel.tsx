@@ -31,8 +31,9 @@ export function RepoOverviewPanel({ fullName, summary, hotspots, suggestions, lo
     const el = containerRef.current;
     if (!el) return;
     const sections = el.querySelectorAll<HTMLElement>(".overview-section");
+    if (sections.length === 0) return;
     staggerEntrance(Array.from(sections));
-  }, [summary]);
+  }, [summary, loading]);
 
   if (loading) {
     return (

@@ -127,13 +127,18 @@ export function App() {
 
   const handleRepoPrepared = useCallback(async (info: { repoName: string; fullName: string; summary: CodeSummaryResponse | null }) => {
     const { repoName, fullName, summary } = info;
-    setPreparedRepo({ repoName, fullName, summary, hotspots: null, suggestions: [], loading: true });
+    const version = Date.now();
+    setPreparedRepo({ repoName, fullName, summary, hotspots: null, suggestions: [], loading: true, _version: version } as any);
     try {
       const [hotspots, suggestionsRes] = await Promise.all([
         getRepoHotspots(repoName).catch(() => null),
         getRepoSuggestions(repoName).catch(() => ({ suggestions: [], analysisVersion: "1.0" })),
       ]);
-      setPreparedRepo({ repoName, fullName, summary, hotspots, suggestions: suggestionsRes.suggestions, loading: false });
+      setPreparedRepo((prev) => {
+        // Don't overwrite if cleared (e.g., mission created while loading)
+        if (!prev || (prev as any)._version !== version) return prev;
+        return { repoName, fullName, summary, hotspots, suggestions: suggestionsRes.suggestions, loading: false };
+      });
     } catch {
       setPreparedRepo((prev) => prev ? { ...prev, loading: false } : null);
     }
