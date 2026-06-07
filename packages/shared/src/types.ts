@@ -459,3 +459,39 @@ export interface QuotaProviderStatus {
   remainingBurnMs: number;
   remainingWindowMs: number;
 }
+
+/**
+ * Mutation testing report summary — extracted from a Stryker JSON report.
+ * Score is mutation score percentage (killed / (killed + survived + timeout) * 100).
+ */
+export interface MutationReportSummary {
+  /** True if the target repo has a stryker.config.* file at its root. */
+  strykerConfigured: boolean;
+  /** Path to the stryker config relative to the repo root, e.g. "stryker.config.mjs". */
+  configPath: string | null;
+  /** Path to the most recent JSON report, e.g. "reports/stryker-report.json". */
+  reportPath: string | null;
+  /** Mutation score percentage 0-100, or null if no report has been generated yet. */
+  score: number | null;
+  /** ISO timestamp of the report, or null if no report. */
+  generatedAt: string | null;
+  /** Mutant counts from the report. */
+  counts: {
+    killed: number;
+    survived: number;
+    timeout: number;
+    noCoverage: number;
+    ignored: number;
+    total: number;
+  } | null;
+}
+
+/**
+ * Status of a Stryker run triggered by the dashboard "Run Mutation Tests" button.
+ */
+export type MutationRunStatus =
+  | { state: "idle" }
+  | { state: "starting"; runId: string; startedAt: string }
+  | { state: "running"; runId: string; progress: number; currentMutator: string | null }
+  | { state: "completed"; runId: string; summary: MutationReportSummary }
+  | { state: "failed"; runId: string; error: string; exitCode: number };
