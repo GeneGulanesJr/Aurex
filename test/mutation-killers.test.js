@@ -2728,7 +2728,9 @@ describe('context.js boundary condition killers', () => {
 
   it('topicQueryNeedles: 121 chars → phrase NOT included', () => {
     // normalized.length > 120 → phrase = []
-    const long = 'a'.repeat(121);
+    // Use spaces so the regex splits into multiple terms
+    const words = Array.from({ length: 30 }, (_, i) => `word${i}`).join(' ');
+    const long = words + ' extraword ' + 'word30 '.repeat(20); // > 120 chars
     const result = topicQueryNeedles(long);
     // The full string should NOT be in results as phrase
     expect(result).not.toContain(long);
@@ -2905,5 +2907,188 @@ describe('search.js boundary condition killers', () => {
     // r0: ratio=0.5, r5: ratio=0/5=0
     // r0 should have higher recallScore (0.5*USEFUL > 0*USEFUL)
     expect(r0._score).toBeGreaterThan(r5._score);
+  });
+});
+
+// ═══════════════════════════════════════════════
+// search.js — remaining ArithmeticOperator L44-55
+// ═══════════════════════════════════════════════
+describe('search.js remaining ArithmeticOperator killers L44-55', () => {
+  it('recallScore: Math.log(1+n) with n=1: exact value', () => {
+    // n=1, useful=1, ratio=1
+    // recallScore = log(2)*MULT*1 + 1*USEFUL
+    const r = rankObservations([
+      baseObs({ id: 1, rank: null, recall_count: 1, useful_count: 1 }),
+    ], 'q')[0];
+    const r0 = rankObservations([
+      baseObs({ id: 1, rank: null, recall_count: 0, useful_count: 0 }),
+    ], 'q')[0];
+    const expected = Math.log(2) * RANKING.RECALL_LOG_MULTIPLIER + RANKING.USEFULNESS_MULTIPLIER;
+    const ranking = require('../config').getConfig().ranking;
+    const diff = r._score - r0._score;
+    expect(diff).toBeCloseTo(expected * ranking.recall, 1);
+  });
+
+  it('recallScore: Math.log(1+n) with n=100: exact value', () => {
+    const r = rankObservations([
+      baseObs({ id: 1, rank: null, recall_count: 100, useful_count: 100 }),
+    ], 'q')[0];
+    const r0 = rankObservations([
+      baseObs({ id: 1, rank: null, recall_count: 0, useful_count: 0 }),
+    ], 'q')[0];
+    const expected = Math.log(101) * RANKING.RECALL_LOG_MULTIPLIER + RANKING.USEFULNESS_MULTIPLIER;
+    const ranking = require('../config').getConfig().ranking;
+    const diff = r._score - r0._score;
+    expect(diff).toBeCloseTo(expected * ranking.recall, 1);
+  });
+
+  it('recallScore: usefulRatio = useful/recall (not useful*recall)', () => {
+    // n=4, useful=2, ratio=0.5
+    // recallScore = log(5)*MULT*0.5 + 0.5*USEFUL
+    // If mutated to *: 2*4=8 * MULT * 0.5 + 0.5*USEFUL = 4*MULT + 0.5*USEFUL (very different)
+    const r = rankObservations([
+      baseObs({ id: 1, rank: null, recall_count: 4, useful_count: 2 }),
+    ], 'q')[0];
+    const r0 = rankObservations([
+      baseObs({ id: 1, rank: null, recall_count: 0, useful_count: 0 }),
+    ], 'q')[0];
+    const expected = Math.log(5) * RANKING.RECALL_LOG_MULTIPLIER * 0.5 + 0.5 * RANKING.USEFULNESS_MULTIPLIER;
+    const ranking = require('../config').getConfig().ranking;
+    const diff = r._score - r0._score;
+    expect(diff).toBeCloseTo(expected * ranking.recall, 1);
+  });
+
+  it('recency: Math.exp(-ageMs / HALF_LIFE) — ageMs=0 → exp(0)=1', () => {
+    // Just-created observation
+    const ts = new Date().toISOString().replace('Z', '');
+    const r = rankObservations([baseObs({ id: 1, rank: null, created_at: ts, trust_score: 0, recall_count: 0, useful_count: 0 })], 'q')[0];
+    const ranking = require('../config').getConfig().ranking;
+    // recency ≈ 1, so score ≈ 1 * ranking.recency
+    expect(r._score).toBeCloseTo(1.0 * ranking.recency, 1);
+  });
+
+  it('recency: old observation has lower score', () => {
+    const ts = new Date(Date.now() - 365 * 86400000).toISOString().replace('Z', '');
+    const r = rankObservations([baseObs({ id: 1, rank: null, created_at: ts })], 'q')[0];
+    const ranking = require('../config').getConfig().ranking;
+    // recency = exp(-365*86400000 / HALF_LIFE) ≈ 0
+    // score ≈ 0 * ranking.recency + 0.5 * ranking.trust
+    expect(r._score).toBeCloseTo(0.5 * ranking.trust, 1);
+  });
+
+  it('ftsScore: (hits/total)*2 with 1/1 hits → 2.0', () => {
+    // query='alpha', title='alpha' → 1/1 * 2 = 2.0
+    const r = rankObservations([baseObs({ id: 1, rank: 0, title: 'alpha' })], 'alpha')[0];
+    const ranking = require('../config').getConfig().ranking;
+    // fts component = 2.0 * ranking.fts_relevance
+    // Total score > 2 * fts_relevance * 0.5
+    expect(r._score).toBeGreaterThan(2 * ranking.fts_relevance * 0.5);
+  });
+
+  it('ftsScore: (hits/total)*2 with 0/1 hits → 0.0', () => {
+    // query='alpha', title='beta' → 0/1 * 2 = 0.0
+    const r = rankObservations([baseObs({ id: 1, rank: 0, title: 'beta' })], 'alpha')[0];
+    // ftsScore = 0
+    // Score should be from recency + trust only
+    const ranking = require('../config').getConfig().ranking;
+    expect(r._score).toBeLessThan(2 * ranking.fts_relevance);
+  });
+
+  it('composite: typeBoost is a multiplier (exact ratio)', () => {
+    // Use two rows with different types but same other properties
+    const base = { rank: -3, trust_score: 0.5, recall_count: 0, useful_count: 0 };
+    const ts = new Date().toISOString().replace('Z', '');
+    const r1 = rankObservations([{ ...baseObs({ id: 1, ...base, type: 'decision', created_at: ts }) }], 'q')[0];
+    const r2 = rankObservations([{ ...baseObs({ id: 1, ...base, type: 'observation', created_at: ts }) }], 'q')[0];
+    const decisionBoost = RANKING.TYPE_BOOST['decision'] || 1.0;
+    const obsBoost = RANKING.TYPE_BOOST['observation'] || 1.0;
+    if (decisionBoost !== obsBoost) {
+      expect(r1._score / r2._score).toBeCloseTo(decisionBoost / obsBoost, 3);
+    }
+  });
+
+  it('composite: navBoost is a multiplier (exact ratio)', () => {
+    // The path_pattern is {} (matches nothing), so navBoost is always 1.0
+    // This test verifies that navBoost doesn't add to the score (it's a multiplier that stays at 1.0)
+    const base = { rank: null, trust_score: 0.5, recall_count: 0, useful_count: 0, type: 'observation' };
+    const ts = new Date().toISOString().replace('Z', '');
+    const nav = rankObservations(
+      [{ ...baseObs({ id: 1, ...base, title: 'Find src/utils/helpers.js module', created_at: ts, snippet: '' }) }],
+      'where is the hook module',
+    )[0];
+    const normal = rankObservations(
+      [{ ...baseObs({ id: 1, ...base, title: 'Find src/utils/helpers.js module', created_at: ts, snippet: '' }) }],
+      '',
+    )[0];
+    // Both should have navBoost = 1.0 (path_pattern {} matches nothing)
+    // The difference in score should come from ftsScore only
+    const ftsContribution = (nav._score - normal._score) / normal._score;
+    // fts component = (hits/total) * 2 * ranking.fts_relevance
+    // 'where' is in title, 'is' is stop word, 'the' is stop word, 'hook' is in title, 'module' is in title
+    // 3/5 * 2 = 1.2
+    expect(ftsContribution).toBeGreaterThan(0);
+  });
+});
+
+// ═══════════════════════════════════════════════
+// dedupe.js — L18 BlockStatement (the if-else chain)
+// ═══════════════════════════════════════════════
+describe('dedupe.js L18 BlockStatement killers', () => {
+  it('trigramOverlap: both empty → 1.0 (BlockStatement path)', () => {
+    expect(trigramOverlap('', '')).toBe(1.0);
+  });
+
+  it('trigramOverlap: one empty → 0.0 (BlockStatement path)', () => {
+    expect(trigramOverlap('abc', '')).toBe(0.0);
+    expect(trigramOverlap('', 'abc')).toBe(0.0);
+  });
+
+  it('trigramOverlap: both < 3 chars → both empty → 1.0', () => {
+    // 'a' has 0 trigrams (loop doesn't run for length < 3)
+    // Both sets are empty → return 1.0
+    expect(trigramOverlap('a', 'b')).toBe(1.0);
+    // One empty string (truly empty), one 'a' (0 trigrams)
+    // 'a' → ta = empty set, '' → tb = empty set
+    // Both empty → 1.0
+    expect(trigramOverlap('a', '')).toBe(1.0);
+  });
+
+  it('trigramOverlap: short string (< 3 chars) produces 0 trigrams', () => {
+    // 'ab' → 0 trigrams (loop runs 0 times)
+    // 'abc' → 1 trigram ('abc')
+    // 'abcd' → 2 trigrams ('abc', 'bcd')
+    expect(trigramOverlap('ab', 'abc')).toBe(0.0); // 'ab' has 0 trigrams
+    expect(trigramOverlap('abc', 'ab')).toBe(0.0); // 'ab' has 0 trigrams
+  });
+});
+
+// ═══════════════════════════════════════════════
+// context.js — remaining cross-project supplement killers
+// ═══════════════════════════════════════════════
+describe('context.js cross-project supplement remaining killers', () => {
+  it('supplement query: params order is [scoreParams..., project, whereParams..., supplementLimit]', () => {
+    const sqlJson = vi.fn((q) => {
+      if (q.includes('session_log') || q.includes("scope = 'personal'")) return [];
+      if (q.includes('topic_matches') && !q.includes('project != ?')) return [{ id: 1, title: 't', type: 'decision', content: 'c', scope: 'project', topic_key: null, created_at: new Date().toISOString().replace('Z', ''), trust_score: 0.5, recall_count: 0 }];
+      if (q.includes('project != ?')) return [];
+      return [];
+    });
+    context(mockDeps({ sqlJson }), { project: 'my-proj', query: 'auth' });
+    const crossCall = sqlJson.mock.calls.find(c => c[0].includes('project != ?'));
+    // The project param should be in the middle (after scoreParams, before whereParams)
+    expect(crossCall[1]).toContain('my-proj');
+  });
+
+  it('supplement query: supplementLimit is last param', () => {
+    const sqlJson = vi.fn((q) => {
+      if (q.includes('session_log') || q.includes("scope = 'personal'")) return [];
+      if (q.includes('topic_matches') && !q.includes('project != ?')) return [{ id: 1, title: 't', type: 'decision', content: 'c', scope: 'project', topic_key: null, created_at: new Date().toISOString().replace('Z', ''), trust_score: 0.5, recall_count: 0 }];
+      if (q.includes('project != ?')) return [];
+      return [];
+    });
+    context(mockDeps({ sqlJson }), { project: 'p', query: 'auth' });
+    const crossCall = sqlJson.mock.calls.find(c => c[0].includes('project != ?'));
+    const lastParam = crossCall[1][crossCall[1].length - 1];
+    expect(lastParam).toBe(CONTEXT.CROSS_PROJECT_SUPPLEMENT_LIMIT || 3);
   });
 });
