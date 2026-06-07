@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import { getUser, listRepos, exchangeCode } from "../clients/github-client.js";
@@ -249,10 +250,14 @@ export function registerGitHubRoutes(app: FastifyInstance, deps: GitHubRouteDeps
 
     try {
       const prepared = await prepareRepoForMission({ lapis, parentRepoRoot: repoRoot, cloneUrl: normalizedCloneUrl });
+      const repoName = path.basename(prepared.repoPath);
+      await lapis.setSetting(`repo:${repoName}:path`, prepared.repoPath);
+      await lapis.setSetting(`repo:${repoName}:fullName`, repo.full_name);
       return {
         fullName: repo.full_name,
         repoPath: prepared.repoPath,
         repoStatus: prepared.repoStatus,
+        repoName,
         indexed: false,
         indexingStatus: "unavailable" as const,
       };

@@ -407,7 +407,7 @@ describe("GitHub App integration routes", () => {
     it("prepares a repo and returns repo + indexing status", async () => {
       mockListRepos.mockResolvedValueOnce(repos);
       mockPrepareRepoForMission.mockResolvedValueOnce({ repoPath: "/workspace/repos/octocat-hello-world", repoStatus: "cloned" });
-      const { app } = buildApp({
+      const { app, lapis } = buildApp({
         github_token: { access_token: "ghu_abc123", token_type: "bearer", scope: "repo", created_at: "2026-01-01T00:00:00Z" },
       });
 
@@ -418,13 +418,18 @@ describe("GitHub App integration routes", () => {
       });
 
       expect(res.statusCode).toBe(200);
-      expect(res.json()).toEqual({
+      const body = res.json();
+      expect(body).toMatchObject({
         fullName: "octocat/hello-world",
         repoPath: "/workspace/repos/octocat-hello-world",
         repoStatus: "cloned",
+        repoName: "octocat-hello-world",
         indexed: false,
         indexingStatus: "unavailable",
       });
+      // Verify repo metadata stored for explore endpoint
+      expect(lapis.setSetting).toHaveBeenCalledWith("repo:octocat-hello-world:path", "/workspace/repos/octocat-hello-world");
+      expect(lapis.setSetting).toHaveBeenCalledWith("repo:octocat-hello-world:fullName", "octocat/hello-world");
       expect(mockPrepareRepoForMission).toHaveBeenCalledWith({
         lapis: expect.any(Object),
         parentRepoRoot: "/workspace",
