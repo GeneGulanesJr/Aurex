@@ -209,7 +209,7 @@ export function App() {
       }
     },
     onNewMission: () => {
-      // Focus the new mission input by dispatching a custom event
+      selectMission(null);
       window.dispatchEvent(new CustomEvent("aurex:focus-new-mission"));
     },
     onToggleSidebar: toggleSidebar,
@@ -279,14 +279,9 @@ export function App() {
             onSelect={selectMission}
             onRemove={removeMission}
             onRestart={markMissionRestarted}
-            onCreateMission={handleCreateMission}
-            github={github}
             systemReady={systemReady}
             totalCost={state.cost?.totalCost}
             collapsed={sidebarCollapsed}
-            preparedRepo={preparedRepo ? { repoName: preparedRepo.repoName, fullName: preparedRepo.fullName, summary: preparedRepo.summary } : null}
-            onRepoPrepared={handleRepoPrepared}
-            suggestedDescription={suggestedMission}
           />
         )}
         <main style={{ overflowY: "auto", background: "var(--bg-deep)" }}>
@@ -313,6 +308,9 @@ export function App() {
               setSuggestedMission(prefill);
               window.dispatchEvent(new CustomEvent("aurex:focus-new-mission", { detail: prefill }));
             }}
+            onRepoPrepared={handleRepoPrepared}
+            github={github}
+            systemReady={systemReady}
           />
         </main>
         <div style={{ gridColumn: "1 / -1" }}>
@@ -337,17 +335,12 @@ export function App() {
               missions={missionsState.missions}
               selectedMissionId={missionsState.selectedMissionId}
               escalationMissionId={state.escalation?.type === "escalation" ? missionsState.selectedMissionId : null}
-              onSelect={(id) => { selectMission(id); setMobileOverlayOpen(false); }}
+              onSelect={(id) => { selectMission(id); if (id !== null) setMobileOverlayOpen(false); }}
               onRemove={removeMission}
               onRestart={markMissionRestarted}
-              onCreateMission={handleCreateMission}
-              github={github}
               systemReady={systemReady}
               totalCost={state.cost?.totalCost}
               collapsed={false}
-              preparedRepo={preparedRepo ? { repoName: preparedRepo.repoName, fullName: preparedRepo.fullName, summary: preparedRepo.summary } : null}
-              onRepoPrepared={handleRepoPrepared}
-              suggestedDescription={suggestedMission}
             />
           </div>
         </>
