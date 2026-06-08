@@ -52,7 +52,6 @@ export function App() {
     packageFindings: BumblebeeFinding[];
     loading: boolean;
   } | null>(null);
-  const [suggestedMission, setSuggestedMission] = useState<string | undefined>(undefined);
   const { settings, setSettings, resetSettings } = useSettings();
   const { state: missionsState, selectMission, removeMission, addOptimisticMission, markMissionRestarted, handleWsEvent: missionsWsHandler } = useMissions();
   const { state, dispatch, handleWsEvent: missionWsHandler } = useMission(missionsState.selectedMissionId);
@@ -170,14 +169,6 @@ export function App() {
     }
   }, []);
 
-  // Clear suggested mission after form picks it up
-  useEffect(() => {
-    if (suggestedMission) {
-      const timer = setTimeout(() => setSuggestedMission(undefined), 100);
-      return () => clearTimeout(timer);
-    }
-  }, [suggestedMission]);
-
   const handleRetryMission = useCallback(async () => {
     if (!state.mission) return;
     try {
@@ -210,7 +201,6 @@ export function App() {
     },
     onNewMission: () => {
       selectMission(null);
-      window.dispatchEvent(new CustomEvent("aurex:focus-new-mission"));
     },
     onToggleSidebar: toggleSidebar,
   });
@@ -305,7 +295,6 @@ export function App() {
             onTriggerScan={triggerSupplyChainScan}
             preparedRepo={preparedRepo}
             onStartFromSuggestion={(prefill: string) => {
-              setSuggestedMission(prefill);
               window.dispatchEvent(new CustomEvent("aurex:focus-new-mission", { detail: prefill }));
             }}
             onRepoPrepared={handleRepoPrepared}

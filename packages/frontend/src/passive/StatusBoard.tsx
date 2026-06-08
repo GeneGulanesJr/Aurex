@@ -62,9 +62,9 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
   if (!mission) {
     return (
       <MissionCreationView
-        onSubmit={async (description, cloneUrl) => { if (onExampleClick) await onExampleClick(description, cloneUrl); }}
+        onSubmit={async (description, cloneUrl) => { await onExampleClick!(description, cloneUrl); }}
         github={github}
-        preparedRepo={preparedRepo ? { repoName: preparedRepo.repoName, fullName: preparedRepo.fullName, summary: preparedRepo.summary, hotspots: preparedRepo.hotspots, suggestions: preparedRepo.suggestions, readiness: preparedRepo.readiness, packageScan: preparedRepo.packageScan, packageFindings: preparedRepo.packageFindings, loading: preparedRepo.loading } : undefined}
+        preparedRepo={preparedRepo ? { repoName: preparedRepo.repoName, fullName: preparedRepo.fullName, summary: preparedRepo.summary, hotspots: preparedRepo.hotspots, suggestions: preparedRepo.suggestions, readiness: preparedRepo.readiness, packageScan: preparedRepo.packageScan, packageFindings: preparedRepo.packageFindings, loading: preparedRepo.loading } : null}
         onRepoPrepared={onRepoPrepared}
         systemReady={systemReady}
         onStartFromSuggestion={onStartFromSuggestion}

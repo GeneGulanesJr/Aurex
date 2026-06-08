@@ -60,6 +60,10 @@ export function MissionCreationView({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
+    form.open();
+  }, []);
+
+  useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const sections = el.querySelectorAll<HTMLElement>(".creation-section");
