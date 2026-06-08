@@ -120,7 +120,11 @@ export function createPlanner(
       let response;
       try {
         const codebaseSection = buildCodebaseContextSection(codeSummary);
-        const systemPrompt = `You are a mission planner. Decompose the mission into ordered milestones. Each milestone has working units with declared paths and modules, validation criteria, and test commands. Respond with JSON only. Keep the plan concise — at most 4 milestones, each with at most 4 working units.
+        const systemPrompt = `You are a mission planner. Decompose the mission into ordered milestones. Each milestone has working units with declared paths and modules, validation criteria, and test commands.
+
+OUTPUT FORMAT: You MUST respond with ONLY a raw JSON object. No markdown, no code fences, no explanation, no thinking aloud. Start your response with { and end with }.
+
+Keep the plan concise — at most 4 milestones, each with at most 4 working units.
 
 IMPORTANT: Use the codebase structure below to ensure your declared paths and modules match the actual project layout. Working units must reference real directories and modules. Plan milestones that are achievable and well-scoped based on the actual codebase architecture.`;
 
@@ -165,6 +169,10 @@ IMPORTANT: Use the codebase structure below to ensure your declared paths and mo
 
       emitLog("planning", "Parsing plan response…");
 
+      // Strip <think/>...</think/> blocks that some models prepend before JSON.
+      // The firstBrace extraction below handles most preamble text, but
+      // think tags can contain literal braces that confuse it.
+      const content = response.content.replace(/<think[\s\S]*?<\/think>\s*/gi, "");
       // 3. Parse — resilient to varying LLM output formats
       // Stryker disable all: the JSON parsing fallback chain has extensive
       // conditional branches that are tested by dedicated parse tests, but
@@ -175,34 +183,34 @@ IMPORTANT: Use the codebase structure below to ensure your declared paths and mo
       let raw: any;
       try {
         // Strip markdown code fences if present
-        const cleaned = response.content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/s, "").trim();
+        const cleaned = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/s, "").trim();
         raw = JSON.parse(cleaned);
       } catch {
         // Try to extract first JSON object from the response
-        const firstBrace = response.content.indexOf("{");
-        const lastBrace = response.content.lastIndexOf("}");
+        const firstBrace = content.indexOf("{");
+        const lastBrace = content.lastIndexOf("}");
         if (firstBrace >= 0 && lastBrace > firstBrace) {
           try {
-            raw = JSON.parse(response.content.slice(firstBrace, lastBrace + 1));
+            raw = JSON.parse(content.slice(firstBrace, lastBrace + 1));
           } catch {
             // If truncated (finish_reason=length), try to repair by closing open brackets
             if (response.finishReason === "length") {
               try {
-                const repaired = repairTruncatedJson(response.content.slice(firstBrace));
+                const repaired = repairTruncatedJson(content.slice(firstBrace));
                 raw = JSON.parse(repaired);
                 emitLog("planning", `Successfully repaired truncated JSON`);
               } catch {
-                emitError("planner_parse_error", `Planner returned truncated JSON that could not be repaired`, { recoverable: true, details: { preview: response.content.slice(0, 200), finishReason: response.finishReason } });
-                throw new Error(`Planner returned invalid JSON: ${response.content.slice(0, 200)}`);
+                emitError("planner_parse_error", `Planner returned truncated JSON that could not be repaired`, { recoverable: true, details: { preview: content.slice(0, 200), finishReason: response.finishReason } });
+                throw new Error(`Planner returned invalid JSON: ${content.slice(0, 200)}`);
               }
             } else {
-              emitError("planner_parse_error", `Planner returned invalid JSON`, { recoverable: true, details: { preview: response.content.slice(0, 200) } });
-              throw new Error(`Planner returned invalid JSON: ${response.content.slice(0, 200)}`);
+              emitError("planner_parse_error", `Planner returned invalid JSON`, { recoverable: true, details: { preview: content.slice(0, 200) } });
+              throw new Error(`Planner returned invalid JSON: ${content.slice(0, 200)}`);
             }
           }
         } else {
-          emitError("planner_parse_error", `Planner returned invalid JSON`, { recoverable: true, details: { preview: response.content.slice(0, 200) } });
-          throw new Error(`Planner returned invalid JSON: ${response.content.slice(0, 200)}`);
+          emitError("planner_parse_error", `Planner returned invalid JSON`, { recoverable: true, details: { preview: content.slice(0, 200) } });
+          throw new Error(`Planner returned invalid JSON: ${content.slice(0, 200)}`);
         }
       }
       // Stryker restore
