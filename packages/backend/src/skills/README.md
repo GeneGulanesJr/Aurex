@@ -6,14 +6,13 @@ These are currently referenced by `src/agents/factory.ts`:
 
 - `orchestrator.md`: mission planning and mission lifecycle coordination
 - `worker.md`: one-todo/working-unit implementation
-- `validator.md`: todo-based scrutiny and user-testing validation
+- `validator.md`: milestone-based scrutiny and user-testing validation
 - `research.md`: research finding capture
 
 ## Prompt-Only Contracts
 
 These define the rest of the Aurex operating model. They are not first-class spawned agent types yet unless the runtime is extended to load them.
 
-- `lapis-context-retriever.md`: focused context bundle generation per todo
 - `todo-state-protocol.md`: exact todo/ledger state transitions and ownership
 - `mission-ledger-reconciliation.md`: live loop for updating ledger readiness, progress, dependencies, blockers, and next actions
 - `human-escalation.md`: when Aurex must stop and ask the human
