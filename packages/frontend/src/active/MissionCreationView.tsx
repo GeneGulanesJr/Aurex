@@ -181,7 +181,7 @@ export function MissionCreationView({
     <div ref={containerRef} style={{ display: "flex", height: "100%", overflowY: "auto" }}>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "40px 24px", maxWidth: "720px", margin: "0 auto", width: "100%" }}>
         {/* Header */}
-        <div className="creation-section" style={{ opacity: 0, textAlign: "center", marginBottom: "32px", width: "100%" }}>
+        <div className="creation-section" style={{ textAlign: "center", marginBottom: "32px", width: "100%" }}>
           <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "48px", fontWeight: 700, letterSpacing: "12px", color: "var(--accent)", textShadow: "0 0 40px var(--accent-glow), 0 0 80px var(--accent-glow)", marginBottom: "4px" }}>
             AUREX
           </div>
@@ -191,7 +191,7 @@ export function MissionCreationView({
         </div>
 
         {!systemReady ? (
-          <div className="creation-section" style={{ opacity: 0, width: "100%", padding: "16px", background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "6px", textAlign: "center" }}>
+          <div className="creation-section" style={{ width: "100%", padding: "16px", background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "6px", textAlign: "center" }}>
             <div style={{ color: "var(--warning)", fontSize: "11px", fontFamily: '"JetBrains Mono", monospace', textTransform: "uppercase", letterSpacing: "1px", marginBottom: "8px" }}>
               Integrations Required
             </div>
@@ -203,7 +203,7 @@ export function MissionCreationView({
           <>
             {/* Tabs */}
             {showTabs && (
-              <div className="creation-section" style={{ opacity: 0, display: "flex", gap: "0", marginBottom: "20px", width: "100%", borderBottom: "1px solid var(--border)" }}>
+              <div className="creation-section" style={{ display: "flex", gap: "0", marginBottom: "20px", width: "100%", borderBottom: "1px solid var(--border)" }}>
                 <button
                   onClick={() => setActiveTab("create")}
                   style={{
@@ -243,7 +243,7 @@ export function MissionCreationView({
 
             {/* Create tab content */}
             {(!showTabs || activeTab === "create") && (
-              <div className="creation-section" style={{ opacity: 0, width: "100%", display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div className="creation-section" style={{ width: "100%", display: "flex", flexDirection: "column", gap: "16px" }}>
                 {/* Repo picker */}
                 {github?.connected && github.repos.length > 0 && (
                   <RepoPicker repos={github.repos} selectedRepoId={form.state.selectedRepoId} onSelect={handleRepoSelect} />
@@ -396,7 +396,7 @@ export function MissionCreationView({
 
             {/* Overview tab content */}
             {showTabs && activeTab === "overview" && (
-              <div className="creation-section" style={{ opacity: 0, width: "100%" }}>
+              <div className="creation-section" style={{ width: "100%" }}>
                 <RepoOverviewPanel
                   repoName={preparedRepo.repoName}
                   fullName={preparedRepo.fullName}
