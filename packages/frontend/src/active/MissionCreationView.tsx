@@ -248,6 +248,21 @@ export function MissionCreationView({
                 {github?.connected && github.repos.length > 0 && (
                   <RepoPicker repos={github.repos} selectedRepoId={form.state.selectedRepoId} onSelect={handleRepoSelect} />
                 )}
+                {github?.connected && github.repos.length === 0 && (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: "4px" }}>
+                    <span style={{ fontSize: "11px", color: github.loading ? "var(--text-muted)" : "var(--warning)", fontFamily: '"JetBrains Mono", monospace' }}>
+                      {github.loading ? "LOADING REPOS..." : "NO REPOS FOUND"}
+                    </span>
+                    {!github.loading && (
+                      <button
+                        onClick={() => github.refreshRepos()}
+                        style={{ fontSize: "10px", color: "var(--accent)", background: "none", border: "1px solid var(--accent-dim)", borderRadius: "3px", cursor: "pointer", padding: "3px 8px", fontFamily: '"JetBrains Mono", monospace', textTransform: "uppercase", letterSpacing: "1px" }}
+                      >
+                        Refresh
+                      </button>
+                    )}
+                  </div>
+                )}
 
                 {/* Prepared repo card */}
                 {form.state.selectedRepoFullName && preparedRepo && (

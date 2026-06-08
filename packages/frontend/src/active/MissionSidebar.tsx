@@ -57,6 +57,18 @@ function statusIconColor(state: string): string {
 }
 
 export function MissionSidebar({ missions, selectedMissionId, escalationMissionId, onSelect, onRemove, onRestart, systemReady, totalCost, collapsed = false }: MissionSidebarProps) {
+  const handleNewMission = useCallback(() => {
+    onSelect(null);
+    // Defer the focus event until after React's render cycle completes.
+    // When a mission is selected, MissionCreationView is not in the DOM yet —
+    // dispatching synchronously means the listener doesn't exist and the event
+    // is lost. requestAnimationFrame yields past React's commit phase so the
+    // creation view mounts and registers its listener before the event fires.
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new CustomEvent("aurex:focus-new-mission"));
+    });
+  }, [onSelect]);
+
   const handleAbort = useCallback(async (e: React.MouseEvent, missionId: string) => {
     e.stopPropagation();
     try {
@@ -77,7 +89,7 @@ export function MissionSidebar({ missions, selectedMissionId, escalationMissionI
     return (
       <aside className="sidebar-transition" style={{ width: "48px", borderRight: "1px solid var(--border)", background: "var(--bg-surface)", display: "flex", flexDirection: "column", alignItems: "center", paddingTop: "12px", gap: "4px" }}>
         <div
-          onClick={() => onSelect(null)}
+          onClick={handleNewMission}
           title="New mission"
           style={{
             width: "32px",
@@ -133,7 +145,7 @@ export function MissionSidebar({ missions, selectedMissionId, escalationMissionI
         <h2 style={{ fontSize: "11px", fontWeight: 500, color: "var(--text-secondary)", fontFamily: '"JetBrains Mono", monospace', textTransform: "uppercase", letterSpacing: "2px", margin: 0 }}>Missions</h2>
         {systemReady && (
           <button
-            onClick={() => onSelect(null)}
+            onClick={handleNewMission}
             style={{
               width: "24px",
               height: "24px",
