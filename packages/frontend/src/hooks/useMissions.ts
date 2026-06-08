@@ -26,7 +26,7 @@ interface MissionsState {
 
 type Action =
   | { type: "SET_MISSIONS"; missions: MissionListItem[] }
-  | { type: "SELECT"; missionId: string }
+  | { type: "SELECT"; missionId: string | null }
   | { type: "MISSION_CREATED"; missionId: string; description: string }
   | { type: "WS_MISSION_QUEUED"; missionId: string; queuePosition: number }
   | { type: "WS_MISSION_STARTED"; missionId: string }
@@ -178,7 +178,7 @@ export function useMissions() {
     }
   }, []);
 
-  const selectMission = useCallback((missionId: string) => {
+  const selectMission = useCallback((missionId: string | null) => {
     dispatch({ type: "SELECT", missionId });
   }, []);
 

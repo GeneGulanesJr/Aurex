@@ -52,7 +52,6 @@ export function App() {
     packageFindings: BumblebeeFinding[];
     loading: boolean;
   } | null>(null);
-  const [suggestedMission, setSuggestedMission] = useState<string | undefined>(undefined);
   const { settings, setSettings, resetSettings } = useSettings();
   const { state: missionsState, selectMission, removeMission, addOptimisticMission, markMissionRestarted, handleWsEvent: missionsWsHandler } = useMissions();
   const { state, dispatch, handleWsEvent: missionWsHandler } = useMission(missionsState.selectedMissionId);
@@ -170,14 +169,6 @@ export function App() {
     }
   }, []);
 
-  // Clear suggested mission after form picks it up
-  useEffect(() => {
-    if (suggestedMission) {
-      const timer = setTimeout(() => setSuggestedMission(undefined), 100);
-      return () => clearTimeout(timer);
-    }
-  }, [suggestedMission]);
-
   const handleRetryMission = useCallback(async () => {
     if (!state.mission) return;
     try {
@@ -209,8 +200,7 @@ export function App() {
       }
     },
     onNewMission: () => {
-      // Focus the new mission input by dispatching a custom event
-      window.dispatchEvent(new CustomEvent("aurex:focus-new-mission"));
+      selectMission(null);
     },
     onToggleSidebar: toggleSidebar,
   });
@@ -279,14 +269,9 @@ export function App() {
             onSelect={selectMission}
             onRemove={removeMission}
             onRestart={markMissionRestarted}
-            onCreateMission={handleCreateMission}
-            github={github}
             systemReady={systemReady}
             totalCost={state.cost?.totalCost}
             collapsed={sidebarCollapsed}
-            preparedRepo={preparedRepo ? { repoName: preparedRepo.repoName, fullName: preparedRepo.fullName, summary: preparedRepo.summary } : null}
-            onRepoPrepared={handleRepoPrepared}
-            suggestedDescription={suggestedMission}
           />
         )}
         <main style={{ overflowY: "auto", background: "var(--bg-deep)" }}>
@@ -310,9 +295,11 @@ export function App() {
             onTriggerScan={triggerSupplyChainScan}
             preparedRepo={preparedRepo}
             onStartFromSuggestion={(prefill: string) => {
-              setSuggestedMission(prefill);
               window.dispatchEvent(new CustomEvent("aurex:focus-new-mission", { detail: prefill }));
             }}
+            onRepoPrepared={handleRepoPrepared}
+            github={github}
+            systemReady={systemReady}
           />
         </main>
         <div style={{ gridColumn: "1 / -1" }}>
@@ -337,17 +324,12 @@ export function App() {
               missions={missionsState.missions}
               selectedMissionId={missionsState.selectedMissionId}
               escalationMissionId={state.escalation?.type === "escalation" ? missionsState.selectedMissionId : null}
-              onSelect={(id) => { selectMission(id); setMobileOverlayOpen(false); }}
+              onSelect={(id) => { selectMission(id); if (id !== null) setMobileOverlayOpen(false); }}
               onRemove={removeMission}
               onRestart={markMissionRestarted}
-              onCreateMission={handleCreateMission}
-              github={github}
               systemReady={systemReady}
               totalCost={state.cost?.totalCost}
               collapsed={false}
-              preparedRepo={preparedRepo ? { repoName: preparedRepo.repoName, fullName: preparedRepo.fullName, summary: preparedRepo.summary } : null}
-              onRepoPrepared={handleRepoPrepared}
-              suggestedDescription={suggestedMission}
             />
           </div>
         </>

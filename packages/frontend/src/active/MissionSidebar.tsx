@@ -1,29 +1,17 @@
 import { useCallback } from "react";
 import type { MissionListItem } from "../hooks/useMissions";
-import type { UseGitHubReturn } from "../hooks/useGitHub";
 import { abortMission, restartMission } from "../api";
-import { NewMissionForm } from "./NewMissionForm";
-import type { CodeSummaryResponse } from "../api";
 
 interface MissionSidebarProps {
   missions: MissionListItem[];
   selectedMissionId: string | null;
   escalationMissionId?: string | null;
-  onSelect: (missionId: string) => void;
+  onSelect: (missionId: string | null) => void;
   onRemove: (missionId: string) => void;
   onRestart: (missionId: string) => void;
-  onCreateMission: (description: string, cloneUrl?: string) => Promise<void>;
-  github?: UseGitHubReturn;
   systemReady?: boolean;
   totalCost?: number;
   collapsed?: boolean;
-  preparedRepo?: {
-    repoName: string;
-    fullName: string;
-    summary: CodeSummaryResponse | null;
-  } | null;
-  onRepoPrepared?: (info: { repoName: string; fullName: string; summary: CodeSummaryResponse | null }) => void;
-  suggestedDescription?: string;
 }
 
 function statusBadge(state: string): { label: string; style: React.CSSProperties } {
@@ -68,7 +56,7 @@ function statusIconColor(state: string): string {
   }
 }
 
-export function MissionSidebar({ missions, selectedMissionId, escalationMissionId, onSelect, onRemove, onRestart, onCreateMission, github, systemReady, totalCost, collapsed = false, preparedRepo, onRepoPrepared, suggestedDescription }: MissionSidebarProps) {
+export function MissionSidebar({ missions, selectedMissionId, escalationMissionId, onSelect, onRemove, onRestart, systemReady, totalCost, collapsed = false }: MissionSidebarProps) {
   const handleAbort = useCallback(async (e: React.MouseEvent, missionId: string) => {
     e.stopPropagation();
     try {
@@ -88,8 +76,26 @@ export function MissionSidebar({ missions, selectedMissionId, escalationMissionI
   if (collapsed) {
     return (
       <aside className="sidebar-transition" style={{ width: "48px", borderRight: "1px solid var(--border)", background: "var(--bg-surface)", display: "flex", flexDirection: "column", alignItems: "center", paddingTop: "12px", gap: "4px" }}>
-        <div style={{ fontSize: "10px", fontFamily: '"JetBrains Mono", monospace', color: "var(--text-muted)", letterSpacing: "0", marginBottom: "8px" }}>
-          M
+        <div
+          onClick={() => onSelect(null)}
+          title="New mission"
+          style={{
+            width: "32px",
+            height: "32px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            borderRadius: "4px",
+            color: "var(--accent)",
+            fontSize: "16px",
+            fontWeight: 600,
+            marginBottom: "4px",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-elevated)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+        >
+          +
         </div>
         {missions.map((mission) => {
           const isSelected = mission.missionId === selectedMissionId;
@@ -121,48 +127,47 @@ export function MissionSidebar({ missions, selectedMissionId, escalationMissionI
     );
   }
 
-  if (missions.length === 0) {
-    return (
-      <aside className="sidebar-transition" style={{ width: "280px", borderRight: "1px solid var(--border)", background: "var(--bg-surface)", display: "flex", flexDirection: "column" }}>
-        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)" }}>
-          <h2 style={{ fontSize: "11px", fontWeight: 500, color: "var(--text-secondary)", fontFamily: '"JetBrains Mono", monospace', textTransform: "uppercase", letterSpacing: "2px", margin: 0 }}>Missions</h2>
-        </div>
-        <NewMissionForm onSubmit={onCreateMission} github={github} preparedRepo={preparedRepo} onRepoPrepared={onRepoPrepared} suggestedDescription={suggestedDescription} />
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "8px" }}>
-          <div style={{ width: "32px", height: "32px", border: "1px dashed var(--border)", borderRadius: "4px", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--border-bright)", fontSize: "16px" }}>◎</div>
-          <span style={{ fontSize: "11px", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace' }}>NO ACTIVE MISSIONS</span>
-          {!systemReady ? (
-            <span style={{ fontSize: "10px", color: "var(--warning)" }}>Configure integrations first</span>
-          ) : (
-            <span style={{ fontSize: "10px", color: "var(--border-bright)" }}>Create a mission to begin</span>
-          )}
-        </div>
-        <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)", marginTop: "auto" }}>
-          <div style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "2px", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', marginBottom: "4px" }}>
-            Total Spent
-          </div>
-          <div style={{ fontSize: "14px", fontWeight: 500, color: "var(--accent)", fontFamily: '"JetBrains Mono", monospace' }}>
-            ${(totalCost ?? 0).toFixed(2)}
-          </div>
-        </div>
-      </aside>
-    );
-  }
-
   return (
     <aside className="sidebar-transition" style={{ width: "280px", borderRight: "1px solid var(--border)", background: "var(--bg-surface)", display: "flex", flexDirection: "column" }}>
-      <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)" }}>
+      <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <h2 style={{ fontSize: "11px", fontWeight: 500, color: "var(--text-secondary)", fontFamily: '"JetBrains Mono", monospace', textTransform: "uppercase", letterSpacing: "2px", margin: 0 }}>Missions</h2>
+        {systemReady && (
+          <button
+            onClick={() => onSelect(null)}
+            style={{
+              width: "24px",
+              height: "24px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "var(--accent)",
+              color: "var(--bg-deep)",
+              border: "none",
+              borderRadius: "4px",
+              fontSize: "14px",
+              fontWeight: 600,
+              cursor: "pointer",
+              fontFamily: '"JetBrains Mono", monospace',
+              lineHeight: 1,
+            }}
+            title="New mission"
+          >
+            +
+          </button>
+        )}
       </div>
-      {!systemReady ? (
-        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: "4px" }}>
-          <span style={{ color: "var(--warning)", fontSize: "11px", fontFamily: '"JetBrains Mono", monospace', textTransform: "uppercase", letterSpacing: "1px" }}>Integrations Required</span>
-          <span style={{ color: "var(--text-muted)", fontSize: "10px" }}>Configure GitHub & PiNyx in Integrations panel before creating missions.</span>
-        </div>
-      ) : (
-        <NewMissionForm onSubmit={onCreateMission} github={github} preparedRepo={preparedRepo} onRepoPrepared={onRepoPrepared} suggestedDescription={suggestedDescription} />
-      )}
       <div style={{ flex: 1, overflowY: "auto" }}>
+        {missions.length === 0 && (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "8px", padding: "32px 16px" }}>
+            <div style={{ width: "32px", height: "32px", border: "1px dashed var(--border)", borderRadius: "4px", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--border-bright)", fontSize: "16px" }}>◎</div>
+            <span style={{ fontSize: "11px", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace' }}>NO ACTIVE MISSIONS</span>
+            {!systemReady ? (
+              <span style={{ fontSize: "10px", color: "var(--warning)" }}>Configure integrations first</span>
+            ) : (
+              <span style={{ fontSize: "10px", color: "var(--border-bright)" }}>Create a mission to begin</span>
+            )}
+          </div>
+        )}
         {missions.map((mission) => {
           const badge = statusBadge(mission.state);
           const isSelected = mission.missionId === selectedMissionId;
@@ -200,7 +205,7 @@ export function MissionSidebar({ missions, selectedMissionId, escalationMissionI
                 {mission.state === "failed" && (
                   <button
                     onClick={(e) => handleRestart(e, mission.missionId)}
-                    style={{ color: "var(--accent)", background: "none", border: "1px solid var(--accent-dim)", borderRadius: "3px", cursor: "pointer", fontSize: "10px", opacity: 1, padding: "3px 6px", fontFamily: '\"JetBrains Mono\", monospace', textTransform: "uppercase", letterSpacing: "1px" }}
+                    style={{ color: "var(--accent)", background: "none", border: "1px solid var(--accent-dim)", borderRadius: "3px", cursor: "pointer", fontSize: "10px", opacity: 1, padding: "3px 6px", fontFamily: '"JetBrains Mono", monospace', textTransform: "uppercase", letterSpacing: "1px" }}
                     title="Restart mission"
                   >
                     Restart
