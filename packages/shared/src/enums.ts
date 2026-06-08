@@ -2,7 +2,7 @@
 
 // Mission lifecycle
 export type MissionStatus = "planning" | "running" | "paused" | "completed" | "failed" | "aborted";
-export type MilestoneStatus = "planned" | "in_progress" | "validating" | "completed" | "failed";
+export type MilestoneStatus = "planned" | "in_progress" | "validating" | "rescoping" | "completed" | "failed";
 
 // Agent statuses
 export type AgentStatus = "spawned" | "planning" | "working" | "reviewing" | "researching" | "committing" | "completed" | "timed_out" | "failed";

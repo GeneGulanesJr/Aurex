@@ -1,6 +1,6 @@
 // packages/backend/src/ws/events.ts
 import type { FastifyInstance } from "fastify";
-import type { WsClientEvent, WsClientMessage } from "@aurex/shared";
+import type { WsClientEvent } from "@aurex/shared";
 
 export type EventHandler = (event: WsClientEvent) => void;
 
@@ -14,11 +14,6 @@ export interface EventBus {
   subscribe(handler: EventHandler): () => void;
   getEventsSince(seq: number): SequencedEvent[];
   getCurrentSeq(): number;
-}
-
-export interface WsRouteDeps {
-  onSubscribeMission?: (socket: any, missionId: string) => void;
-  onCheckpointDecision?: (msg: WsClientMessage) => void;
 }
 
 const MAX_EVENT_HISTORY = 10_000;
@@ -78,7 +73,6 @@ export function registerWebSocketRoutes(
   app: FastifyInstance,
   eventBus: EventBus,
   apiKey: string | null = null,
-  deps?: WsRouteDeps,
 ): void {
   app.get("/ws", { websocket: true }, (socket) => {
     let authenticated = !apiKey;
@@ -136,15 +130,9 @@ export function registerWebSocketRoutes(
 
         if (msg.event === "subscribe_mission" && typeof msg.missionId === "string") {
           subscribedMissions.add(msg.missionId);
-          deps?.onSubscribeMission?.(socket, msg.missionId);
           if (socket.readyState === socket.OPEN) {
             socket.send(JSON.stringify({ type: "subscribed", missionId: msg.missionId }));
           }
-          return;
-        }
-
-        if (msg.event === "checkpoint_decision") {
-          deps?.onCheckpointDecision?.(msg as WsClientMessage);
           return;
         }
       } catch {

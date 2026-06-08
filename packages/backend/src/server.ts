@@ -123,7 +123,6 @@ async function main() {
     lapis,
     pool,
     agentLogger,
-    appConfig: config,
     missionConfig: {
       workerTimeouts: config.workerTimeouts,
       costCap: config.missionCostCap,

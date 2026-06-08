@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scoreBand, bandColorVar, SCORE_BANDS } from "./mutation-score.js";
+import { scoreBand, bandColorVar, SCORE_BANDS } from "./mutation-score";
 
 describe("scoreBand", () => {
   it("returns 'none' for null", () => {

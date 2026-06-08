@@ -20,6 +20,6 @@ describe("CompressionService", () => {
 
     await expect(compression.run("m1", "budget_threshold")).resolves.toBeUndefined();
     expect(emit).toHaveBeenCalledTimes(1);
-    expect(emit).toHaveBeenCalledWith(expect.objectContaining({ agentId: "compression-m1" }));
+    expect(emit).toHaveBeenCalledWith(expect.objectContaining({ type: "mission_error", missionId: "m1", code: "compression_failed" }));
   });
 });

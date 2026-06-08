@@ -11,6 +11,7 @@ import { useTabBadge } from "./hooks/useTabBadge";
 import { useSettings } from "./hooks/useSettings";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useSupplyChain } from "./hooks/useSupplyChain";
+import { useQuota } from "./hooks/useQuota";
 import { MissionSidebar } from "./active/MissionSidebar";
 import { StatusBoard } from "./passive/StatusBoard";
 import { EscalationOverlay } from "./active/EscalationOverlay";
@@ -56,6 +57,7 @@ export function App() {
   const { state: missionsState, selectMission, removeMission, addOptimisticMission, markMissionRestarted, handleWsEvent: missionsWsHandler } = useMissions();
   const { state, dispatch, handleWsEvent: missionWsHandler } = useMission(missionsState.selectedMissionId);
   const { state: supplyChainState, triggerScan: triggerSupplyChainScan, handleWsEvent: supplyChainWsHandler } = useSupplyChain(missionsState.selectedMissionId);
+  const { status: quotaStatus } = useQuota();
   const eventsRef = useRef<WsClientEvent[]>([]);
 
   const bp = useBreakpoint();
@@ -259,6 +261,7 @@ export function App() {
         onToggleSidebar={toggleSidebar}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenQuota={() => setQuotaOpen(true)}
+        quotaStatus={quotaStatus?.providers?.find(p => p.tracked)?.status ?? null}
       />
       <div style={{ display: "grid", gridTemplateColumns: gridColumns, gridTemplateRows: "1fr 36px", flex: 1, overflow: "hidden", position: "relative" }}>
         {!bp.isMobile && (

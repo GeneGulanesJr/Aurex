@@ -34,8 +34,8 @@ export function IntegrationsPanel({ open, github, onClose, onPinyxConfigUpdate, 
   }, [open]);
 
   useEffect(() => {
-    if (open) setPinyxTab("connection");
-  }, [open]);
+    if (open) setPinyxTab(initialPinyxTab ?? "connection");
+  }, [open, initialPinyxTab]);
 
   if (!open) return null;
 
