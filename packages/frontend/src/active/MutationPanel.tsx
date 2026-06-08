@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { MutationReportSummary, MutationRunStatus } from "@aurex/shared";
-import { runMutationTests, getMutationRunStatus } from "../api.js";
-import { scoreBand, bandColorVar } from "./mutation-score.js";
+import { runMutationTests, getMutationRunStatus } from "../api";
+import { scoreBand, bandColorVar } from "./mutation-score";
 
 interface Props {
   repoName: string;

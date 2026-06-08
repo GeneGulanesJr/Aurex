@@ -4,7 +4,6 @@ import type { MissionConfig, QuotaWindow, QuotaConfig } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { MissionRunnerPool, PoolMissionStatus } from "../orchestrator/mission-runner-pool.js";
 import type { AgentLogger } from "../agents/agent-logger.js";
-import type { AppConfig } from "../config.js";
 import { checkQuota, resetWindow, getEffectiveProviderConfig } from "../enforcement/quota-gate.js";
 
 const defaultMissionConfig: Omit<MissionConfig, "modelHints"> = {
@@ -16,12 +15,11 @@ const defaultMissionConfig: Omit<MissionConfig, "modelHints"> = {
 
 export async function missionRoutes(
   app: FastifyInstance,
-  { lapis, pool, agentLogger, missionConfig = defaultMissionConfig, appConfig }: {
+  { lapis, pool, agentLogger, missionConfig = defaultMissionConfig }: {
     lapis: LaPisClient;
     pool: MissionRunnerPool;
     agentLogger?: AgentLogger;
     missionConfig?: typeof defaultMissionConfig;
-    appConfig?: AppConfig;
   },
 ) {
   async function hydrateMissionPayload(missionId: string) {

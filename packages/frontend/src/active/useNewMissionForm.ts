@@ -1,4 +1,4 @@
-import { useReducer, useCallback, useEffect, useRef } from "react";
+import { useReducer, useCallback, useEffect } from "react";
 
 export interface FormState {
   open: boolean;
@@ -75,11 +75,6 @@ export async function submitIfValid(
 export function useNewMissionForm(onSubmit: (description: string, cloneUrl?: string) => Promise<void>, suggestedDescription?: string) {
   const [state, dispatch] = useReducer(formReducer, initialFormState);
 
-  // Track the latest suggested description so the focus-new-mission event
-  // handler can apply it even if the effect hasn't run yet.
-  const suggestedRef = useRef(suggestedDescription);
-  suggestedRef.current = suggestedDescription;
-
   useEffect(() => {
     if (suggestedDescription && !state.open) {
       dispatch({ type: "OPEN_WITH_SUGGESTION", description: suggestedDescription });
@@ -117,6 +112,5 @@ export function useNewMissionForm(onSubmit: (description: string, cloneUrl?: str
     handleSubmit,
     handleKeyDown,
     canSubmit: state.description.trim().length > 0 && !state.submitting,
-    suggestedRef,
   };
 }

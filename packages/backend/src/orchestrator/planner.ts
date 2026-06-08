@@ -72,6 +72,7 @@ export interface PlanResult {
   milestones: Array<{
     id: string;
     title: string;
+    description: string;
     units: Array<{ id: string; description: string }>;
   }>;
 }
@@ -394,7 +395,7 @@ IMPORTANT: Use the codebase structure below to ensure your declared paths and mo
           });
         }
 
-        result.push({ id: milestone.id, title: ms.title, units });
+        result.push({ id: milestone.id, title: ms.title, description: ms.description, units });
       }
 
       emitLog("planning", `Plan created with ${result.length} milestones. Starting execution…`);

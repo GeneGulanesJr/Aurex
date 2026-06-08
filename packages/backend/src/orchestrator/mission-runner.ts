@@ -193,7 +193,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         id: ms.id,
         missionId,
         title: ms.title,
-        description: ms.title,
+        description: ms.description,
         orderIndex: i,
         status: "planned" as const,
         validationContractId: contractLookup.get(ms.id) ?? "",

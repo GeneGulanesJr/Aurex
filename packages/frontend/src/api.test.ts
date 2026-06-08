@@ -156,7 +156,7 @@ describe("repo explore API", () => {
   });
 
   it("getRepoSuggestions fetches suggestions", async () => {
-    const suggestions = { suggestions: [{ id: "complexity-a", category: "high_complexity", title: "Refactor a" }], analysisVersion: "1.0" };
+    const suggestions = { suggestions: [{ id: "complexity-a", category: "complexity", title: "Refactor a" }], analysisVersion: "1.0" };
     mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => suggestions });
 
     const result = await getRepoSuggestions("my-repo");
