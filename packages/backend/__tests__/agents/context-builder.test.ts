@@ -274,4 +274,40 @@ describe("buildValidatorContext", () => {
     });
     expect(ctx).not.toContain("Research Findings");
   });
+
+  it("includes diff summary when provided", () => {
+    const ctx = buildValidatorContext({
+      validatorType: "validator_scrutiny",
+      missionDescription: "Build auth",
+      milestoneTitle: "Auth module",
+      milestoneDescription: "JWT auth",
+      contractId: "contract-1",
+      contractCriteria: ["Login returns JWT"],
+      testCommands: ["npm test"],
+      acceptanceBehavior: "",
+      baseBranch: "main",
+      units: [],
+      diffSummary: "diff --git a/src/auth.ts b/src/auth.ts\n+export function login() {}",
+    });
+
+    expect(ctx).toContain("## Changed Code (Diff)");
+    expect(ctx).toContain("export function login()");
+  });
+
+  it("omits diff section when no diff provided", () => {
+    const ctx = buildValidatorContext({
+      validatorType: "validator_scrutiny",
+      missionDescription: "Build auth",
+      milestoneTitle: "Auth module",
+      milestoneDescription: "JWT auth",
+      contractId: "contract-1",
+      contractCriteria: [],
+      testCommands: [],
+      acceptanceBehavior: "",
+      baseBranch: "main",
+      units: [],
+    });
+
+    expect(ctx).not.toContain("## Changed Code (Diff)");
+  });
 });

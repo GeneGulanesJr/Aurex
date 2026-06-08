@@ -35,6 +35,8 @@ export interface ValidatorContextInput {
   baseBranch: string;
   units: ValidatorUnitContext[];
   researchFindings?: ResearchFinding[];
+  /** Concatenated git diff for all working unit branches against baseBranch. */
+  diffSummary?: string;
 }
 
 export interface ResearchContextInput {
@@ -168,6 +170,12 @@ export function buildValidatorContext(input: ValidatorContextInput): string {
 
   if (input.validatorType === "validator_scrutiny") {
     sections.push(buildScrutinyReviewInstructions());
+  }
+
+  if (input.diffSummary && input.diffSummary.trim().length > 0) {
+    sections.push(
+      `## Changed Code (Diff)\n\nThe following is the git diff of all worker changes against the base branch. Review these changes against the contract criteria.\n\n\`\`\`diff\n${input.diffSummary}\n\`\`\``,
+    );
   }
 
   if (input.units.length > 0) {
