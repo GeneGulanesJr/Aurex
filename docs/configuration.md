@@ -1,0 +1,131 @@
+# Aurex Configuration Reference
+
+> _Last updated: 2026-06-08_
+
+The source of truth is [`.env.example`](../.env.example). This document explains every variable, its effect, the code location that reads it, and a worked example for the built-in providers.
+
+## How to set variables
+
+**Local development:** copy `.env.example` to `.env` and edit.
+
+**Docker:** pass via shell env (`GITHUB_CLIENT_SECRET=... docker compose up`) or a `.env` file at the repo root — `docker-compose.yml` interpolates `${VAR:-default}` values automatically.
+
+**Validation:** the backend validates required variables on boot in [`packages/backend/src/config.ts:62`](../packages/backend/src/config.ts) (`loadConfig()` throws if a required var is missing).
+
+---
+
+## Server
+
+| Variable | Type | Required | Default | Effect | Source |
+|---|---|---|---|---|---|
+| `PORT` | int | no | `3000` | HTTP port the Fastify backend binds to. WebSocket `/ws` shares this port. | [`config.ts:89`](../packages/backend/src/config.ts) |
+| `API_KEY` | string | no | _(none)_ | If set, every REST request must include this value in the `x-api-key` header, and every WebSocket must `auth` with it. Leave empty to disable. | [`config.ts:90`](../packages/backend/src/config.ts) |
+| `AUREX_ROOT` | path | no | `=REPO_ROOT` | Where the Aurex source tree lives — used to locate the orchestrator's own skill files (`packages/backend/src/skills/*.md`). Inside Docker, this is `/aurex` because the source is bind-mounted there. | [`config.ts:86`](../packages/backend/src/config.ts) |
+
+## Repos & branches
+
+| Variable | Type | Required | Default | Effect | Source |
+|---|---|---|---|---|---|
+| `REPO_ROOT` | path | **yes** | — | Parent directory under which cloned mission target repos live. Workers and scanners expect target repos under `${REPO_ROOT}/repos/<name>`. | [`config.ts:85`](../packages/backend/src/config.ts) |
+| `GIT_MAIN_BRANCH` | string | no | `main` | Protected branch workers merge into. Branch guards refuse to commit to this branch from a worker worktree. | [`config.ts:87`](../packages/backend/src/config.ts) |
+
+## Mission limits
+
+| Variable | Type | Default | Effect | Source |
+|---|---|---|---|---|
+| `MAX_CONCURRENT_MISSIONS` | int | `3` | Max missions the runner pool will run in parallel. Excess missions queue. | [`config.ts:91`](../packages/backend/src/config.ts) |
+| `MISSION_COST_CAP` | float | `50.0` | USD cap per mission. The milestone loop pauses + escalates when exceeded. | [`config.ts:83`](../packages/backend/src/config.ts) |
+| `MAX_VALIDATOR_RETRIES` | int | `2` | Max times the negotiator may retry a failed milestone with a new worker. After this, the milestone escalates. | [`config.ts:81`](../packages/backend/src/config.ts) |
+| `MAX_RESCOPES_PER_MILESTONE` | int | `2` | Max times a single milestone may be re-scoped. Note: `.env.example` ships `5`; the code default is `2`. | [`config.ts:82`](../packages/backend/src/config.ts) |
+
+## Agent timeouts (milliseconds)
+
+| Variable | Default | Effect | Source |
+|---|---|---|---|
+| `WORKER_TIMEOUT_SIMPLE` | `120000` (2 min) | Per-attempt timeout for "simple" workers (e.g. small text changes). | [`config.ts:74`](../packages/backend/src/config.ts) |
+| `WORKER_TIMEOUT_BUILD` | `300000` (5 min) | Per-attempt timeout for "build" workers (dependency installs, codegen). | [`config.ts:75`](../packages/backend/src/config.ts) |
+| `WORKER_TIMEOUT_TEST_HEAVY` | `600000` (10 min) | Per-attempt timeout for "test-heavy" workers (running full test suites). | [`config.ts:76`](../packages/backend/src/config.ts) |
+| `VALIDATOR_TIMEOUT` | `180000` (3 min) | Per-validator timeout. | [`config.ts:78`](../packages/backend/src/config.ts) |
+| `RESEARCH_TIMEOUT` | `120000` (2 min) | Per-researcher-attempt timeout. | [`config.ts:79`](../packages/backend/src/config.ts) |
+
+## LaPis endpoint
+
+| Variable | Type | Required | Default | Effect | Source |
+|---|---|---|---|---|---|
+| `LAPIS_ENDPOINT` | URL | **yes** | — | Where the LaPis shared-state HTTP API lives. Inside Docker this is `http://lapis:9100`; locally it's `http://localhost:9100`. | [`config.ts:71`](../packages/backend/src/config.ts) |
+
+## PiNyx endpoint
+
+| Variable | Type | Default | Effect | Source |
+|---|---|---|---|---|
+| `PINYX_ENDPOINT` | URL | `http://localhost:7331` | **Deprecated** — PiNyx (the LLM gateway) is now configured in-app via the **Integrations → Connection / Keys / Models** tabs, which persist provider URLs and keys into LaPis. The env var is kept only for first-run defaults; the Integrations panel value overrides it. See [`docs/api.md`](./api.md) for the `/api/pinyx/*` endpoints. | `.env.example` (commented as deprecated) |
+
+## GitHub App OAuth
+
+These are the **public** GitHub App client values for the bundled Aurex GitHub App. You only need to override them if you've registered your own GitHub App.
+
+| Variable | Type | Default | Effect | Source |
+|---|---|---|---|---|
+| `GITHUB_CLIENT_ID` | string | `Iv23lijYF4sZMcU62MjT` (bundled Aurex App) | OAuth client id sent to `GET /api/github/connect`. | [`.env.example`](../.env.example) |
+| `GITHUB_CLIENT_SECRET` | string | _(none)_ | **Required for OAuth to work.** Copy from the Aurex GitHub App's settings (or your own App if you registered one). The backend exchanges the temp code for an access token using this secret. | [`.env.example`](../.env.example) |
+| `GITHUB_CALLBACK_URL` | URL | `http://localhost:3000/api/github/callback` | Where GitHub redirects after the user authorizes. Must match the callback URL registered on the GitHub App. | [`.env.example`](../.env.example) |
+| `GITHUB_FRONTEND_URL` | URL | `http://localhost:8080` | Where the backend redirects the user *after* the callback exchanges the code. The dashboard reads `sessionStorage` to restore the UI state the user was on before kicking off OAuth. | [`.env.example`](../.env.example) |
+
+## Quota
+
+Per-coding-plan rate limits. The quota gate runs in front of `POST /api/missions` and refuses to start a mission if any tracked provider is out of budget.
+
+| Variable | Type | Default | Effect | Source |
+|---|---|---|---|---|
+| `QUOTA_ENABLED` | bool | `false` | Master switch. When `true`, the backend reads `quota_config` and `quota_windows` from LaPis and gates `POST /api/missions` accordingly. | [`config.ts:93`](../packages/backend/src/config.ts) |
+| `QUOTA_WINDOW_HOURS` | int (hours) | `5` | Length of the rolling quota window per provider. Converted to ms internally (`* 60 * 60 * 1000`). | [`config.ts:94`](../packages/backend/src/config.ts) |
+| `QUOTA_BURN_HOURS` | int (hours) | `1` | Length of the budget-burn window the prefire check projects. Converted to ms internally. | [`config.ts:95`](../packages/backend/src/config.ts) |
+
+---
+
+## Built-in PiNyx providers
+
+PiNyx is configured in-app. The **Integrations → Keys** tab in the dashboard lets you enter an API key per provider; the **Integrations → Models** tab lets you pick a model. These three providers ship built-in:
+
+| Provider | Base URL | Protocol | Notes |
+|---|---|---|---|
+| **Kilo Code** | `https://api.kilo.ai/v1` | OpenAI-compatible | Default for first-run. Free tier available by appending `/free` to the model id (e.g. `kilo/kilo-auto/free`). |
+| **Z.AI Coding** | `https://api.z.ai/api/coding/paas/v4` | OpenAI-compatible | Anthropic-aliased coding models. |
+| **MiniMax** | `https://api.minimax.io/v1` | OpenAI-compatible | Default model: `MiniMax-M3`. Enter your Subscription Key in the Keys tab. |
+
+**Custom OpenAI-compatible providers:** the Integrations panel accepts any base URL + key + model id. PiNyx uses the OpenAI-compatible adapter for all of them.
+
+---
+
+## Example: minimal local `.env`
+
+```bash
+# Required
+LAPIS_ENDPOINT=http://localhost:9100
+REPO_ROOT=/workspace
+
+# Optional but recommended
+AUREX_ROOT=/path/to/aurex
+GIT_MAIN_BRANCH=main
+PORT=3000
+MAX_CONCURRENT_MISSIONS=3
+MISSION_COST_CAP=50.00
+MAX_VALIDATOR_RETRIES=2
+MAX_RESCOPES_PER_MILESTONE=5
+
+# GitHub (only needed for the GitHub repo picker)
+GITHUB_CLIENT_ID=Iv23lijYF4sZMcU62MjT
+GITHUB_CLIENT_SECRET=replace-me
+GITHUB_CALLBACK_URL=http://localhost:3000/api/github/callback
+GITHUB_FRONTEND_URL=http://localhost:8080
+
+# Optional auth
+# API_KEY=some-shared-secret
+
+# Optional quota gate
+# QUOTA_ENABLED=true
+# QUOTA_WINDOW_HOURS=5
+# QUOTA_BURN_HOURS=1
+```
+
+PiNyx is intentionally **not** in this file — configure it through the dashboard's Integrations panel.

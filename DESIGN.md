@@ -275,7 +275,9 @@ All structural borders use `var(--border)` at 1px. No 2px borders, no thick sepa
 
 Status dots are 6px circles with matching-color glow (`box-shadow`). Connected = green, warning = yellow, error = red.
 
-## Components
+## Frame Components
+
+The persistent frame around every dashboard view — topbar, sidebar, telemetry bar, and the controls they contain.
 
 ### Topbar
 - Full-width bar at 44px height
@@ -311,8 +313,90 @@ Status dots are 6px circles with matching-color glow (`box-shadow`). Connected =
 ### Theme Picker
 - Three small colored circles in the topbar (amber, cyan, red)
 - Clicking one instantly switches `data-theme` on `<html>`
-- Selection persisted to `localStorage`, defaults to `solar-flare`
+- Selection persists in `localStorage` (theme preference) and `sessionStorage` (UI return state across OAuth callbacks, per `2026-06-07-oauth-state-preservation`)
+- Selection defaults to `solar-flare` if nothing is stored
 - React context (`useTheme`) provides current theme and setter
+
+## Mission Control Layout
+
+The active mission experience is a **composed layout** rather than a single monolithic component. Four pieces fit together:
+
+### `MissionPipeline` (passive/MissionPipeline.tsx)
+The main composed layout. Splits the work area into a **left rail** (mission status + milestone progress) and a **right inspector** (`MissionInspectorPanel`). Replaces the older single-surface `StatusBoard` for missions that have begun executing.
+
+### `MissionSummaryHeader` (passive/MissionSummaryHeader.tsx)
+A compact mission header / status strip. Renders mission id, description, current milestone, elapsed time, and a risk summary. Sits at the top of the left rail.
+
+### `MissionActivityFeed` (passive/MissionActivityFeed.tsx)
+A unified live feed that replaces the older separate `PlanningLog` + `EventStream` presentations. Renders agent spawns, tool calls, cost updates, validator verdicts, and checkpoint escalations in a single scannable column. Pure display helpers in `missionUiModel.ts` normalize the event stream into a stable order for the feed.
+
+### `MissionInspectorPanel` (passive/MissionInspectorPanel.tsx)
+A right-side **tabbed inspector** with three tabs:
+- **Activity** — live agent events for the focused mission
+- **Code** — `CodeContextPanel` summary, dependency graph, and hotspot heatmap for the mission's target repo
+- **Supply Chain** — `SupplyChainPanel` showing the latest Bumblebee supply-chain scan results
+
+Tab availability is derived from data presence in `missionUiModel.ts` (pure helpers), not from prop drilling.
+
+## Panels
+
+The right inspector and overview surfaces are composed from a set of focused panels. Each panel is small, single-purpose, and reads from a typed hook.
+
+| Panel | File | Purpose |
+|---|---|---|
+| `RepoOverviewPanel` | `passive/RepoOverviewPanel.tsx` | First-paint view of a repo (size, languages, last commit, mission suggestions) |
+| `CodeContextPanel` | `passive/CodeContextPanel.tsx` | Code summary + graph hotspots for the focused mission |
+| `SupplyChainPanel` | `passive/SupplyChainPanel.tsx` | Latest Bumblebee supply-chain scan with severity counts |
+| `DependencyGraph` | `passive/DependencyGraph.tsx` | Lightweight graph view of repo dependencies |
+| `HotspotHeatmap` | `passive/HotspotHeatmap.tsx` | File-level churn heatmap from code-context data |
+| `ArchitectureSummary` | `passive/ArchitectureSummary.tsx` | High-level architecture read-out for the repo |
+| `MissionComplete` | `passive/MissionComplete.tsx` | Terminal-state celebration panel for completed missions |
+| `StatusBoard` | `passive/StatusBoard.tsx` | Legacy empty-state board; kept for the no-mission landing state |
+
+## Integrations Panel
+
+A tabbed panel for configuring the gateway and external services, accessed from the sidebar.
+
+| Tab | File | Purpose |
+|---|---|---|
+| **Connection** | `active/PinyxConnectionTab.tsx` | PiNyx reachability check, configured provider list, "test" button per provider |
+| **Keys** | `active/PinyxKeysTab.tsx` | Per-provider API key entry for the three built-ins (Kilo Code, Z.AI Coding, MiniMax) plus custom OpenAI-compatible providers |
+| **Models** | `active/PinyxModelsTab.tsx` | Model catalog per provider with the model used for orchestrator / worker / validator / research hints |
+| **Settings** | `active/SettingsPanel.tsx` | Workspace-level toggles |
+| **Quota** | `active/QuotaPanel.tsx` | Coding-plan quota state — burn vs window — with manual reset |
+| **Mutation** | `active/MutationPanel.tsx` | Stryker run history + diff mutation score for the focused repo |
+
+The Integrations panel is reached via the sidebar and renders inside the main content area; the topbar/sidebar/telemetry frame is unchanged.
+
+## Components
+
+Components are organized by directory under `packages/frontend/src/`.
+
+### Frame (`frame/`)
+- **TopBar** — logo, connection status dots, uptime, active mission count, theme picker
+- **TelemetryBar** — live tokens, cost, agents, WebSocket status
+- **ThemePicker** — three colored circles that switch `data-theme` on `<html>`
+
+### Passive (`passive/`)
+- **MissionPipeline** — composed main layout (left rail + right inspector)
+- **MissionSummaryHeader** — compact mission status strip
+- **MissionActivityFeed** — unified live feed
+- **MissionInspectorPanel** — tabbed right inspector (Activity / Code / Supply Chain)
+- **RepoOverviewPanel**, **CodeContextPanel**, **SupplyChainPanel**, **DependencyGraph**, **HotspotHeatmap**, **ArchitectureSummary** — focused panels
+- **StatusBoard** — legacy empty-state board
+- **MissionComplete** — terminal-state celebration
+- **missionUiModel.ts** — pure display helpers (progress, feed normalization, tab availability, risk summaries)
+
+### Active (`active/`)
+- **EscalationOverlay**, **CheckpointPanel**, **DecisionActions**, **AttemptHistory** — escalation flow
+- **IntegrationsPanel** + **TabBar** — gateway/external-services configuration shell
+- **PinyxConnectionTab**, **PinyxKeysTab**, **PinyxModelsTab** — PiNyx tabs
+- **QuotaPanel**, **SettingsPanel**, **MutationPanel** — operational tabs
+- **RepoPicker**, **RepoPrepareModal**, **MissionCreationView**, **MissionSidebar** — mission creation flow
+- **mutation-score.ts** — pure helpers for the mutation panel
+
+### Hooks (`hooks/`)
+14 typed hooks back the components above, including `useMission`, `useMissions`, `useWebSocket`, `useTheme`, `useGitHub`, `usePinyxStatus`, `useNotifications`, `useQuota`, `useSettings`, `useSupplyChain`, `useTabBadge`, `useKeyboardShortcuts`, and `useBreakpoint`.
 
 ## Do's and Don'ts
 
@@ -326,16 +410,16 @@ The following animation modules exist in `packages/frontend/src/animations/` and
 
 | Module | Functions | Target Component | Trigger |
 |---|---|---|---|
-| `counters.ts` | `animateCounter` | CostCounter, telemetry values | Number change (cost, tokens, agents) |
-| `counters.ts` | `animateProgress` | MilestoneBar | Milestone progress update |
-| `state-transitions.ts` | `enterActive` | StatusBoard overlay | Mission state → active |
-| `state-transitions.ts` | `exitActive` | StatusBoard overlay | Mission state → inactive |
-| `state-transitions.ts` | `dimPassive` | StatusBoard | Mission goes idle/backgrounded |
-| `state-transitions.ts` | `restorePassive` | StatusBoard | Mission resumes foreground |
-| `agent-animations.ts` | `createPulse` | AgentNode | Agent spawns or sends update |
-| `agent-animations.ts` | `createSpin` | AgentNode | Agent enters working state |
-| `agent-animations.ts` | `createIdle` | AgentNode | Agent waiting/idle |
-| `stagger.ts` | `staggerEntrance` | AgentGrid | Agents appear (mission start, new agent spawned) |
+| `counters.ts` | `animateCounter` | TelemetryBar, CostCounter | Number change (cost, tokens, agents) |
+| `counters.ts` | `animateProgress` | MissionSummaryHeader | Milestone progress update |
+| `state-transitions.ts` | `enterActive` | MissionPipeline | Mission focused / state → active |
+| `state-transitions.ts` | `exitActive` | MissionPipeline | Mission unfocused / state → inactive |
+| `state-transitions.ts` | `dimPassive` | MissionPipeline | Mission goes idle/backgrounded |
+| `state-transitions.ts` | `restorePassive` | MissionPipeline | Mission resumes foreground |
+| `agent-animations.ts` | `createPulse` | MissionActivityFeed | Agent spawns or sends update |
+| `agent-animations.ts` | `createSpin` | MissionActivityFeed | Agent enters working state |
+| `agent-animations.ts` | `createIdle` | MissionActivityFeed | Agent waiting/idle |
+| `stagger.ts` | `staggerEntrance` | MissionInspectorPanel | Tab or agent appears (mission start, new agent spawned) |
 
 ### Animation Principles
 
