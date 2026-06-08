@@ -18,6 +18,10 @@ import {
   markWorkerTodoProgress,
   reconcileMissionLedger,
 } from "./ledger-reconciler.js";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 const AUTO_RESCOPE_BATCH_LIMIT = 2;
 
@@ -391,6 +395,35 @@ export function createMilestoneLoop(
             validatorTypes.push("validator_user_testing");
           }
 
+          // Collect git diff for all validator units against base branch.
+          // Placed before the loop since the diff is the same for all validator types.
+          let diffSummary = "";
+          try {
+            const diffParts: string[] = [];
+            for (const vu of validatorUnits) {
+              if (vu.taskBranch && vu.worktreePath) {
+                try {
+                  const { stdout } = await execFileAsync(
+                    "git",
+                    // Use HEAD instead of taskBranch — in worktrees HEAD is
+                    // always the checked-out task branch, and this avoids
+                    // branch-name edge cases.
+                    ["-C", vu.worktreePath, "diff", `${loopConfig.gitMainBranch}...HEAD`, "--"],
+                    { maxBuffer: 1024 * 1024 },
+                  );
+                  if (stdout.trim()) {
+                    diffParts.push(`--- Unit: ${vu.id} (${vu.taskBranch}) ---\n${stdout}`);
+                  }
+                } catch {
+                  // Branch may not exist or no diff available — skip
+                }
+              }
+            }
+            diffSummary = diffParts.join("\n\n");
+          } catch {
+            // Diff collection is best-effort
+          }
+
           for (const validatorType of validatorTypes) {
             const agentId = `${validatorType}-${milestone.id}`;
             const contextContent = buildValidatorContext({
@@ -399,6 +432,7 @@ export function createMilestoneLoop(
               contractId, contractCriteria: criteria, testCommands, acceptanceBehavior,
               baseBranch: loopConfig.gitMainBranch, units: validatorUnits,
               researchFindings,
+              diffSummary: diffSummary || undefined,
             });
 
             callbacks.onAgentStatus(agentId, validatorType, "spawned", milestone.id);

@@ -4,7 +4,7 @@ import {
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentType, WorkerStatus, AgentOutputEventType } from "@aurex/shared";
-import { AGENT_TOOLS } from "./factory.js";
+import { AGENT_TOOLS, needsMemoryLayer } from "./factory.js";
 import { createWorkerTools } from "./worker-tools.js";
 import { createValidatorTools } from "./validator-tools.js";
 import { createResearchTools } from "./research-tools.js";
@@ -91,7 +91,7 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
       let cumulativeTokens = 0;
 
       const skillBaseDir = path.dirname(opts.skillFilePath);
-      const loader = new DefaultResourceLoader({
+      const loaderConfig: Record<string, any> = {
         cwd: opts.cwd,
         agentDir,
         skillsOverride: (current: any) => ({
@@ -107,17 +107,66 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
           ],
           diagnostics: current.diagnostics,
         }),
-        agentsFilesOverride: (current: any) => ({
-          agentsFiles: [
-            ...current.agentsFiles,
-            {
-              path: "/virtual/aurex-context.md",
-              content: opts.contextContent,
-            },
-          ],
-          diagnostics: current.diagnostics,
-        }),
-      });
+        agentsFilesOverride: (current: any) => {
+          const extraFiles: Array<{ path: string; content: string }> = [];
+
+          // For non-memory-layer agents, inject a countermanding agentsFile
+          // that overrides the global AGENTS.md memory-layer enforcement.
+          // The global ~/.pi/agent/AGENTS.md says "read → BLOCKED, use
+          // memory-code first" but memory-code was removed by
+          // extensionsOverride. Without this override the agent tries to
+          // call nonexistent tools and spirals.
+          if (!needsMemoryLayer(opts.agentType)) {
+            extraFiles.push({
+              path: "/virtual/aurex-no-memory-layer.md",
+              content: [
+                "# Memory-Layer Tools Not Available",
+                "",
+                "This session does NOT have the memory-layer extension loaded.",
+                "The following tools are NOT available: memory-code, memory-doc,",
+                "memory-search, memory-save, memory-get, memory-update,",
+                "memory-delete, memory-related, memory-load-context.",
+                "",
+                "IGNORE any instructions in other context files that say to use",
+                "memory-code, memory-doc, or other memory-* tools. Those rules",
+                "do not apply to this session.",
+                "",
+                "Use `read` and `bash` directly. No outline step is required",
+                "before reading files.",
+              ].join("\n"),
+            });
+          }
+
+          return {
+            agentsFiles: [
+              ...current.agentsFiles,
+              {
+                path: "/virtual/aurex-context.md",
+                content: opts.contextContent,
+              },
+              ...extraFiles,
+            ],
+            diagnostics: current.diagnostics,
+          };
+        },
+      };
+
+      // Strip memory-layer extension for agents that don't need it.
+      // The memory-layer extension registers memory-code/memory-search
+      // tools and injects session lifecycle hooks.
+      if (!needsMemoryLayer(opts.agentType)) {
+        loaderConfig.extensionsOverride = (base: any) => ({
+          ...base,
+          // Extension has no `name` property — identify by file path.
+          // The path will be something like:
+          // ~/.pi/agent/git/.../LaPis/extensions/memory-layer/index.ts
+          extensions: base.extensions.filter(
+            (ext: any) => !ext.path.includes("memory-layer"),
+          ),
+        });
+      }
+
+      const loader = new DefaultResourceLoader(loaderConfig);
       await loader.reload();
 
       const { session } = await createAgentSession({

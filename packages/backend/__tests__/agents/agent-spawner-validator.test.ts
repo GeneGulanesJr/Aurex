@@ -115,4 +115,36 @@ describe("AgentSpawner — validator types", () => {
     const result = await handle.completed;
     expect(result.status).toBe("completed");
   });
+
+  it("strips memory-layer extension from validator sessions", async () => {
+    const lapis = createMockLapis();
+    const spawner = createAgentSpawner({
+      lapis,
+      agentDir: "/test/.pi/agent",
+      defaultTimeout: 60_000,
+    });
+
+    const handle = await spawner.spawn({
+      agentType: "validator_scrutiny",
+      unitId: "unit-1",
+      missionId: "m-1",
+      milestoneId: "ms-1",
+      cwd: "/test/repo",
+      skillFilePath: "/app/src/skills/validator.md",
+      contextContent: "# Validate milestone",
+      taskPrompt: "Validate milestone ms-1",
+      timeout: 60_000,
+      contractId: "c-1",
+    });
+
+    const result = await handle.completed;
+    expect(result.status).toBe("completed");
+    expect(lapis.registerAgentSession).toHaveBeenCalledWith(
+      "validator_scrutiny",
+      "validator-session-1",
+      "m-1",
+      "ms-1",
+      "unit-1",
+    );
+  });
 });
