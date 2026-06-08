@@ -37,8 +37,6 @@ export type StreamingChunk = {
   done: boolean;
 };
 
-export type WsEvent = WsClientEvent;
-
 export type EscalationTrigger =
   | { kind: "milestone_complete"; milestoneId: string; releaseBranch?: string }
   | { kind: "rescope_limit"; milestoneId: string; attemptHistory?: AttemptSummary[] }

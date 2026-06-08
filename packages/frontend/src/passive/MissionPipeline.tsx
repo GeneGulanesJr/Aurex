@@ -29,6 +29,7 @@ const statusConfig: Record<string, { color: string; label: string; icon: string 
   planned: { color: "var(--text-muted)", label: "PLANNED", icon: "○" },
   in_progress: { color: "var(--accent)", label: "IN PROGRESS", icon: "●" },
   validating: { color: "var(--info)", label: "VALIDATING", icon: "◈" },
+  rescoping: { color: "var(--warning)", label: "RESCOPING", icon: "↻" },
   completed: { color: "var(--success)", label: "COMPLETED", icon: "✓" },
   failed: { color: "var(--error)", label: "FAILED", icon: "✕" },
 };

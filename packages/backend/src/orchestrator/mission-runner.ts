@@ -279,7 +279,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
               eventBus.emit({ type: "mission_status", missionId, status: "failed" });
               return;
             }
-            eventBus.emit({ type: "milestone_progress", milestoneId: cpResult.milestoneId, status: "rescoping" as MilestoneStatus, completedUnits: 0, totalUnits: result.units.length });
+            eventBus.emit({ type: "milestone_progress", milestoneId: cpResult.milestoneId, status: "rescoping", completedUnits: 0, totalUnits: result.units.length });
           }
         }
 

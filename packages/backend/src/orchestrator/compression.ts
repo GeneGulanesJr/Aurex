@@ -16,12 +16,12 @@ export function createCompressionService(
         await lapis.runCompression(missionId, trigger);
       } catch (error) {
         eventBus.emit({
-          type: "agent_status" as any,
-          agentId: `compression-${missionId}`,
-          agentType: "orchestrator" as any,
-          status: "failed" as any,
-          milestoneId: missionId,
-        } as any);
+          type: "mission_error",
+          missionId,
+          code: "compression_failed",
+          message: error instanceof Error ? error.message : String(error),
+          recoverable: true,
+        });
         console.warn(
           // Stryker disable next-line StringLiteral: the error message
           // string is only used for logging and doesn't affect behavior.
