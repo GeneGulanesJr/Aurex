@@ -5,6 +5,12 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+const ALLOWED_TEST_COMMAND_PATTERN = /^[a-zA-Z0-9_./-]+(?: [a-zA-Z0-9_./=:"-]+)*$/;
+
+function isSafeTestCommand(cmd: string): boolean {
+  return ALLOWED_TEST_COMMAND_PATTERN.test(cmd) && !cmd.includes("..");
+}
+
 export interface IntegrationLifecycleResult {
   integrationBranch: string;
   releaseBranch: string;
@@ -29,49 +35,59 @@ export function createIntegrationLifecycle(worktreeManager: WorktreeManager) {
       const branchSuffix = `${input.missionId}/${input.milestoneOrderIndex + 1}-${input.milestoneId}`;
       const integrationBranch = `integration/${branchSuffix}`;
       const releaseBranch = `release/${branchSuffix}`;
-      const mergedBranches_input = input.units
+      const inputBranches = input.units
         .map((unit) => unit.taskBranch)
         .filter((branch): branch is string => branch.trim().length > 0);
+
       await worktreeManager.createBranch(integrationBranch, input.baseBranch);
 
       const mergedBranches: string[] = [];
       const conflictedBranches: string[] = [];
 
-      for (const branch of mergedBranches_input) {
+      for (const branch of inputBranches) {
         try {
           await worktreeManager.mergeToTarget(branch, integrationBranch);
           mergedBranches.push(branch);
         } catch {
-          // Try "ours" strategy to auto-resolve simple conflicts
           try {
             await worktreeManager.mergeToTargetWithStrategy(branch, integrationBranch, "ours");
             mergedBranches.push(branch);
           } catch {
+            try {
+              await worktreeManager.abortMerge();
+            } catch { /* nothing to abort */ }
             conflictedBranches.push(branch);
           }
         }
       }
 
-      if (conflictedBranches.length > 0 && conflictedBranches.length === mergedBranches_input.length) {
+      if (conflictedBranches.length > 0 && conflictedBranches.length === inputBranches.length) {
         throw new Error(`All worker branches have merge conflicts: ${conflictedBranches.join(", ")}`);
       }
 
       await worktreeManager.createBranch(releaseBranch, integrationBranch);
 
-      // Run contract test commands on the integration branch before finalizing.
-      // Best-effort — if tests fail, report the failure in the result.
       let testFailure: string | undefined;
       if (input.testCommands && input.testCommands.length > 0) {
         for (const cmd of input.testCommands) {
+          if (!isSafeTestCommand(cmd)) {
+            testFailure = (testFailure ? testFailure + "\n" : "") +
+              `Command '${cmd.slice(0, 100)}' rejected: contains disallowed characters`;
+            continue;
+          }
           try {
             await execFileAsync("bash", ["-c", cmd], {
               cwd: worktreeManager.getRepoRoot(),
               timeout: 120_000,
               maxBuffer: 1024 * 1024,
             });
-          } catch (err: any) {
+          } catch (err: unknown) {
+            const stderr = (err instanceof Error && "stderr" in err)
+              ? String((err as { stderr: string }).stderr).slice(0, 200)
+              : "";
+            const message = err instanceof Error ? err.message : String(err);
             testFailure = (testFailure ? testFailure + "\n" : "") +
-              `Command '${cmd}' failed: ${err.stderr?.slice(0, 200) || err.message}`;
+              `Command '${cmd}' failed: ${stderr || message}`;
           }
         }
       }
