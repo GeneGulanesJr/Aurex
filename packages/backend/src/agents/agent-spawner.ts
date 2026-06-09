@@ -55,7 +55,7 @@ export interface SpawnResult {
 }
 
 export function createAgentSpawner(config: AgentSpawnerConfig) {
-  const { lapis, agentDir, defaultTimeout, logger, eventBus, maxConcurrent, validatorToolCallCap = 25 } = config;
+  const { lapis, agentDir, defaultTimeout, logger, eventBus, maxConcurrent, validatorToolCallCap = 40 } = config;
   const activeHandles = new Map<string, SpawnHandle>();
   let missionCumulativeCost = 0;
   let missionCumulativeTokens = 0;

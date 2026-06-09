@@ -158,9 +158,9 @@ describe("AgentSpawner — validator types", () => {
 
     // Override the default subscribe mock: emit many tool_call events.
     // The spawner should abort the session when the cap is exceeded
-    // (well before any agent_end).
+    // (well before any agent_end). Default cap is now 40.
     mockSession.subscribe.mockImplementation((fn: any) => {
-      for (let i = 0; i < 30; i++) {
+      for (let i = 0; i < 50; i++) {
         setTimeout(() => fn({
           type: "message_update",
           assistantMessageEvent: {
@@ -199,8 +199,9 @@ describe("AgentSpawner — validator types", () => {
       defaultTimeout: 60_000,
     });
 
+    // Emit 50 tool calls — exceeds the default cap of 40
     mockSession.subscribe.mockImplementation((fn: any) => {
-      for (let i = 0; i < 30; i++) {
+      for (let i = 0; i < 50; i++) {
         setTimeout(() => fn({
           type: "message_update",
           assistantMessageEvent: {

@@ -240,6 +240,20 @@ export function buildValidatorContext(input: ValidatorContextInput): string {
     );
   }
 
+  // Inject tool-call budget so the model can self-regulate
+  sections.push(
+    [
+      "## Tool-Call Budget",
+      "",
+      "You have a hard cap on tool calls per session. Be decisive:",
+      "- After reviewing the diff and running test commands, you have enough context to write a verdict.",
+      "- Do NOT read every file in the diff exhaustively. The diff is already in your context.",
+      "- Focus on the 2-3 files most likely to contain real issues.",
+      "- Call `write_verdict` as soon as you can ground your decision in evidence.",
+      "- An unforced failure (no verdict written) wastes an entire worker+validator cycle.",
+    ].join("\n"),
+  );
+
   sections.push(
     [
       "## VERDICT",
