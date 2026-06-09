@@ -12,6 +12,11 @@ export interface WorktreeManager {
   mergeToTarget(sourceBranch: string, targetBranch: string): Promise<void>;
   pruneWorktree(worktreePath: string): Promise<void>;
   installBranchGuard(worktreePath: string, allowedBranch: string): Promise<void>;
+  createValidatorWorktree(
+    milestoneId: string,
+    baseBranch: string,
+    taskBranches: string[],
+  ): Promise<CreateValidatorWorktreeResult>;
 }
 
 function sanitizeGitArg(arg: string): void {
@@ -23,14 +28,21 @@ function sanitizeGitArg(arg: string): void {
   }
 }
 
+export interface CreateValidatorWorktreeResult {
+  worktreePath: string;
+  validationBranch: string;
+  mergedUnitIds: string[];   // branches that merged cleanly
+  conflictedBranches: string[]; // branches that hit a merge conflict
+}
+
 export function createWorktreeManager(repoRoot: string): WorktreeManager {
   const worktreeBase = `${repoRoot}/.git-worktrees`;
 
-  async function git(...args: string[]): Promise<string> {
+  async function git(cwd: string, ...args: string[]): Promise<string> {
     for (const arg of args) sanitizeGitArg(arg);
     // Stryker disable next-line MethodExpression: stdout → stderr mutant
     // is equivalent when git output goes to either stream in test mocks.
-    const { stdout } = await execFileAsync("git", ["-C", repoRoot, ...args]);
+    const { stdout } = await execFileAsync("git", ["-C", cwd, ...args]);
     return stdout.trim();
   }
 
@@ -41,29 +53,72 @@ export function createWorktreeManager(repoRoot: string): WorktreeManager {
 
       // Stryker disable next-line StringLiteral: git command args —
       // mutant changing "branch" to "" would fail at runtime.
-      await git("branch", taskBranch, agentBranch);
-      await git("worktree", "add", worktreePath, taskBranch);
+      await git(repoRoot, "branch", taskBranch, agentBranch);
+      await git(repoRoot, "worktree", "add", worktreePath, taskBranch);
 
       return { worktreePath, taskBranch };
     },
 
     async createBranch(branchName, baseBranch) {
       // Stryker disable next-line StringLiteral: git command args
-      await git("branch", branchName, baseBranch);
+      await git(repoRoot, "branch", branchName, baseBranch);
     },
 
     async mergeToTarget(sourceBranch, targetBranch) {
       // Stryker disable next-line StringLiteral: git command args
-      await git("checkout", targetBranch);
+      await git(repoRoot, "checkout", targetBranch);
       // Stryker disable next-line StringLiteral: git command args
-      await git("merge", sourceBranch, "--no-ff");
+      await git(repoRoot, "merge", sourceBranch, "--no-ff");
     },
 
     async pruneWorktree(worktreePath) {
       // Stryker disable next-line StringLiteral: git command args
-      await git("worktree", "remove", worktreePath, "--force");
+      await git(repoRoot, "worktree", "remove", worktreePath, "--force");
       // Stryker disable next-line StringLiteral: git command args
-      await git("worktree", "prune");
+      await git(repoRoot, "worktree", "prune");
+    },
+
+    async createValidatorWorktree(milestoneId, baseBranch, taskBranches) {
+      const validationBranch = `validation/${milestoneId}`;
+      const worktreePath = `${worktreeBase}/validator-${milestoneId}`;
+
+      // Idempotent cleanup: if a previous run left the worktree behind, remove it.
+      // Stryker disable next-line StringLiteral: git command args
+      try { await git(repoRoot, "worktree", "remove", worktreePath, "--force"); } catch { /* not present */ }
+      try { await git(repoRoot, "branch", "-D", validationBranch); } catch { /* not present */ }
+      // Stryker disable next-line StringLiteral: git command args
+      try { await git(repoRoot, "worktree", "prune"); } catch { /* best-effort */ }
+
+      // Stryker disable next-line StringLiteral: git command args
+      await git(repoRoot, "branch", validationBranch, baseBranch);
+      // Stryker disable next-line StringLiteral: git command args
+      await git(repoRoot, "worktree", "add", worktreePath, validationBranch);
+
+      const mergedUnitIds: string[] = [];
+      const conflictedBranches: string[] = [];
+
+      for (const taskBranch of taskBranches) {
+        // Stryker disable next-line StringLiteral: git command args
+        // --no-commit so we can detect conflicts and abort cleanly.
+        try {
+          await git(worktreePath, "merge", "--no-ff", "--no-commit", taskBranch);
+          // Stryker disable next-line StringLiteral: git commit args
+          // --no-verify bypasses the branch-guard pre-commit hook (which
+          // restricts to task/integration/release/*; validation/* is not
+          // in that list but is a legitimate internal branch).
+          await git(worktreePath, "commit", "--no-verify", "-m", `merge ${taskBranch} into ${validationBranch}`);
+          mergedUnitIds.push(taskBranch);
+        } catch {
+          // Stryker disable next-line StringLiteral: git command args
+          // Conflict: abort the in-progress merge so the worktree is clean.
+          try {
+            await git(worktreePath, "merge", "--abort");
+          } catch { /* nothing to abort */ }
+          conflictedBranches.push(taskBranch);
+        }
+      }
+
+      return { worktreePath, validationBranch, mergedUnitIds, conflictedBranches };
     },
 
     async installBranchGuard(_worktreePath, allowedBranch) {

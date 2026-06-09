@@ -60,6 +60,84 @@ describe("WorktreeManager", () => {
     expect(calls.some((c) => c.includes("worktree prune"))).toBe(true);
   });
 
+  describe("createValidatorWorktree", () => {
+    it("creates a fresh worktree at validator-${milestoneId} from base branch", async () => {
+      const manager = createWorktreeManager("/repo/root");
+      const result = await manager.createValidatorWorktree("ms-1", "main", [
+        "task/worker-a/auth-001",
+      ]);
+
+      expect(result.worktreePath).toBe("/repo/root/.git-worktrees/validator-ms-1");
+      expect(result.validationBranch).toBe("validation/ms-1");
+
+      const calls = mockExecAsync.mock.calls.map((c) => `${c[0]} ${(c[1] as string[]).join(" ")}`);
+      expect(calls.some((c) => c.includes("branch validation/ms-1 main"))).toBe(true);
+      expect(calls.some((c) => c.includes("worktree add /repo/root/.git-worktrees/validator-ms-1 validation/ms-1"))).toBe(true);
+      expect(calls.some((c) => c.includes("merge --no-ff --no-commit task/worker-a/auth-001"))).toBe(true);
+    });
+
+    it("merges multiple worker branches in order", async () => {
+      const manager = createWorktreeManager("/repo/root");
+      await manager.createValidatorWorktree("ms-2", "main", [
+        "task/worker-a/auth-001",
+        "task/worker-b/db-002",
+      ]);
+
+      const calls = mockExecAsync.mock.calls.map((c) => `${c[0]} ${(c[1] as string[]).join(" ")}`);
+      const firstIdx = calls.findIndex((c) => c.includes("task/worker-a/auth-001"));
+      const secondIdx = calls.findIndex((c) => c.includes("task/worker-b/db-002"));
+      expect(firstIdx).toBeGreaterThan(-1);
+      expect(secondIdx).toBeGreaterThan(firstIdx);
+    });
+
+    it("returns mergedUnitIds reflecting which branches merged cleanly", async () => {
+      // Simulate conflict on the second merge only — the first commits
+      // successfully, the second throws (conflict). Setup calls (worktree
+      // cleanup, branch creation, worktree add) all succeed first.
+      let mergeCallCount = 0;
+      mockExecAsync.mockImplementation(async (_cmd: string, args: string[]) => {
+        if (args.includes("merge") && !args.includes("--abort")) {
+          mergeCallCount++;
+          if (mergeCallCount === 2) {
+            throw new Error("CONFLICT: merge conflict in src/auth.ts");
+          }
+        }
+        return { stdout: "", stderr: "" };
+      });
+
+      const manager = createWorktreeManager("/repo/root");
+      const result = await manager.createValidatorWorktree("ms-3", "main", [
+        "task/worker-a/auth-001",
+        "task/worker-b/db-002",
+      ]);
+
+      expect(result.mergedUnitIds).toEqual(["task/worker-a/auth-001"]);
+      expect(result.conflictedBranches).toEqual(["task/worker-b/db-002"]);
+    });
+
+    it("aborts in-progress merge on conflict and leaves branch usable", async () => {
+      // After a failed merge, --no-commit leaves the worktree mid-merge.
+      // We need to run `git merge --abort` so the worktree is in a clean state
+      // for the validator to read.
+      mockExecAsync.mockImplementation(async (_cmd: string, args: string[]) => {
+        if (args.includes("merge") && !args.includes("--abort")) {
+          throw new Error("CONFLICT");
+        }
+        return { stdout: "", stderr: "" };
+      });
+
+      const manager = createWorktreeManager("/repo/root");
+      const result = await manager.createValidatorWorktree("ms-4", "main", [
+        "task/worker-b/db-002",
+      ]);
+
+      expect(result.conflictedBranches).toEqual(["task/worker-b/db-002"]);
+
+      const calls = mockExecAsync.mock.calls.map((c) => `${c[0]} ${(c[1] as string[]).join(" ")}`);
+      expect(calls.some((c) => c.includes("-C /repo/root/.git-worktrees/validator-ms-4 merge --abort"))).toBe(true);
+    });
+  });
+
   describe("sanitizeGitArg", () => {
     it("rejects arguments with null bytes", async () => {
       // Kills L18:7 ConditionalExpression → false (skips the check)
