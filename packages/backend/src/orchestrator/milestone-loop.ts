@@ -3,7 +3,7 @@ import type { LaPisClient } from "../clients/lapis-client.js";
 import type { PinyxClient } from "../clients/pinyx-client.js";
 import { QuotaExhaustedError } from "../clients/pinyx-quota-wrapper.js";
 import { createNegotiator } from "./negotiator.js";
-import { createWorktreeManager } from "./worktree.js";
+import { createWorktreeManager, type CreateValidatorWorktreeResult } from "./worktree.js";
 import { createAgentSpawner } from "../agents/agent-spawner.js";
 import type { AgentLogger } from "../agents/agent-logger.js";
 import type { EventBus } from "../ws/events.js";
@@ -424,6 +424,27 @@ export function createMilestoneLoop(
             // Diff collection is best-effort
           }
 
+          // Build a merged worktree once for all validator types so they
+          // share the same on-disk post-worker state. The validator's
+          // read/bash calls operate from this directory.
+          let validatorWorktree: CreateValidatorWorktreeResult | null = null;
+          try {
+            validatorWorktree = await worktreeManager.createValidatorWorktree(
+              milestone.id,
+              loopConfig.gitMainBranch,
+              validatorUnits.map((u) => u.taskBranch).filter(Boolean),
+            );
+          } catch (err) {
+            // Merged worktree creation is best-effort. If it fails, the
+            // validator falls back to the base repo cwd (legacy behavior)
+            // and the diff in context is its only signal.
+            console.warn(
+              `[validator] Failed to create merged worktree for milestone ${milestone.id}:`,
+              err instanceof Error ? err.message : err,
+            );
+          }
+          const validatorCwd = validatorWorktree?.worktreePath ?? loopConfig.repoRoot;
+
           for (const validatorType of validatorTypes) {
             const agentId = `${validatorType}-${milestone.id}`;
             const contextContent = buildValidatorContext({
@@ -433,12 +454,19 @@ export function createMilestoneLoop(
               baseBranch: loopConfig.gitMainBranch, units: validatorUnits,
               researchFindings,
               diffSummary: diffSummary || undefined,
+              validatorWorktree: validatorWorktree
+                ? {
+                    path: validatorWorktree.worktreePath,
+                    mergedBranches: validatorWorktree.mergedUnitIds,
+                    conflictedBranches: validatorWorktree.conflictedBranches,
+                  }
+                : undefined,
             });
 
             callbacks.onAgentStatus(agentId, validatorType, "spawned", milestone.id);
             const handle = await spawner.spawn({
               agentType: validatorType, agentId, missionId: mission.id, milestoneId: milestone.id,
-              contractId, cwd: loopConfig.repoRoot,
+              contractId, cwd: validatorCwd,
               skillFilePath: `${loopConfig.aurexRoot}/packages/backend/src/skills/validator.md`,
               contextContent,
               taskPrompt: `Validate milestone "${milestone.title}" as ${validatorType}. Use write_verdict when done.`,
@@ -451,6 +479,19 @@ export function createMilestoneLoop(
             activeHandles.delete(handle);
             callbacks.onAgentStatus(agentId, validatorType, result.status === "completed" ? "completed" : result.status, milestone.id);
             handle.dispose();
+          }
+
+          // Prune the merged validation worktree after all validators complete.
+          // Stryker disable next-line StringLiteral: best-effort cleanup
+          if (validatorWorktree) {
+            try {
+              await worktreeManager.pruneWorktree(validatorWorktree.worktreePath);
+            } catch (err) {
+              console.warn(
+                `[validator] Failed to prune merged worktree ${validatorWorktree.worktreePath}:`,
+                err instanceof Error ? err.message : err,
+              );
+            }
           }
 
           // --- NEGOTIATION PHASE ---
