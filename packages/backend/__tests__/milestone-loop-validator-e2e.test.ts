@@ -203,6 +203,7 @@ describe("milestone loop validator E2E", () => {
         integrationBranch: "integration/mission-e2e/1-ms-e2e",
         releaseBranch: "release/mission-e2e/1-ms-e2e",
         mergedBranches: ["task/worker-unit-e2e/unit-e2e"],
+        conflictedBranches: [],
       },
     );
 

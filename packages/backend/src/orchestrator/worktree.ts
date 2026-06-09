@@ -10,6 +10,7 @@ export interface WorktreeManager {
   createWorktree(agentId: string, taskId: string, agentBranch: string): Promise<{ worktreePath: string; taskBranch: string }>;
   createBranch(branchName: string, baseBranch: string): Promise<void>;
   mergeToTarget(sourceBranch: string, targetBranch: string): Promise<void>;
+  mergeToTargetWithStrategy(sourceBranch: string, targetBranch: string, strategy: string): Promise<void>;
   pruneWorktree(worktreePath: string): Promise<void>;
   installBranchGuard(worktreePath: string, allowedBranch: string): Promise<void>;
   createValidatorWorktree(
@@ -69,6 +70,13 @@ export function createWorktreeManager(repoRoot: string): WorktreeManager {
       await git(repoRoot, "checkout", targetBranch);
       // Stryker disable next-line StringLiteral: git command args
       await git(repoRoot, "merge", sourceBranch, "--no-ff");
+    },
+
+    async mergeToTargetWithStrategy(sourceBranch, targetBranch, strategy) {
+      // Stryker disable next-line StringLiteral: git command args
+      await git(repoRoot, "checkout", targetBranch);
+      // Stryker disable next-line StringLiteral: git command args
+      await git(repoRoot, "merge", sourceBranch, "--no-ff", `-X${strategy}`);
     },
 
     async pruneWorktree(worktreePath) {

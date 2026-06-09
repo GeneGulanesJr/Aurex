@@ -5,6 +5,7 @@ export interface IntegrationLifecycleResult {
   integrationBranch: string;
   releaseBranch: string;
   mergedBranches: string[];
+  conflictedBranches: string[];
   [k: string]: unknown;
 }
 
@@ -22,19 +23,36 @@ export function createIntegrationLifecycle(worktreeManager: WorktreeManager) {
       const branchSuffix = `${input.missionId}/${input.milestoneOrderIndex + 1}-${input.milestoneId}`;
       const integrationBranch = `integration/${branchSuffix}`;
       const releaseBranch = `release/${branchSuffix}`;
-      const mergedBranches = input.units
+      const mergedBranches_input = input.units
         .map((unit) => unit.taskBranch)
         .filter((branch): branch is string => branch.trim().length > 0);
-
       await worktreeManager.createBranch(integrationBranch, input.baseBranch);
 
-      for (const branch of mergedBranches) {
-        await worktreeManager.mergeToTarget(branch, integrationBranch);
+      const mergedBranches: string[] = [];
+      const conflictedBranches: string[] = [];
+
+      for (const branch of mergedBranches_input) {
+        try {
+          await worktreeManager.mergeToTarget(branch, integrationBranch);
+          mergedBranches.push(branch);
+        } catch {
+          // Try "ours" strategy to auto-resolve simple conflicts
+          try {
+            await worktreeManager.mergeToTargetWithStrategy(branch, integrationBranch, "ours");
+            mergedBranches.push(branch);
+          } catch {
+            conflictedBranches.push(branch);
+          }
+        }
+      }
+
+      if (conflictedBranches.length > 0 && conflictedBranches.length === mergedBranches_input.length) {
+        throw new Error(`All worker branches have merge conflicts: ${conflictedBranches.join(", ")}`);
       }
 
       await worktreeManager.createBranch(releaseBranch, integrationBranch);
 
-      return { integrationBranch, releaseBranch, mergedBranches };
+      return { integrationBranch, releaseBranch, mergedBranches, conflictedBranches };
     },
   };
 }
