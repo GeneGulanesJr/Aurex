@@ -355,6 +355,85 @@ describe("milestone loop validator E2E", () => {
       expect.objectContaining({ phase: "integration" }),
     );
   });
+
+  it("spawns validator from a merged worktree, not the base repo root", async () => {
+    const mission = makeMission();
+    const milestone = makeMilestone();
+    const unit = makeUnit();
+    const verdicts: ValidationVerdict[] = [];
+    const handoffs: unknown[] = [];
+
+    const spawnCwds: string[] = [];
+
+    const lapis = {
+      updateMissionStatus: vi.fn().mockResolvedValue(undefined),
+      updateMilestoneStatus: vi.fn().mockResolvedValue(undefined),
+      updateWorkingUnitStatus: vi.fn().mockResolvedValue(undefined),
+      getWorkingUnitsForMilestone: vi.fn().mockResolvedValue([unit]),
+      getContractHistory: vi.fn().mockResolvedValue([
+        {
+          id: "contract-e2e",
+          content: { criteria: ["validator uses merged worktree"], testCommands: [], acceptanceBehavior: "" },
+        },
+      ]),
+      writeHandoff: vi.fn().mockResolvedValue({ accepted: true, errors: [] }),
+      getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
+      writeVerdict: vi.fn().mockImplementation(async (sessionId: string, v: Omit<ValidationVerdict, "id" | "sessionId">) => {
+        const written = { id: `verdict-${verdicts.length + 1}`, sessionId, ...v };
+        verdicts.push(written);
+        return written;
+      }),
+      getVerdicts: vi.fn().mockImplementation(async () => verdicts),
+      getSessionsForMilestone: vi.fn().mockResolvedValue([]),
+      incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-e2e", retries: 0, rescopes: 0 }),
+      registerAgentSession: vi.fn().mockResolvedValue(undefined),
+      searchMemory: vi.fn().mockResolvedValue([]),
+      getFindings: vi.fn().mockResolvedValue([]),
+      runCompression: vi.fn().mockResolvedValue(undefined),
+    } as unknown as LaPisClient;
+
+    mockCreateAgentSession.mockImplementation(async (opts: { cwd: string; customTools: Array<{ name: string; execute: Function }> }) => {
+      spawnCwds.push(opts.cwd);
+      const sessionId = `session-${mockCreateAgentSession.mock.calls.length}`;
+      let subscriber: (event: unknown) => void = () => {};
+      return {
+        session: {
+          sessionId,
+          subscribe(fn: (event: unknown) => void) { subscriber = fn; return () => {}; },
+          async prompt() {
+            const verdictTool = opts.customTools.find((t) => t.name === "write_verdict");
+            if (verdictTool) {
+              await verdictTool.execute("v", { verdict: "pass", findings: "ok", failedUnitIds: [] });
+            }
+            subscriber({ type: "agent_end" });
+          },
+          abort: vi.fn(),
+          dispose: vi.fn(),
+        },
+      };
+    });
+
+    const callbacks = {
+      onEscalation: vi.fn(),
+      onAgentStatus: vi.fn(),
+      onMilestoneProgress: vi.fn(),
+      onCostUpdate: vi.fn(),
+      onError: vi.fn(),
+    };
+
+    const loop = createMilestoneLoop(lapis, {} as PinyxClient, callbacks, {
+      agentDir: "/test/.pi/agent",
+      repoRoot,
+      gitMainBranch: "main",
+    });
+
+    await loop.run(mission, [milestone]);
+
+    // The validator spawn is the last in the sequence (research → worker → validator)
+    const validatorCwd = spawnCwds[spawnCwds.length - 1];
+    expect(validatorCwd).toContain(".git-worktrees/validator-");
+    expect(validatorCwd).not.toBe(repoRoot);
+  });
 });
 
 async function git(cwd: string, ...args: string[]) {
