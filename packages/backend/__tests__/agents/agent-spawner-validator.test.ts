@@ -191,7 +191,7 @@ describe("AgentSpawner — validator types", () => {
     expect(result.error).toContain("tool_call_cap");
   });
 
-  it("writes a synthetic fail verdict to LaPis when validator exceeds tool-call cap", async () => {
+  it("does NOT write a synthetic verdict when cap is exceeded (moved to milestone-loop)", async () => {
     const lapis = createMockLapis();
     const spawner = createAgentSpawner({
       lapis,
@@ -229,17 +229,9 @@ describe("AgentSpawner — validator types", () => {
     expect(result.status).toBe("failed");
     expect(result.error).toContain("tool_call_cap");
 
-    // The synthetic verdict must be written to LaPis so the negotiator
-    // can route to retry/rescope.
-    expect(lapis.writeVerdict).toHaveBeenCalledWith(
-      "validator-session-1",
-      expect.objectContaining({
-        milestoneId: "ms-1",
-        contractId: "c-1",
-        validatorType: "validator_scrutiny",
-        verdict: "fail",
-        failedUnitIds: expect.any(Array),
-      }),
-    );
+    // The spawner should NOT write a verdict — that's the milestone-loop's
+    // job now. The subscribe callback's async writeVerdict races with
+    // resolveCompleted, so we moved it out.
+    expect(lapis.writeVerdict).not.toHaveBeenCalled();
   });
 });

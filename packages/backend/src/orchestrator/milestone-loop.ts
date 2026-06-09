@@ -478,6 +478,29 @@ export function createMilestoneLoop(
             const result = await handle.completed;
             activeHandles.delete(handle);
             callbacks.onAgentStatus(agentId, validatorType, result.status === "completed" ? "completed" : result.status, milestone.id);
+
+            // If the validator was killed by the tool-call cap, write a
+            // synthetic fail verdict here (in the milestone-loop's control
+            // flow) instead of in the spawner's subscribe callback. The
+            // subscribe callback's async writeVerdict races with
+            // resolveCompleted, causing the verdict to be missing when
+            // getVerdicts runs (root cause of the rescope death spiral).
+            if (result.status === "failed" && result.error?.includes("tool_call_cap_exceeded")) {
+              try {
+                await lapis.writeVerdict(handle.sessionId, {
+                  milestoneId: milestone.id,
+                  contractId,
+                  validatorType: validatorType as "validator_scrutiny" | "validator_user_testing",
+                  verdict: "fail",
+                  findings: `Validator auto-failed: exceeded tool-call cap without producing a verdict. The model exhausted its tool-call budget without writing a grounded verdict. This usually means the validator couldn't find real issues but also couldn't confidently pass — review the worker output and contract criteria manually.`,
+                  failedUnitIds: [],
+                  timestamp: new Date().toISOString(),
+                });
+              } catch (err) {
+                console.warn(`[milestone-loop] Failed to write synthetic cap-hit verdict:`, err instanceof Error ? err.message : err);
+              }
+            }
+
             handle.dispose();
           }
 

@@ -277,33 +277,12 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
               });
               emitOutput(opts, "failed", errMsg, { toolCallCount, toolCallCap });
 
-              // Write a synthetic fail verdict so the orchestrator's
-              // negotiator sees a real failure and can route to
-              // retry/rescope. The validator session is aborted, so the
-              // model never called write_verdict — we have to do it.
-              if (isValidatorSession && opts.contractId) {
-                // Stryker disable next-line BlockStatement: best-effort
-                // — writeVerdict failure should not block the spawner
-                // from resolving completed. The orchestrator handles
-                // missing verdicts via the "No validator verdicts were
-                // recorded" escalate path.
-                try {
-                  await lapis.writeVerdict(session.sessionId, {
-                    milestoneId: opts.milestoneId,
-                    contractId: opts.contractId,
-                    validatorType: opts.agentType as "validator_scrutiny" | "validator_user_testing",
-                    verdict: "fail",
-                    findings: `Validator auto-failed: exceeded ${toolCallCap} tool calls without writing a verdict. Increase context or reduce review scope.`,
-                    failedUnitIds: [],
-                    timestamp: new Date().toISOString(),
-                  });
-                } catch (err) {
-                  console.warn(
-                    `[spawner] Failed to write synthetic verdict for capped validator session ${session.sessionId}:`,
-                    err instanceof Error ? err.message : err,
-                  );
-                }
-              }
+              // NOTE: The synthetic verdict is NOT written here. The
+              // subscribe callback is async but the Pi SDK doesn't await
+              // it, so the verdict POST races with resolveCompleted.
+              // Instead, the milestone-loop writes the synthetic verdict
+              // after handle.completed resolves, guaranteeing it lands
+              // before getVerdicts runs.
 
               resolveCompleted({
                 status: "failed",
