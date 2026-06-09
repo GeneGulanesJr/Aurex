@@ -4,7 +4,7 @@ import type { PinyxClient } from "../clients/pinyx-client.js";
 import { QuotaExhaustedError } from "../clients/pinyx-quota-wrapper.js";
 import { createNegotiator } from "./negotiator.js";
 import { createWorktreeManager, type CreateValidatorWorktreeResult } from "./worktree.js";
-import { createAgentSpawner } from "../agents/agent-spawner.js";
+import { createAgentSpawner, TOOL_CALL_CAP_EXCEEDED } from "../agents/agent-spawner.js";
 import type { AgentLogger } from "../agents/agent-logger.js";
 import type { EventBus } from "../ws/events.js";
 import { buildValidatorContext, buildWorkerContext, buildResearchContext, type ValidatorUnitContext } from "../agents/context-builder.js";
@@ -516,7 +516,7 @@ export function createMilestoneLoop(
             // Both cases need a synthetic fail verdict so the negotiator
             // can route to retry/rescope instead of hitting
             // "No validator verdicts were recorded".
-            const isCapHit = result.status === "failed" && result.error?.includes("tool_call_cap_exceeded");
+            const isCapHit = result.status === "failed" && result.error?.includes(TOOL_CALL_CAP_EXCEEDED);
             if (isCapHit) {
               // Cap hit — model never had a chance to write verdict
               try {
@@ -566,7 +566,7 @@ export function createMilestoneLoop(
               await lapis.writeVerdict(syntheticSessionId, {
                 milestoneId: milestone.id,
                 contractId,
-                validatorType: "validator_scrutiny",
+                validatorType: (validatorTypes[0] ?? "validator_scrutiny") as "validator_scrutiny" | "validator_user_testing",
                 verdict: "fail",
                 findings: `Validator completed session without calling write_verdict. The model finished its review but did not submit a formal verdict. This is a model compliance issue — the validator skill instructs using write_verdict exactly once.`,
                 failedUnitIds: [],
@@ -696,6 +696,20 @@ export function createMilestoneLoop(
             callbacks.onError(mission.id, "integration_failed", summary, { milestoneId: milestone.id, recoverable: false, details: { phase: "integration" } });
             callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary, phase: "integration" });
             return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
+          }
+
+          // Handle conflicted branches: map them to failed unit IDs so
+          // the checkpoint provides actionable information.
+          if (integration.conflictedBranches.length > 0) {
+            const conflictedSet = new Set(integration.conflictedBranches);
+            const conflictedUnitIds = integrationUnits
+              .filter((u) => conflictedSet.has(u.taskBranch))
+              .map((u) => u.id);
+            if (conflictedUnitIds.length > 0) {
+              callbacks.onError(mission.id, "integration_conflicts",
+                `Merge conflicts on branches: ${integration.conflictedBranches.join(", ")}`,
+                { milestoneId: milestone.id, recoverable: true, details: { conflictedUnitIds, phase: "integration" } });
+            }
           }
 
           // Post-integration test gate: if contract tests fail on the
