@@ -25,7 +25,7 @@ function runCompact(deps) {
       SELECT id FROM (
         SELECT id, ROW_NUMBER() OVER (PARTITION BY project ORDER BY created_at DESC) AS rn
         FROM observations WHERE type = 'session_summary' AND deleted_at IS NULL
-      ) WHERE rn > ${RESULT_LIMITS.SUMMARIES_PER_PROJECT}
+      ) WHERE rn > ${RESULT_LIMITS.SESSION_SUMMARY_FLOOR}
     )`);
     report.steps.oldSummariesPruned = true;
 
@@ -44,6 +44,9 @@ function runCompact(deps) {
       ) WHERE rn <= ${RESULT_LIMITS.SESSIONS_PER_PROJECT}
     )`);
     report.steps.sessionLogPruned = true;
+
+    sqlRun(`DELETE FROM user_prompts WHERE session_id NOT IN (SELECT CAST(id AS TEXT) FROM session_log)`);
+    report.steps.orphanPromptsCleaned = true;
 
     sqlRun(
       `DELETE FROM trust_adjustments WHERE timestamp < datetime('now', '-${TIME_WINDOWS.TRUST_ADJUSTMENTS_RETENTION_DAYS} days')`,
@@ -79,7 +82,7 @@ function compact(deps) {
   return runCompact(deps);
 }
 
-function dream(deps) {
+function dream(deps, args = {}) {
   const startedAt = new Date().toISOString();
   const report = { startedAt, phases: {} };
   let totalCleaned = 0;
@@ -160,7 +163,7 @@ function dream(deps) {
         AND (rl.recall_count IS NULL OR rl.recall_count = 0)
         AND o.content LIKE '%Auto-detected%'
         AND (sl.trust_score IS NULL OR sl.trust_score < ${DEDUP.DREAM_LOW_TRUST_THRESHOLD})
-        AND o.created_at < datetime('now', '-${TIME_WINDOWS.DREAM_AUTO_DETECTED_MIN_AGE_DAYS} days')
+        ${args.bypassAgeGates ? '' : "AND o.created_at < datetime('now', '-" + TIME_WINDOWS.DREAM_AUTO_DETECTED_MIN_AGE_DAYS + " days')"}
     `,
       [type],
     );
@@ -306,6 +309,64 @@ function dream(deps) {
   }
   report.phases.consolidated = { count: consolidated };
   totalCleaned += consolidated;
+
+  // Phase 8: Maintain single session_summary per project
+  const summariesPerProject = deps.sqlJson(`
+    SELECT id, project, content, created_at,
+           ROW_NUMBER() OVER (PARTITION BY project ORDER BY created_at DESC) as rn,
+           COUNT(*) OVER (PARTITION BY project) as total
+    FROM observations
+    WHERE type = 'session_summary' AND deleted_at IS NULL
+  `);
+  let summariesConsolidated = 0;
+  for (const row of summariesPerProject) {
+    if (row.total > 1 && row.rn > 1) {
+      deps.softDeleteObservation(row.id);
+      cleanedIds.push({
+        id: row.id,
+        title: 'Session Summary',
+        reason: `consolidated into newer project summary for ${row.project}`,
+      });
+      summariesConsolidated++;
+    }
+  }
+  report.phases.projectSummaryConsolidation = { count: summariesConsolidated };
+  totalCleaned += summariesConsolidated;
+
+  // Phase 9: Session compaction — clean old empty sessions
+  const sessionStats = deps.sqlJson(`
+    SELECT project,
+           COUNT(*) as total_sessions,
+           SUM(CASE WHEN memories_saved = 0 THEN 1 ELSE 0 END) as empty_sessions,
+           SUM(CASE WHEN ended_at IS NULL THEN 1 ELSE 0 END) as orphan_sessions
+    FROM session_log
+    GROUP BY project
+  `);
+  let sessionsCompacted = 0;
+  for (const stat of sessionStats) {
+    const total = stat.total_sessions;
+    if (total <= 5) continue; // Hard floor
+
+    const oldEmptySessions = deps.sqlJson(
+      `SELECT id FROM session_log
+       WHERE project = ? AND memories_saved = 0
+       AND ended_at IS NOT NULL
+       ORDER BY started_at DESC
+       LIMIT -1 OFFSET 5`,
+      [stat.project],
+    );
+
+    for (const session of oldEmptySessions) {
+      deps.sqlRun('DELETE FROM user_prompts WHERE session_id = ?', [String(session.id)]);
+      deps.sqlRun('DELETE FROM session_log WHERE id = ?', [session.id]);
+      sessionsCompacted++;
+    }
+  }
+  report.phases.sessionCompaction = {
+    projects: sessionStats.length,
+    sessionsCompacted,
+  };
+  totalCleaned += sessionsCompacted;
 
   // Run compact as final step
   const compactResult = runCompact(deps);
