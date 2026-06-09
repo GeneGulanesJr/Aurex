@@ -6,12 +6,15 @@ import path from "node:path";
 
 const execFileAsync = promisify(execFile);
 
+const ALLOWED_MERGE_STRATEGIES = new Set(["ours", "theirs", "union", "ort"]);
+
 export interface WorktreeManager {
   getRepoRoot(): string;
   createWorktree(agentId: string, taskId: string, agentBranch: string): Promise<{ worktreePath: string; taskBranch: string }>;
   createBranch(branchName: string, baseBranch: string): Promise<void>;
   mergeToTarget(sourceBranch: string, targetBranch: string): Promise<void>;
   mergeToTargetWithStrategy(sourceBranch: string, targetBranch: string, strategy: string): Promise<void>;
+  abortMerge(): Promise<void>;
   pruneWorktree(worktreePath: string): Promise<void>;
   installBranchGuard(worktreePath: string, allowedBranch: string): Promise<void>;
   createValidatorWorktree(
@@ -33,8 +36,8 @@ function sanitizeGitArg(arg: string): void {
 export interface CreateValidatorWorktreeResult {
   worktreePath: string;
   validationBranch: string;
-  mergedUnitIds: string[];   // branches that merged cleanly
-  conflictedBranches: string[]; // branches that hit a merge conflict
+  mergedUnitIds: string[];
+  conflictedBranches: string[];
 }
 
 export function createWorktreeManager(repoRoot: string): WorktreeManager {
@@ -78,10 +81,19 @@ export function createWorktreeManager(repoRoot: string): WorktreeManager {
     },
 
     async mergeToTargetWithStrategy(sourceBranch, targetBranch, strategy) {
+      if (!ALLOWED_MERGE_STRATEGIES.has(strategy)) {
+        throw new Error(`Invalid merge strategy: ${strategy}. Allowed: ${[...ALLOWED_MERGE_STRATEGIES].join(", ")}`);
+      }
       // Stryker disable next-line StringLiteral: git command args
       await git(repoRoot, "checkout", targetBranch);
       // Stryker disable next-line StringLiteral: git command args
       await git(repoRoot, "merge", sourceBranch, "--no-ff", `-X${strategy}`);
+    },
+
+    async abortMerge() {
+      try {
+        await git(repoRoot, "merge", "--abort");
+      } catch { /* nothing to abort */ }
     },
 
     async pruneWorktree(worktreePath) {
