@@ -1,4 +1,4 @@
-import type { QuotaWindow, QuotaConfig, QuotaProviderQuotaConfig, QuotaProviderStatus } from "@aurex/shared";
+import type { QuotaWindow, QuotaConfig, QuotaProviderStatus } from "@aurex/shared";
 import type { QuotaStatus } from "@aurex/shared";
 
 export interface QuotaCheckResult {

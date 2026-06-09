@@ -1,6 +1,6 @@
 // packages/backend/src/routes/pinyx.ts
 import type { FastifyInstance } from "fastify";
-import type { AgentType, MissionConfig } from "@aurex/shared";
+import type { AgentType } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 
 export interface PinyxProviderConfig {

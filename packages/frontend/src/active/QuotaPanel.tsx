@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { useQuota } from "../hooks/useQuota";
 import { calculatePrefire } from "../api";
-import type { QuotaProviderStatus, QuotaConfigUpdateRequest } from "@aurex/shared";
+import type { QuotaProviderStatus } from "@aurex/shared";
 
 interface QuotaPanelProps {
   open: boolean;

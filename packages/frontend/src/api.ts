@@ -1,4 +1,4 @@
-import type { CheckpointDecision, CostSummary, Milestone, Mission, WorkingUnit, MissionStatus, BumblebeeScanResult, BumblebeeFinding, ExposureCatalog, MutationReportSummary, MutationRunStatus } from "@aurex/shared";
+import type { CheckpointDecision, ExposureCatalog, MutationReportSummary, MutationRunStatus } from "@aurex/shared";
 import type { CreateMissionResponse, GetMissionResponse, CheckpointResponse, HealthResponse, AgentLogResponse, TriggerScanResponse, ListScansResponse, GetScanResultsResponse, BumblebeeStatusResponse, QuotaStatusResponse, PrefireRequest, PrefireResponse, CalculatePrefireRequest, CalculatePrefireResponse, QuotaConfigUpdateRequest } from "@aurex/shared";
 
 export type CurrentMissionPayload = GetMissionResponse;

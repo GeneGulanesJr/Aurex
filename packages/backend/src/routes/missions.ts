@@ -4,7 +4,7 @@ import type { MissionConfig, QuotaWindow, QuotaConfig } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { MissionRunnerPool, PoolMissionStatus } from "../orchestrator/mission-runner-pool.js";
 import type { AgentLogger } from "../agents/agent-logger.js";
-import { checkQuota, resetWindow, getEffectiveProviderConfig } from "../enforcement/quota-gate.js";
+import { checkQuota, resetWindow } from "../enforcement/quota-gate.js";
 
 const defaultMissionConfig: Omit<MissionConfig, "modelHints"> = {
   workerTimeouts: { simple: 120000, build: 300000, testHeavy: 600000 },

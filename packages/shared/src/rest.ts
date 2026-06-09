@@ -1,6 +1,5 @@
 // packages/shared/src/rest.ts
 import type { Mission, Milestone, WorkingUnit, CostSummary, BumblebeeScanResult, BumblebeeFinding, ExposureCatalog, QuotaProviderStatus } from "./types.js";
-import type { QuotaStatus } from "./enums.js";
 
 export interface CreateMissionRequest {
   description: string;

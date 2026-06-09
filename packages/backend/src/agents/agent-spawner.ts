@@ -181,10 +181,6 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
       });
       sessionId = session.sessionId;
 
-      if ((opts as any)._validatorCtx) {
-        (opts as any)._validatorCtx.sessionId = session.sessionId;
-      }
-
       await lapis.registerAgentSession(
         opts.agentType,
         session.sessionId,

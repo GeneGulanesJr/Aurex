@@ -1,5 +1,5 @@
 import type { LaPisClient } from "../clients/lapis-client.js";
-import type { HandoffRecord, MissionTodo, TodoEvidence, TodoLedgerStatus, TodoStatus, ValidationVerdict, WorkingUnit } from "@aurex/shared";
+import type { MissionTodo, TodoEvidence, TodoLedgerStatus, TodoStatus, ValidationVerdict, WorkingUnit } from "@aurex/shared";
 
 type NextActionType =
   | "spawn_worker"

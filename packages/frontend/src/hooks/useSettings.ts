@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 
 export interface AurexSettings {
   /** Auto-collapse code context panel when mission starts */

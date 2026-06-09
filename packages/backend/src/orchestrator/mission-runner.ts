@@ -6,14 +6,13 @@ import { createPinyxClient } from "../clients/pinyx-client.js";
 import { createQuotaAwarePinyxClient, QuotaExhaustedError } from "../clients/pinyx-quota-wrapper.js";
 import type { EventBus } from "../ws/events.js";
 import type { AgentLogger } from "../agents/agent-logger.js";
-import type { AppConfig } from "../config.js";
 import { createCheckpointManager } from "./checkpoint-manager.js";
 import { createMilestoneLoop } from "./milestone-loop.js";
 import { createPlanner, type CodeSummary } from "./planner.js";
 import { createCompressionService } from "./compression.js";
 import { prepareRepoForMission } from "./repo-prep.js";
 import { rescopeMilestone } from "./rescope.js";
-import { checkQuota, resetWindow } from "../enforcement/quota-gate.js";
+import { resetWindow } from "../enforcement/quota-gate.js";
 import path from "path";
 
 export interface RunnerStatus {

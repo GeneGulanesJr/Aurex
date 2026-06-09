@@ -476,8 +476,9 @@ export function createMilestoneLoop(
 
           if (decision.decision === "escalate") {
             const trigger: CheckpointTrigger = "rescope_limit";
-            callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, {});
-            return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary: `${decision.reason}. Aurex auto-rescopes at most ${AUTO_RESCOPE_BATCH_LIMIT} times before asking for direction so missions do not rescope endlessly.` };
+            const summary = `${decision.reason}. Aurex auto-rescopes at most ${AUTO_RESCOPE_BATCH_LIMIT} times before asking for direction so missions do not rescope endlessly.`;
+            callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary });
+            return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
           }
 
           if (decision.decision === "retry") {

@@ -4,7 +4,7 @@
  * (package.json, package-lock.json, yarn.lock), and matches dependencies
  * against the exposure catalog.
  */
-import { readFile, readdir, stat } from "fs/promises";
+import { readFile, readdir } from "fs/promises";
 import { join, relative } from "path";
 import { randomUUID } from "crypto";
 import type { BumblebeePackage, BumblebeeFinding } from "@aurex/shared";

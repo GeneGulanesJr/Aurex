@@ -1,6 +1,6 @@
 // packages/backend/src/enforcement/enforcement-gate.ts
 import { validateBroadcastTransition, canAuthorTransition } from "./broadcast-lifecycle.js";
-import { validateResearchTransition, canTransitionFinding } from "./research-lifecycle.js";
+import { canTransitionFinding } from "./research-lifecycle.js";
 import type { BroadcastLifecycle, ResearchLifecycle, StandingContext } from "@aurex/shared";
 
 export function enforceBroadcastTransition(

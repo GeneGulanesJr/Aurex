@@ -1,8 +1,8 @@
 // packages/shared/src/types.ts
 import type {
-  MissionStatus, MilestoneStatus, AgentType, AgentStatus, WorkerStatus,
+  MissionStatus, MilestoneStatus, AgentType, WorkerStatus,
   BroadcastLifecycle, BroadcastCategory, ResearchLifecycle, ResearchRelevance,
-  NegotiatorVerdict, CompressionTrigger, CheckpointDecision, CheckpointTrigger,
+  CheckpointDecision, CheckpointTrigger,
   QuotaStatus,
 } from "./enums.js";
 
