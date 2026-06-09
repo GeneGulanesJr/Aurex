@@ -121,6 +121,51 @@ export function createMilestoneLoop(
           const integrationUnits: WorkingUnit[] = [];
           const validatorUnits: ValidatorUnitContext[] = [];
 
+          // --- PRE-WORKER RESEARCH ---
+          // If no prior research findings exist (first milestone or first
+          // loop iteration after a rescope), run research BEFORE workers
+          // so they benefit from domain knowledge.
+          if (researchFindings.length === 0) {
+            const preResearchPaths = units.flatMap((u: WorkingUnit) => u.declaredPaths);
+            const preResearchModules = [...new Set(units.flatMap((u: WorkingUnit) => u.declaredModules))];
+            const preResearchId = `research-${milestone.id}`;
+            const preResearchContext = buildResearchContext({
+              missionDescription: mission.description,
+              milestoneTitle: milestone.title,
+              milestoneDescription: milestone.description,
+              unitDescriptions: units.map((u: WorkingUnit) => u.description),
+              declaredPaths: preResearchPaths,
+              declaredModules: preResearchModules,
+            });
+
+            callbacks.onAgentStatus(preResearchId, "research", "spawned", milestone.id);
+            const preResearchHandle = await spawner.spawn({
+              agentType: "research",
+              agentId: preResearchId,
+              missionId: mission.id,
+              milestoneId: milestone.id,
+              cwd: loopConfig.repoRoot,
+              skillFilePath: `${loopConfig.aurexRoot}/packages/backend/src/skills/research.md`,
+              contextContent: preResearchContext,
+              taskPrompt: `Research domain knowledge for milestone "${milestone.title}" BEFORE workers begin. Investigate the codebase areas relevant to the declared paths and modules. Submit findings using write_finding.`,
+              timeout: config.workerTimeouts.build,
+            });
+            activeHandles.add(preResearchHandle);
+
+            callbacks.onAgentStatus(preResearchId, "research", "researching", milestone.id);
+            const preResearchResult = await preResearchHandle.completed;
+            activeHandles.delete(preResearchHandle);
+            callbacks.onAgentStatus(
+              preResearchId,
+              "research",
+              preResearchResult.status === "completed" ? "completed" : preResearchResult.status,
+              milestone.id,
+            );
+            preResearchHandle.dispose();
+
+            researchFindings = await lapis.getFindings(mission.id).catch(() => researchFindings);
+          }
+
           // --- WORKER PHASE ---
           const pendingUnits = units.filter((u: WorkingUnit) => u.status === "planned");
           const completedUnits = units.filter((u: WorkingUnit) => u.status === "completed");
@@ -296,46 +341,6 @@ export function createMilestoneLoop(
             const summary = `Mission cost cap exceeded: $${cumulativeCost.toFixed(2)} >= $${config.costCap.toFixed(2)}`;
             return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
           }
-
-          // --- RESEARCH PHASE ---
-          const allDeclaredPaths = units.flatMap((u: WorkingUnit) => u.declaredPaths);
-          const allDeclaredModules = [...new Set(units.flatMap((u: WorkingUnit) => u.declaredModules))];
-          const researchAgentId = `research-${milestone.id}`;
-          const researchContext = buildResearchContext({
-            missionDescription: mission.description,
-            milestoneTitle: milestone.title,
-            milestoneDescription: milestone.description,
-            unitDescriptions: units.map((u: WorkingUnit) => u.description),
-            declaredPaths: allDeclaredPaths,
-            declaredModules: allDeclaredModules,
-          });
-
-          callbacks.onAgentStatus(researchAgentId, "research", "spawned", milestone.id);
-          const researchHandle = await spawner.spawn({
-            agentType: "research",
-            agentId: researchAgentId,
-            missionId: mission.id,
-            milestoneId: milestone.id,
-            cwd: loopConfig.repoRoot,
-            skillFilePath: `${loopConfig.aurexRoot}/packages/backend/src/skills/research.md`,
-            contextContent: researchContext,
-            taskPrompt: `Research domain knowledge for milestone "${milestone.title}". Investigate the codebase areas relevant to the declared paths and modules. Submit findings using write_finding.`,
-            timeout: config.workerTimeouts.build,
-          });
-          activeHandles.add(researchHandle);
-
-          callbacks.onAgentStatus(researchAgentId, "research", "researching", milestone.id);
-          const researchResult = await researchHandle.completed;
-          activeHandles.delete(researchHandle);
-          callbacks.onAgentStatus(
-            researchAgentId,
-            "research",
-            researchResult.status === "completed" ? "completed" : researchResult.status,
-            milestone.id,
-          );
-          researchHandle.dispose();
-
-          researchFindings = await lapis.getFindings(mission.id).catch(() => researchFindings);
 
           // --- VALIDATOR PHASE ---
           const handoffs = await lapis.getHandoffsForMilestone(milestone.id).catch(() => [] as any[]);
