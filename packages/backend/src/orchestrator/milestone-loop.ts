@@ -110,6 +110,7 @@ export function createMilestoneLoop(
         let researchFindings: ResearchFinding[] = await lapis.getFindings(mission.id).catch(() => [] as ResearchFinding[]);
         while (loopActive) {
           loopActive = false;
+          let hasRetriedFailedUnits = false;
 
           // Fetch current units (may change after rescope)
           const units = await lapis.getWorkingUnitsForMilestone(milestone.id).catch(() => [] as import("@aurex/shared").WorkingUnit[]);
@@ -323,14 +324,35 @@ export function createMilestoneLoop(
           }
 
           if (failedCount > 0) {
+            // Per-unit retry: re-spawn only the failed units once before
+            // escalating the entire milestone. This avoids discarding
+            // successful workers' work when only 1-2 units failed.
+            const failedUnits = units.filter((u: WorkingUnit) => u.status === "failed" || u.status === "timed_out");
+            if (failedUnits.length > 0 && !hasRetriedFailedUnits) {
+              hasRetriedFailedUnits = true;
+              for (const u of failedUnits) {
+                await lapis.updateWorkingUnitStatus(u.id, "planned");
+              }
+              await reconcileMissionLedger(lapis, {
+                missionId: mission.id,
+                milestoneId: milestone.id,
+                reason: "per-unit retry: re-spawning failed workers",
+                actorId: "orchestrator",
+              });
+              callbacks.onMilestoneProgress(milestone.id, "retrying", completedCount, units.length);
+              loopActive = true;
+              continue;
+            }
+
+            // Already retried once — escalate
             await reconcileMissionLedger(lapis, {
               missionId: mission.id,
               milestoneId: milestone.id,
-              reason: "worker failure before validation",
+              reason: "worker failure after retry",
               actorId: "orchestrator",
             });
             const trigger: CheckpointTrigger = "unclassifiable_error";
-            const summary = `${failedCount} worker unit(s) failed before validation`;
+            const summary = `${failedCount} worker unit(s) failed after retry`;
             callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary });
             return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
           }
@@ -486,20 +508,22 @@ export function createMilestoneLoop(
             activeHandles.delete(handle);
             callbacks.onAgentStatus(agentId, validatorType, result.status === "completed" ? "completed" : result.status, milestone.id);
 
-            // If the validator was killed by the tool-call cap, write a
-            // synthetic fail verdict here (in the milestone-loop's control
-            // flow) instead of in the spawner's subscribe callback. The
-            // subscribe callback's async writeVerdict races with
-            // resolveCompleted, causing the verdict to be missing when
-            // getVerdicts runs (root cause of the rescope death spiral).
-            if (result.status === "failed" && result.error?.includes("tool_call_cap_exceeded")) {
+            // Handle validators that didn't write a verdict:
+            // 1. Cap-exceeded: session was aborted by tool-call cap
+            // 2. Completed but no verdict: model finished without calling write_verdict
+            // Both cases need a synthetic fail verdict so the negotiator
+            // can route to retry/rescope instead of hitting
+            // "No validator verdicts were recorded".
+            const isCapHit = result.status === "failed" && result.error?.includes("tool_call_cap_exceeded");
+            if (isCapHit) {
+              // Cap hit — model never had a chance to write verdict
               try {
                 await lapis.writeVerdict(handle.sessionId, {
                   milestoneId: milestone.id,
                   contractId,
                   validatorType: validatorType as "validator_scrutiny" | "validator_user_testing",
                   verdict: "fail",
-                  findings: `Validator auto-failed: exceeded tool-call cap without producing a verdict. The model exhausted its tool-call budget without writing a grounded verdict. This usually means the validator couldn't find real issues but also couldn't confidently pass — review the worker output and contract criteria manually.`,
+                  findings: `Validator auto-failed: exceeded tool-call cap without producing a verdict. The model exhausted its tool-call budget.`,
                   failedUnitIds: [],
                   timestamp: new Date().toISOString(),
                 });
@@ -507,6 +531,10 @@ export function createMilestoneLoop(
                 console.warn(`[milestone-loop] Failed to write synthetic cap-hit verdict:`, err instanceof Error ? err.message : err);
               }
             }
+            // For completed validators, the write_verdict tool should have been
+            // called by the model during the session. If it wasn't, the
+            // negotiator will see "No validator verdicts were recorded" and
+            // the stagnation detector will catch it on the second cycle.
 
             handle.dispose();
           }
@@ -525,7 +553,30 @@ export function createMilestoneLoop(
           }
 
           // --- NEGOTIATION PHASE ---
-          const verdicts = await lapis.getVerdicts(milestone.id).catch(() => [] as import("@aurex/shared").ValidationVerdict[]);
+          let verdicts = await lapis.getVerdicts(milestone.id).catch(() => [] as import("@aurex/shared").ValidationVerdict[]);
+
+          // If validators completed but no verdicts were written (model didn't
+          // call write_verdict), write a synthetic fail verdict. This prevents
+          // the "No validator verdicts were recorded" → rescope death spiral.
+          if (verdicts.length === 0 && validatorTypes.length > 0) {
+            try {
+              const syntheticSessionId = `synthetic-${milestone.id}-${Date.now()}`;
+              await lapis.writeVerdict(syntheticSessionId, {
+                milestoneId: milestone.id,
+                contractId,
+                validatorType: "validator_scrutiny",
+                verdict: "fail",
+                findings: `Validator completed session without calling write_verdict. The model finished its review but did not submit a formal verdict. This is a model compliance issue — the validator skill instructs using write_verdict exactly once.`,
+                failedUnitIds: [],
+                timestamp: new Date().toISOString(),
+              });
+              // Re-fetch verdicts with the synthetic one included
+              verdicts = await lapis.getVerdicts(milestone.id).catch(() => [] as import("@aurex/shared").ValidationVerdict[]);
+            } catch (err) {
+              console.warn(`[milestone-loop] Failed to write synthetic no-verdict:`, err instanceof Error ? err.message : err);
+            }
+          }
+
           await applyValidatorVerdictsToTodos(lapis, {
             missionId: mission.id,
             verdicts,
