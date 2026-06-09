@@ -147,4 +147,47 @@ describe("AgentSpawner — validator types", () => {
       "unit-1",
     );
   });
+
+  it("counts tool calls in a validator session and aborts when cap is exceeded", async () => {
+    const lapis = createMockLapis();
+    const spawner = createAgentSpawner({
+      lapis,
+      agentDir: "/test/.pi/agent",
+      defaultTimeout: 60_000,
+    });
+
+    // Override the default subscribe mock: emit many tool_call events.
+    // The spawner should abort the session when the cap is exceeded
+    // (well before any agent_end).
+    mockSession.subscribe.mockImplementation((fn: any) => {
+      for (let i = 0; i < 30; i++) {
+        setTimeout(() => fn({
+          type: "message_update",
+          assistantMessageEvent: {
+            type: "tool_call",
+            toolCall: { name: "bash", arguments: { command: `ls -la ${i}` } },
+          },
+        }), i);
+      }
+      // Never emit agent_end — the spawner should abort the session itself.
+      return () => {};
+    });
+
+    const handle = await spawner.spawn({
+      agentType: "validator_scrutiny",
+      unitId: "unit-1",
+      missionId: "m-1",
+      milestoneId: "ms-1",
+      cwd: "/test/repo",
+      skillFilePath: "/app/src/skills/validator.md",
+      contextContent: "# Validate milestone",
+      taskPrompt: "Validate milestone ms-1",
+      timeout: 60_000,
+      contractId: "c-1",
+    });
+
+    const result = await handle.completed;
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("tool_call_cap");
+  });
 });
