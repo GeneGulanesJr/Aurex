@@ -93,6 +93,8 @@ export function createMilestoneLoop(
 
         // Update milestone status
         await lapis.updateMilestoneStatus(milestone.id, "in_progress");
+        // Reset stagnation detector for this milestone
+        negotiator.resetStagnation();
         callbacks.onMilestoneProgress(milestone.id, "in_progress", 0, 0);
         await reconcileMissionLedger(lapis, {
           missionId: mission.id,

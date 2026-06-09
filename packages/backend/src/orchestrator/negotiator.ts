@@ -2,6 +2,7 @@
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { ValidationVerdict, NegotiatorVerdict, AgentType } from "@aurex/shared";
 import { verifyCreatorSession } from "../enforcement/creator-verifier.js";
+import { createHash } from "node:crypto";
 
 interface NegotiateResult {
   decision: NegotiatorVerdict;
@@ -10,7 +11,22 @@ interface NegotiateResult {
 }
 
 export function createNegotiator(lapis: LaPisClient) {
+  let priorSignature: string | null = null;
+
+  function hashVerdicts(verdicts: ValidationVerdict[]): string {
+    const data = verdicts
+      .map((v) => `${v.validatorType}:${v.verdict}:${v.findings}:${(v.failedUnitIds ?? []).sort().join(",")}`)
+      .sort()
+      .join("|");
+    return createHash("sha256").update(data).digest("hex").slice(0, 16);
+  }
+
   return {
+    /** Reset stagnation detector — call when starting a new milestone */
+    resetStagnation() {
+      priorSignature = null;
+    },
+
     async negotiate(
       milestoneId: string,
       retryCount: number,
@@ -33,6 +49,18 @@ export function createNegotiator(lapis: LaPisClient) {
         }
         return true;
       });
+
+      // Stagnation detection: if the exact same verdict pattern was seen
+      // in the prior cycle, the loop is not making progress. Escalate
+      // immediately instead of retrying/rescoping endlessly.
+      const currentSignature = hashVerdicts(validVerdicts);
+      if (priorSignature !== null && priorSignature === currentSignature) {
+        return {
+          decision: "escalate",
+          reason: `Stagnation detected: identical validator findings across cycles. The retry/rescope did not change the validator outcome. Human review required.`,
+        };
+      }
+      priorSignature = currentSignature;
 
       if (validVerdicts.length === 0) {
         return { decision: "escalate", reason: "No validator verdicts were recorded" };
