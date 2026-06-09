@@ -474,7 +474,9 @@ export function createMilestoneLoop(
           }
           const validatorCwd = validatorWorktree?.worktreePath ?? loopConfig.repoRoot;
 
-          for (const validatorType of validatorTypes) {
+          // Run all validator types concurrently — they share a read-only
+          // merged worktree and don't modify state.
+          await Promise.all(validatorTypes.map(async (validatorType) => {
             const agentId = `${validatorType}-${milestone.id}`;
             const contextContent = buildValidatorContext({
               validatorType, missionDescription: mission.description,
@@ -537,7 +539,7 @@ export function createMilestoneLoop(
             // the stagnation detector will catch it on the second cycle.
 
             handle.dispose();
-          }
+          }));
 
           // Prune the merged validation worktree after all validators complete.
           // Stryker disable next-line StringLiteral: best-effort cleanup
