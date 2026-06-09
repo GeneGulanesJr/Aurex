@@ -7,6 +7,7 @@ import path from "node:path";
 const execFileAsync = promisify(execFile);
 
 export interface WorktreeManager {
+  getRepoRoot(): string;
   createWorktree(agentId: string, taskId: string, agentBranch: string): Promise<{ worktreePath: string; taskBranch: string }>;
   createBranch(branchName: string, baseBranch: string): Promise<void>;
   mergeToTarget(sourceBranch: string, targetBranch: string): Promise<void>;
@@ -48,6 +49,10 @@ export function createWorktreeManager(repoRoot: string): WorktreeManager {
   }
 
   return {
+    getRepoRoot() {
+      return repoRoot;
+    },
+
     async createWorktree(agentId, taskId, agentBranch) {
       const taskBranch = `task/${agentId}/${taskId}`;
       const worktreePath = `${worktreeBase}/${agentId}-${taskId}`;

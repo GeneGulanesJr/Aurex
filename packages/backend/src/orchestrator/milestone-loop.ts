@@ -675,6 +675,7 @@ export function createMilestoneLoop(
               missionId: mission.id, milestoneId: milestone.id,
               milestoneOrderIndex: milestone.orderIndex,
               baseBranch: loopConfig.gitMainBranch, units: integrationUnits,
+              testCommands,
             });
             await markMergedTodos(lapis, {
               missionId: mission.id,
@@ -694,6 +695,16 @@ export function createMilestoneLoop(
             const summary = `Integration failed after validation pass: ${error instanceof Error ? error.message : String(error)}`;
             callbacks.onError(mission.id, "integration_failed", summary, { milestoneId: milestone.id, recoverable: false, details: { phase: "integration" } });
             callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary, phase: "integration" });
+            return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
+          }
+
+          // Post-integration test gate: if contract tests fail on the
+          // integration branch, report the failure instead of creating release.
+          if (integration.testFailure) {
+            const trigger: CheckpointTrigger = "unclassifiable_error";
+            const summary = `Integration branch tests failed:\n${integration.testFailure.slice(0, 500)}`;
+            callbacks.onError(mission.id, "integration_tests_failed", summary, { milestoneId: milestone.id, recoverable: false, details: { phase: "integration_tests" } });
+            callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary, phase: "integration_tests" });
             return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
           }
 
