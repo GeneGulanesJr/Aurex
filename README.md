@@ -166,7 +166,6 @@ All config is via environment variables. Key ones:
 | Variable | Default | What it controls |
 |---|---|---|
 | `LAPIS_ENDPOINT` | `http://localhost:9100` | Where the shared state DB lives |
-| `PINYX_ENDPOINT` | `http://localhost:7331` | _(Deprecated — PiNyx is configured via the Integrations panel UI)_ |
 | `REPO_ROOT` | `/workspace` | Path to the parent directory containing mission target repos |
 | `AUREX_ROOT` | `=REPO_ROOT` | Path to the Aurex source tree (for orchestrator skills) |
 | `GIT_MAIN_BRANCH` | `main` | Protected branch workers merge into |
@@ -225,7 +224,7 @@ Custom providers are also supported — add any base URL in the Integrations pan
 │   │   └── Dockerfile
 │   └── frontend/        # React mission control dashboard (@aurex/frontend)
 │       ├── frame/       # TopBar, TelemetryBar, ThemePicker
-│       ├── hooks/       # 14 typed hooks (mission, ws, theme, github, pinyx, quota, ...)
+│       ├── hooks/       # 13 typed hooks (mission, ws, theme, github, pinyx, quota, ...)
 │       ├── lib/         # Shared client utilities + sessionState
 │       ├── passive/     # MissionPipeline, InspectorPanel, RepoOverview, CodeContext, SupplyChain
 │       ├── active/      # Escalation overlay, Integrations panel, Mutation panel, Quota panel

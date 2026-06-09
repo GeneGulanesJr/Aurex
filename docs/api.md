@@ -4,7 +4,7 @@
 
 - **Base URL (default):** `http://localhost:3000`
 - **WebSocket URL:** `ws://localhost:3000/ws`
-- **Auth:** If `API_KEY` is set in the backend environment, the API key must be sent in the `x-api-key` request header for REST and as an `auth` message on the WebSocket.
+- **Auth:** If `API_KEY` is set in the backend environment, the API key must be sent as `Authorization: Bearer <key>` on REST requests and as a `auth` message on the WebSocket.
 - **Content type:** `application/json` for request and response bodies.
 - **Error envelope:** `{ "error": "<message>" }` for REST errors. Some endpoints add a typed discriminator (e.g. `{ "error": "quota_exhausted", "providerId": "...", "remainingMs": ..., "windowResetsAt": "..." }`).
 
@@ -22,7 +22,7 @@ For shared request/response shapes see [`packages/shared/src/rest.ts`](../packag
 | **Code Context** | [`GET /api/missions/:missionId/code/summary`](#get-apimissionsmissionidcodesummary), [`GET /api/missions/:missionId/code/graph`](#get-apimissionsmissionidcodegraph), [`GET /api/missions/:missionId/code/hotspots`](#get-apimissionsmissionidcodehotspots) |
 | **PiNyx** | [`GET /api/pinyx/status`](#get-apipinyxstatus), [`GET /api/pinyx/config`](#get-apipinyxconfig), [`POST /api/pinyx/config`](#post-apipinyxconfig), [`GET /api/pinyx/models`](#get-apipinyxmodels) |
 | **Quota** | [`GET /api/quota`](#get-apiquota), [`POST /api/quota/config`](#post-apiquotaconfig), [`POST /api/quota/prefire`](#post-apiquotaprefire), [`POST /api/quota/reset`](#post-apiquotareset), [`POST /api/quota/calculate-prefire`](#post-apiquotacalculate-prefire) |
-| **Mutation testing** | [`GET /api/repos/:repoName/mutation`](#get-apireposreponamemutation), [`POST /api/repos/:repoName/mutation/run`](#post-apireposreponamemutationrun), [`GET /api/repos/:repoName/mutation/run/:runId`](#get-apireposreponamemutationrunrunid) |
+| **Mutation testing** | [`GET /api/repos/:repoName/mutation`](#get-apireposreponamemutation), [`POST /api/repos/:repoName/mutation/run`](#post-apireposreponamemutationrun), [`GET /api/repos/:repoName/mutation/:runId`](#get-apireposreponamemutationrunid) |
 | **Repo Explore** | [`POST /api/repos/:repoName/explore`](#post-apireposreponameexplore), [`GET /api/repos/:repoName/summary`](#get-apireposreponamesummary), [`GET /api/repos/:repoName/hotspots`](#get-apireposreponamehotspots), [`GET /api/repos/:repoName/readiness`](#get-apireposreponamereadiness), [`POST /api/repos/:repoName/scans`](#post-apireposreponamescans), [`GET /api/repos/:repoName/scans`](#get-apireposreponamescans-1), [`GET /api/repos/:repoName/scans/:scanId`](#get-apireposreponamescansscanid), [`GET /api/repos/:repoName/suggestions`](#get-apireposreponamesuggestions) |
 | **Bumblebee (supply chain)** | [`GET /api/bumblebee/status`](#get-apibumblebeestatus), [`GET /api/bumblebee/catalog`](#get-apibumblebeecatalog), [`POST /api/bumblebee/catalog`](#post-apibumblebeecatalog), [`POST /api/missions/:missionId/scans`](#post-apimissionsmissionidscans), [`GET /api/missions/:missionId/scans`](#get-apimissionsmissionidscans), [`GET /api/missions/:missionId/scans/:scanId`](#get-apimissionsmissionidscansscanid) |
 | **WebSocket** | [`/ws`](#websocket-ws) |
@@ -221,9 +221,9 @@ Latest mutation score for the repo (or 404 if no run yet).
 
 Kick off a Stryker run against the repo. Returns immediately; the run is observable via `GET /api/repos/:repoName/mutation/run/:runId`.
 
-### `GET /api/repos/:repoName/mutation/run/:runId`
+### `GET /api/repos/:repoName/mutation/:runId`
 
-Get the status / results of a specific mutation run.
+Get the status / results of a specific mutation run. Implemented in `packages/backend/src/routes/mutation-routes.ts:120`.
 
 ---
 
@@ -299,14 +299,24 @@ Fetch a specific scan by id.
 
 ## WebSocket (`/ws`)
 
-Connect to `ws://localhost:3000/ws` for real-time mission events. Implemented in `packages/backend/src/ws/events.ts`.
+Connect to `ws://localhost:3000/ws` for real-time mission events. Implemented in `packages/backend/src/ws/events.ts`. `/ws` is exempt from REST auth, but if `API_KEY` is set the socket requires a token handshake (see below).
 
 ### Handshake
 
-1. Server sends `{ "type": "hello", "seq": <currentSeq> }` immediately on connect.
-2. Client may send `{ "type": "auth", "apiKey": "..." }` if `API_KEY` is set. If no `auth_ok` arrives within the auth timeout window, the socket is closed with code `4001`.
-3. Client may send `{ "type": "subscribe", "missionId": "..." }` to receive only events for that mission, or omit it to receive all events.
-4. Server sends `{ "type": "subscribed", "missionId": "..." }` on success or `closes 4003` on invalid auth.
+1. Client connects. The server immediately starts a 5-second auth timer.
+2. If `API_KEY` is set, the client must send `{ "type": "auth", "token": "<API_KEY>" }`. On success the server replies with `{ "type": "auth_ok" }` and clears the timer; on failure the server closes the socket with code `4003`.
+3. After auth, the server sends a single `{ "type": "hello", "seq": <currentSeq> }` frame so the client knows where to resume from.
+4. If the client never authenticates within 5 seconds, the server closes the socket with code `4001`.
+
+### Subscription
+
+By default a connected client receives every emitted event. To filter to a single mission, send:
+
+```
+{ "type": "subscribe_mission", "missionId": "..." }
+```
+
+The server replies with `{ "type": "subscribed", "missionId": "..." }` to confirm. There is no "unsubscribe" message — close the socket to stop receiving.
 
 ### Live event stream
 
@@ -320,4 +330,4 @@ where `MissionEvent` is the discriminated union defined in [`packages/shared/src
 
 ### Replay
 
-If a client knows the last `seq` it saw, it can send `{ "type": "replay", "fromSeq": <n> }` and the server will replay all events with `seq > n` in order, then send `{ "type": "replay_done", "count": <k> }`.
+If a client knows the last `seq` it saw, it can send `{ "type": "replay", "lastSeq": <n> }` and the server will replay all events with `seq > n` in batches of 100, then send `{ "type": "replay_done", "count": <k> }`. Replayed events include `"replayed": true` alongside `seq` and `event`. The event buffer holds the most recent 10 000 events; `lastSeq` values older than that will be clamped to the buffer's oldest entry.

@@ -7,7 +7,7 @@ _Last updated: 2026-06-08 | Mission control layout rework complete | 700 tests a
 | Subsystem | Status | Plan | Tests | Notes |
 |---|---|---|---|---|
 | **Shared types & enums** | ✅ Complete | — | Covered | `@aurex/shared` — 5 files: enums, events, rest, types, index |
-| **Backend module structure** | ✅ Complete | — | — | 50 source files across 10 directories |
+| **Backend module structure** | ✅ Complete | — | — | 50 source files across 8 source directories (`agents`, `clients`, `enforcement`, `orchestrator`, `routes`, `scanner`, `skills`, `ws`) + `config.ts` + `server.ts` |
 | **Frontend component structure** | ✅ Complete | — | — | 69 source files across 6 directories |
 | **Agent spawner + factory** | ✅ Complete | — | ✅ | Pi SDK `createAgentSession()`, per-type tools |
 | **Worker spawning + worktrees** | ✅ Complete | — | ✅ | Git worktree isolation, branch guards, handoffs |

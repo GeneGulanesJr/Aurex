@@ -19,7 +19,7 @@ The source of truth is [`.env.example`](../.env.example). This document explains
 | Variable | Type | Required | Default | Effect | Source |
 |---|---|---|---|---|---|
 | `PORT` | int | no | `3000` | HTTP port the Fastify backend binds to. WebSocket `/ws` shares this port. | [`config.ts:89`](../packages/backend/src/config.ts) |
-| `API_KEY` | string | no | _(none)_ | If set, every REST request must include this value in the `x-api-key` header, and every WebSocket must `auth` with it. Leave empty to disable. | [`config.ts:90`](../packages/backend/src/config.ts) |
+| `API_KEY` | string | no | _(none)_ | If set, every REST request must include this value in an `Authorization: Bearer <key>` header. Leave empty to disable. WebSocket auth is described in [`docs/api.md`](./api.md#websocket-ws). | [`config.ts:90`](../packages/backend/src/config.ts) |
 | `AUREX_ROOT` | path | no | `=REPO_ROOT` | Where the Aurex source tree lives — used to locate the orchestrator's own skill files (`packages/backend/src/skills/*.md`). Inside Docker, this is `/aurex` because the source is bind-mounted there. | [`config.ts:86`](../packages/backend/src/config.ts) |
 
 ## Repos & branches
@@ -56,9 +56,7 @@ The source of truth is [`.env.example`](../.env.example). This document explains
 
 ## PiNyx endpoint
 
-| Variable | Type | Default | Effect | Source |
-|---|---|---|---|---|
-| `PINYX_ENDPOINT` | URL | `http://localhost:7331` | **Deprecated** — PiNyx (the LLM gateway) is now configured in-app via the **Integrations → Connection / Keys / Models** tabs, which persist provider URLs and keys into LaPis. The env var is kept only for first-run defaults; the Integrations panel value overrides it. See [`docs/api.md`](./api.md) for the `/api/pinyx/*` endpoints. | `.env.example` (commented as deprecated) |
+PiNyx (the LLM gateway) is **not configured via environment variables**. Provider URLs, API keys, and model selection live in the **Integrations → Connection / Keys / Models** tabs in the dashboard and are persisted into LaPis settings. The `/api/pinyx/*` endpoints in [`docs/api.md`](./api.md#pinyx) are how the Integrations panel reads and writes those settings. The bundled PiNyx is reachable inside Docker at `http://pinyx:7331` and locally at `http://localhost:7331`; you only need to know that URL when running the stack out of Docker.
 
 ## GitHub App OAuth
 
