@@ -592,7 +592,7 @@ export function createMilestoneLoop(
           });
 
           const retryCounter = await lapis.incrementRetry(milestone.id);
-          const effectiveMaxRescopes = Math.min(config.maxRescopes, AUTO_RESCOPE_BATCH_LIMIT);
+          const effectiveMaxRescopes = Math.min(config.maxRescopes, config.maxAutoRescopes ?? AUTO_RESCOPE_BATCH_LIMIT);
           const decision = await negotiator.negotiate(
             milestone.id, retryCounter.retries, retryCounter.rescopes,
             config.maxValidatorRetries, effectiveMaxRescopes, verdicts,
@@ -600,7 +600,7 @@ export function createMilestoneLoop(
 
           if (decision.decision === "escalate") {
             const trigger: CheckpointTrigger = "rescope_limit";
-            const summary = `${decision.reason}. Aurex auto-rescopes at most ${AUTO_RESCOPE_BATCH_LIMIT} times before asking for direction so missions do not rescope endlessly.`;
+            const summary = `${decision.reason}. Aurex auto-rescopes at most ${effectiveMaxRescopes} times before asking for direction so missions do not rescope endlessly.`;
             callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary });
             return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
           }

@@ -89,7 +89,7 @@ export interface CodeSummary {
 export function createPlanner(
   lapis: LaPisClient,
   pinyx: PinyxClient,
-  opts?: { model?: string; eventBus?: EventBus; missionId?: string; codeSummary?: CodeSummary },
+  opts?: { model?: string; eventBus?: EventBus; missionId?: string; codeSummary?: CodeSummary; maxMilestones?: number; maxUnitsPerMilestone?: number },
 ) {
   const model = opts?.model ?? "kilo/kilo-auto/free";
   const eventBus = opts?.eventBus;
@@ -125,7 +125,7 @@ export function createPlanner(
 
 OUTPUT FORMAT: You MUST respond with ONLY a raw JSON object. No markdown, no code fences, no explanation, no thinking aloud. Start your response with { and end with }.
 
-Keep the plan concise — at most 4 milestones, each with at most 4 working units.
+Keep the plan concise — at most ${opts?.maxMilestones ?? 4} milestones, each with at most ${opts?.maxUnitsPerMilestone ?? 4} working units.
 
 IMPORTANT: Use the codebase structure below to ensure your declared paths and modules match the actual project layout. Working units must reference real directories and modules. Plan milestones that are achievable and well-scoped based on the actual codebase architecture.`;
 

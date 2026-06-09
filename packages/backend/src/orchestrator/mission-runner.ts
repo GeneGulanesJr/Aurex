@@ -148,7 +148,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexing skipped: ${msg}` });
       }
 
-      const planner = createPlanner(lapis, pinyx, { model, eventBus, missionId, codeSummary });
+      const planner = createPlanner(lapis, pinyx, { model, eventBus, missionId, codeSummary, maxMilestones: mission.configJson.maxMilestones, maxUnitsPerMilestone: mission.configJson.maxUnitsPerMilestone });
 
       const planResult = await planner.plan(mission.description, missionId).catch(async (err) => {
         const msg = err instanceof Error ? err.message : String(err);

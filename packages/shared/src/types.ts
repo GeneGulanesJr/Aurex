@@ -22,6 +22,12 @@ export interface MissionConfig {
   maxRescopes: number;
   cloneUrl?: string;
   repoRoot?: string;
+  /** Max milestones per plan. Default 4. */
+  maxMilestones?: number;
+  /** Max working units per milestone. Default 4. */
+  maxUnitsPerMilestone?: number;
+  /** Max auto-rescopes before escalation. Default 2. */
+  maxAutoRescopes?: number;
 }
 
 export interface Milestone {
