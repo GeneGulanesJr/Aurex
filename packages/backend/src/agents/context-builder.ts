@@ -23,6 +23,15 @@ export interface ValidatorUnitContext {
   handoff?: HandoffRecord;
 }
 
+export interface ValidatorWorktreeInfo {
+  /** Absolute path to the worktree the validator was spawned from. */
+  path: string;
+  /** Worker branches that merged cleanly into the validation branch. */
+  mergedBranches: string[];
+  /** Worker branches that had merge conflicts and were NOT applied. */
+  conflictedBranches: string[];
+}
+
 export interface ValidatorContextInput {
   validatorType: "validator_scrutiny" | "validator_user_testing";
   missionDescription: string;
@@ -37,6 +46,14 @@ export interface ValidatorContextInput {
   researchFindings?: ResearchFinding[];
   /** Concatenated git diff for all working unit branches against baseBranch. */
   diffSummary?: string;
+  /**
+   * Information about the merged validation worktree the validator is
+   * spawned from. When present, the validator's read/bash tools operate
+   * from this worktree (which contains all worker code changes merged in).
+   * Conflicted branches have NOT been applied — the validator is told so
+   * explicitly and is expected to fail those units.
+   */
+  validatorWorktree?: ValidatorWorktreeInfo;
 }
 
 export interface ResearchContextInput {
@@ -151,6 +168,28 @@ export function buildValidatorContext(input: ValidatorContextInput): string {
       `- Base branch: ${input.baseBranch}`,
     ].join("\n"),
   );
+
+  if (input.validatorWorktree) {
+    const vw = input.validatorWorktree;
+    const conflictedUnitIds = vw.conflictedBranches
+      .map((branch) => input.units.find((u) => u.taskBranch === branch)?.id)
+      .filter((id): id is string => Boolean(id));
+    sections.push(
+      [
+        "## Merged Validation Worktree",
+        "",
+        `Path: \`${vw.path}\``,
+        "",
+        "Your `read` and `bash` tool calls operate from THIS directory. The code on disk is the post-worker state — files added or modified by workers ARE present here. Do NOT search the base branch for code that the diff shows as added; it exists here.",
+        "",
+        `- Merged cleanly: ${vw.mergedBranches.length === 0 ? "(none)" : vw.mergedBranches.join(", ")}`,
+        `- Merge conflicts (NOT applied — treat as failed): ${vw.conflictedBranches.length === 0 ? "(none)" : vw.conflictedBranches.join(", ")}`,
+        conflictedUnitIds.length > 0
+          ? `\nUnits with unmergeable code: ${conflictedUnitIds.join(", ")}. These MUST be listed in \`failedUnitIds\` with the reason "merge conflict — worker code could not be integrated".`
+          : "",
+      ].filter(Boolean).join("\n"),
+    );
+  }
 
   if (input.contractCriteria.length > 0) {
     sections.push(

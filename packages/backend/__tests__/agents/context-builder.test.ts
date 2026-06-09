@@ -310,4 +310,50 @@ describe("buildValidatorContext", () => {
 
     expect(ctx).not.toContain("## Changed Code (Diff)");
   });
+
+  it("includes merged worktree path and merge status when provided", () => {
+    const ctx = buildValidatorContext({
+      validatorType: "validator_scrutiny",
+      missionDescription: "Build auth",
+      milestoneTitle: "Auth module",
+      milestoneDescription: "JWT auth",
+      contractId: "contract-1",
+      contractCriteria: ["Login returns JWT"],
+      testCommands: ["npm test"],
+      acceptanceBehavior: "",
+      baseBranch: "main",
+      units: [
+        { id: "u-1", description: "auth", declaredPaths: [], declaredModules: [], taskBranch: "task/worker-a/u-1", worktreePath: "/repo/.git-worktrees/worker-a-u-1" },
+        { id: "u-2", description: "db", declaredPaths: [], declaredModules: [], taskBranch: "task/worker-b/u-2", worktreePath: "/repo/.git-worktrees/worker-b-u-2" },
+      ],
+      validatorWorktree: {
+        path: "/repo/.git-worktrees/validator-ms-1",
+        mergedBranches: ["task/worker-a/u-1"],
+        conflictedBranches: ["task/worker-b/u-2"],
+      },
+    });
+
+    expect(ctx).toContain("## Merged Validation Worktree");
+    expect(ctx).toContain("/repo/.git-worktrees/validator-ms-1");
+    expect(ctx).toContain("Your `read` and `bash` tool calls operate from THIS directory.");
+    expect(ctx).toContain("task/worker-b/u-2");
+    expect(ctx).toContain("u-2");
+  });
+
+  it("omits merged worktree section when not provided", () => {
+    const ctx = buildValidatorContext({
+      validatorType: "validator_scrutiny",
+      missionDescription: "Build auth",
+      milestoneTitle: "Auth module",
+      milestoneDescription: "JWT auth",
+      contractId: "contract-1",
+      contractCriteria: [],
+      testCommands: [],
+      acceptanceBehavior: "",
+      baseBranch: "main",
+      units: [],
+    });
+
+    expect(ctx).not.toContain("## Merged Validation Worktree");
+  });
 });
