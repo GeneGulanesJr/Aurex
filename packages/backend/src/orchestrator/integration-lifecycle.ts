@@ -49,6 +49,11 @@ export function createIntegrationLifecycle(worktreeManager: WorktreeManager) {
           await worktreeManager.mergeToTarget(branch, integrationBranch);
           mergedBranches.push(branch);
         } catch {
+          // Abort the failed merge before trying an alternative strategy,
+          // otherwise git refuses to start a new merge while one is in progress.
+          try {
+            await worktreeManager.abortMerge();
+          } catch { /* nothing to abort */ }
           try {
             await worktreeManager.mergeToTargetWithStrategy(branch, integrationBranch, "ours");
             mergedBranches.push(branch);
