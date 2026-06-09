@@ -60,7 +60,7 @@ describe("integration lifecycle — review fixes", () => {
 
     expect(result.mergedBranches).toEqual(["task/worker-unit-1/unit-1"]);
     expect(result.conflictedBranches).toEqual(["task/worker-unit-2/unit-2"]);
-    expect(worktree.abortMerge).toHaveBeenCalledTimes(1);
+    expect(worktree.abortMerge).toHaveBeenCalledTimes(2);
   });
 
   it("partial conflicts: merges some branches, conflicts others, creates release", async () => {
