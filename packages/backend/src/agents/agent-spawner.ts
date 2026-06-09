@@ -22,6 +22,8 @@ export interface AgentSpawnerConfig {
   logger?: AgentLogger;
   eventBus?: EventBus;
   maxConcurrent?: number;
+  /** Max tool calls for a validator session before auto-fail. Default 25. */
+  validatorToolCallCap?: number;
   onCost?: (missionId: string, totalCost: number, totalTokens: number, delta: number) => void;
 }
 
@@ -53,7 +55,7 @@ export interface SpawnResult {
 }
 
 export function createAgentSpawner(config: AgentSpawnerConfig) {
-  const { lapis, agentDir, defaultTimeout, logger, eventBus, maxConcurrent } = config;
+  const { lapis, agentDir, defaultTimeout, logger, eventBus, maxConcurrent, validatorToolCallCap = 25 } = config;
   const activeHandles = new Map<string, SpawnHandle>();
   let missionCumulativeCost = 0;
   let missionCumulativeTokens = 0;
@@ -209,7 +211,11 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
       });
 
       let settled = false;
-      const unsubscribe = session.subscribe((event: any) => {
+      let toolCallCount = 0;
+      const isValidatorSession = opts.agentType === "validator_scrutiny" || opts.agentType === "validator_user_testing";
+      const toolCallCap = isValidatorSession ? validatorToolCallCap : Infinity;
+
+      const unsubscribe = session.subscribe(async (event: any) => {
         if (settled) return;
 
         if (event.type === "agent_end") {
@@ -250,6 +256,62 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
           const toolName = event.assistantMessageEvent?.toolCall?.name;
           const toolInput = (event.assistantMessageEvent?.toolCall?.arguments ?? event.assistantMessageEvent?.toolCall?.input) as Record<string, unknown> | undefined;
           if (toolName) {
+            toolCallCount++;
+            // Validator tool-call cap enforcement: abort and force a
+            // synthetic fail verdict if the model keeps making tool calls
+            // without producing a verdict. The cap is the only thing
+            // bounding the validator's runtime — the Pi SDK session loop
+            // has no built-in maxSteps.
+            if (toolCallCount > toolCallCap) {
+              settled = true;
+              session.abort();
+              const errMsg = `tool_call_cap_exceeded: ${toolCallCount} calls (cap ${toolCallCap})`;
+              logger?.log({
+                sessionId: session.sessionId,
+                agentType: opts.agentType,
+                missionId: opts.missionId,
+                milestoneId: opts.milestoneId,
+                unitId: opts.unitId,
+                event: "failed",
+                data: { error: errMsg, toolCallCount, toolCallCap },
+              });
+              emitOutput(opts, "failed", errMsg, { toolCallCount, toolCallCap });
+
+              // Write a synthetic fail verdict so the orchestrator's
+              // negotiator sees a real failure and can route to
+              // retry/rescope. The validator session is aborted, so the
+              // model never called write_verdict — we have to do it.
+              if (isValidatorSession && opts.contractId) {
+                // Stryker disable next-line BlockStatement: best-effort
+                // — writeVerdict failure should not block the spawner
+                // from resolving completed. The orchestrator handles
+                // missing verdicts via the "No validator verdicts were
+                // recorded" escalate path.
+                try {
+                  await lapis.writeVerdict(session.sessionId, {
+                    milestoneId: opts.milestoneId,
+                    contractId: opts.contractId,
+                    validatorType: opts.agentType as "validator_scrutiny" | "validator_user_testing",
+                    verdict: "fail",
+                    findings: `Validator auto-failed: exceeded ${toolCallCap} tool calls without writing a verdict. Increase context or reduce review scope.`,
+                    failedUnitIds: [],
+                    timestamp: new Date().toISOString(),
+                  });
+                } catch (err) {
+                  console.warn(
+                    `[spawner] Failed to write synthetic verdict for capped validator session ${session.sessionId}:`,
+                    err instanceof Error ? err.message : err,
+                  );
+                }
+              }
+
+              resolveCompleted({
+                status: "failed",
+                sessionId: session.sessionId,
+                error: errMsg,
+              });
+              return;
+            }
             const snippet = extractToolSnippet(toolName, toolInput || {});
             logger?.log({
               sessionId: session.sessionId,
