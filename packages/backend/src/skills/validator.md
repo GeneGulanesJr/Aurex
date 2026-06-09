@@ -146,6 +146,17 @@ List anything needed to verify uncertain points.
 List specific tests that would increase confidence.
 ```
 
+## Tool Call Budget
+
+You have a **hard cap of 25 tool calls** per session. The orchestrator aborts the session and writes a synthetic `verdict: "fail"` when the cap is exceeded. There is no partial credit — an aborted session counts as a fail.
+
+Be decisive:
+- After 5 reads/greps of the relevant code, you have enough context
+- After running the test commands, you have your test results
+- Call `write_verdict` as soon as you can ground your decision in evidence
+
+Do not exhaustively enumerate every file in the diff. Pick the 2-3 files most likely to contain real defects and review them. The diff is in your context — you do not need to `read` every changed file.
+
 ## Verdict Tool
 
 Use `write_verdict` exactly once:
