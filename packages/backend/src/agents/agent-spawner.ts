@@ -3,6 +3,8 @@ import {
   DefaultResourceLoader,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
+
+type DefaultResourceLoaderOptions = ConstructorParameters<typeof DefaultResourceLoader>[0];
 import type { AgentType, WorkerStatus, AgentOutputEventType } from "@aurex/shared";
 import { AGENT_TOOLS, needsMemoryLayer } from "./factory.js";
 import { createWorkerTools } from "./worker-tools.js";
@@ -91,7 +93,7 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
       let cumulativeTokens = 0;
 
       const skillBaseDir = path.dirname(opts.skillFilePath);
-      const loaderConfig: Record<string, any> = {
+      const loaderConfig: DefaultResourceLoaderOptions = {
         cwd: opts.cwd,
         agentDir,
         skillsOverride: (current: any) => ({
