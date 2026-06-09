@@ -215,7 +215,7 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
       const isValidatorSession = opts.agentType === "validator_scrutiny" || opts.agentType === "validator_user_testing";
       const toolCallCap = isValidatorSession ? validatorToolCallCap : Infinity;
 
-      const unsubscribe = session.subscribe((event: any) => {
+      const unsubscribe = session.subscribe(async (event: any) => {
         if (settled) return;
 
         if (event.type === "agent_end") {
@@ -276,6 +276,35 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
                 data: { error: errMsg, toolCallCount, toolCallCap },
               });
               emitOutput(opts, "failed", errMsg, { toolCallCount, toolCallCap });
+
+              // Write a synthetic fail verdict so the orchestrator's
+              // negotiator sees a real failure and can route to
+              // retry/rescope. The validator session is aborted, so the
+              // model never called write_verdict — we have to do it.
+              if (isValidatorSession && opts.contractId) {
+                // Stryker disable next-line BlockStatement: best-effort
+                // — writeVerdict failure should not block the spawner
+                // from resolving completed. The orchestrator handles
+                // missing verdicts via the "No validator verdicts were
+                // recorded" escalate path.
+                try {
+                  await lapis.writeVerdict(session.sessionId, {
+                    milestoneId: opts.milestoneId,
+                    contractId: opts.contractId,
+                    validatorType: opts.agentType as "validator_scrutiny" | "validator_user_testing",
+                    verdict: "fail",
+                    findings: `Validator auto-failed: exceeded ${toolCallCap} tool calls without writing a verdict. Increase context or reduce review scope.`,
+                    failedUnitIds: [],
+                    timestamp: new Date().toISOString(),
+                  });
+                } catch (err) {
+                  console.warn(
+                    `[spawner] Failed to write synthetic verdict for capped validator session ${session.sessionId}:`,
+                    err instanceof Error ? err.message : err,
+                  );
+                }
+              }
+
               resolveCompleted({
                 status: "failed",
                 sessionId: session.sessionId,

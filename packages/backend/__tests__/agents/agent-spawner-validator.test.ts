@@ -190,4 +190,56 @@ describe("AgentSpawner — validator types", () => {
     expect(result.status).toBe("failed");
     expect(result.error).toContain("tool_call_cap");
   });
+
+  it("writes a synthetic fail verdict to LaPis when validator exceeds tool-call cap", async () => {
+    const lapis = createMockLapis();
+    const spawner = createAgentSpawner({
+      lapis,
+      agentDir: "/test/.pi/agent",
+      defaultTimeout: 60_000,
+    });
+
+    mockSession.subscribe.mockImplementation((fn: any) => {
+      for (let i = 0; i < 30; i++) {
+        setTimeout(() => fn({
+          type: "message_update",
+          assistantMessageEvent: {
+            type: "tool_call",
+            toolCall: { name: "read", arguments: { path: `file-${i}.ts` } },
+          },
+        }), i);
+      }
+      return () => {};
+    });
+
+    const handle = await spawner.spawn({
+      agentType: "validator_scrutiny",
+      unitId: "unit-1",
+      missionId: "m-1",
+      milestoneId: "ms-1",
+      cwd: "/test/repo",
+      skillFilePath: "/app/src/skills/validator.md",
+      contextContent: "# Validate milestone",
+      taskPrompt: "Validate milestone ms-1",
+      timeout: 60_000,
+      contractId: "c-1",
+    });
+
+    const result = await handle.completed;
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("tool_call_cap");
+
+    // The synthetic verdict must be written to LaPis so the negotiator
+    // can route to retry/rescope.
+    expect(lapis.writeVerdict).toHaveBeenCalledWith(
+      "validator-session-1",
+      expect.objectContaining({
+        milestoneId: "ms-1",
+        contractId: "c-1",
+        validatorType: "validator_scrutiny",
+        verdict: "fail",
+        failedUnitIds: expect.any(Array),
+      }),
+    );
+  });
 });
