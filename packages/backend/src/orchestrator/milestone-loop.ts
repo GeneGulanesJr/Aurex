@@ -672,7 +672,7 @@ export function createMilestoneLoop(
           }
 
           // decision === "pass"
-          let integration;
+          let integration: Awaited<ReturnType<typeof integrationLifecycle.integrate>>;
           try {
             integration = await integrationLifecycle.integrate({
               missionId: mission.id, milestoneId: milestone.id,
