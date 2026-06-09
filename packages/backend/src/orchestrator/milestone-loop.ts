@@ -108,9 +108,9 @@ export function createMilestoneLoop(
         // Rescopes re-plan the milestone via PiNyx and start fresh.
         let loopActive = true;
         let researchFindings: ResearchFinding[] = await lapis.getFindings(mission.id).catch(() => [] as ResearchFinding[]);
+        let hasRetriedFailedUnits = false;
         while (loopActive) {
           loopActive = false;
-          let hasRetriedFailedUnits = false;
 
           // Fetch current units (may change after rescope)
           const units = await lapis.getWorkingUnitsForMilestone(milestone.id).catch(() => [] as import("@aurex/shared").WorkingUnit[]);
@@ -119,6 +119,7 @@ export function createMilestoneLoop(
 
           let completedCount = 0;
           let failedCount = 0;
+          const failedUnitIds: string[] = [];
           const integrationUnits: WorkingUnit[] = [];
           const validatorUnits: ValidatorUnitContext[] = [];
 
@@ -296,6 +297,7 @@ export function createMilestoneLoop(
                 callbacks.onAgentStatus(agentId, "worker", "timed_out", milestone.id);
                 callbacks.onError(mission.id, "worker_timeout", `Worker "${unit.description}" timed out`, { workerId: agentId, milestoneId: milestone.id, recoverable: true });
                 failedCount++;
+                failedUnitIds.push(unit.id);
               } else {
                 await lapis.updateWorkingUnitStatus(unit.id, "failed");
                 await markWorkerTodoProgress(lapis, {
@@ -310,6 +312,7 @@ export function createMilestoneLoop(
                 callbacks.onAgentStatus(agentId, "worker", "failed", milestone.id);
                 callbacks.onError(mission.id, "worker_failed", `Worker "${unit.description}" failed`, { workerId: agentId, milestoneId: milestone.id, recoverable: true });
                 failedCount++;
+                failedUnitIds.push(unit.id);
               }
               await reconcileMissionLedger(lapis, {
                 missionId: mission.id,
@@ -327,11 +330,11 @@ export function createMilestoneLoop(
             // Per-unit retry: re-spawn only the failed units once before
             // escalating the entire milestone. This avoids discarding
             // successful workers' work when only 1-2 units failed.
-            const failedUnits = units.filter((u: WorkingUnit) => u.status === "failed" || u.status === "timed_out");
-            if (failedUnits.length > 0 && !hasRetriedFailedUnits) {
+            const failedUnitIdsForRetry = failedUnitIds;
+            if (failedUnitIdsForRetry.length > 0 && !hasRetriedFailedUnits) {
               hasRetriedFailedUnits = true;
-              for (const u of failedUnits) {
-                await lapis.updateWorkingUnitStatus(u.id, "planned");
+              for (const uid of failedUnitIdsForRetry) {
+                await lapis.updateWorkingUnitStatus(uid, "planned");
               }
               await reconcileMissionLedger(lapis, {
                 missionId: mission.id,
@@ -677,9 +680,12 @@ export function createMilestoneLoop(
               baseBranch: loopConfig.gitMainBranch, units: integrationUnits,
               testCommands,
             });
+            const mergedIntegrationUnits = integrationUnits.filter(
+              (u) => integration.mergedBranches.includes(u.taskBranch),
+            );
             await markMergedTodos(lapis, {
               missionId: mission.id,
-              units: integrationUnits,
+              units: mergedIntegrationUnits,
               sourceBranches: integration.mergedBranches,
               targetBranch: integration.integrationBranch,
               reason: "integration branch merge completed after validation pass",
