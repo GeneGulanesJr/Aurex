@@ -1,6 +1,6 @@
 import { useReducer, useCallback, useEffect } from "react";
 import type { Mission, Milestone, WorkingUnit, CostSummary, WsClientEvent, MilestoneStatus, AgentType, AgentStatus, AgentOutputEventType } from "@aurex/shared";
-import { getMission } from "../api";
+import { getMission, getAgentLogs } from "../api";
 
 export interface MissionError {
   code: string;
@@ -142,6 +142,38 @@ export function useMission(missionId: string | null) {
       })
       .catch(() => {});
 
+    return () => { cancelled = true; };
+  }, [missionId]);
+
+  // Rehydrate agent logs on mount so the event timeline isn't empty
+  // after a page refresh. Converts backend log entries into the same
+  // MISSION_LOG / AGENT_OUTPUT actions that WS events produce.
+  useEffect(() => {
+    if (!missionId) return;
+    let cancelled = false;
+    getAgentLogs(missionId)
+      .then((response) => {
+        if (cancelled) return;
+        for (const entry of response.logs) {
+          if (entry.event === "tool_call" || entry.event === "spawned" || entry.event === "completed" || entry.event === "failed" || entry.event === "timed_out" || entry.event === "prompt_sent") {
+            dispatch({
+              type: "MISSION_LOG",
+              phase: entry.agentType ?? "worker",
+              message: entry.message,
+              data: { rehydrated: true, ...entry.data },
+            });
+          }
+          dispatch({
+            type: "AGENT_OUTPUT",
+            agentId: entry.sessionId,
+            eventType: entry.event as AgentOutputEventType,
+            message: entry.message,
+            timestamp: entry.timestamp,
+            data: entry.data,
+          });
+        }
+      })
+      .catch(() => {});
     return () => { cancelled = true; };
   }, [missionId]);
 

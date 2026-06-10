@@ -48,19 +48,37 @@ export function CodeContextPanel({
   const [collapsed, setCollapsed] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const indexingDone = useMemo(() => logs.some((l) => l.phase === "indexing" && l.data?.indexingDone === true), [logs]);
+  const logBasedIndexingDone = useMemo(() => logs.some((l) => l.phase === "indexing" && l.data?.indexingDone === true), [logs]);
 
   const indexCounts = useMemo(() => {
     const doneLog = logs.find((l) => l.phase === "indexing" && l.data?.indexingDone === true);
-    return { files: (doneLog?.data?.files as number) ?? 0, symbols: (doneLog?.data?.symbols as number) ?? 0 };
-  }, [logs]);
+    return { files: (doneLog?.data?.files as number) ?? summary?.files ?? 0, symbols: (doneLog?.data?.symbols as number) ?? summary?.symbols ?? 0 };
+  }, [logs, summary]);
 
+  // indexingDone is true when either:
+  // 1. A WS log with indexingDone=true was received (live session), or
+  // 2. The code summary was successfully fetched (page refresh — the repo
+  //    was already indexed in a prior session and the data persists in LaPis).
+  const indexingDone = logBasedIndexingDone || summary !== null;
+
+  // On mount or when missionId changes, try fetching code context immediately.
+  // On a live session this will 404 until indexing completes (then the
+  // logBasedIndexingDone path kicks in). On page refresh it succeeds
+  // immediately because the indexed data persists in LaPis.
   useEffect(() => {
-    if (!indexingDone || !missionId) return;
-    getCodeSummary(missionId).then(setSummary).catch(() => setSummaryError(true));
-    getCodeGraph(missionId).then(setGraph).catch(() => setGraphError(true));
-    getCodeHotspots(missionId).then(setHotspots).catch(() => setHotspotsError(true));
-  }, [indexingDone, missionId]);
+    if (!missionId) return;
+    let cancelled = false;
+    getCodeSummary(missionId)
+      .then((data) => { if (!cancelled) setSummary(data); })
+      .catch(() => { if (!cancelled) setSummaryError(true); });
+    getCodeGraph(missionId)
+      .then((data) => { if (!cancelled) setGraph(data); })
+      .catch(() => { if (!cancelled) setGraphError(true); });
+    getCodeHotspots(missionId)
+      .then((data) => { if (!cancelled) setHotspots(data); })
+      .catch(() => { if (!cancelled) setHotspotsError(true); });
+    return () => { cancelled = true; };
+  }, [missionId]);
 
   useEffect(() => {
     const el = panelRef.current;
