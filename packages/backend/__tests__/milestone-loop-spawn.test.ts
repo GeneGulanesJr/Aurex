@@ -299,4 +299,49 @@ describe("milestone loop with spawner", () => {
     );
   });
 
+  it("prunes worktrees for workers retried due to missing handoff", async () => {
+    let eventSubscriber: (event: any) => void = () => {};
+    (mockSession.subscribe as any).mockImplementation((fn: any) => {
+      eventSubscriber = fn;
+      return () => {};
+    });
+    (mockSession.prompt as any).mockImplementation(async () => {
+      eventSubscriber({ type: "agent_end" });
+    });
+
+    const unit: WorkingUnit = {
+      id: "unit-wt",
+      milestoneId: "ms-1",
+      description: "Create auth module",
+      declaredPaths: ["src/auth/index.ts"],
+      declaredModules: ["auth"],
+      status: "planned" as any,
+      taskBranch: "task/unit-wt",
+      worktreePath: "/repo/.git-worktrees/unit-wt",
+      sessionId: "",
+    };
+
+    const lapis = createMockLapis([unit], []);
+    const pinyx = createMockPinyx();
+    const callbacks = {
+      onEscalation: vi.fn(),
+      onAgentStatus: vi.fn(),
+      onMilestoneProgress: vi.fn(),
+      onCostUpdate: vi.fn(),
+      onError: vi.fn(),
+    };
+
+    const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
+      agentDir: "/home/user/.pi/agent",
+      repoRoot: "/repo",
+      gitMainBranch: "main",
+    });
+
+    await loop.run(makeMission(), [makeMilestone()]);
+
+    const allCalls = mockExecAsync.mock.calls.map((c: any) => JSON.stringify(c));
+    const pruneCall = allCalls.find((c: string) => c.includes("worktree") && c.includes("remove"));
+    expect(pruneCall).toBeDefined();
+  });
+
 });

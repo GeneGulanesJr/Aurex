@@ -409,8 +409,8 @@ export function createMilestoneLoop(
           }
           if (invalidHandoffUnitIds.length > 0) {
             failedCount += invalidHandoffUnitIds.length;
+            const unitsToRetry = validatorUnits.filter(u => invalidHandoffUnitIds.includes(u.id));
             const invalidSet = new Set(invalidHandoffUnitIds);
-            // Remove invalid units from subsequent phases
             for (let i = validatorUnits.length - 1; i >= 0; i--) {
               if (invalidSet.has(validatorUnits[i].id)) validatorUnits.splice(i, 1);
             }
@@ -420,10 +420,7 @@ export function createMilestoneLoop(
 
             if (!hasRetriedFailedUnits) {
               hasRetriedFailedUnits = true;
-              // Prune worktrees for units being retried to avoid leaking
-              // git worktrees and branches — createWorktree will be called
-              // again on the next loop iteration.
-              for (const unit of validatorUnits.filter(u => invalidHandoffUnitIds.includes(u.id))) {
+              for (const unit of unitsToRetry) {
                 if (unit.worktreePath) {
                   try {
                     await worktreeManager.pruneWorktree(unit.worktreePath);

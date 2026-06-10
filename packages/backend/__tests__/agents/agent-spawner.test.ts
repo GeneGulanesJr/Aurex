@@ -581,6 +581,76 @@ describe("AgentSpawner", () => {
       expect(costEntries).toHaveLength(1);
       expect(costEntries[0].data?.cost).toBe(0.05);
     });
+
+    it("handles nested cost.total shape", async () => {
+      const lapis = createMockLapis();
+      const logger = createAgentLogger();
+      const spawner = createAgentSpawner({
+        lapis,
+        agentDir: "/home/user/.pi/agent",
+        defaultTimeout: 120_000,
+        logger,
+      });
+
+      let eventSubscriber: (event: any) => void = () => {};
+      mockSession.subscribe.mockImplementation((fn: any) => {
+        eventSubscriber = fn;
+        return () => {};
+      });
+      mockSession.prompt.mockImplementation(async () => {
+        eventSubscriber({
+          type: "message_update",
+          assistantMessageEvent: {
+            usage: { cost: { total: 0.12 }, totalTokens: 2000 },
+          },
+        });
+        eventSubscriber({ type: "agent_end" });
+      });
+
+      const handle = await spawner.spawn(baseSpawnOpts);
+      await handle.completed;
+
+      const costEntries = logger.getEntries({ event: "cost_update" });
+      expect(costEntries).toHaveLength(1);
+      expect(costEntries[0].data?.cost).toBe(0.12);
+    });
+
+    it("warns on unexpected cost shape and skips zero-cost with no tokens", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const lapis = createMockLapis();
+      const logger = createAgentLogger();
+      const spawner = createAgentSpawner({
+        lapis,
+        agentDir: "/home/user/.pi/agent",
+        defaultTimeout: 120_000,
+        logger,
+      });
+
+      let eventSubscriber: (event: any) => void = () => {};
+      mockSession.subscribe.mockImplementation((fn: any) => {
+        eventSubscriber = fn;
+        return () => {};
+      });
+      mockSession.prompt.mockImplementation(async () => {
+        eventSubscriber({
+          type: "message_update",
+          assistantMessageEvent: {
+            usage: { cost: "free" },
+          },
+        });
+        eventSubscriber({ type: "agent_end" });
+      });
+
+      const handle = await spawner.spawn(baseSpawnOpts);
+      await handle.completed;
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[spawner] Unexpected usage.cost shape:", "free",
+      );
+      const costEntries = logger.getEntries({ event: "cost_update" });
+      expect(costEntries).toHaveLength(0);
+      warnSpy.mockRestore();
+    });
   });
 
   describe("concurrency limit", () => {
@@ -706,7 +776,7 @@ describe("AgentSpawner", () => {
       expect(callOpts.model).toBeUndefined();
     });
 
-    it("caches model config across spawns", async () => {
+    it("caches model config across spawns with same endpoint", async () => {
       const lapis = {
         ...createMockLapis(),
         getSetting: vi.fn().mockResolvedValue({ endpoint: "http://pinyx:7331/" }),
@@ -721,8 +791,55 @@ describe("AgentSpawner", () => {
       await spawner.spawn({ ...baseSpawnOpts, model: "test/cache-model" });
       await spawner.spawn({ ...baseSpawnOpts, model: "test/cache-model" });
 
-      // getSetting should only be called once due to caching
-      expect(lapis.getSetting).toHaveBeenCalledTimes(1);
+      // ModelRegistry.inMemory should only be called once — the second spawn
+      // reuses the cached { model, modelRegistry, authStorage } entry.
+      const MockModelRegistry = vi.mocked(await import("@earendil-works/pi-coding-agent")).ModelRegistry;
+      expect(MockModelRegistry.inMemory).toHaveBeenCalledTimes(1);
+    });
+
+    it("re-resolves model when endpoint changes", async () => {
+      let callIdx = 0;
+      const lapis = {
+        ...createMockLapis(),
+        getSetting: vi.fn().mockImplementation(async () => {
+          callIdx++;
+          return { endpoint: callIdx === 1 ? "http://pinyx-old:7331/" : "http://pinyx-new:7331/" };
+        }),
+      } as unknown as LaPisClient;
+
+      const spawner = createAgentSpawner({
+        lapis,
+        agentDir: "/home/user/.pi/agent",
+        defaultTimeout: 120_000,
+      });
+
+      await spawner.spawn({ ...baseSpawnOpts, model: "test/endpoint-change" });
+      await spawner.spawn({ ...baseSpawnOpts, model: "test/endpoint-change" });
+
+      // Two different endpoints -> two cache entries -> two inMemory calls
+      const MockModelRegistry = vi.mocked(await import("@earendil-works/pi-coding-agent")).ModelRegistry;
+      expect(MockModelRegistry.inMemory).toHaveBeenCalledTimes(2);
+    });
+
+    it("clears cache on shutdown", async () => {
+      const lapis = {
+        ...createMockLapis(),
+        getSetting: vi.fn().mockResolvedValue({ endpoint: "http://pinyx:7331/" }),
+      } as unknown as LaPisClient;
+
+      const spawner = createAgentSpawner({
+        lapis,
+        agentDir: "/home/user/.pi/agent",
+        defaultTimeout: 120_000,
+      });
+
+      await spawner.spawn({ ...baseSpawnOpts, model: "test/shutdown-cache" });
+      spawner.shutdown();
+      await spawner.spawn({ ...baseSpawnOpts, model: "test/shutdown-cache" });
+
+      // After shutdown clears the cache, the second spawn should re-register
+      const MockModelRegistry = vi.mocked(await import("@earendil-works/pi-coding-agent")).ModelRegistry;
+      expect(MockModelRegistry.inMemory).toHaveBeenCalledTimes(2);
     });
   });
 

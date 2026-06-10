@@ -24,7 +24,7 @@ export interface AgentSpawnerConfig {
   logger?: AgentLogger;
   eventBus?: EventBus;
   maxConcurrent?: number;
-  /** Max tool calls for a validator session before auto-fail. Default 25. */
+  /** Max tool calls for a validator session before auto-fail. Default 40. */
   validatorToolCallCap?: number;
   onCost?: (missionId: string, totalCost: number, totalTokens: number, delta: number) => void;
 }
@@ -324,6 +324,9 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
               : typeof rawCost?.total === "number"
                 ? rawCost.total
                 : 0;
+            if (delta === 0 && rawCost != null && typeof rawCost !== "number" && typeof rawCost?.total !== "number") {
+              console.warn("[spawner] Unexpected usage.cost shape:", rawCost);
+            }
             if (delta === 0 && typeof usage.totalTokens !== "number") return;
             cumulativeCost += delta;
             cumulativeTokens += usage.totalTokens ?? 0;
@@ -448,6 +451,7 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
         handle.dispose();
       }
       activeHandles.clear();
+      pinyxModelCache.clear();
     },
 
     getActiveCount(): number {
@@ -551,9 +555,6 @@ const pinyxModelCache = new Map<string, { model: any; modelRegistry: any; authSt
 async function resolvePinyxModel(lapis: LaPisClient, modelId: string | undefined) {
   if (!modelId) return null;
 
-  const cached = pinyxModelCache.get(modelId);
-  if (cached) return cached;
-
   if (typeof lapis.getSetting !== "function") {
     console.warn(`[spawner] Cannot resolve PiNyx model "${modelId}": lapis.getSetting is not available`);
     return null;
@@ -567,6 +568,10 @@ async function resolvePinyxModel(lapis: LaPisClient, modelId: string | undefined
     console.warn(`[spawner] Cannot resolve PiNyx model "${modelId}": no endpoint configured in pinyx_config`);
     return null;
   }
+
+  const cacheKey = `${endpoint}::${modelId}`;
+  const cached = pinyxModelCache.get(cacheKey);
+  if (cached) return cached;
 
   const authStorage = AuthStorage.inMemory();
   authStorage.setRuntimeApiKey("pinyx", "pinyx");
@@ -599,6 +604,6 @@ async function resolvePinyxModel(lapis: LaPisClient, modelId: string | undefined
   }
 
   const result = { model, modelRegistry, authStorage };
-  pinyxModelCache.set(modelId, result);
+  pinyxModelCache.set(cacheKey, result);
   return result;
 }
