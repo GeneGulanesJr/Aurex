@@ -174,7 +174,7 @@ describe("AgentSpawner", () => {
       expect.arrayContaining(["write_verdict"]),
     );
     expect(mockCreateAgentSession.mock.calls[2][0].tools).toEqual(
-      expect.arrayContaining(["write_finding", "search_memory"]),
+      expect.arrayContaining(["read", "grep", "find", "ls", "write_finding", "search_memory"]),
     );
   });
 

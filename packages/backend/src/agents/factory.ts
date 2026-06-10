@@ -6,7 +6,7 @@ export const AGENT_TOOLS: Record<AgentType, string[]> = {
   worker: ["read", "write", "edit", "bash"],
   validator_scrutiny: ["read", "bash"],
   validator_user_testing: ["read", "bash"],
-  research: ["read"],
+  research: ["read", "grep", "find", "ls"],
 };
 
 export const AGENT_SKILL: Record<AgentType, string> = {
