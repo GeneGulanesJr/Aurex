@@ -247,7 +247,7 @@ export function App() {
   const showMobileOverlay = bp.isMobile && mobileOverlayOpen;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
+    <div className="app-shell">
       <TopBar
         connected={connected}
         missionCount={activeMissionCount}
@@ -263,7 +263,7 @@ export function App() {
         onOpenQuota={() => setQuotaOpen(true)}
         quotaStatus={quotaStatus?.providers?.find(p => p.tracked)?.status ?? null}
       />
-      <div style={{ display: "grid", gridTemplateColumns: gridColumns, gridTemplateRows: "1fr 36px", flex: 1, overflow: "hidden", position: "relative" }}>
+      <div className="app-workspace" style={{ gridTemplateColumns: gridColumns }}>
         {!bp.isMobile && (
           <MissionSidebar
             missions={missionsState.missions}
@@ -277,7 +277,7 @@ export function App() {
             collapsed={sidebarCollapsed}
           />
         )}
-        <main style={{ overflowY: "auto", background: "var(--bg-deep)" }}>
+        <main className="app-main">
           <StatusBoard
             mission={state.mission}
             milestones={state.milestones}
@@ -305,7 +305,7 @@ export function App() {
             systemReady={systemReady}
           />
         </main>
-        <div style={{ gridColumn: "1 / -1" }}>
+        <div className="app-telemetry-row">
           <TelemetryBar
             tokens={state.cost?.totalTokens ?? 0}
             cost={state.cost?.totalCost ?? 0}

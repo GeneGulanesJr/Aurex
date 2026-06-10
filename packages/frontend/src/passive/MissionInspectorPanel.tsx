@@ -1,4 +1,3 @@
-import { useMemo, useState } from "react";
 import type { BumblebeeFinding, BumblebeeScanResult, Milestone, WsClientEvent } from "@aurex/shared";
 import { CodeContextPanel } from "./CodeContextPanel";
 import { MissionActivityFeed } from "./MissionActivityFeed";
@@ -18,8 +17,6 @@ interface MissionInspectorPanelProps {
   onTriggerScan?: (profile?: "baseline" | "project" | "deep") => void;
 }
 
-type TabId = "activity" | "code" | "supply";
-
 export function MissionInspectorPanel(props: MissionInspectorPanelProps) {
   const latestScan = props.scans.length > 0 ? props.scans[props.scans.length - 1] : null;
   const showSupply = shouldShowSupplyChainTab({
@@ -29,54 +26,68 @@ export function MissionInspectorPanel(props: MissionInspectorPanelProps) {
     hasLatestSummary: Boolean(latestScan?.summary),
   });
   const risk = summarizeSupplyChainRisk(props.scanFindings);
-  const tabs = useMemo(() => [
-    { id: "activity" as const, label: "Activity", badge: String(Math.min(props.eventStreamCount, props.events.length + props.logs.length)) },
-    { id: "code" as const, label: "Code", badge: null },
-    ...(showSupply ? [{ id: "supply" as const, label: "Supply", badge: risk.findingCount > 0 ? String(risk.findingCount) : risk.label }] : []),
-  ], [props.eventStreamCount, props.events.length, props.logs.length, showSupply, risk.findingCount, risk.label]);
-  const [activeTab, setActiveTab] = useState<TabId>("activity");
-  const safeActiveTab = tabs.some((tab) => tab.id === activeTab) ? activeTab : "activity";
+  const activityCount = Math.min(props.eventStreamCount, props.events.length + props.logs.length);
+  const isMissionActive = ["planning", "running", "executing"].includes(props.missionStatus);
 
   return (
-    <aside className="mission-inspector-panel">
-      <div style={{ display: "flex", gap: "4px", borderBottom: "1px solid var(--border)", marginBottom: "12px", flexShrink: 0 }}>
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            style={{
-              background: safeActiveTab === tab.id ? "var(--bg-elevated)" : "transparent",
-              border: "none",
-              borderBottom: `2px solid ${safeActiveTab === tab.id ? "var(--accent)" : "transparent"}`,
-              color: safeActiveTab === tab.id ? "var(--accent)" : "var(--text-muted)",
-              cursor: "pointer",
-              padding: "8px 10px",
-              fontFamily: '"JetBrains Mono", monospace',
-              fontSize: "10px",
-              letterSpacing: "1px",
-              textTransform: "uppercase",
-            }}
-          >
-            {tab.label}{tab.badge && <span style={{ marginLeft: "6px", color: tab.id === "supply" ? risk.color : "var(--text-secondary)" }}>{tab.badge}</span>}
-          </button>
-        ))}
-      </div>
+    <aside className="mission-inspector-panel mission-inspector-panel--open">
+      <InspectorSection
+        title="Live Activity"
+        badge={activityCount > 0 ? String(activityCount) : "Ready"}
+      >
+        <MissionActivityFeed
+          logs={props.logs}
+          events={props.events}
+          active={isMissionActive}
+          limit={props.eventStreamCount}
+        />
+      </InspectorSection>
 
-      <div style={{ minHeight: 0, flex: 1, overflow: "hidden" }}>
-        {safeActiveTab === "activity" && (
-          <MissionActivityFeed logs={props.logs} events={props.events} active={props.missionStatus === "planning" || props.missionStatus === "running"} limit={props.eventStreamCount} />
-        )}
-        {safeActiveTab === "code" && (
-          <div style={{ overflowY: "auto", height: "100%" }}>
-            <CodeContextPanel missionId={props.missionId} logs={props.logs} milestones={props.milestones} variant="inspector" autoCollapse={false} showCollapsedSummary={false} />
-          </div>
-        )}
-        {safeActiveTab === "supply" && (
-          <div style={{ overflowY: "auto", height: "100%" }}>
-            <SupplyChainPanel findings={props.scanFindings} scans={props.scans} isScanning={props.isScanning} onTriggerScan={props.onTriggerScan} variant="inspector" hideWhenEmpty />
-          </div>
-        )}
-      </div>
+      <InspectorSection title="Code Context" badge="Always visible">
+        <CodeContextPanel
+          missionId={props.missionId}
+          logs={props.logs}
+          milestones={props.milestones}
+          variant="inspector"
+          autoCollapse={false}
+          showCollapsedSummary={false}
+        />
+      </InspectorSection>
+
+      {showSupply && (
+        <InspectorSection title="Supply Chain" badge={risk.findingCount > 0 ? String(risk.findingCount) : risk.label} badgeColor={risk.color}>
+          <SupplyChainPanel
+            findings={props.scanFindings}
+            scans={props.scans}
+            isScanning={props.isScanning}
+            onTriggerScan={props.onTriggerScan}
+            variant="inspector"
+            hideWhenEmpty
+          />
+        </InspectorSection>
+      )}
     </aside>
+  );
+}
+
+function InspectorSection({
+  title,
+  badge,
+  badgeColor = "var(--text-secondary)",
+  children,
+}: {
+  title: string;
+  badge?: string;
+  badgeColor?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="mission-inspector-section">
+      <div className="mission-inspector-section-header">
+        <span>{title}</span>
+        {badge && <span style={{ color: badgeColor }}>{badge}</span>}
+      </div>
+      <div className="mission-inspector-section-body">{children}</div>
+    </section>
   );
 }

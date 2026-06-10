@@ -106,19 +106,20 @@ export function MissionPipeline({ mission, milestones, workers, cost, events, lo
   return (
     <div className="mission-pipeline-shell">
       <div className="mission-primary-column">
-        <MissionSummaryHeader
+        <div className="mission-flow-card">
+          <MissionSummaryHeader
           mission={mission}
           milestones={milestones}
           workers={workers}
           cost={cost}
         />
 
-        {/* Milestone pipeline */}
-        <div ref={pipelineRef} style={{ display: "flex", flexDirection: "column", gap: "0" }}>
-        {milestones.length === 0 && (
-          <PlanningPhase missionStatus={mission.status} errors={errors} onRetry={onRetry} />
-        )}
-        {milestones.map((milestone, i) => {
+          {/* Milestone pipeline */}
+          <div ref={pipelineRef} style={{ display: "flex", flexDirection: "column", gap: "0" }}>
+            {milestones.length === 0 && (
+              <PlanningPhase missionStatus={mission.status} errors={errors} onRetry={onRetry} />
+            )}
+            {milestones.map((milestone, i) => {
           const cfg = statusConfig[milestone.status] || statusConfig.planned;
           const msWorkers = workersByMilestone.get(milestone.id) || [];
           const isActive = milestone.id === activeMilestone?.id;
@@ -206,7 +207,8 @@ export function MissionPipeline({ mission, milestones, workers, cost, events, lo
               </div>
             </div>
           );
-        })}
+            })}
+          </div>
         </div>
       </div>
 
