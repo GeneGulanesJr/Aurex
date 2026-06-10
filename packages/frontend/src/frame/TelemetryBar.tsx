@@ -39,17 +39,18 @@ export function TelemetryBar({ tokens, cost, agentCount, wsConnected, scanFindin
 
   return (
     <footer
+      className="telemetry-bar"
       style={{
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        padding: "0 16px",
-        height: "36px",
+        padding: "0 18px",
+        minHeight: "36px",
         background: "var(--bg-inset)",
         borderTop: "1px solid var(--border)",
       }}
     >
-      <div style={{ display: "flex", gap: "20px" }}>
+      <div style={{ display: "flex", gap: "20px", minWidth: 0, overflow: "hidden" }}>
         <span style={monoLabel}>
           TOKENS <span ref={tokensRef} style={{ color: "var(--text-secondary)" }}>{tokens.toLocaleString()}</span>
         </span>

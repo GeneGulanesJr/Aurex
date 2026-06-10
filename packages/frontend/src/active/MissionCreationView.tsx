@@ -54,7 +54,6 @@ export function MissionCreationView({
   const [exploreSummary, setExploreSummary] = useState<CodeSummaryResponse | null>(null);
   const [prepareError, setPrepareError] = useState<string | null>(null);
   const [preparedRepoName, setPreparedRepoName] = useState<string>("");
-  const [activeTab, setActiveTab] = useState<"create" | "overview">("create");
   const [preparedRepoCache, setPreparedRepoCache] = useState<Map<number, { repoName: string; summary: CodeSummaryResponse | null }>>(new Map());
   const containerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -78,12 +77,6 @@ export function MissionCreationView({
   }, []);
 
   useEffect(() => {
-    if (preparedRepo) {
-      setActiveTab("create");
-    }
-  }, [preparedRepo?.repoName]);
-
-  useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as string | undefined;
       if (detail) {
@@ -91,7 +84,6 @@ export function MissionCreationView({
       } else {
         form.open();
       }
-      setActiveTab("create");
       setTimeout(() => textareaRef.current?.focus(), 50);
     };
     window.addEventListener("aurex:focus-new-mission", handler);
@@ -165,7 +157,6 @@ export function MissionCreationView({
       onStartFromSuggestion(prefill);
     } else {
       form.openWithSuggestion(prefill);
-      setActiveTab("create");
       setTimeout(() => textareaRef.current?.focus(), 50);
     }
   };
@@ -175,13 +166,13 @@ export function MissionCreationView({
     setTimeout(() => textareaRef.current?.focus(), 50);
   };
 
-  const showTabs = !!preparedRepo;
+  const hasPreparedRepo = !!preparedRepo;
 
   return (
-    <div ref={containerRef} style={{ display: "flex", height: "100%", overflowY: "auto" }}>
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "40px 24px", maxWidth: "720px", margin: "0 auto", width: "100%" }}>
+    <div ref={containerRef} className="mission-creation-scroll">
+      <div className={hasPreparedRepo ? "mission-creation-stage mission-creation-stage--wide" : "mission-creation-stage"}>
         {/* Header */}
-        <div className="creation-section" style={{ textAlign: "center", marginBottom: "32px", width: "100%" }}>
+        <div className="creation-section mission-creation-hero">
           <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "48px", fontWeight: 700, letterSpacing: "12px", color: "var(--accent)", textShadow: "0 0 40px var(--accent-glow), 0 0 80px var(--accent-glow)", marginBottom: "4px" }}>
             AUREX
           </div>
@@ -189,6 +180,16 @@ export function MissionCreationView({
             Autonomous Mission Control
           </div>
         </div>
+
+        <MissionLaunchChecklist
+          systemReady={!!systemReady}
+          githubConnected={!!github?.connected}
+          repoCount={github?.repos.length ?? 0}
+          selectedRepo={form.state.selectedRepoFullName}
+          hasDescription={form.state.description.trim().length > 0}
+          hasPreparedRepo={hasPreparedRepo}
+          repoLoading={preparedRepo?.loading ?? false}
+        />
 
         {!systemReady ? (
           <div className="creation-section" style={{ width: "100%", padding: "16px", background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "6px", textAlign: "center" }}>
@@ -201,49 +202,15 @@ export function MissionCreationView({
           </div>
         ) : (
           <>
-            {/* Tabs */}
-            {showTabs && (
-              <div className="creation-section" style={{ display: "flex", gap: "0", marginBottom: "20px", width: "100%", borderBottom: "1px solid var(--border)" }}>
-                <button
-                  onClick={() => setActiveTab("create")}
-                  style={{
-                    padding: "8px 16px",
-                    background: "none",
-                    border: "none",
-                    borderBottom: activeTab === "create" ? "2px solid var(--accent)" : "2px solid transparent",
-                    color: activeTab === "create" ? "var(--accent)" : "var(--text-muted)",
-                    fontSize: "11px",
-                    fontFamily: '"JetBrains Mono", monospace',
-                    textTransform: "uppercase",
-                    letterSpacing: "1px",
-                    cursor: "pointer",
-                  }}
-                >
-                  Create
-                </button>
-                <button
-                  onClick={() => setActiveTab("overview")}
-                  style={{
-                    padding: "8px 16px",
-                    background: "none",
-                    border: "none",
-                    borderBottom: activeTab === "overview" ? "2px solid var(--accent)" : "2px solid transparent",
-                    color: activeTab === "overview" ? "var(--accent)" : "var(--text-muted)",
-                    fontSize: "11px",
-                    fontFamily: '"JetBrains Mono", monospace',
-                    textTransform: "uppercase",
-                    letterSpacing: "1px",
-                    cursor: "pointer",
-                  }}
-                >
-                  Overview
-                </button>
-              </div>
-            )}
-
-            {/* Create tab content */}
-            {(!showTabs || activeTab === "create") && (
-              <div className="creation-section" style={{ width: "100%", display: "flex", flexDirection: "column", gap: "16px" }}>
+            <div
+              className={
+                hasPreparedRepo
+                  ? "mission-creation-content mission-creation-content--with-overview"
+                  : "mission-creation-content"
+              }
+            >
+              {/* Create mission content */}
+              <div className="creation-section mission-create-card">
                 {/* Repo picker */}
                 {github?.connected && github.repos.length > 0 && (
                   <RepoPicker repos={github.repos} selectedRepoId={form.state.selectedRepoId} onSelect={handleRepoSelect} />
@@ -351,7 +318,7 @@ export function MissionCreationView({
                 {form.state.error && <p style={{ fontSize: "12px", color: "var(--error)", margin: 0 }}>{form.state.error}</p>}
 
                 {/* Example missions (only when no repo prepared) */}
-                {!showTabs && (
+                {!hasPreparedRepo && (
                   <div style={{ marginTop: "12px" }}>
                     <div style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "2px", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', marginBottom: "12px" }}>
                       EXAMPLE MISSIONS
@@ -392,11 +359,10 @@ export function MissionCreationView({
                   </div>
                 )}
               </div>
-            )}
 
-            {/* Overview tab content */}
-            {showTabs && activeTab === "overview" && (
-              <div className="creation-section" style={{ width: "100%" }}>
+              {/* Repo overview stays visible so users do not have to hunt through tabs. */}
+              {hasPreparedRepo && preparedRepo && (
+                <aside className="creation-section mission-overview-card">
                 <RepoOverviewPanel
                   repoName={preparedRepo.repoName}
                   fullName={preparedRepo.fullName}
@@ -409,8 +375,9 @@ export function MissionCreationView({
                   loading={preparedRepo.loading}
                   onStartMission={handleSuggestionClick}
                 />
-              </div>
-            )}
+                </aside>
+              )}
+            </div>
           </>
         )}
       </div>
@@ -438,6 +405,75 @@ export function MissionCreationView({
           }}
         />
       )}
+    </div>
+  );
+}
+
+
+function MissionLaunchChecklist({
+  systemReady,
+  githubConnected,
+  repoCount,
+  selectedRepo,
+  hasDescription,
+  hasPreparedRepo,
+  repoLoading,
+}: {
+  systemReady: boolean;
+  githubConnected: boolean;
+  repoCount: number;
+  selectedRepo?: string;
+  hasDescription: boolean;
+  hasPreparedRepo: boolean;
+  repoLoading: boolean;
+}) {
+  const items = [
+    {
+      label: "Connect integrations",
+      detail: systemReady ? "GitHub and PiNyx are ready." : "Open Integrations to finish setup.",
+      complete: systemReady,
+      active: !systemReady,
+    },
+    {
+      label: "Choose a repo",
+      detail: selectedRepo ?? (githubConnected ? `${repoCount} repositories available below.` : "Connect GitHub to load repositories."),
+      complete: Boolean(selectedRepo),
+      active: systemReady && !selectedRepo,
+    },
+    {
+      label: "Review repo context",
+      detail: repoLoading ? "Analysis is still running." : hasPreparedRepo ? "Suggestions are visible next to the prompt." : "Pick a repo to unlock suggested missions.",
+      complete: hasPreparedRepo && !repoLoading,
+      active: Boolean(selectedRepo) && (!hasPreparedRepo || repoLoading),
+    },
+    {
+      label: "Describe the mission",
+      detail: hasDescription ? "Prompt is ready to launch." : "Write a goal or click a suggested mission.",
+      complete: hasDescription,
+      active: systemReady && (hasPreparedRepo || Boolean(selectedRepo)) && !hasDescription,
+    },
+  ];
+
+  return (
+    <div className="creation-section mission-launch-checklist" aria-label="Mission launch checklist">
+      <div className="mission-launch-checklist__header">
+        <span>Launch checklist</span>
+        <span>{items.filter((item) => item.complete).length}/{items.length} ready</span>
+      </div>
+      <div className="mission-launch-checklist__items">
+        {items.map((item) => (
+          <div
+            key={item.label}
+            className={`mission-launch-checklist__item${item.complete ? " mission-launch-checklist__item--complete" : ""}${item.active ? " mission-launch-checklist__item--active" : ""}`}
+          >
+            <span className="mission-launch-checklist__dot">{item.complete ? "✓" : item.active ? "→" : "•"}</span>
+            <span>
+              <strong>{item.label}</strong>
+              <small>{item.detail}</small>
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

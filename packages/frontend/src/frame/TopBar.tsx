@@ -56,15 +56,17 @@ export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, 
   const dotColor = connected ? "var(--success)" : "var(--error)";
   return (
     <header
+      className="top-bar"
       style={{
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        padding: "0 16px",
-        height: "44px",
+        padding: "0 18px",
+        minHeight: "48px",
         background: "var(--bg-surface)",
         borderBottom: "1px solid var(--border)",
-        gap: "12px",
+        gap: "14px",
+        boxShadow: "0 1px 0 rgba(255,255,255,0.02), 0 10px 30px rgba(0,0,0,0.16)",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
@@ -115,7 +117,7 @@ export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, 
         </span>
       </div>
 
-      <div className="hide-on-mobile" style={{ display: "flex", gap: "20px" }}>
+      <div className="top-bar-status hide-on-mobile" style={{ display: "flex", gap: "20px" }}>
         <StatusItem color={connected ? "var(--success)" : "var(--error)"} label="LAPIS CONNECTED" />
         <button
           onClick={onOpenIntegrations}
