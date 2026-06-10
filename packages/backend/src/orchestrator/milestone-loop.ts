@@ -663,6 +663,16 @@ export function createMilestoneLoop(
           if (decision.decision === "retry") {
             // Reset failed units to "planned" and re-run worker+validator
             const failedIds = decision.failedUnitIds ?? [];
+            if (failedIds.length === 0) {
+              // Validator failed but didn't identify any specific units.
+              // Re-running with no units to retry would loop indefinitely
+              // (workers don't re-run, validator re-evaluates same code,
+              // model may flip-flop between pass/fail). Escalate instead.
+              const trigger: CheckpointTrigger = "unclassifiable_error";
+              const summary = `Validator returned fail with no failedUnitIds — cannot determine which units to retry. ${decision.reason}`;
+              callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary });
+              return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
+            }
             for (const uid of failedIds) {
               await lapis.updateWorkingUnitStatus(uid, "planned");
             }
