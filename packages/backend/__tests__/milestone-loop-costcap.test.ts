@@ -48,6 +48,7 @@ vi.mock("node:fs/promises", () => ({
 import { createMilestoneLoop } from "../src/orchestrator/milestone-loop";
 import type { LaPisClient } from "../src/clients/lapis-client";
 import type { PinyxClient } from "../src/clients/pinyx-client";
+import { makeHandoff } from "./helpers/make-handoff.js";
 
 function makeMission(costCap: number): Mission {
   return {
@@ -67,6 +68,7 @@ function makeMilestone(): Milestone {
     status: "planned", validationContractId: "c-1",
   };
 }
+
 
 function createMockLapis(units: WorkingUnit[]): LaPisClient {
   return {
@@ -89,7 +91,7 @@ function createMockLapis(units: WorkingUnit[]): LaPisClient {
     writeHandoff: vi.fn().mockResolvedValue({ accepted: true, errors: [] }),
     searchMemory: vi.fn().mockResolvedValue([]),
     writeVerdict: vi.fn().mockResolvedValue({}),
-    getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
+    getHandoffsForMilestone: vi.fn().mockResolvedValue(units.map((unit) => makeHandoff(unit.id))),
     getFindings: vi.fn().mockResolvedValue([]),
     runCompression: vi.fn().mockResolvedValue(undefined),
   } as unknown as LaPisClient;

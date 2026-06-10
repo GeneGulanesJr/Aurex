@@ -34,6 +34,7 @@ vi.mock("node:util", () => ({ promisify: () => vi.fn().mockResolvedValue({ stdou
 import { createMilestoneLoop } from "../src/orchestrator/milestone-loop";
 import type { LaPisClient } from "../src/clients/lapis-client";
 import type { PinyxClient } from "../src/clients/pinyx-client";
+import { makeHandoff } from "./helpers/make-handoff.js";
 
 function makeMission(): Mission {
   return {
@@ -73,7 +74,8 @@ const failVerdict: (failedIds: string[]) => ValidationVerdict = (failedIds) => (
   classification: "patchable", timestamp: "",
 });
 
-function createMockLapis(units: WorkingUnit[], verdicts: ValidationVerdict[]): LaPisClient {
+
+function createMockLapis(units: WorkingUnit[], verdicts: ValidationVerdict[], handoffs = units.map((unit) => makeHandoff(unit.id))): LaPisClient {
   let callCount = 0;
   return {
     updateMissionStatus: vi.fn().mockResolvedValue(undefined),
@@ -102,7 +104,7 @@ function createMockLapis(units: WorkingUnit[], verdicts: ValidationVerdict[]): L
     writeHandoff: vi.fn().mockResolvedValue({ accepted: true, errors: [] }),
     searchMemory: vi.fn().mockResolvedValue([]),
     writeVerdict: vi.fn().mockResolvedValue({}),
-    getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
+    getHandoffsForMilestone: vi.fn().mockResolvedValue(handoffs),
     createWorkingUnit: vi.fn().mockImplementation(async (_msId: string, unit: any) => ({
       id: `new-${Date.now()}`, ...unit, milestoneId: _msId, status: "planned", taskBranch: "", worktreePath: "", sessionId: "",
     })),

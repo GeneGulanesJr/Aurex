@@ -1,6 +1,8 @@
 import {
   createAgentSession,
+  AuthStorage,
   DefaultResourceLoader,
+  ModelRegistry,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 
@@ -22,7 +24,7 @@ export interface AgentSpawnerConfig {
   logger?: AgentLogger;
   eventBus?: EventBus;
   maxConcurrent?: number;
-  /** Max tool calls for a validator session before auto-fail. Default 25. */
+  /** Max tool calls for a validator session before auto-fail. Default 40. */
   validatorToolCallCap?: number;
   onCost?: (missionId: string, totalCost: number, totalTokens: number, delta: number) => void;
 }
@@ -39,6 +41,8 @@ export interface SpawnOptions {
   contextContent: string;
   taskPrompt: string;
   timeout?: number;
+  /** PiNyx/OpenAI-compatible model id to use for this agent session. */
+  model?: string;
 }
 
 export interface SpawnHandle {
@@ -90,9 +94,12 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
       }
 
       const timeout = opts.timeout ?? defaultTimeout;
-      const tools = AGENT_TOOLS[opts.agentType];
       let sessionId = "";
       const customTools = createCustomTools(lapis, opts, () => sessionId);
+      const tools = [...new Set([
+        ...AGENT_TOOLS[opts.agentType],
+        ...customTools.map((tool) => tool?.name).filter((name): name is string => Boolean(name)),
+      ])];
       let cumulativeCost = 0;
       let cumulativeTokens = 0;
 
@@ -175,6 +182,8 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
       const loader = new DefaultResourceLoader(loaderConfig);
       await loader.reload();
 
+      const pinyxModelConfig = await resolvePinyxModel(lapis, opts.model);
+
       const { session } = await createAgentSession({
         cwd: opts.cwd,
         agentDir,
@@ -182,6 +191,7 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
         customTools,
         resourceLoader: loader,
         sessionManager: SessionManager.inMemory(opts.cwd),
+        ...(pinyxModelConfig ? pinyxModelConfig : {}),
       });
       sessionId = session.sessionId;
 
@@ -307,8 +317,17 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
           }
 
           const usage = event.assistantMessageEvent?.usage;
-          if (usage && typeof usage.cost === "number") {
-            const delta = usage.cost;
+          if (usage) {
+            const rawCost = usage.cost;
+            const delta = typeof rawCost === "number"
+              ? rawCost
+              : typeof rawCost?.total === "number"
+                ? rawCost.total
+                : 0;
+            if (delta === 0 && rawCost != null && typeof rawCost !== "number" && typeof rawCost?.total !== "number") {
+              console.warn("[spawner] Unexpected usage.cost shape:", rawCost);
+            }
+            if (delta === 0 && typeof usage.totalTokens !== "number") return;
             cumulativeCost += delta;
             cumulativeTokens += usage.totalTokens ?? 0;
             missionCumulativeCost += delta;
@@ -432,6 +451,7 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
         handle.dispose();
       }
       activeHandles.clear();
+      pinyxModelCache.clear();
     },
 
     getActiveCount(): number {
@@ -521,9 +541,69 @@ function createCustomTools(
   if (opts.agentType === "research") {
     return createResearchTools(lapis, {
       missionId: opts.missionId,
-      authorId: getSessionId(),
+      getAuthorId: getSessionId,
     });
   }
 
   return [];
+}
+
+// Cache resolved PiNyx model configs keyed by model ID to avoid
+// re-creating AuthStorage/ModelRegistry on every spawn call.
+const pinyxModelCache = new Map<string, { model: any; modelRegistry: any; authStorage: any }>();
+
+async function resolvePinyxModel(lapis: LaPisClient, modelId: string | undefined) {
+  if (!modelId) return null;
+
+  if (typeof lapis.getSetting !== "function") {
+    console.warn(`[spawner] Cannot resolve PiNyx model "${modelId}": lapis.getSetting is not available`);
+    return null;
+  }
+  const saved = await lapis.getSetting<{ endpoint?: string }>("pinyx_config").catch((err) => {
+    console.warn(`[spawner] Failed to fetch pinyx_config for model "${modelId}":`, err instanceof Error ? err.message : err);
+    return null;
+  });
+  const endpoint = saved?.endpoint?.replace(/\/$/, "");
+  if (!endpoint) {
+    console.warn(`[spawner] Cannot resolve PiNyx model "${modelId}": no endpoint configured in pinyx_config`);
+    return null;
+  }
+
+  const cacheKey = `${endpoint}::${modelId}`;
+  const cached = pinyxModelCache.get(cacheKey);
+  if (cached) return cached;
+
+  const authStorage = AuthStorage.inMemory();
+  authStorage.setRuntimeApiKey("pinyx", "pinyx");
+  const modelRegistry = ModelRegistry.inMemory(authStorage);
+  modelRegistry.registerProvider("pinyx", {
+    name: "PiNyx",
+    baseUrl: `${endpoint}/v1`,
+    apiKey: "pinyx",
+    api: "openai-completions",
+    models: [{
+      id: modelId,
+      name: modelId,
+      api: "openai-completions",
+      baseUrl: `${endpoint}/v1`,
+      reasoning: false,
+      input: ["text"],
+      contextWindow: 128_000,
+      maxTokens: 16_384,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      compat: {
+        supportsDeveloperRole: false,
+        supportsReasoningEffort: false,
+      },
+    }],
+  });
+
+  const model = modelRegistry.find("pinyx", modelId);
+  if (!model) {
+    throw new Error(`Unable to register PiNyx model ${modelId}`);
+  }
+
+  const result = { model, modelRegistry, authStorage };
+  pinyxModelCache.set(cacheKey, result);
+  return result;
 }

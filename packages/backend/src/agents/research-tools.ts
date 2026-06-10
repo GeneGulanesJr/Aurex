@@ -5,7 +5,8 @@ import type { LaPisClient } from "../clients/lapis-client.js";
 
 export interface ResearchToolContext {
   missionId: string;
-  authorId: string;
+  authorId?: string;
+  getAuthorId?: () => string;
 }
 
 export function createResearchTools(lapis: LaPisClient, ctx: ResearchToolContext) {
@@ -36,9 +37,17 @@ export function createResearchTools(lapis: LaPisClient, ctx: ResearchToolContext
         domain = [];
       }
 
-      await lapis.writeFinding(ctx.authorId, {
+      const authorId = ctx.getAuthorId?.() ?? ctx.authorId ?? "";
+      if (!authorId) {
+        return {
+          content: [{ type: "text" as const, text: "Finding rejected: research session is not registered yet." }],
+          details: {} as Record<string, never>,
+        };
+      }
+
+      await lapis.writeFinding(authorId, {
         missionId: ctx.missionId,
-        authorId: ctx.authorId,
+        authorId,
         domain,
         title: params.title as string,
         content: params.content as string,

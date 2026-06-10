@@ -19,8 +19,11 @@ describe("agent factory", () => {
     expect(tools).not.toContain("edit");
   });
 
-  it("research has read only", () => {
-    expect(AGENT_TOOLS["research"]).toEqual(["read"]);
+  it("research has read-only discovery tools", () => {
+    expect(AGENT_TOOLS["research"]).toEqual(["read", "grep", "find", "ls"]);
+    expect(AGENT_TOOLS["research"]).not.toContain("write");
+    expect(AGENT_TOOLS["research"]).not.toContain("edit");
+    expect(AGENT_TOOLS["research"]).not.toContain("bash");
   });
 
   it("orchestrator has read only", () => {
