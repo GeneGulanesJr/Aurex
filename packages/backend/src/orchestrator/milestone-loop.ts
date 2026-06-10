@@ -382,9 +382,14 @@ export function createMilestoneLoop(
           // validators and integration depend on.
           const invalidHandoffUnitIds: string[] = [];
           for (const unit of validatorUnits) {
-            const errors = unit.handoff
-              ? validateHandoff(unit.handoff as any).errors
-              : ["worker completed without submitting write_handoff"];
+            let errors: string[];
+            try {
+              errors = unit.handoff
+                ? validateHandoff(unit.handoff as any).errors
+                : ["worker completed without submitting write_handoff"];
+            } catch (err) {
+              errors = [`handoff validation threw: ${err instanceof Error ? err.message : String(err)}`];
+            }
 
             if (errors.length > 0) {
               console.warn(`[enforcement] Invalid handoff for unit ${unit.id}:`, errors);
@@ -415,6 +420,21 @@ export function createMilestoneLoop(
 
             if (!hasRetriedFailedUnits) {
               hasRetriedFailedUnits = true;
+              // Prune worktrees for units being retried to avoid leaking
+              // git worktrees and branches — createWorktree will be called
+              // again on the next loop iteration.
+              for (const unit of validatorUnits.filter(u => invalidHandoffUnitIds.includes(u.id))) {
+                if (unit.worktreePath) {
+                  try {
+                    await worktreeManager.pruneWorktree(unit.worktreePath);
+                  } catch (err) {
+                    console.warn(
+                      `[retry] Failed to prune worktree ${unit.worktreePath} for unit ${unit.id}:`,
+                      err instanceof Error ? err.message : err,
+                    );
+                  }
+                }
+              }
               for (const uid of invalidHandoffUnitIds) {
                 await lapis.updateWorkingUnitStatus(uid, "planned");
               }

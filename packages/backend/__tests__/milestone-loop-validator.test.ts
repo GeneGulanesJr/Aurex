@@ -34,6 +34,7 @@ vi.mock("node:util", () => ({ promisify: () => vi.fn().mockResolvedValue({ stdou
 import { createMilestoneLoop } from "../src/orchestrator/milestone-loop";
 import type { LaPisClient } from "../src/clients/lapis-client";
 import type { PinyxClient } from "../src/clients/pinyx-client";
+import { makeHandoff } from "./helpers/make-handoff.js";
 
 function makeMission(overrides?: Partial<Mission>): Mission {
   return {
@@ -65,21 +66,6 @@ function makeMilestone(overrides?: Partial<Milestone>): Milestone {
   };
 }
 
-function makeHandoff(unitId: string) {
-  return {
-    unitId,
-    featureName: "Auth work",
-    description: "Implemented the requested auth work",
-    implemented: "Auth work completed",
-    remaining: "none",
-    rationale: "The implementation follows the existing auth module shape and keeps validation evidence explicit.",
-    assumptions: "Existing test helpers are available",
-    unresolvedUncertainties: "none",
-    errorsEncountered: "none",
-    commandsRun: [{ command: "npm test", exitCode: 0 }],
-    gitCommitHash: "abc123",
-  };
-}
 
 function createMockLapis(units: WorkingUnit[] = [], verdicts: ValidationVerdict[] = [], handoffs = units.map((unit) => makeHandoff(unit.id))): LaPisClient {
   return {

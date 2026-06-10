@@ -34,6 +34,7 @@ vi.mock("node:util", () => ({ promisify: () => vi.fn().mockResolvedValue({ stdou
 import { createMilestoneLoop } from "../src/orchestrator/milestone-loop";
 import type { LaPisClient } from "../src/clients/lapis-client";
 import type { PinyxClient } from "../src/clients/pinyx-client";
+import { makeHandoff } from "./helpers/make-handoff.js";
 
 function makeMission(): Mission {
   return {
@@ -73,21 +74,6 @@ const failVerdict: (failedIds: string[]) => ValidationVerdict = (failedIds) => (
   classification: "patchable", timestamp: "",
 });
 
-function makeHandoff(unitId: string) {
-  return {
-    unitId,
-    featureName: `Feature ${unitId}`,
-    description: `Completed ${unitId}`,
-    implemented: `Implemented ${unitId}`,
-    remaining: "none",
-    rationale: "The retry test fixture supplies a valid handoff so negotiation behavior is isolated.",
-    assumptions: "Test worktrees and contracts are mocked",
-    unresolvedUncertainties: "none",
-    errorsEncountered: "none",
-    commandsRun: [{ command: "npm test", exitCode: 0 }],
-    gitCommitHash: "abc123",
-  };
-}
 
 function createMockLapis(units: WorkingUnit[], verdicts: ValidationVerdict[], handoffs = units.map((unit) => makeHandoff(unit.id))): LaPisClient {
   let callCount = 0;

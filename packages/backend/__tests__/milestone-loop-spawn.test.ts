@@ -46,22 +46,8 @@ vi.mock("node:util", () => ({
 import { createMilestoneLoop } from "../src/orchestrator/milestone-loop";
 import type { LaPisClient } from "../src/clients/lapis-client";
 import type { PinyxClient } from "../src/clients/pinyx-client";
+import { makeHandoff } from "./helpers/make-handoff.js";
 
-function makeHandoff(unitId: string) {
-  return {
-    unitId,
-    featureName: "Login",
-    description: "Implemented login endpoint",
-    implemented: "POST /login",
-    remaining: "none",
-    rationale: "The endpoint follows the existing auth module pattern and keeps token issuance isolated.",
-    assumptions: "Existing auth dependencies are available",
-    unresolvedUncertainties: "none",
-    errorsEncountered: "none",
-    commandsRun: [{ command: "npm test", exitCode: 0 }],
-    gitCommitHash: "abc123",
-  };
-}
 
 function createMockLapis(units: WorkingUnit[] = [], handoffs = units.map((unit) => makeHandoff(unit.id))): LaPisClient {
   return {

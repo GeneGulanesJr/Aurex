@@ -640,4 +640,90 @@ describe("AgentSpawner", () => {
       expect(handle2.sessionId).toBe("test-session-123");
     });
   });
+
+  describe("resolvePinyxModel error paths", () => {
+    // Use unique model IDs per test to avoid cache collisions with the
+    // module-level pinyxModelCache.
+
+    it("falls back to default when lapis.getSetting is not a function", async () => {
+      const lapis = createMockLapis() as LaPisClient;
+      const spawner = createAgentSpawner({
+        lapis,
+        agentDir: "/home/user/.pi/agent",
+        defaultTimeout: 120_000,
+      });
+
+      await spawner.spawn({
+        ...baseSpawnOpts,
+        model: "test/no-getSetting",
+      });
+
+      const callOpts = mockCreateAgentSession.mock.calls[0][0];
+      expect(callOpts.model).toBeUndefined();
+      expect(callOpts.modelRegistry).toBeUndefined();
+      expect(callOpts.authStorage).toBeUndefined();
+    });
+
+    it("falls back to default when getSetting rejects", async () => {
+      const lapis = {
+        ...createMockLapis(),
+        getSetting: vi.fn().mockRejectedValue(new Error("db error")),
+      } as unknown as LaPisClient;
+
+      const spawner = createAgentSpawner({
+        lapis,
+        agentDir: "/home/user/.pi/agent",
+        defaultTimeout: 120_000,
+      });
+
+      await spawner.spawn({
+        ...baseSpawnOpts,
+        model: "test/getSetting-rejects",
+      });
+
+      const callOpts = mockCreateAgentSession.mock.calls[0][0];
+      expect(callOpts.model).toBeUndefined();
+    });
+
+    it("falls back to default when pinyx_config has no endpoint", async () => {
+      const lapis = {
+        ...createMockLapis(),
+        getSetting: vi.fn().mockResolvedValue({ endpoint: "" }),
+      } as unknown as LaPisClient;
+
+      const spawner = createAgentSpawner({
+        lapis,
+        agentDir: "/home/user/.pi/agent",
+        defaultTimeout: 120_000,
+      });
+
+      await spawner.spawn({
+        ...baseSpawnOpts,
+        model: "test/no-endpoint",
+      });
+
+      const callOpts = mockCreateAgentSession.mock.calls[0][0];
+      expect(callOpts.model).toBeUndefined();
+    });
+
+    it("caches model config across spawns", async () => {
+      const lapis = {
+        ...createMockLapis(),
+        getSetting: vi.fn().mockResolvedValue({ endpoint: "http://pinyx:7331/" }),
+      } as unknown as LaPisClient;
+
+      const spawner = createAgentSpawner({
+        lapis,
+        agentDir: "/home/user/.pi/agent",
+        defaultTimeout: 120_000,
+      });
+
+      await spawner.spawn({ ...baseSpawnOpts, model: "test/cache-model" });
+      await spawner.spawn({ ...baseSpawnOpts, model: "test/cache-model" });
+
+      // getSetting should only be called once due to caching
+      expect(lapis.getSetting).toHaveBeenCalledTimes(1);
+    });
+  });
+
 });

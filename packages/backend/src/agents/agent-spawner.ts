@@ -544,13 +544,29 @@ function createCustomTools(
   return [];
 }
 
+// Cache resolved PiNyx model configs keyed by model ID to avoid
+// re-creating AuthStorage/ModelRegistry on every spawn call.
+const pinyxModelCache = new Map<string, { model: any; modelRegistry: any; authStorage: any }>();
+
 async function resolvePinyxModel(lapis: LaPisClient, modelId: string | undefined) {
   if (!modelId) return null;
 
-  if (typeof lapis.getSetting !== "function") return null;
-  const saved = await lapis.getSetting<{ endpoint?: string }>("pinyx_config").catch(() => null);
+  const cached = pinyxModelCache.get(modelId);
+  if (cached) return cached;
+
+  if (typeof lapis.getSetting !== "function") {
+    console.warn(`[spawner] Cannot resolve PiNyx model "${modelId}": lapis.getSetting is not available`);
+    return null;
+  }
+  const saved = await lapis.getSetting<{ endpoint?: string }>("pinyx_config").catch((err) => {
+    console.warn(`[spawner] Failed to fetch pinyx_config for model "${modelId}":`, err instanceof Error ? err.message : err);
+    return null;
+  });
   const endpoint = saved?.endpoint?.replace(/\/$/, "");
-  if (!endpoint) return null;
+  if (!endpoint) {
+    console.warn(`[spawner] Cannot resolve PiNyx model "${modelId}": no endpoint configured in pinyx_config`);
+    return null;
+  }
 
   const authStorage = AuthStorage.inMemory();
   authStorage.setRuntimeApiKey("pinyx", "pinyx");
@@ -582,5 +598,7 @@ async function resolvePinyxModel(lapis: LaPisClient, modelId: string | undefined
     throw new Error(`Unable to register PiNyx model ${modelId}`);
   }
 
-  return { model, modelRegistry, authStorage };
+  const result = { model, modelRegistry, authStorage };
+  pinyxModelCache.set(modelId, result);
+  return result;
 }

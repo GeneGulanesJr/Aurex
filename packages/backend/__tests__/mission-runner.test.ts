@@ -75,22 +75,8 @@ vi.mock("../src/clients/pinyx-client.js", () => ({
 import { createMissionRunner } from "../src/orchestrator/mission-runner";
 import type { LaPisClient } from "../src/clients/lapis-client";
 import { createPinyxClient } from "../src/clients/pinyx-client.js";
+import { makeHandoff } from "./helpers/make-handoff.js";
 
-function makeHandoff(unitId: string) {
-  return {
-    unitId,
-    featureName: `Feature ${unitId}`,
-    description: `Completed ${unitId}`,
-    implemented: `Implemented ${unitId}`,
-    remaining: "none",
-    rationale: "The mission runner test fixture supplies valid handoff evidence for mocked worker completion.",
-    assumptions: "Agent execution is mocked",
-    unresolvedUncertainties: "none",
-    errorsEncountered: "none",
-    commandsRun: [{ command: "npm test", exitCode: 0 }],
-    gitCommitHash: "abc123",
-  };
-}
 
 function createMockLapis(): LaPisClient {
   return {
