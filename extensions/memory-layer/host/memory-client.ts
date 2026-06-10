@@ -137,7 +137,12 @@ export async function memStreaming(
   onProgress?: ProgressCallback,
 ): Promise<MemResult | null> {
   const dispatch = await getInProcessDispatch();
-  if (dispatch) {
+  // Indexing commands must always use the child-process path (spawn).
+  // The in-process dispatch runs indexRepo synchronously on the main thread,
+  // which freezes Pi's TUI. The child-process path is non-blocking and
+  // streams progress via stderr.
+  const INDEXING_COMMANDS = new Set(['index-repo', 'reindex-repo', 'index-docs', 'reindex-docs']);
+  if (dispatch && !INDEXING_COMMANDS.has(cmd)) {
     try {
       const stringArgs: Record<string, string> = {};
       for (const [k, v] of Object.entries(args)) {
