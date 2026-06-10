@@ -129,7 +129,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         const repoName = path.basename(missionRepoRoot);
         const existingSummary = await lapis.getCodeSummary(repoName).catch(() => null);
         if (existingSummary && existingSummary.files > 0) {
-          eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Repo ${repoName} already indexed (${existingSummary.files} files), skipping…` });
+          eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Repo ${repoName} already indexed (${existingSummary.files} files), skipping…`, data: { indexingDone: true, files: existingSummary.files, symbols: existingSummary.symbols ?? 0, edges: (existingSummary as any).import_edges ?? 0 } });
           await lapis.setSetting(`mission:${missionId}:repoName`, repoName);
           codeSummary = existingSummary;
         } else {
