@@ -12,9 +12,14 @@ export function registerCodeContextRoutes(app: FastifyInstance, deps: CodeContex
     const { missionId } = req.params as { missionId: string };
     const repoName = await lapis.getSetting<string>(`mission:${missionId}:repoName`);
     if (!repoName) {
+      console.warn(`[code-context] No repoName found for mission ${missionId}. Code context will be empty.`);
       return { files: 0, symbols: 0, edges: 0, modules: [], entryPoints: [], cycles: { count: 0, paths: [] } };
     }
-    return lapis.getCodeSummary(repoName);
+    const summary = await lapis.getCodeSummary(repoName).catch((err) => {
+      console.warn(`[code-context] Failed to get code summary for repo ${repoName}:`, err instanceof Error ? err.message : err);
+      return { files: 0, symbols: 0, edges: 0, modules: [], entryPoints: [], cycles: { count: 0, paths: [] } };
+    });
+    return summary;
   });
 
   app.get("/api/missions/:missionId/code/graph", async (req) => {
