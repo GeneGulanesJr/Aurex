@@ -379,8 +379,13 @@ describe("milestone loop validator E2E", () => {
           content: { criteria: ["validator uses merged worktree"], testCommands: [], acceptanceBehavior: "" },
         },
       ]),
-      writeHandoff: vi.fn().mockResolvedValue({ accepted: true, errors: [] }),
-      getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
+      writeHandoff: vi.fn().mockImplementation(async (_unitId: string, handoff: unknown) => {
+        handoffs.push(handoff);
+        return { accepted: true, errors: [] };
+      }),
+      getHandoffsForMilestone: vi.fn().mockImplementation(async () => (
+        handoffs.map((handoff, index) => makeHandoffRecord(handoff, index))
+      )),
       writeVerdict: vi.fn().mockImplementation(async (sessionId: string, v: Omit<ValidationVerdict, "id" | "sessionId">) => {
         const written = { id: `verdict-${verdicts.length + 1}`, sessionId, ...v };
         verdicts.push(written);
@@ -404,7 +409,22 @@ describe("milestone loop validator E2E", () => {
           sessionId,
           subscribe(fn: (event: unknown) => void) { subscriber = fn; return () => {}; },
           async prompt() {
+            const handoffTool = opts.customTools.find((t) => t.name === "write_handoff");
             const verdictTool = opts.customTools.find((t) => t.name === "write_verdict");
+            if (handoffTool) {
+              await handoffTool.execute("handoff", {
+                featureName: "Validator worktree fixture",
+                description: "Completed worker work for validator worktree test",
+                implemented: "Prepared worker branch for merged validator worktree",
+                remaining: "none",
+                rationale: "The handoff confirms the worker phase completed before validator spawn checks run.",
+                assumptions: "The validator test only needs a valid handoff to proceed to validator spawning.",
+                unresolvedUncertainties: "none",
+                errorsEncountered: "none",
+                commandsRun: JSON.stringify([{ command: "test fixture", exitCode: 0 }]),
+                gitCommitHash: "abc123",
+              });
+            }
             if (verdictTool) {
               await verdictTool.execute("v", { verdict: "pass", findings: "ok", failedUnitIds: [] });
             }

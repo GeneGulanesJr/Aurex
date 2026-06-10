@@ -1,6 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@earendil-works/pi-coding-agent", () => {
+  class MockAuthStorage {
+    static inMemory = vi.fn(() => ({ setRuntimeApiKey: vi.fn() }));
+  }
+  class MockModelRegistry {
+    static inMemory = vi.fn(() => new MockModelRegistry());
+    registerProvider = vi.fn();
+    find = vi.fn((_provider: string, modelId: string) => ({ provider: "pinyx", id: modelId }));
+  }
   class MockResourceLoader {
     reload = vi.fn().mockResolvedValue(undefined);
     getSkills = vi.fn().mockReturnValue([]);
@@ -30,6 +38,8 @@ vi.mock("@earendil-works/pi-coding-agent", () => {
         sessionId: "mock",
       },
     }),
+    AuthStorage: MockAuthStorage,
+    ModelRegistry: MockModelRegistry,
     SessionManager: { inMemory: vi.fn() },
     DefaultResourceLoader: MockResourceLoader,
     defineTool: vi.fn(),
@@ -65,6 +75,22 @@ vi.mock("../src/clients/pinyx-client.js", () => ({
 import { createMissionRunner } from "../src/orchestrator/mission-runner";
 import type { LaPisClient } from "../src/clients/lapis-client";
 import { createPinyxClient } from "../src/clients/pinyx-client.js";
+
+function makeHandoff(unitId: string) {
+  return {
+    unitId,
+    featureName: `Feature ${unitId}`,
+    description: `Completed ${unitId}`,
+    implemented: `Implemented ${unitId}`,
+    remaining: "none",
+    rationale: "The mission runner test fixture supplies valid handoff evidence for mocked worker completion.",
+    assumptions: "Agent execution is mocked",
+    unresolvedUncertainties: "none",
+    errorsEncountered: "none",
+    commandsRun: [{ command: "npm test", exitCode: 0 }],
+    gitCommitHash: "abc123",
+  };
+}
 
 function createMockLapis(): LaPisClient {
   return {
@@ -114,7 +140,7 @@ function createMockLapis(): LaPisClient {
       { id: "ms-1", missionId: "m-1", title: "M1", description: "First", orderIndex: 0, status: "planned", validationContractId: "" },
     ]),
     getContractHistory: vi.fn().mockResolvedValue([]),
-    getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
+    getHandoffsForMilestone: vi.fn().mockResolvedValue([makeHandoff("u-1"), makeHandoff("u-done")]),
     getVerdicts: vi.fn().mockResolvedValue([
       { verdict: "pass", validatorType: "validator_scrutiny" },
     ]),

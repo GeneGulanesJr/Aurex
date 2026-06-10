@@ -54,6 +54,22 @@ function makeMilestone(overrides?: Partial<Milestone>): Milestone {
   };
 }
 
+function makeHandoff(unitId: string) {
+  return {
+    unitId,
+    featureName: `Feature ${unitId}`,
+    description: `Completed ${unitId}`,
+    implemented: `Implemented ${unitId}`,
+    remaining: "none",
+    rationale: "The test fixture supplies a valid worker handoff so the scenario can reach validation.",
+    assumptions: "Test dependencies are mocked",
+    unresolvedUncertainties: "none",
+    errorsEncountered: "none",
+    commandsRun: [{ command: "npm test", exitCode: 0 }],
+    gitCommitHash: "abc123",
+  };
+}
+
 function createMockLapis(units: WorkingUnit[] = []): LaPisClient {
   return {
     updateMissionStatus: vi.fn().mockResolvedValue(undefined),
@@ -75,7 +91,7 @@ function createMockLapis(units: WorkingUnit[] = []): LaPisClient {
     writeHandoff: vi.fn().mockResolvedValue({ accepted: true, errors: [] }),
     searchMemory: vi.fn().mockResolvedValue([]),
     writeVerdict: vi.fn().mockResolvedValue({}),
-    getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
+    getHandoffsForMilestone: vi.fn().mockResolvedValue(units.map((unit) => makeHandoff(unit.id))),
     getFindings: vi.fn().mockResolvedValue([]),
     runCompression: vi.fn().mockResolvedValue(undefined),
   } as unknown as LaPisClient;

@@ -376,25 +376,30 @@ export function createMilestoneLoop(
             unit.handoff = handoffsByUnitId.get(unit.id);
           }
 
-          // Validate handoffs — fail units with invalid handoffs
+          // Validate handoffs — fail units with missing or invalid handoffs.
+          // A completed worker session is not enough evidence that useful work
+          // happened; the handoff is the structured completion signal that
+          // validators and integration depend on.
           const invalidHandoffUnitIds: string[] = [];
           for (const unit of validatorUnits) {
-            if (unit.handoff) {
-              const validation = validateHandoff(unit.handoff as any);
-              if (!validation.valid) {
-                console.warn(`[enforcement] Invalid handoff for unit ${unit.id}:`, validation.errors);
-                await lapis.updateWorkingUnitStatus(unit.id, "failed").catch(() => {});
-                await markWorkerTodoProgress(lapis, {
-                  missionId: mission.id,
-                  unit: unit as WorkingUnit,
-                  workerId: "handoff-validator",
-                  status: "blocked",
-                  reason: `invalid worker handoff: ${validation.errors.join("; ")}`,
-                  branch: unit.taskBranch,
-                  notes: validation.errors,
-                });
-                invalidHandoffUnitIds.push(unit.id);
-              }
+            const errors = unit.handoff
+              ? validateHandoff(unit.handoff as any).errors
+              : ["worker completed without submitting write_handoff"];
+
+            if (errors.length > 0) {
+              console.warn(`[enforcement] Invalid handoff for unit ${unit.id}:`, errors);
+              await lapis.updateWorkingUnitStatus(unit.id, "failed").catch(() => {});
+              await markWorkerTodoProgress(lapis, {
+                missionId: mission.id,
+                unit: unit as WorkingUnit,
+                workerId: "handoff-validator",
+                status: "blocked",
+                reason: `invalid worker handoff: ${errors.join("; ")}`,
+                branch: unit.taskBranch,
+                notes: errors,
+              });
+              callbacks.onError(mission.id, "worker_handoff_invalid", `Worker "${unit.description}" did not submit a valid handoff`, { workerId: `worker-${unit.id}`, milestoneId: milestone.id, recoverable: true, details: { errors } });
+              invalidHandoffUnitIds.push(unit.id);
             }
           }
           if (invalidHandoffUnitIds.length > 0) {
@@ -407,6 +412,33 @@ export function createMilestoneLoop(
             for (let i = integrationUnits.length - 1; i >= 0; i--) {
               if (invalidSet.has((integrationUnits[i] as WorkingUnit).id)) integrationUnits.splice(i, 1);
             }
+
+            if (!hasRetriedFailedUnits) {
+              hasRetriedFailedUnits = true;
+              for (const uid of invalidHandoffUnitIds) {
+                await lapis.updateWorkingUnitStatus(uid, "planned");
+              }
+              await reconcileMissionLedger(lapis, {
+                missionId: mission.id,
+                milestoneId: milestone.id,
+                reason: "per-unit retry: re-spawning workers with missing or invalid handoffs",
+                actorId: "orchestrator",
+              });
+              callbacks.onMilestoneProgress(milestone.id, "retrying", completedCount, units.length);
+              loopActive = true;
+              continue;
+            }
+
+            await reconcileMissionLedger(lapis, {
+              missionId: mission.id,
+              milestoneId: milestone.id,
+              reason: "worker handoff failure after retry",
+              actorId: "orchestrator",
+            });
+            const trigger: CheckpointTrigger = "unclassifiable_error";
+            const summary = `${invalidHandoffUnitIds.length} worker unit(s) failed to submit a valid handoff after retry`;
+            callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary });
+            return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
           }
 
           const contractContent = (contract as any)?.content ?? {};

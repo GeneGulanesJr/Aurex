@@ -73,7 +73,23 @@ const failVerdict: (failedIds: string[]) => ValidationVerdict = (failedIds) => (
   classification: "patchable", timestamp: "",
 });
 
-function createMockLapis(units: WorkingUnit[], verdicts: ValidationVerdict[]): LaPisClient {
+function makeHandoff(unitId: string) {
+  return {
+    unitId,
+    featureName: `Feature ${unitId}`,
+    description: `Completed ${unitId}`,
+    implemented: `Implemented ${unitId}`,
+    remaining: "none",
+    rationale: "The retry test fixture supplies a valid handoff so negotiation behavior is isolated.",
+    assumptions: "Test worktrees and contracts are mocked",
+    unresolvedUncertainties: "none",
+    errorsEncountered: "none",
+    commandsRun: [{ command: "npm test", exitCode: 0 }],
+    gitCommitHash: "abc123",
+  };
+}
+
+function createMockLapis(units: WorkingUnit[], verdicts: ValidationVerdict[], handoffs = units.map((unit) => makeHandoff(unit.id))): LaPisClient {
   let callCount = 0;
   return {
     updateMissionStatus: vi.fn().mockResolvedValue(undefined),
@@ -102,7 +118,7 @@ function createMockLapis(units: WorkingUnit[], verdicts: ValidationVerdict[]): L
     writeHandoff: vi.fn().mockResolvedValue({ accepted: true, errors: [] }),
     searchMemory: vi.fn().mockResolvedValue([]),
     writeVerdict: vi.fn().mockResolvedValue({}),
-    getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
+    getHandoffsForMilestone: vi.fn().mockResolvedValue(handoffs),
     createWorkingUnit: vi.fn().mockImplementation(async (_msId: string, unit: any) => ({
       id: `new-${Date.now()}`, ...unit, milestoneId: _msId, status: "planned", taskBranch: "", worktreePath: "", sessionId: "",
     })),

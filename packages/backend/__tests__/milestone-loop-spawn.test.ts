@@ -47,7 +47,23 @@ import { createMilestoneLoop } from "../src/orchestrator/milestone-loop";
 import type { LaPisClient } from "../src/clients/lapis-client";
 import type { PinyxClient } from "../src/clients/pinyx-client";
 
-function createMockLapis(units: WorkingUnit[] = []): LaPisClient {
+function makeHandoff(unitId: string) {
+  return {
+    unitId,
+    featureName: "Login",
+    description: "Implemented login endpoint",
+    implemented: "POST /login",
+    remaining: "none",
+    rationale: "The endpoint follows the existing auth module pattern and keeps token issuance isolated.",
+    assumptions: "Existing auth dependencies are available",
+    unresolvedUncertainties: "none",
+    errorsEncountered: "none",
+    commandsRun: [{ command: "npm test", exitCode: 0 }],
+    gitCommitHash: "abc123",
+  };
+}
+
+function createMockLapis(units: WorkingUnit[] = [], handoffs = units.map((unit) => makeHandoff(unit.id))): LaPisClient {
   return {
     updateMissionStatus: vi.fn().mockResolvedValue(undefined),
     updateMilestoneStatus: vi.fn().mockResolvedValue(undefined),
@@ -64,7 +80,7 @@ function createMockLapis(units: WorkingUnit[] = []): LaPisClient {
     getContractHistory: vi.fn().mockResolvedValue([{
       content: { criteria: ["works"], testCommands: ["npm test"], acceptanceBehavior: "works" },
     }]),
-    getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
+    getHandoffsForMilestone: vi.fn().mockResolvedValue(handoffs),
     registerAgentSession: vi.fn().mockResolvedValue(undefined),
     logCost: vi.fn().mockResolvedValue(undefined),
     writeHandoff: vi.fn().mockResolvedValue({ accepted: true, errors: [] }),
@@ -245,4 +261,56 @@ describe("milestone loop with spawner", () => {
       "ms-1", "in_progress", 1, 1,
     );
   });
+
+  it("retries a worker that completes without a handoff before validation", async () => {
+    let eventSubscriber: (event: any) => void = () => {};
+    (mockSession.subscribe as any).mockImplementation((fn: any) => {
+      eventSubscriber = fn;
+      return () => {};
+    });
+    (mockSession.prompt as any).mockImplementation(async () => {
+      eventSubscriber({ type: "agent_end" });
+    });
+
+    const unit: WorkingUnit = {
+      id: "unit-1",
+      milestoneId: "ms-1",
+      description: "Create login endpoint",
+      declaredPaths: ["src/auth/login.ts"],
+      declaredModules: ["auth"],
+      status: "planned" as any,
+      taskBranch: "",
+      worktreePath: "",
+      sessionId: "",
+    };
+
+    const lapis = createMockLapis([unit], []);
+    const pinyx = createMockPinyx();
+    const callbacks = {
+      onEscalation: vi.fn(),
+      onAgentStatus: vi.fn(),
+      onMilestoneProgress: vi.fn(),
+      onCostUpdate: vi.fn(),
+      onError: vi.fn(),
+    };
+
+    const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
+      agentDir: "/home/user/.pi/agent",
+      repoRoot: "/repo",
+      gitMainBranch: "main",
+    });
+
+    const result = await loop.run(makeMission(), [makeMilestone()]);
+
+    expect(result.status).toBe("checkpoint_needed");
+    expect(result.summary).toContain("failed to submit a valid handoff");
+    expect(lapis.updateWorkingUnitStatus).toHaveBeenCalledWith("unit-1", "planned");
+    expect(callbacks.onError).toHaveBeenCalledWith(
+      "m-1",
+      "worker_handoff_invalid",
+      expect.stringContaining("valid handoff"),
+      expect.objectContaining({ recoverable: true }),
+    );
+  });
+
 });

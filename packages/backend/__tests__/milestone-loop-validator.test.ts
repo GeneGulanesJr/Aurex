@@ -65,7 +65,23 @@ function makeMilestone(overrides?: Partial<Milestone>): Milestone {
   };
 }
 
-function createMockLapis(units: WorkingUnit[] = [], verdicts: ValidationVerdict[] = []): LaPisClient {
+function makeHandoff(unitId: string) {
+  return {
+    unitId,
+    featureName: "Auth work",
+    description: "Implemented the requested auth work",
+    implemented: "Auth work completed",
+    remaining: "none",
+    rationale: "The implementation follows the existing auth module shape and keeps validation evidence explicit.",
+    assumptions: "Existing test helpers are available",
+    unresolvedUncertainties: "none",
+    errorsEncountered: "none",
+    commandsRun: [{ command: "npm test", exitCode: 0 }],
+    gitCommitHash: "abc123",
+  };
+}
+
+function createMockLapis(units: WorkingUnit[] = [], verdicts: ValidationVerdict[] = [], handoffs = units.map((unit) => makeHandoff(unit.id))): LaPisClient {
   return {
     getMission: vi.fn().mockResolvedValue(makeMission()),
     updateMissionStatus: vi.fn().mockResolvedValue(undefined),
@@ -84,7 +100,7 @@ function createMockLapis(units: WorkingUnit[] = [], verdicts: ValidationVerdict[
     ]),
     incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
     writeVerdict: vi.fn().mockResolvedValue({}),
-    getHandoffsForMilestone: vi.fn().mockResolvedValue([]),
+    getHandoffsForMilestone: vi.fn().mockResolvedValue(handoffs),
     getFindings: vi.fn().mockResolvedValue([]),
     runCompression: vi.fn().mockResolvedValue(undefined),
   } as unknown as LaPisClient;
