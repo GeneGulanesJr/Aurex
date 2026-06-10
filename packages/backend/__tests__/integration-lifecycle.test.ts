@@ -27,6 +27,7 @@ describe("integration lifecycle", () => {
       integrationBranch: "integration/mission-1/1-ms-1",
       releaseBranch: "release/mission-1/1-ms-1",
       mergedBranches: ["task/worker-unit-1/unit-1", "task/worker-unit-2/unit-2"],
+      conflictedBranches: [],
     });
     expect(worktree.createBranch).toHaveBeenNthCalledWith(1, "integration/mission-1/1-ms-1", "main");
     expect(worktree.mergeToTarget).toHaveBeenNthCalledWith(1, "task/worker-unit-1/unit-1", "integration/mission-1/1-ms-1");

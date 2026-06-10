@@ -4,7 +4,7 @@ import type { PinyxClient } from "../clients/pinyx-client.js";
 import { QuotaExhaustedError } from "../clients/pinyx-quota-wrapper.js";
 import { createNegotiator } from "./negotiator.js";
 import { createWorktreeManager, type CreateValidatorWorktreeResult } from "./worktree.js";
-import { createAgentSpawner } from "../agents/agent-spawner.js";
+import { createAgentSpawner, TOOL_CALL_CAP_EXCEEDED } from "../agents/agent-spawner.js";
 import type { AgentLogger } from "../agents/agent-logger.js";
 import type { EventBus } from "../ws/events.js";
 import { buildValidatorContext, buildWorkerContext, buildResearchContext, type ValidatorUnitContext } from "../agents/context-builder.js";
@@ -108,6 +108,7 @@ export function createMilestoneLoop(
         // Rescopes re-plan the milestone via PiNyx and start fresh.
         let loopActive = true;
         let researchFindings: ResearchFinding[] = await lapis.getFindings(mission.id).catch(() => [] as ResearchFinding[]);
+        let hasRetriedFailedUnits = false;
         while (loopActive) {
           loopActive = false;
 
@@ -118,8 +119,54 @@ export function createMilestoneLoop(
 
           let completedCount = 0;
           let failedCount = 0;
+          const failedUnitIds: string[] = [];
           const integrationUnits: WorkingUnit[] = [];
           const validatorUnits: ValidatorUnitContext[] = [];
+
+          // --- PRE-WORKER RESEARCH ---
+          // If no prior research findings exist (first milestone or first
+          // loop iteration after a rescope), run research BEFORE workers
+          // so they benefit from domain knowledge.
+          if (researchFindings.length === 0) {
+            const preResearchPaths = units.flatMap((u: WorkingUnit) => u.declaredPaths);
+            const preResearchModules = [...new Set(units.flatMap((u: WorkingUnit) => u.declaredModules))];
+            const preResearchId = `research-${milestone.id}`;
+            const preResearchContext = buildResearchContext({
+              missionDescription: mission.description,
+              milestoneTitle: milestone.title,
+              milestoneDescription: milestone.description,
+              unitDescriptions: units.map((u: WorkingUnit) => u.description),
+              declaredPaths: preResearchPaths,
+              declaredModules: preResearchModules,
+            });
+
+            callbacks.onAgentStatus(preResearchId, "research", "spawned", milestone.id);
+            const preResearchHandle = await spawner.spawn({
+              agentType: "research",
+              agentId: preResearchId,
+              missionId: mission.id,
+              milestoneId: milestone.id,
+              cwd: loopConfig.repoRoot,
+              skillFilePath: `${loopConfig.aurexRoot}/packages/backend/src/skills/research.md`,
+              contextContent: preResearchContext,
+              taskPrompt: `Research domain knowledge for milestone "${milestone.title}" BEFORE workers begin. Investigate the codebase areas relevant to the declared paths and modules. Submit findings using write_finding.`,
+              timeout: config.workerTimeouts.build,
+            });
+            activeHandles.add(preResearchHandle);
+
+            callbacks.onAgentStatus(preResearchId, "research", "researching", milestone.id);
+            const preResearchResult = await preResearchHandle.completed;
+            activeHandles.delete(preResearchHandle);
+            callbacks.onAgentStatus(
+              preResearchId,
+              "research",
+              preResearchResult.status === "completed" ? "completed" : preResearchResult.status,
+              milestone.id,
+            );
+            preResearchHandle.dispose();
+
+            researchFindings = await lapis.getFindings(mission.id).catch(() => researchFindings);
+          }
 
           // --- WORKER PHASE ---
           const pendingUnits = units.filter((u: WorkingUnit) => u.status === "planned");
@@ -250,6 +297,7 @@ export function createMilestoneLoop(
                 callbacks.onAgentStatus(agentId, "worker", "timed_out", milestone.id);
                 callbacks.onError(mission.id, "worker_timeout", `Worker "${unit.description}" timed out`, { workerId: agentId, milestoneId: milestone.id, recoverable: true });
                 failedCount++;
+                failedUnitIds.push(unit.id);
               } else {
                 await lapis.updateWorkingUnitStatus(unit.id, "failed");
                 await markWorkerTodoProgress(lapis, {
@@ -264,6 +312,7 @@ export function createMilestoneLoop(
                 callbacks.onAgentStatus(agentId, "worker", "failed", milestone.id);
                 callbacks.onError(mission.id, "worker_failed", `Worker "${unit.description}" failed`, { workerId: agentId, milestoneId: milestone.id, recoverable: true });
                 failedCount++;
+                failedUnitIds.push(unit.id);
               }
               await reconcileMissionLedger(lapis, {
                 missionId: mission.id,
@@ -278,14 +327,35 @@ export function createMilestoneLoop(
           }
 
           if (failedCount > 0) {
+            // Per-unit retry: re-spawn only the failed units once before
+            // escalating the entire milestone. This avoids discarding
+            // successful workers' work when only 1-2 units failed.
+            const failedUnitIdsForRetry = failedUnitIds;
+            if (failedUnitIdsForRetry.length > 0 && !hasRetriedFailedUnits) {
+              hasRetriedFailedUnits = true;
+              for (const uid of failedUnitIdsForRetry) {
+                await lapis.updateWorkingUnitStatus(uid, "planned");
+              }
+              await reconcileMissionLedger(lapis, {
+                missionId: mission.id,
+                milestoneId: milestone.id,
+                reason: "per-unit retry: re-spawning failed workers",
+                actorId: "orchestrator",
+              });
+              callbacks.onMilestoneProgress(milestone.id, "retrying", completedCount, units.length);
+              loopActive = true;
+              continue;
+            }
+
+            // Already retried once — escalate
             await reconcileMissionLedger(lapis, {
               missionId: mission.id,
               milestoneId: milestone.id,
-              reason: "worker failure before validation",
+              reason: "worker failure after retry",
               actorId: "orchestrator",
             });
             const trigger: CheckpointTrigger = "unclassifiable_error";
-            const summary = `${failedCount} worker unit(s) failed before validation`;
+            const summary = `${failedCount} worker unit(s) failed after retry`;
             callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary });
             return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
           }
@@ -296,46 +366,6 @@ export function createMilestoneLoop(
             const summary = `Mission cost cap exceeded: $${cumulativeCost.toFixed(2)} >= $${config.costCap.toFixed(2)}`;
             return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
           }
-
-          // --- RESEARCH PHASE ---
-          const allDeclaredPaths = units.flatMap((u: WorkingUnit) => u.declaredPaths);
-          const allDeclaredModules = [...new Set(units.flatMap((u: WorkingUnit) => u.declaredModules))];
-          const researchAgentId = `research-${milestone.id}`;
-          const researchContext = buildResearchContext({
-            missionDescription: mission.description,
-            milestoneTitle: milestone.title,
-            milestoneDescription: milestone.description,
-            unitDescriptions: units.map((u: WorkingUnit) => u.description),
-            declaredPaths: allDeclaredPaths,
-            declaredModules: allDeclaredModules,
-          });
-
-          callbacks.onAgentStatus(researchAgentId, "research", "spawned", milestone.id);
-          const researchHandle = await spawner.spawn({
-            agentType: "research",
-            agentId: researchAgentId,
-            missionId: mission.id,
-            milestoneId: milestone.id,
-            cwd: loopConfig.repoRoot,
-            skillFilePath: `${loopConfig.aurexRoot}/packages/backend/src/skills/research.md`,
-            contextContent: researchContext,
-            taskPrompt: `Research domain knowledge for milestone "${milestone.title}". Investigate the codebase areas relevant to the declared paths and modules. Submit findings using write_finding.`,
-            timeout: config.workerTimeouts.build,
-          });
-          activeHandles.add(researchHandle);
-
-          callbacks.onAgentStatus(researchAgentId, "research", "researching", milestone.id);
-          const researchResult = await researchHandle.completed;
-          activeHandles.delete(researchHandle);
-          callbacks.onAgentStatus(
-            researchAgentId,
-            "research",
-            researchResult.status === "completed" ? "completed" : researchResult.status,
-            milestone.id,
-          );
-          researchHandle.dispose();
-
-          researchFindings = await lapis.getFindings(mission.id).catch(() => researchFindings);
 
           // --- VALIDATOR PHASE ---
           const handoffs = await lapis.getHandoffsForMilestone(milestone.id).catch(() => [] as any[]);
@@ -447,7 +477,9 @@ export function createMilestoneLoop(
           }
           const validatorCwd = validatorWorktree?.worktreePath ?? loopConfig.repoRoot;
 
-          for (const validatorType of validatorTypes) {
+          // Run all validator types concurrently — they share a read-only
+          // merged worktree and don't modify state.
+          await Promise.all(validatorTypes.map(async (validatorType) => {
             const agentId = `${validatorType}-${milestone.id}`;
             const contextContent = buildValidatorContext({
               validatorType, missionDescription: mission.description,
@@ -481,20 +513,22 @@ export function createMilestoneLoop(
             activeHandles.delete(handle);
             callbacks.onAgentStatus(agentId, validatorType, result.status === "completed" ? "completed" : result.status, milestone.id);
 
-            // If the validator was killed by the tool-call cap, write a
-            // synthetic fail verdict here (in the milestone-loop's control
-            // flow) instead of in the spawner's subscribe callback. The
-            // subscribe callback's async writeVerdict races with
-            // resolveCompleted, causing the verdict to be missing when
-            // getVerdicts runs (root cause of the rescope death spiral).
-            if (result.status === "failed" && result.error?.includes("tool_call_cap_exceeded")) {
+            // Handle validators that didn't write a verdict:
+            // 1. Cap-exceeded: session was aborted by tool-call cap
+            // 2. Completed but no verdict: model finished without calling write_verdict
+            // Both cases need a synthetic fail verdict so the negotiator
+            // can route to retry/rescope instead of hitting
+            // "No validator verdicts were recorded".
+            const isCapHit = result.status === "failed" && result.error?.includes(TOOL_CALL_CAP_EXCEEDED);
+            if (isCapHit) {
+              // Cap hit — model never had a chance to write verdict
               try {
                 await lapis.writeVerdict(handle.sessionId, {
                   milestoneId: milestone.id,
                   contractId,
                   validatorType: validatorType as "validator_scrutiny" | "validator_user_testing",
                   verdict: "fail",
-                  findings: `Validator auto-failed: exceeded tool-call cap without producing a verdict. The model exhausted its tool-call budget without writing a grounded verdict. This usually means the validator couldn't find real issues but also couldn't confidently pass — review the worker output and contract criteria manually.`,
+                  findings: `Validator auto-failed: exceeded tool-call cap without producing a verdict. The model exhausted its tool-call budget.`,
                   failedUnitIds: [],
                   timestamp: new Date().toISOString(),
                 });
@@ -502,9 +536,13 @@ export function createMilestoneLoop(
                 console.warn(`[milestone-loop] Failed to write synthetic cap-hit verdict:`, err instanceof Error ? err.message : err);
               }
             }
+            // For completed validators, the write_verdict tool should have been
+            // called by the model during the session. If it wasn't, the
+            // negotiator will see "No validator verdicts were recorded" and
+            // the stagnation detector will catch it on the second cycle.
 
             handle.dispose();
-          }
+          }));
 
           // Prune the merged validation worktree after all validators complete.
           // Stryker disable next-line StringLiteral: best-effort cleanup
@@ -520,7 +558,30 @@ export function createMilestoneLoop(
           }
 
           // --- NEGOTIATION PHASE ---
-          const verdicts = await lapis.getVerdicts(milestone.id).catch(() => [] as import("@aurex/shared").ValidationVerdict[]);
+          let verdicts = await lapis.getVerdicts(milestone.id).catch(() => [] as import("@aurex/shared").ValidationVerdict[]);
+
+          // If validators completed but no verdicts were written (model didn't
+          // call write_verdict), write a synthetic fail verdict. This prevents
+          // the "No validator verdicts were recorded" → rescope death spiral.
+          if (verdicts.length === 0 && validatorTypes.length > 0) {
+            try {
+              const syntheticSessionId = `synthetic-${milestone.id}-${Date.now()}`;
+              await lapis.writeVerdict(syntheticSessionId, {
+                milestoneId: milestone.id,
+                contractId,
+                validatorType: (validatorTypes[0] ?? "validator_scrutiny") as "validator_scrutiny" | "validator_user_testing",
+                verdict: "fail",
+                findings: `Validator completed session without calling write_verdict. The model finished its review but did not submit a formal verdict. This is a model compliance issue — the validator skill instructs using write_verdict exactly once.`,
+                failedUnitIds: [],
+                timestamp: new Date().toISOString(),
+              });
+              // Re-fetch verdicts with the synthetic one included
+              verdicts = await lapis.getVerdicts(milestone.id).catch(() => [] as import("@aurex/shared").ValidationVerdict[]);
+            } catch (err) {
+              console.warn(`[milestone-loop] Failed to write synthetic no-verdict:`, err instanceof Error ? err.message : err);
+            }
+          }
+
           await applyValidatorVerdictsToTodos(lapis, {
             missionId: mission.id,
             verdicts,
@@ -534,7 +595,7 @@ export function createMilestoneLoop(
           });
 
           const retryCounter = await lapis.incrementRetry(milestone.id);
-          const effectiveMaxRescopes = Math.min(config.maxRescopes, AUTO_RESCOPE_BATCH_LIMIT);
+          const effectiveMaxRescopes = Math.min(config.maxRescopes, config.maxAutoRescopes ?? AUTO_RESCOPE_BATCH_LIMIT);
           const decision = await negotiator.negotiate(
             milestone.id, retryCounter.retries, retryCounter.rescopes,
             config.maxValidatorRetries, effectiveMaxRescopes, verdicts,
@@ -542,7 +603,7 @@ export function createMilestoneLoop(
 
           if (decision.decision === "escalate") {
             const trigger: CheckpointTrigger = "rescope_limit";
-            const summary = `${decision.reason}. Aurex auto-rescopes at most ${AUTO_RESCOPE_BATCH_LIMIT} times before asking for direction so missions do not rescope endlessly.`;
+            const summary = `${decision.reason}. Aurex auto-rescopes at most ${effectiveMaxRescopes} times before asking for direction so missions do not rescope endlessly.`;
             callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary });
             return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
           }
@@ -611,16 +672,20 @@ export function createMilestoneLoop(
           }
 
           // decision === "pass"
-          let integration;
+          let integration: Awaited<ReturnType<typeof integrationLifecycle.integrate>>;
           try {
             integration = await integrationLifecycle.integrate({
               missionId: mission.id, milestoneId: milestone.id,
               milestoneOrderIndex: milestone.orderIndex,
               baseBranch: loopConfig.gitMainBranch, units: integrationUnits,
+              testCommands,
             });
+            const mergedIntegrationUnits = integrationUnits.filter(
+              (u) => integration.mergedBranches.includes(u.taskBranch),
+            );
             await markMergedTodos(lapis, {
               missionId: mission.id,
-              units: integrationUnits,
+              units: mergedIntegrationUnits,
               sourceBranches: integration.mergedBranches,
               targetBranch: integration.integrationBranch,
               reason: "integration branch merge completed after validation pass",
@@ -636,6 +701,30 @@ export function createMilestoneLoop(
             const summary = `Integration failed after validation pass: ${error instanceof Error ? error.message : String(error)}`;
             callbacks.onError(mission.id, "integration_failed", summary, { milestoneId: milestone.id, recoverable: false, details: { phase: "integration" } });
             callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary, phase: "integration" });
+            return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
+          }
+
+          // Handle conflicted branches: map them to failed unit IDs so
+          // the checkpoint provides actionable information.
+          if (integration.conflictedBranches.length > 0) {
+            const conflictedSet = new Set(integration.conflictedBranches);
+            const conflictedUnitIds = integrationUnits
+              .filter((u) => conflictedSet.has(u.taskBranch))
+              .map((u) => u.id);
+            if (conflictedUnitIds.length > 0) {
+              callbacks.onError(mission.id, "integration_conflicts",
+                `Merge conflicts on branches: ${integration.conflictedBranches.join(", ")}`,
+                { milestoneId: milestone.id, recoverable: true, details: { conflictedUnitIds, phase: "integration" } });
+            }
+          }
+
+          // Post-integration test gate: if contract tests fail on the
+          // integration branch, report the failure instead of creating release.
+          if (integration.testFailure) {
+            const trigger: CheckpointTrigger = "unclassifiable_error";
+            const summary = `Integration branch tests failed:\n${integration.testFailure.slice(0, 500)}`;
+            callbacks.onError(mission.id, "integration_tests_failed", summary, { milestoneId: milestone.id, recoverable: false, details: { phase: "integration_tests" } });
+            callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary, phase: "integration_tests" });
             return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
           }
 

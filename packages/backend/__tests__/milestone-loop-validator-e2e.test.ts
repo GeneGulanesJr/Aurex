@@ -194,7 +194,6 @@ describe("milestone loop validator E2E", () => {
       failedUnitIds: [],
     });
     expect(lapis.updateMilestoneStatus).toHaveBeenCalledWith("ms-e2e", "validating");
-    // Milestone is NOT auto-completed — checkpoint needed for human approval
     expect(lapis.updateMilestoneStatus).not.toHaveBeenCalledWith("ms-e2e", "completed");
     expect(callbacks.onEscalation).toHaveBeenCalledWith(
       "mission-e2e",
@@ -203,6 +202,7 @@ describe("milestone loop validator E2E", () => {
         integrationBranch: "integration/mission-e2e/1-ms-e2e",
         releaseBranch: "release/mission-e2e/1-ms-e2e",
         mergedBranches: ["task/worker-unit-e2e/unit-e2e"],
+        conflictedBranches: [],
       },
     );
 
@@ -210,7 +210,7 @@ describe("milestone loop validator E2E", () => {
     expect(stdout).toContain("worker-updated");
   });
 
-  it("returns checkpoint_needed when integration merge fails after validator pass", async () => {
+  it("returns milestone_complete when ours strategy auto-resolves integration conflict after validator pass", async () => {
     const mission = makeMission();
     const milestone = makeMilestone();
     const unit = makeUnit();
@@ -343,16 +343,19 @@ describe("milestone loop validator E2E", () => {
 
     expect(result.status).toBe("checkpoint_needed");
     if (result.status === "checkpoint_needed") {
-      expect(result.trigger).toBe("unclassifiable_error");
-      expect(result.summary).toContain("Integration failed after validation pass");
+      expect(result.trigger).toBe("milestone_complete");
+      expect(result.summary).toContain("release/mission-e2e/1-ms-e2e");
     }
     expect(handoffs).toHaveLength(1);
     expect(verdicts).toHaveLength(1);
     expect(lapis.updateMilestoneStatus).not.toHaveBeenCalledWith("ms-e2e", "completed");
     expect(callbacks.onEscalation).toHaveBeenCalledWith(
       "mission-e2e",
-      { kind: "unclassifiable_error", milestoneId: "ms-e2e" },
-      expect.objectContaining({ phase: "integration" }),
+      { kind: "milestone_complete", milestoneId: "ms-e2e", releaseBranch: "release/mission-e2e/1-ms-e2e" },
+      expect.objectContaining({
+        integrationBranch: "integration/mission-e2e/1-ms-e2e",
+        releaseBranch: "release/mission-e2e/1-ms-e2e",
+      }),
     );
   });
 
@@ -429,7 +432,6 @@ describe("milestone loop validator E2E", () => {
 
     await loop.run(mission, [milestone]);
 
-    // The validator spawn is the last in the sequence (research → worker → validator)
     const validatorCwd = spawnCwds[spawnCwds.length - 1];
     expect(validatorCwd).toContain(".git-worktrees/validator-");
     expect(validatorCwd).not.toBe(repoRoot);

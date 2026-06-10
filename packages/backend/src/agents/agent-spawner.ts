@@ -48,6 +48,8 @@ export interface SpawnHandle {
   dispose(): void;
 }
 
+export const TOOL_CALL_CAP_EXCEEDED = "tool_call_cap_exceeded";
+
 export interface SpawnResult {
   status: "completed" | "timed_out" | "failed";
   sessionId: string;
@@ -265,7 +267,7 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
             if (toolCallCount > toolCallCap) {
               settled = true;
               session.abort();
-              const errMsg = `tool_call_cap_exceeded: ${toolCallCount} calls (cap ${toolCallCap})`;
+              const errMsg = `${TOOL_CALL_CAP_EXCEEDED}: ${toolCallCount} calls (cap ${toolCallCap})`;
               logger?.log({
                 sessionId: session.sessionId,
                 agentType: opts.agentType,
