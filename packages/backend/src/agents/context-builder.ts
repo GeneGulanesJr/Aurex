@@ -341,7 +341,10 @@ function buildScrutinyReviewInstructions(): string {
 function buildResearchFindingsSection(findings: ResearchFinding[]): string {
   const items = findings
     .filter((f) => f.status !== "rejected" && f.status !== "expired")
-    .map((f) => `### ${f.title} [${f.relevance}]\nDomain: ${f.domain.join(", ")}\n${f.content}`)
+    .map((f) => {
+      const domain = Array.isArray(f.domain) ? f.domain : [String(f.domain ?? "general")];
+      return `### ${f.title} [${f.relevance}]\nDomain: ${domain.join(", ")}\n${f.content}`;
+    })
     .join("\n\n");
   return `## Research Findings\n\nThe following findings were gathered by the research agent. Use them to inform your work.\n\n${items}`;
 }
