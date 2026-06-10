@@ -151,6 +151,7 @@ export function createMilestoneLoop(
               contextContent: preResearchContext,
               taskPrompt: `Research domain knowledge for milestone "${milestone.title}" BEFORE workers begin. Investigate the codebase areas relevant to the declared paths and modules. Submit findings using write_finding.`,
               timeout: config.workerTimeouts.build,
+              model: config.modelHints.research,
             });
             activeHandles.add(preResearchHandle);
 
@@ -254,6 +255,7 @@ export function createMilestoneLoop(
                 contextContent,
                 taskPrompt: `Implement: ${unit.description}\n\nFollow your skill instructions carefully. Use write_handoff when done.`,
                 timeout: config.workerTimeouts.simple,
+                model: config.modelHints.worker,
               });
               activeHandles.add(handle);
 
@@ -505,6 +507,7 @@ export function createMilestoneLoop(
               contextContent,
               taskPrompt: `Validate milestone "${milestone.title}" as ${validatorType}. Use write_verdict when done.`,
               timeout: config.workerTimeouts.testHeavy,
+              model: config.modelHints[validatorType],
             });
             activeHandles.add(handle);
 

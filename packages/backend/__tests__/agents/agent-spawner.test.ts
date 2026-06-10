@@ -16,6 +16,15 @@ const { mockSession, mockCreateAgentSession } = vi.hoisted(() => {
 });
 
 vi.mock("@earendil-works/pi-coding-agent", () => {
+  class MockAuthStorage {
+    static inMemory = vi.fn(() => ({ setRuntimeApiKey: vi.fn() }));
+  }
+  class MockModelRegistry {
+    registered: any = null;
+    static inMemory = vi.fn(() => new MockModelRegistry());
+    registerProvider = vi.fn((_provider: string, config: any) => { this.registered = config; });
+    find = vi.fn((_provider: string, modelId: string) => ({ provider: "pinyx", id: modelId }));
+  }
   class MockResourceLoader {
     reload = vi.fn().mockResolvedValue(undefined);
     getSkills = vi.fn().mockReturnValue([]);
@@ -24,9 +33,11 @@ vi.mock("@earendil-works/pi-coding-agent", () => {
   }
   return {
     createAgentSession: mockCreateAgentSession,
+    AuthStorage: MockAuthStorage,
+    ModelRegistry: MockModelRegistry,
     SessionManager: { inMemory: vi.fn() },
     DefaultResourceLoader: MockResourceLoader,
-    defineTool: vi.fn(),
+    defineTool: vi.fn((tool) => tool),
   };
 });
 
@@ -38,6 +49,8 @@ vi.mock("@sinclair/typebox", () => ({
     Optional: (schema: any) => schema,
     Array: (schema: any) => ({ type: "array", items: schema }),
     Boolean: (opts?: any) => ({ type: "boolean", ...opts }),
+    Literal: (value: any) => ({ const: value }),
+    Union: (items: any[], opts?: any) => ({ anyOf: items, ...opts }),
   },
 }));
 
@@ -105,8 +118,64 @@ describe("AgentSpawner", () => {
     expect(mockCreateAgentSession).toHaveBeenCalled();
     const callOpts = mockCreateAgentSession.mock.calls[0][0];
     expect(callOpts.cwd).toBe("/repo/.git-worktrees/worker-unit-1");
-    expect(callOpts.tools).toEqual(["read", "write", "edit", "bash"]);
+    expect(callOpts.tools).toEqual(["read", "write", "edit", "bash", "write_handoff", "search_memory"]);
     expect(result.sessionId).toBe("test-session-123");
+  });
+
+  it("routes spawned agents through the configured PiNyx model", async () => {
+    const lapis = {
+      ...createMockLapis(),
+      getSetting: vi.fn().mockResolvedValue({ endpoint: "http://pinyx:7331/" }),
+    } as unknown as LaPisClient;
+    const spawner = createAgentSpawner({
+      lapis,
+      agentDir: "/home/user/.pi/agent",
+      defaultTimeout: 120_000,
+    });
+
+    await spawner.spawn({
+      ...baseSpawnOpts,
+      model: "kilo/kilo-auto",
+    });
+
+    const callOpts = mockCreateAgentSession.mock.calls[0][0];
+    expect(callOpts.model).toEqual({ provider: "pinyx", id: "kilo/kilo-auto" });
+    expect(callOpts.modelRegistry).toBeDefined();
+    expect(callOpts.authStorage).toBeDefined();
+  });
+
+  it("includes custom completion tools in the Pi SDK allowlist", async () => {
+    const lapis = createMockLapis();
+    const spawner = createAgentSpawner({
+      lapis,
+      agentDir: "/home/user/.pi/agent",
+      defaultTimeout: 120_000,
+    });
+
+    await spawner.spawn(baseSpawnOpts);
+    await spawner.spawn({
+      ...baseSpawnOpts,
+      agentType: "validator_scrutiny",
+      agentId: "validator-1",
+      contractId: "contract-1",
+      unitId: undefined,
+    });
+    await spawner.spawn({
+      ...baseSpawnOpts,
+      agentType: "research",
+      agentId: "research-1",
+      unitId: undefined,
+    });
+
+    expect(mockCreateAgentSession.mock.calls[0][0].tools).toEqual(
+      expect.arrayContaining(["write_handoff", "search_memory"]),
+    );
+    expect(mockCreateAgentSession.mock.calls[1][0].tools).toEqual(
+      expect.arrayContaining(["write_verdict"]),
+    );
+    expect(mockCreateAgentSession.mock.calls[2][0].tools).toEqual(
+      expect.arrayContaining(["write_finding", "search_memory"]),
+    );
   });
 
   it("registers agent session in LaPis", async () => {
