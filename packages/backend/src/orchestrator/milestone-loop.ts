@@ -729,6 +729,19 @@ export function createMilestoneLoop(
               return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
             }
 
+            // Log the rescope so the rescopes counter increments in LaPis.
+            // Without this, the negotiator's rescopeCount is always 0 and the
+            // auto-rescope limit is never enforced.
+            await lapis.logRescope(milestone.id, {
+              milestoneId: milestone.id,
+              contractId,
+              reason: decision.reason,
+              previousScope: units.map((u: WorkingUnit) => u.description).join("; "),
+              newScope: resp.units.map((u) => u.description).join("; "),
+            }).catch((err) => {
+              console.warn(`[milestone-loop] Failed to log rescope:`, err instanceof Error ? err.message : err);
+            });
+
             loopActive = true;
             continue;
           }

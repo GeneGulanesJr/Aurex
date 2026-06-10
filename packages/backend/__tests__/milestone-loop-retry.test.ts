@@ -109,6 +109,7 @@ function createMockLapis(units: WorkingUnit[], verdicts: ValidationVerdict[], ha
       id: `new-${Date.now()}`, ...unit, milestoneId: _msId, status: "planned", taskBranch: "", worktreePath: "", sessionId: "",
     })),
     getFindings: vi.fn().mockResolvedValue([]),
+    logRescope: vi.fn().mockResolvedValue(undefined),
     runCompression: vi.fn().mockResolvedValue(undefined),
   } as unknown as LaPisClient;
 }
