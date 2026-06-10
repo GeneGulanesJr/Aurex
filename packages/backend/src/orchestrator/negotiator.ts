@@ -50,10 +50,21 @@ export function createNegotiator(lapis: LaPisClient) {
         return true;
       });
 
+      // Keep only the latest verdict per validator type. Verdicts accumulate
+      // across retry cycles (old fails + new passes), so using ALL of them
+      // causes stale "fail" verdicts to override fresh "pass" verdicts.
+      // Verdicts are returned in insertion order, so the last one per type wins.
+      const latestByType = new Map<string, ValidationVerdict>();
+      for (const v of validVerdicts) {
+        const key = v.validatorType ?? "validator_scrutiny";
+        latestByType.set(key, v);
+      }
+      const latestVerdicts = [...latestByType.values()];
+
       // Stagnation detection: if the exact same verdict pattern was seen
       // in the prior cycle, the loop is not making progress. Escalate
       // immediately instead of retrying/rescoping endlessly.
-      const currentSignature = hashVerdicts(validVerdicts);
+      const currentSignature = hashVerdicts(latestVerdicts);
       if (priorSignature !== null && priorSignature === currentSignature) {
         return {
           decision: "escalate",
@@ -62,23 +73,23 @@ export function createNegotiator(lapis: LaPisClient) {
       }
       priorSignature = currentSignature;
 
-      if (validVerdicts.length === 0) {
+      if (latestVerdicts.length === 0) {
         return { decision: "escalate", reason: "No validator verdicts were recorded" };
       }
 
-      const scrutinyVerdict = validVerdicts.find((v) => v.validatorType === "validator_scrutiny");
+      const scrutinyVerdict = latestVerdicts.find((v) => v.validatorType === "validator_scrutiny");
       if (!scrutinyVerdict) {
         return { decision: "escalate", reason: "Missing scrutiny validator verdict" };
       }
 
       // Check if all verdicts pass
-      const allPass = validVerdicts.every((v) => v.verdict === "pass");
+      const allPass = latestVerdicts.every((v) => v.verdict === "pass");
       if (allPass) {
         return { decision: "pass", reason: "All validators passed" };
       }
 
       // User testing failure always blocks (override authority)
-      const userTestFailure = validVerdicts.find(
+      const userTestFailure = latestVerdicts.find(
         (v) => v.validatorType === "validator_user_testing" && v.verdict === "fail",
       );
       if (userTestFailure) {
@@ -99,7 +110,7 @@ export function createNegotiator(lapis: LaPisClient) {
       }
 
       // Scrutiny-only failure — classify
-      const scrutinyFailure = validVerdicts.find(
+      const scrutinyFailure = latestVerdicts.find(
         // Stryker disable next-line all: equivalent mutant — with the current
         // validator types (scarcity | user_testing), a non-scrutiny fail cannot
         // reach this point (user_testing fail exits earlier), so swapping the
