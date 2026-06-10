@@ -23,7 +23,11 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-const AUTO_RESCOPE_BATCH_LIMIT = 2;
+// Auto-rescope is disabled by default (0). When enabled, the milestone loop
+// will automatically re-plan via Pinyx after exhausting validator retries.
+// When disabled (0), the loop escalates to the user after retries, giving
+// the human direct control over whether to rescope, retry, or abort.
+const AUTO_RESCOPE_BATCH_LIMIT = 0;
 
 export type MilestoneLoopResult =
   | { status: "completed" }

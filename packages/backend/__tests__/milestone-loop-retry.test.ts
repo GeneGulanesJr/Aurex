@@ -166,34 +166,18 @@ describe("milestone loop — retry/rescope handling", () => {
     expect((lapis.incrementRetry as any).mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("re-plans milestone when negotiator returns 'rescope'", async () => {
+  it("escalates to user instead of auto-rescoping when AUTO_RESCOPE_BATCH_LIMIT=0", async () => {
     const units = [makeUnit("u-1", ["src/auth/"], ["auth"])];
     const verdicts = [failVerdict(["u-1"])];
     const lapis = createMockLapis(units, verdicts);
 
-    // Simulate: first negotiation returns retry (retries=0 < maxRetries), second returns retry (retries=1),
-    // third returns rescope (retries=2 >= maxRetries, rescopes=0 < maxRescopes)
+    // Retries exhausted, rescopeCount < effectiveMaxRescopes(0) is FALSE → escalate
     (lapis.incrementRetry as any)
-      .mockResolvedValueOnce({ milestoneId: "ms-1", retries: 2, rescopes: 0 })
-      .mockResolvedValueOnce({ milestoneId: "ms-1", retries: 2, rescopes: 1 });
+      .mockResolvedValueOnce({ milestoneId: "ms-1", retries: 2, rescopes: 0 });
 
-    // For rescope: pinyx re-plans, lapis creates new units
-    (lapis.getVerdicts as any).mockResolvedValueOnce(verdicts) // first round: fail
-      .mockResolvedValueOnce([passVerdict]); // second round (after rescope re-plan): pass
-
-    // getWorkingUnitsForMilestone: after rescope, returns new units
-    let getUnitsCallCount = 0;
-    (lapis.getWorkingUnitsForMilestone as any).mockImplementation(async () => {
-      getUnitsCallCount++;
-      return units.map(u => ({ ...u, status: "planned" }));
-    });
+    (lapis.getVerdicts as any).mockResolvedValueOnce(verdicts);
 
     const pinyx = createMockPinyx();
-    (pinyx.chat as any).mockResolvedValueOnce({
-      content: JSON.stringify({ units: [{ description: "Fixed auth", declaredPaths: ["src/auth/"], declaredModules: ["auth"] }] }),
-      finishReason: "stop",
-      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-    });
     const callbacks = {
       onEscalation: vi.fn(),
       onAgentStatus: vi.fn(),
@@ -208,11 +192,14 @@ describe("milestone loop — retry/rescope handling", () => {
 
     const result = await loop.run(makeMission(), [makeMilestone()]);
 
-    // Should complete after rescope + re-plan
+    // Should escalate to user instead of auto-rescoping
     expect(result.status).toBe("checkpoint_needed");
+    if (result.status === "checkpoint_needed") {
+      expect(result.trigger).toBe("rescope_limit");
+    }
 
-    // PiNyx should have been called for re-planning
-    expect((pinyx.chat as any).mock.calls.length).toBeGreaterThanOrEqual(1);
+    // PiNyx should NOT have been called — no auto-rescope
+    expect((pinyx.chat as any).mock.calls.length).toBe(0);
   });
 
   it("asks for human direction after two automatic rescopes even when configured higher", async () => {
@@ -239,7 +226,7 @@ describe("milestone loop — retry/rescope handling", () => {
     expect(result.status).toBe("checkpoint_needed");
     if (result.status === "checkpoint_needed") {
       expect(result.trigger).toBe("rescope_limit");
-      expect(result.summary).toContain("at most 2 times");
+      expect(result.summary).toContain("at most 0 times");
     }
     expect(pinyx.chat).not.toHaveBeenCalled();
   });
