@@ -49,7 +49,7 @@ export interface MilestoneLoopConfig {
   gitMainBranch: string;
   eventBus: EventBus;
   logger?: AgentLogger;
-  onCompression?: (missionId: string, trigger: CompressionTrigger) => Promise<void>;
+  onCompression?: (missionId: string, trigger: CompressionTrigger) => Promise<unknown>;
   onPostMilestoneScan?: (missionId: string, root: string) => Promise<void>;
 }
 

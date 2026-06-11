@@ -16,6 +16,19 @@ export interface LaPisClientConfig {
   lapisEndpoint: string;
 }
 
+/**
+ * Structured response from LaPis's POST /missions/:missionId/compression endpoint.
+ * Mirrors the shape returned by `compressMissionState` in LaPis
+ * (src/compression/mission-state.js). Updated from the previous void return
+ * so the orchestrator can surface compression results in the dashboard and
+ * feed them into downstream planner invocations.
+ */
+export interface CompressionResult {
+  summary: string | null;
+  tokensSaved: number;
+  error?: string;
+}
+
 export interface LaPisClient {
   // Mission state
   createMission(description: string, config: MissionConfig): Promise<Mission>;
@@ -98,7 +111,7 @@ export interface LaPisClient {
   logRescope(milestoneId: string, event: Omit<RescopeEvent, "id" | "timestamp">): Promise<void>;
 
   // State compression
-  runCompression(missionId: string, trigger: CompressionTrigger): Promise<void>;
+  runCompression(missionId: string, trigger: CompressionTrigger): Promise<CompressionResult>;
 
   // Checkpoints
   createCheckpoint(checkpoint: Omit<CheckpointRecord, "id" | "status" | "createdAt" | "resolvedAt">): Promise<CheckpointRecord>;
@@ -377,8 +390,11 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
     },
 
     // State compression delegated to LaPis.
+    // Note: route is /compression (with the 'n') — not /compress. The previous
+    // URL was silently 404'ing. LaPis's actual route is registered in
+    // src/http/server.js as POST /missions/:missionId/compression.
     runCompression(missionId, trigger) {
-      return post(`/missions/${missionId}/compress`, { trigger });
+      return post(`/missions/${missionId}/compression`, { trigger }) as Promise<CompressionResult>;
     },
 
     // Checkpoints
