@@ -29,11 +29,22 @@ function isMetricsEnabled(): boolean {
   return Boolean(exporter) && exporter !== "none";
 }
 
-function requestAttributes(request: FastifyRequest, reply?: FastifyReply): Attributes {
+function normalizedRoute(request: FastifyRequest): string {
+  return request.routeOptions?.url ?? "unmatched";
+}
+
+function activeRequestAttributes(request: FastifyRequest): Attributes {
   return {
-    method: request.method,
-    route: request.routeOptions?.url ?? request.url,
-    status_code: reply?.statusCode ?? 0,
+    "http.request.method": request.method,
+    "http.route": normalizedRoute(request),
+  };
+}
+
+function completedRequestAttributes(request: FastifyRequest, reply: FastifyReply): Attributes {
+  return {
+    "http.request.method": request.method,
+    "http.route": normalizedRoute(request),
+    "http.response.status_code": reply.statusCode,
   };
 }
 
@@ -108,7 +119,8 @@ export function startTelemetry(): TelemetryHandle {
     unit: "ms",
   });
   eventLoopDelayMs.addCallback((observable) => {
-    observable.observe(eventLoopDelay.mean / 1_000_000);
+    const meanDelayMs = eventLoopDelay.mean / 1_000_000;
+    observable.observe(Number.isFinite(meanDelayMs) ? meanDelayMs : 0);
     eventLoopDelay.reset();
   });
 
@@ -117,19 +129,19 @@ export function startTelemetry(): TelemetryHandle {
     registerFastifyMetrics(app: FastifyInstance) {
       app.addHook("onRequest", async (request) => {
         (request as RequestWithTelemetryStart).telemetryStart = hrtime.bigint();
-        activeRequests.add(1, requestAttributes(request));
+        activeRequests.add(1, activeRequestAttributes(request));
       });
 
       app.addHook("onResponse", async (request, reply) => {
         const telemetryRequest = request as RequestWithTelemetryStart;
         const startedAt = telemetryRequest.telemetryStart;
-        const attributes = requestAttributes(request, reply);
+        const attributes = completedRequestAttributes(request, reply);
         requestsTotal.add(1, attributes);
         if (startedAt) {
           const elapsedMs = Number(hrtime.bigint() - startedAt) / 1_000_000;
           requestDurationMs.record(elapsedMs, attributes);
         }
-        activeRequests.add(-1, requestAttributes(request));
+        activeRequests.add(-1, activeRequestAttributes(request));
       });
     },
     async shutdown() {

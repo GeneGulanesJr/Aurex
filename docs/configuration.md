@@ -62,7 +62,7 @@ PiNyx (the LLM gateway) is **not configured via environment variables**. Provide
 
 ## OpenTelemetry metrics
 
-Aurex runs an OpenTelemetry Collector in Docker Compose as a metrics bridge only. The backend exports OTLP metrics to the collector, the collector exposes Aurex application metrics at `http://localhost:9464/metrics`, and collector self-metrics are exposed separately at `http://localhost:8888/metrics`. Prometheus and Grafana are intentionally not bundled so an external monitoring system can scrape those endpoints.
+Aurex runs an OpenTelemetry Collector in Docker Compose as a metrics bridge only. The backend exports OTLP metrics to the collector, the collector exposes Aurex application metrics at `http://localhost:9464/metrics`, and collector self-metrics are exposed separately at `http://localhost:8888/metrics`. Backend HTTP metric labels use normalized Fastify route templates; unmatched requests are labeled `unmatched` to avoid high-cardinality URL labels. Prometheus and Grafana are intentionally not bundled so an external monitoring system can scrape those endpoints.
 
 | Variable | Type | Default | Effect | Source |
 |---|---|---|---|---|
