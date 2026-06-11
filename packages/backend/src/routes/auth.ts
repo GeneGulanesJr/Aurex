@@ -1,25 +1,72 @@
-// packages/backend/src/routes/auth.ts
+import { jwtVerify, createRemoteJWKSet } from "jose";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 
-export function createAuthHook(apiKey: string | null) {
-  if (!apiKey) {
-    return async (_request: FastifyRequest, _reply: FastifyReply) => {};
-  }
+export interface Auth0User {
+  sub: string;
+  email?: string;
+  name?: string;
+  picture?: string;
+}
 
+let jwksCache: ReturnType<typeof createRemoteJWKSet> | null = null;
+
+function getJWKS(domain: string) {
+  if (!jwksCache) {
+    jwksCache = createRemoteJWKSet(new URL(`https://${domain}/.well-known/jwks.json`));
+  }
+  return jwksCache;
+}
+
+const SKIP_PATHS = ["/health", "/api/github/callback"];
+
+function shouldSkip(url: string): boolean {
+  if (url.startsWith("/ws")) return true;
+  return SKIP_PATHS.some((p) => url === p);
+}
+
+export async function verifyJwt(
+  token: string,
+  domain: string,
+  audience: string,
+): Promise<Auth0User> {
+  const { payload } = await jwtVerify(token, getJWKS(domain), {
+    issuer: `https://${domain}/`,
+    audience,
+  });
+  return {
+    sub: payload.sub ?? "",
+    email: typeof payload.email === "string" ? payload.email : undefined,
+    name: typeof payload.name === "string" ? payload.name : undefined,
+    picture: typeof payload.picture === "string" ? payload.picture : undefined,
+  };
+}
+
+export function createAuthHook(
+  auth0Domain: string,
+  auth0Audience: string,
+) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    if (request.url === "/health" || request.url.startsWith("/ws") || request.url.startsWith("/api/github/callback")) return;
+    if (shouldSkip(request.url)) return;
+
     const header = request.headers.authorization;
     if (!header || !header.startsWith("Bearer ")) {
-      return reply.status(401).send({ error: "Missing or invalid Authorization header" });
+      return reply.status(401).send({ error: "Missing Authorization header" });
     }
+
     const token = header.slice(7);
-    if (token !== apiKey) {
-      return reply.status(403).send({ error: "Invalid API key" });
+    try {
+      request.user = await verifyJwt(token, auth0Domain, auth0Audience);
+    } catch {
+      return reply.status(401).send({ error: "Invalid or expired token" });
     }
   };
 }
 
-export function registerGlobalAuth(app: FastifyInstance, apiKey: string | null): void {
-  const authHook = createAuthHook(apiKey);
+export function registerGlobalAuth(
+  app: FastifyInstance,
+  auth0Domain: string,
+  auth0Audience: string,
+): void {
+  const authHook = createAuthHook(auth0Domain, auth0Audience);
   app.addHook("onRequest", authHook);
 }

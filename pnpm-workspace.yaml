@@ -3,5 +3,6 @@ packages:
 allowBuilds:
   '@google/genai': true
   better-sqlite3: true
+  browser-tabs-lock: true
   esbuild: true
   protobufjs: true

@@ -3,6 +3,7 @@ import { useWebSocket } from "./hooks/useWebSocket";
 import { useMissions } from "./hooks/useMissions";
 import { useMission } from "./hooks/useMission";
 import { useTheme } from "./hooks/useTheme";
+import { useAuth } from "./hooks/useAuth";
 import { useGitHub } from "./hooks/useGitHub";
 import { usePinyxStatus } from "./hooks/usePinyxStatus";
 import { useBreakpoint } from "./hooks/useBreakpoint";
@@ -16,11 +17,13 @@ import { MissionSidebar } from "./active/MissionSidebar";
 import { StatusBoard } from "./passive/StatusBoard";
 import { EscalationOverlay } from "./active/EscalationOverlay";
 import { IntegrationsPanel } from "./active/IntegrationsPanel";
+import { LoginScreen } from "./frame/LoginScreen";
 import { getSessionState, clearSessionState } from "./lib/sessionState";
 import { SettingsPanel } from "./active/SettingsPanel";
 import { QuotaPanel } from "./active/QuotaPanel";
 import { TopBar } from "./frame/TopBar";
 import { TelemetryBar } from "./frame/TelemetryBar";
+import { setTokenGetter } from "./api";
 import { submitCheckpoint, createMission, restartMission, getRepoHotspots, getRepoSuggestions, getRepoReadiness, listRepoScans } from "./api";
 import type { WsClientEvent, CheckpointDecision } from "@aurex/shared";
 import type { CodeSummaryResponse, CodeHotspotsResponse, RepoSuggestion, RepoReadinessProfile } from "./api";
@@ -28,6 +31,14 @@ import type { BumblebeeScanResult, BumblebeeFinding } from "@aurex/shared";
 
 export function App() {
   const { theme, setTheme } = useTheme();
+  const { isAuthenticated, isLoading: authLoading, getToken } = useAuth();
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      setTokenGetter(getToken);
+    }
+  }, [isAuthenticated, getToken]);
+
   const github = useGitHub();
   const pinyxStatus = usePinyxStatus();
   const systemReady = github.connected && pinyxStatus.configured;
@@ -98,7 +109,7 @@ export function App() {
 
   const { connected } = useWebSocket(combinedHandler, {
     missionId: missionsState.selectedMissionId,
-    apiKey: import.meta.env.VITE_AUREX_API_KEY || undefined,
+    getToken,
   });
 
   // Browser notifications + tab badge
@@ -206,6 +217,11 @@ export function App() {
     },
     onToggleSidebar: toggleSidebar,
   });
+
+  // Auth gate
+  if (!isAuthenticated && !authLoading) {
+    return <LoginScreen />;
+  }
 
   // Connecting overlay
   if (!connected) {

@@ -93,10 +93,12 @@ async function main() {
   const app = Fastify({ logger: true });
   await app.register(websocket);
 
-  // Auth (no-op if API_KEY not set)
-  registerGlobalAuth(app, config.apiKey);
+  registerGlobalAuth(app, config.auth0Domain, config.auth0Audience);
 
-  registerWebSocketRoutes(app, eventBus, config.apiKey);
+  registerWebSocketRoutes(app, eventBus, {
+    auth0Domain: config.auth0Domain,
+    auth0Audience: config.auth0Audience,
+  });
 
   // Health endpoint
   app.get("/health", async () => {

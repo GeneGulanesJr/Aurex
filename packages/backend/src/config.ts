@@ -1,10 +1,8 @@
 // packages/backend/src/config.ts
 
 export interface AppConfig {
-  // LaPis (shared state) — HTTP only
   lapisEndpoint: string;
 
-  // Agent timeouts (ms)
   workerTimeouts: {
     simple: number;
     build: number;
@@ -13,30 +11,23 @@ export interface AppConfig {
   validatorTimeout: number;
   researchTimeout: number;
 
-  // Mission limits
   maxValidatorRetries: number;
   maxRescopes: number;
   validatorToolCallCap: number;
   missionCostCap: number;
 
-  // Git
   repoRoot: string;
-  // Aurex install root — where the orchestrator's own skill files live
-  // (packages/backend/src/skills/*.md). Distinct from repoRoot, which is
-  // the parent directory of cloned mission target repos.
   aurexRoot: string;
   gitMainBranch: string;
 
-  // Server
   port: number;
 
-  // Authentication
-  apiKey: string | null;
+  auth0Domain: string;
+  auth0Audience: string;
+  auth0ClientId: string;
 
-  // Multi-mission concurrency
   maxConcurrentMissions: number;
 
-  // Quota / coding plan
   quotaEnabled: boolean;
   quotaWindowDurationMs: number;
   quotaBurnDurationMs: number;
@@ -89,7 +80,9 @@ export function loadConfig(): AppConfig {
     gitMainBranch: env("GIT_MAIN_BRANCH", "main"),
 
     port: envInt("PORT", 3000),
-    apiKey: process.env.API_KEY || null,
+    auth0Domain: env("AUTH0_DOMAIN"),
+    auth0Audience: env("AUTH0_AUDIENCE"),
+    auth0ClientId: env("AUTH0_CLIENT_ID"),
     maxConcurrentMissions: envInt("MAX_CONCURRENT_MISSIONS", 3),
 
     quotaEnabled: process.env.QUOTA_ENABLED === "true",

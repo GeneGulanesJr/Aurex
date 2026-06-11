@@ -17,7 +17,7 @@ export function parseWsMessage(data: string): { seq?: number; event?: WsClientEv
 
 export interface UseWebSocketOptions {
   missionId?: string | null;
-  apiKey?: string;
+  getToken?: () => Promise<string>;
 }
 
 export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: UseWebSocketOptions) {
@@ -38,15 +38,20 @@ export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: Use
       if (!mountedRef.current) return;
 
       const ws = new WebSocket(buildWsUrl(window.location.host, window.location.protocol));
-      let authenticated = !optsRef.current?.apiKey;
+      let authenticated = !optsRef.current?.getToken;
 
-      ws.onopen = () => {
+      ws.onopen = async () => {
         if (!mountedRef.current) { ws.close(); return; }
         reconnectDelayRef.current = RECONNECT_BASE_DELAY;
 
-        // Send auth if api key is configured
-        if (optsRef.current?.apiKey) {
-          ws.send(JSON.stringify({ type: "auth", token: optsRef.current.apiKey }));
+        if (optsRef.current?.getToken) {
+          try {
+            const token = await optsRef.current.getToken();
+            ws.send(JSON.stringify({ type: "auth", token }));
+          } catch {
+            ws.close(4003, "Auth failed");
+            return;
+          }
         }
 
         // Send replay request from last known sequence

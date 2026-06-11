@@ -1,6 +1,6 @@
-// packages/backend/src/ws/events.ts
 import type { FastifyInstance } from "fastify";
 import type { WsClientEvent } from "@aurex/shared";
+import { verifyJwt } from "../routes/auth.js";
 
 export type EventHandler = (event: WsClientEvent) => void;
 
@@ -69,36 +69,47 @@ export function createEventBus(): EventBus {
   };
 }
 
+export interface WsAuthConfig {
+  auth0Domain: string;
+  auth0Audience: string;
+}
+
 export function registerWebSocketRoutes(
   app: FastifyInstance,
   eventBus: EventBus,
-  apiKey: string | null = null,
+  authConfig: WsAuthConfig,
 ): void {
   app.get("/ws", { websocket: true }, (socket) => {
-    let authenticated = !apiKey;
+    let authenticated = false;
     const subscribedMissions = new Set<string>();
-    const pendingAuthTimeout = apiKey
-      ? setTimeout(() => {
-          if (!authenticated && socket.readyState === socket.OPEN) {
-            socket.close(4001, "Auth timeout");
-          }
-        }, 5000)
-      : null;
+
+    const pendingAuthTimeout = setTimeout(() => {
+      if (!authenticated && socket.readyState === socket.OPEN) {
+        socket.close(4001, "Auth timeout");
+      }
+    }, 10000);
 
     let unsubscribe: (() => void) | null = null;
 
-    const messageHandler = (raw: Buffer) => {
+    const messageHandler = async (raw: Buffer) => {
       try {
         const msg = JSON.parse(raw.toString());
 
         if (!authenticated) {
-          if (msg.type === "auth" && msg.token === apiKey) {
-            authenticated = true;
-            if (pendingAuthTimeout) clearTimeout(pendingAuthTimeout);
-            if (socket.readyState === socket.OPEN) {
-              socket.send(JSON.stringify({ type: "auth_ok" }));
+          if (msg.type === "auth" && typeof msg.token === "string") {
+            try {
+              await verifyJwt(msg.token, authConfig.auth0Domain, authConfig.auth0Audience);
+              authenticated = true;
+              clearTimeout(pendingAuthTimeout);
+              if (socket.readyState === socket.OPEN) {
+                socket.send(JSON.stringify({ type: "auth_ok" }));
+              }
+              wireUp();
+            } catch {
+              if (socket.readyState === socket.OPEN) {
+                socket.close(4003, "Invalid auth");
+              }
             }
-            wireUp();
           } else {
             if (socket.readyState === socket.OPEN) {
               socket.close(4003, "Invalid auth");
@@ -141,7 +152,6 @@ export function registerWebSocketRoutes(
     };
 
     function wireUp() {
-      // Defer to next tick so client message handlers are registered first
       setImmediate(() => {
         if (socket.readyState === socket.OPEN) {
           socket.send(JSON.stringify({ type: "hello", seq: eventBus.getCurrentSeq() }));
@@ -162,17 +172,13 @@ export function registerWebSocketRoutes(
 
     socket.on("message", messageHandler);
 
-    if (authenticated) {
-      wireUp();
-    }
-
     socket.on("close", () => {
       if (unsubscribe) unsubscribe();
-      if (pendingAuthTimeout) clearTimeout(pendingAuthTimeout);
+      clearTimeout(pendingAuthTimeout);
     });
     socket.on("error", () => {
       if (unsubscribe) unsubscribe();
-      if (pendingAuthTimeout) clearTimeout(pendingAuthTimeout);
+      clearTimeout(pendingAuthTimeout);
     });
   });
 }
