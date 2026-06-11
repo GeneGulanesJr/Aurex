@@ -45,6 +45,10 @@ export interface SpawnOptions {
   model?: string;
   /** Overrides the configured validator tool-call cap for this session. 0 disables the cap. */
   validatorToolCallCap?: number;
+  /** When true, tool/cost activity refreshes the timeout window instead of treating timeout as a hard wall clock. */
+  extendTimeoutOnActivity?: boolean;
+  /** Upper bound for activity-extended sessions. Defaults to the base timeout when extension is disabled. */
+  maxTimeout?: number;
 }
 
 export interface SpawnHandle {
@@ -228,10 +232,28 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
       });
 
       let settled = false;
+      let workerHandoffAccepted = false;
+      const workerHandoffRequired = opts.agentType === "worker"
+        && customTools.some((tool) => tool?.name === "write_handoff");
       let toolCallCount = 0;
       const isValidatorSession = opts.agentType === "validator_scrutiny" || opts.agentType === "validator_user_testing";
       const effectiveValidatorToolCallCap = opts.validatorToolCallCap ?? validatorToolCallCap;
       const toolCallCap = isValidatorSession && effectiveValidatorToolCallCap > 0 ? effectiveValidatorToolCallCap : Infinity;
+      const failSession = (message: string, data?: Record<string, unknown>) => {
+        if (settled) return;
+        settled = true;
+        logger?.log({
+          sessionId: session.sessionId,
+          agentType: opts.agentType,
+          missionId: opts.missionId,
+          milestoneId: opts.milestoneId,
+          unitId: opts.unitId,
+          event: "failed",
+          data,
+        });
+        emitOutput(opts, "failed", message, data);
+        resolveCompleted({ status: "failed", sessionId: session.sessionId, error: message });
+      };
       const completeSuccessfully = (message: string) => {
         if (settled) return;
         settled = true;
@@ -248,15 +270,49 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
       };
 
       onWorkerHandoffAccepted = () => {
+        workerHandoffAccepted = true;
         completeSuccessfully("Worker handoff accepted; ending session.");
         session.abort();
       };
 
+      let refreshTimeoutOnActivity: (activity: string) => void = () => {};
+      const activeToolExecutions = new Set<string>();
+
       const unsubscribe = session.subscribe(async (event: any) => {
         if (settled) return;
 
+        if (event.type === "tool_execution_start") {
+          const id = typeof event.toolCallId === "string" ? event.toolCallId : `${event.toolName ?? "tool"}:${Date.now()}`;
+          activeToolExecutions.add(id);
+          refreshTimeoutOnActivity(`tool_start:${event.toolName ?? "unknown"}`);
+        }
+
+        if (event.type === "tool_execution_update") {
+          refreshTimeoutOnActivity(`tool_update:${event.toolName ?? "unknown"}`);
+        }
+
+        if (event.type === "tool_execution_end") {
+          if (typeof event.toolCallId === "string") activeToolExecutions.delete(event.toolCallId);
+          logger?.log({
+            sessionId: session.sessionId,
+            agentType: opts.agentType,
+            missionId: opts.missionId,
+            milestoneId: opts.milestoneId,
+            unitId: opts.unitId,
+            event: "tool_result",
+            data: { tool: event.toolName, isError: event.isError, result: event.result },
+          });
+          refreshTimeoutOnActivity(`tool_end:${event.toolName ?? "unknown"}`);
+        }
+
         if (event.type === "agent_end") {
-          completeSuccessfully("Agent completed successfully");
+          if (workerHandoffRequired && !workerHandoffAccepted) {
+            failSession("Worker session ended before submitting an accepted write_handoff.", {
+              error: "worker_handoff_missing",
+            });
+          } else {
+            completeSuccessfully("Agent completed successfully");
+          }
         }
 
         if (event.type === "message_update") {
@@ -327,6 +383,7 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
               data: { tool: toolName, input: toolInput },
             });
             emitOutput(opts, "tool_call", `${toolName} ${snippet}`, { tool: toolName, snippet });
+            refreshTimeoutOnActivity(`tool:${toolName}`);
           }
 
           const usage = event.assistantMessageEvent?.usage;
@@ -369,36 +426,89 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
             }).catch(() => {});
 
             config.onCost?.(opts.missionId, missionCumulativeCost, missionCumulativeTokens, delta);
+            refreshTimeoutOnActivity("usage");
           }
         }
       });
 
       // timeout <= 0 disables the deadline entirely — agent runs until it
       // finishes naturally or is aborted for other reasons (cost cap, tool
-      // cap, explicit abort). Useful for free-tier models that need more
-      // than 5 minutes to complete thorough exploration.
+      // cap, explicit abort). For workers, callers can opt into an
+      // activity-extended timeout: tool/cost activity refreshes the idle
+      // window while maxTimeout keeps runaway sessions bounded.
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
-      if (timeout > 0) {
-        timeoutId = setTimeout(() => {
-          if (!settled) {
-            settled = true;
-            session.abort();
+      const timeoutStartedAt = Date.now();
+      const extendTimeoutOnActivity = opts.extendTimeoutOnActivity === true;
+      const maxTimeout = Math.max(timeout, opts.maxTimeout ?? timeout);
+      const fireTimeout = () => {
+        if (settled) return;
+
+        if (extendTimeoutOnActivity && activeToolExecutions.size > 0) {
+          const elapsed = Date.now() - timeoutStartedAt;
+          const remainingTotal = maxTimeout - elapsed;
+          if (remainingTotal > 0) {
+            const nextDelay = Math.min(timeout, remainingTotal);
+            scheduleTimeout(nextDelay);
             logger?.log({
               sessionId: session.sessionId,
               agentType: opts.agentType,
               missionId: opts.missionId,
               milestoneId: opts.milestoneId,
               unitId: opts.unitId,
-              event: "timed_out",
+              event: "config_decision",
+              data: {
+                decision: "timeout_extended",
+                activity: "active_tool_execution",
+                activeToolExecutions: activeToolExecutions.size,
+                nextDelay,
+                maxTimeout,
+                elapsed,
+              },
             });
-            emitOutput(opts, "timed_out", "Agent timed out");
-            resolveCompleted({ status: "timed_out", sessionId: session.sessionId });
+            return;
           }
-        }, timeout);
+        }
+
+        settled = true;
+        session.abort();
+        logger?.log({
+          sessionId: session.sessionId,
+          agentType: opts.agentType,
+          missionId: opts.missionId,
+          milestoneId: opts.milestoneId,
+          unitId: opts.unitId,
+          event: "timed_out",
+        });
+        emitOutput(opts, "timed_out", "Agent timed out");
+        resolveCompleted({ status: "timed_out", sessionId: session.sessionId });
+      };
+      const scheduleTimeout = (delayMs: number) => {
+        if (timeoutId) clearTimeout(timeoutId);
+        timeoutId = setTimeout(fireTimeout, delayMs);
         // Avoid keeping the process alive solely because of the timeout
         if (typeof timeoutId === "object" && timeoutId && "unref" in timeoutId) {
           (timeoutId as { unref: () => void }).unref();
         }
+      };
+      refreshTimeoutOnActivity = (activity: string) => {
+        if (!extendTimeoutOnActivity || timeout <= 0 || settled) return;
+        const elapsed = Date.now() - timeoutStartedAt;
+        const remainingTotal = maxTimeout - elapsed;
+        if (remainingTotal <= 0) return;
+        const nextDelay = Math.min(timeout, remainingTotal);
+        scheduleTimeout(nextDelay);
+        logger?.log({
+          sessionId: session.sessionId,
+          agentType: opts.agentType,
+          missionId: opts.missionId,
+          milestoneId: opts.milestoneId,
+          unitId: opts.unitId,
+          event: "config_decision",
+          data: { decision: "timeout_extended", activity, nextDelay, maxTimeout, elapsed },
+        });
+      };
+      if (timeout > 0) {
+        scheduleTimeout(timeout);
       } else {
         logger?.log({
           sessionId: session.sessionId,

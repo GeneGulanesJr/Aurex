@@ -160,6 +160,8 @@ export function createMilestoneLoop(
           let completedCount = 0;
           let failedCount = 0;
           const failedUnitIds: string[] = [];
+          const handoffFailureUnitIds: string[] = [];
+          const timeoutFailureUnitIds: string[] = [];
           const integrationUnits: WorkingUnit[] = [];
           const validatorUnits: ValidatorUnitContext[] = [];
 
@@ -312,6 +314,7 @@ export function createMilestoneLoop(
                 reason: "worker spawned",
                 actorId: "orchestrator",
               });
+              const workerTimeout = selectWorkerTimeout(unit, contract?.content?.testCommands ?? [], config.workerTimeouts);
               const handle = await spawner.spawn({
                 agentType: "worker",
                 agentId,
@@ -329,7 +332,9 @@ export function createMilestoneLoop(
                   "Follow your skill instructions carefully.",
                   "When useful work is committed, verification is blocked, or time is running short, call write_handoff immediately with partial/blocking details.",
                 ].join("\n"),
-                timeout: 0,
+                timeout: workerTimeout,
+                extendTimeoutOnActivity: true,
+                maxTimeout: selectWorkerMaxTimeout(workerTimeout),
                 model: config.modelHints.worker,
               });
               activeHandles.add(handle);
@@ -377,7 +382,9 @@ export function createMilestoneLoop(
                   callbacks.onError(mission.id, "worker_timeout", `Worker "${unit.description}" timed out`, { workerId: agentId, milestoneId: milestone.id, recoverable: true });
                   failedCount++;
                   failedUnitIds.push(unit.id);
+                  timeoutFailureUnitIds.push(unit.id);
                 } else {
+                  const missingHandoff = result.error?.includes("write_handoff") || result.error?.includes("worker_handoff_missing");
                   rememberRuntimeUnit(milestone.id, { ...unit, taskBranch, worktreePath, sessionId: result.sessionId, status: "failed" });
                   await lapis.updateWorkingUnitStatus(unit.id, "failed");
                   await markWorkerTodoProgress(lapis, {
@@ -385,14 +392,29 @@ export function createMilestoneLoop(
                     unit: { ...unit, taskBranch, worktreePath },
                     workerId: agentId,
                     status: "blocked",
-                    reason: "worker failed",
+                    reason: missingHandoff ? "worker ended without accepted handoff" : "worker failed",
                     branch: taskBranch,
-                    notes: [`Worker ${agentId} failed unit ${unit.id}`],
+                    notes: [missingHandoff
+                      ? `Worker ${agentId} ended before submitting an accepted write_handoff for unit ${unit.id}`
+                      : `Worker ${agentId} failed unit ${unit.id}`],
                   });
                   callbacks.onAgentStatus(agentId, "worker", "failed", milestone.id);
-                  callbacks.onError(mission.id, "worker_failed", `Worker "${unit.description}" failed`, { workerId: agentId, milestoneId: milestone.id, recoverable: true });
+                  callbacks.onError(
+                    mission.id,
+                    missingHandoff ? "worker_handoff_invalid" : "worker_failed",
+                    missingHandoff
+                      ? `Worker "${unit.description}" did not submit a valid handoff`
+                      : `Worker "${unit.description}" failed`,
+                    {
+                      workerId: agentId,
+                      milestoneId: milestone.id,
+                      recoverable: true,
+                      ...(missingHandoff ? { details: { error: result.error } } : {}),
+                    },
+                  );
                   failedCount++;
                   failedUnitIds.push(unit.id);
+                  if (missingHandoff) handoffFailureUnitIds.push(unit.id);
                 }
                 await reconcileMissionLedger(lapis, {
                   missionId: mission.id,
@@ -436,7 +458,11 @@ export function createMilestoneLoop(
               actorId: "orchestrator",
             });
             const trigger: CheckpointTrigger = "unclassifiable_error";
-            const summary = `${failedCount} worker unit(s) failed after retry`;
+            const summary = handoffFailureUnitIds.length === failedCount
+              ? `${handoffFailureUnitIds.length} worker unit(s) failed to submit a valid handoff after retry`
+              : timeoutFailureUnitIds.length === failedCount
+                ? `${timeoutFailureUnitIds.length} worker unit(s) timed out after retry`
+                : `${failedCount} worker unit(s) failed after retry`;
             callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary });
             return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
           }
@@ -1042,6 +1068,36 @@ export function createMilestoneLoop(
     units.set(unit.id, unit);
     runtimeUnitsByMilestone.set(milestoneId, units);
   }
+}
+
+
+function selectWorkerTimeout(
+  unit: WorkingUnit,
+  testCommands: string[],
+  workerTimeouts: Mission["configJson"]["workerTimeouts"],
+): number {
+  const text = [unit.description, ...unit.declaredModules, ...unit.declaredPaths, ...testCommands]
+    .join(" ")
+    .toLowerCase();
+
+  if (/\b(test|vitest|jest|playwright|cypress|pytest|cargo test|go test|e2e|integration)\b/.test(text)) {
+    return workerTimeouts.testHeavy;
+  }
+
+  if (/\b(build|compile|bundle|install|migration|codegen|generate|docker)\b/.test(text)) {
+    return workerTimeouts.build;
+  }
+
+  if (/\b(analy[sz]e|inventory|measure|audit|research|map|hotspot|complexity)\b/.test(text)) {
+    return workerTimeouts.testHeavy;
+  }
+
+  return workerTimeouts.simple;
+}
+
+
+function selectWorkerMaxTimeout(timeout: number): number {
+  return Math.max(timeout * 4, timeout + 10 * 60_000);
 }
 
 function normalizeWorkingUnitForLoop(unit: WorkingUnit): WorkingUnit {
