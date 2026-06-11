@@ -176,7 +176,7 @@ All config is via environment variables. Key ones:
 | `MAX_VALIDATOR_RETRIES` | `2` | How many times a failed milestone can retry |
 | `MAX_RESCOPES_PER_MILESTONE` | `5` | How many rescopes a single milestone may undergo |
 | `VALIDATOR_TOOL_CALL_CAP` | `0` | Optional per-validator tool-call cap; `0` means unlimited |
-| `WORKER_TIMEOUT_SIMPLE` | `120000` ms | Timeout for simple workers |
+| `WORKER_TIMEOUT_SIMPLE` | `180000` ms | Timeout for simple workers |
 | `WORKER_TIMEOUT_BUILD` | `300000` ms | Timeout for build workers |
 | `WORKER_TIMEOUT_TEST_HEAVY` | `600000` ms | Timeout for test-heavy workers |
 | `VALIDATOR_TIMEOUT` | `180000` ms | Timeout for validators |

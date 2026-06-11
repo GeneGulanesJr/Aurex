@@ -68,12 +68,12 @@ function makeUnit(id: string, paths: string[], modules: string[]): WorkingUnit {
 }
 
 const passVerdict: ValidationVerdict = {
-  verdict: "pass", validatorType: "validator_scrutiny", sessionId: "s1",
+  verdict: "pass", validatorType: "validator_scrutiny", sessionId: "mock-session",
   milestoneId: "ms-1", contractId: "c-1", findings: "", failedUnitIds: [], timestamp: "",
 };
 
 const failVerdict: (failedIds: string[]) => ValidationVerdict = (failedIds) => ({
-  verdict: "fail", validatorType: "validator_scrutiny", sessionId: "s1",
+  verdict: "fail", validatorType: "validator_scrutiny", sessionId: "mock-session",
   milestoneId: "ms-1", contractId: "c-1", findings: "broke", failedUnitIds: failedIds,
   classification: "patchable", timestamp: "",
 });
@@ -100,7 +100,7 @@ function createMockLapis(units: WorkingUnit[], verdicts: ValidationVerdict[], ha
       return [passVerdict];
     }),
     getSessionsForMilestone: vi.fn().mockResolvedValue([
-      { sessionId: "s1", agentType: "validator_scrutiny", missionId: "m-1", milestoneId: "ms-1", terminatedAt: null },
+      { sessionId: "mock-session", agentType: "validator_scrutiny", missionId: "m-1", milestoneId: "ms-1", terminatedAt: null },
     ]),
     incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
     registerAgentSession: vi.fn().mockResolvedValue(undefined),

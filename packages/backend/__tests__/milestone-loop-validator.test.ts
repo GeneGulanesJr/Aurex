@@ -117,8 +117,8 @@ describe("milestone loop — validator phase", () => {
       status: "completed", taskBranch: "task/w-1/unit-1", worktreePath: "/wt", sessionId: "sess-1",
     };
     const passVerdicts: ValidationVerdict[] = [
-      { id: "v-1", milestoneId: "ms-1", contractId: "c-1", validatorType: "validator_scrutiny", sessionId: "vs-1", verdict: "pass", findings: "OK", failedUnitIds: [], timestamp: "" },
-      { id: "v-2", milestoneId: "ms-1", contractId: "c-1", validatorType: "validator_user_testing", sessionId: "vu-1", verdict: "pass", findings: "OK", failedUnitIds: [], timestamp: "" },
+      { id: "v-1", milestoneId: "ms-1", contractId: "c-1", validatorType: "validator_scrutiny", sessionId: "mock-session", verdict: "pass", findings: "OK", failedUnitIds: [], timestamp: "" },
+      { id: "v-2", milestoneId: "ms-1", contractId: "c-1", validatorType: "validator_user_testing", sessionId: "mock-session", verdict: "pass", findings: "OK", failedUnitIds: [], timestamp: "" },
     ];
     const lapis = createMockLapis([completedUnit], passVerdicts);
     const pinyx = createMockPinyx();
@@ -359,6 +359,61 @@ describe("milestone loop — validator phase", () => {
       "m-1",
       expect.objectContaining({ kind: "unclassifiable_error", milestoneId: "ms-1" }),
       expect.objectContaining({ summary: expect.stringContaining("compliance failure") }),
+    );
+  });
+
+  it("does not let a stale scrutiny verdict mask the current validator missing write_verdict", async () => {
+    const completedUnit: WorkingUnit = {
+      id: "unit-1", milestoneId: "ms-1", description: "Do thing",
+      declaredPaths: ["src/auth.ts"], declaredModules: ["auth"],
+      status: "completed", taskBranch: "task/w-1/unit-1", worktreePath: "/wt", sessionId: "sess-1",
+    };
+    const staleScrutinyVerdict: ValidationVerdict = {
+      id: "v-old",
+      milestoneId: "ms-1",
+      contractId: "c-1",
+      validatorType: "validator_scrutiny",
+      sessionId: "",
+      verdict: "pass",
+      findings: "Prior retry passed",
+      failedUnitIds: [],
+      timestamp: "2026-01-01T00:00:00Z",
+    };
+    const lapis = createMockLapis([completedUnit], [staleScrutinyVerdict]);
+    const pinyx = createMockPinyx();
+    const callbacks = {
+      onEscalation: vi.fn(),
+      onAgentStatus: vi.fn(),
+      onMilestoneProgress: vi.fn(),
+      onCostUpdate: vi.fn(),
+      onError: vi.fn(),
+    };
+
+    mockSession.subscribe.mockImplementation((fn: any) => {
+      setTimeout(() => fn({ type: "agent_end" }), 0);
+      return () => {};
+    });
+
+    const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
+      agentDir: "/test/.pi/agent",
+      repoRoot: "/test/repo",
+      gitMainBranch: "main",
+    });
+
+    const result = await loop.run(makeMission(), [makeMilestone({ description: "Implement auth. Acceptance: none" })]);
+
+    expect(result.status).toBe("checkpoint_needed");
+    if (result.status === "checkpoint_needed") {
+      expect(result.trigger).toBe("unclassifiable_error");
+      expect(result.summary).toContain("completed without submitting write_verdict");
+    }
+    expect(lapis.writeVerdict).toHaveBeenCalledWith(
+      "mock-session",
+      expect.objectContaining({
+        validatorType: "validator_scrutiny",
+        verdict: "fail",
+        findings: expect.stringContaining("did not submit a formal verdict"),
+      }),
     );
   });
 

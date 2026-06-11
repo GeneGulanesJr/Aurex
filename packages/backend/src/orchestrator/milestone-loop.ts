@@ -330,7 +330,7 @@ export function createMilestoneLoop(
                   "Follow your skill instructions carefully.",
                   "When useful work is committed, verification is blocked, or time is running short, call write_handoff immediately with partial/blocking details.",
                 ].join("\n"),
-                timeout: 0,
+                timeout: workerTimeout,
                 model: config.modelHints.worker,
               });
               activeHandles.add(handle);
@@ -764,7 +764,13 @@ export function createMilestoneLoop(
           // verdict and the negotiator reports "Missing scrutiny validator
           // verdict" as if it were an ordinary validation failure.
           let wroteSyntheticMissingVerdict = false;
-          const verdictTypes = new Set(verdicts.map((v) => v.validatorType ?? "validator_scrutiny"));
+          const currentValidatorSessionIds = new Set(
+            validatorResults.map((result) => result.sessionId).filter((sessionId) => sessionId.length > 0),
+          );
+          let currentRunVerdicts = verdicts.filter(
+            (verdict) => verdict.sessionId && currentValidatorSessionIds.has(verdict.sessionId),
+          );
+          const verdictTypes = new Set(currentRunVerdicts.map((v) => v.validatorType ?? "validator_scrutiny"));
           for (const validatorResult of validatorResults) {
             if (verdictTypes.has(validatorResult.validatorType)) continue;
 
@@ -801,6 +807,9 @@ export function createMilestoneLoop(
 
           if (wroteSyntheticMissingVerdict) {
             verdicts = await lapis.getVerdicts(milestone.id).catch(() => [] as import("@aurex/shared").ValidationVerdict[]);
+            currentRunVerdicts = verdicts.filter(
+              (verdict) => verdict.sessionId && currentValidatorSessionIds.has(verdict.sessionId),
+            );
           }
 
           if (validatorRuntimeFailures.length > 0) {
@@ -817,7 +826,7 @@ export function createMilestoneLoop(
 
           await applyValidatorVerdictsToTodos(lapis, {
             missionId: mission.id,
-            verdicts,
+            verdicts: currentRunVerdicts,
             reason: "validator verdicts recorded",
           });
           await reconcileMissionLedger(lapis, {
@@ -831,7 +840,7 @@ export function createMilestoneLoop(
           const effectiveMaxRescopes = Math.min(config.maxRescopes, config.maxAutoRescopes ?? AUTO_RESCOPE_BATCH_LIMIT);
           const decision = await negotiator.negotiate(
             milestone.id, retryCounter.retries, retryCounter.rescopes,
-            config.maxValidatorRetries, effectiveMaxRescopes, verdicts,
+            config.maxValidatorRetries, effectiveMaxRescopes, currentRunVerdicts,
           );
 
           if (decision.decision === "escalate") {
@@ -885,7 +894,7 @@ export function createMilestoneLoop(
                 milestone: { id: milestone.id, title: milestone.title, description: milestone.description },
                 model: config.modelHints.orchestrator,
                 reason: decision.reason,
-                verdicts,
+                verdicts: currentRunVerdicts,
                 researchFindings,
                 completedUnitSummaries: integrationUnits.map((u) => ({
                   description: u.description,
