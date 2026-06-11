@@ -1,9 +1,21 @@
 // packages/shared/src/types.ts
 import type {
-  MissionStatus, MilestoneStatus, AgentType, WorkerStatus,
-  BroadcastLifecycle, BroadcastCategory, ResearchLifecycle, ResearchRelevance,
-  CheckpointDecision, CheckpointTrigger,
+  MissionStatus,
+  MilestoneStatus,
+  AgentType,
+  WorkerStatus,
+  BroadcastLifecycle,
+  BroadcastCategory,
+  ResearchLifecycle,
+  ResearchRelevance,
+  CheckpointDecision,
+  CheckpointTrigger,
   QuotaStatus,
+  PreparedAgentRole,
+  PreparedAgentSessionStatus,
+  ExecutionFailureCode,
+  ExecutionJobStatus,
+  ExecutionJobType,
 } from "./enums.js";
 
 export interface Mission {
@@ -128,6 +140,92 @@ export interface ResearchFinding {
   createdAt: string;
 }
 
+export interface PreparedAgentSessionConfig {
+  model: string;
+  provider: string | null;
+  repoRoot: string | null;
+  cloneUrl: string | null;
+  branch: string | null;
+  worktreePath: string | null;
+  prompt: string;
+  systemPromptRef: string | null;
+  envVars: Record<string, string>;
+  secretRefs: string[];
+  setupCommands: string[];
+  allowedTools: string[];
+  mcpServers: Record<string, unknown>;
+}
+
+export interface PreparedAgentSession {
+  id: string;
+  missionId: string;
+  milestoneId: string | null;
+  unitId: string | null;
+  role: PreparedAgentRole;
+  status: PreparedAgentSessionStatus;
+  config: PreparedAgentSessionConfig;
+  queueJobId: string | null;
+  createdAt: string;
+  preparedAt: string;
+  queuedAt: string | null;
+  startedAt: string | null;
+  lastHeartbeatAt: string | null;
+  completedAt: string | null;
+  failureCode: ExecutionFailureCode | null;
+  failureMessage: string | null;
+  attempt: number;
+  maxAttempts: number;
+}
+
+export interface ExecutionQueueJob {
+  id: string;
+  type: ExecutionJobType;
+  status: ExecutionJobStatus;
+  missionId: string;
+  milestoneId: string | null;
+  unitId: string | null;
+  sessionId: string | null;
+  priority: number;
+  runAfter: string;
+  claimToken: string | null;
+  claimedBy: string | null;
+  claimedAt: string | null;
+  heartbeatAt: string | null;
+  attempt: number;
+  maxAttempts: number;
+  failureCode: ExecutionFailureCode | null;
+  failureMessage: string | null;
+  payload: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}
+
+export type ReconciliationActionType =
+  | "release_claim"
+  | "requeue"
+  | "retry_session"
+  | "mark_lost"
+  | "fail_terminal"
+  | "escalate_to_user";
+
+export interface ReconciliationAction {
+  targetType: "queue_job" | "agent_session" | "mission";
+  targetId: string;
+  action: ReconciliationActionType;
+  failureCode: ExecutionFailureCode;
+  reason: string;
+}
+
+export interface ReconciliationRunSummary {
+  scanned: number;
+  wouldRequeue: number;
+  wouldMarkLost: number;
+  wouldFail: number;
+  wouldEscalate: number;
+  actions: ReconciliationAction[];
+}
+
 export interface AgentSessionRecord {
   sessionId: string;
   agentType: AgentType;
@@ -215,9 +313,32 @@ export interface MemoryResult {
   topicKey: string | null;
 }
 
-export type TodoLedgerStatus = "planning" | "ready" | "in_progress" | "blocked" | "validating" | "completed" | "cancelled";
-export type TodoStatus = "pending" | "ready" | "in_progress" | "blocked" | "implemented" | "validating" | "needs_changes" | "passed" | "merged" | "cancelled";
-export type TodoType = "discovery" | "implementation" | "test" | "refactor" | "validation" | "documentation";
+export type TodoLedgerStatus =
+  | "planning"
+  | "ready"
+  | "in_progress"
+  | "blocked"
+  | "validating"
+  | "completed"
+  | "cancelled";
+export type TodoStatus =
+  | "pending"
+  | "ready"
+  | "in_progress"
+  | "blocked"
+  | "implemented"
+  | "validating"
+  | "needs_changes"
+  | "passed"
+  | "merged"
+  | "cancelled";
+export type TodoType =
+  | "discovery"
+  | "implementation"
+  | "test"
+  | "refactor"
+  | "validation"
+  | "documentation";
 export type TodoPriority = "low" | "medium" | "high";
 export type TodoRiskLevel = "low" | "medium" | "high";
 export type TodoConfidence = "low" | "medium" | "high";
@@ -226,7 +347,9 @@ export interface TodoEvidence {
   branch: string | null;
   commits: string[];
   changedFiles: string[];
-  testsRun: Array<{ command: string; exitCode?: number; output?: string } | string>;
+  testsRun: Array<
+    { command: string; exitCode?: number; output?: string } | string
+  >;
   testResults: unknown[];
   validatorVerdict: unknown | null;
   notes: string[];
@@ -500,6 +623,11 @@ export interface MutationReportSummary {
 export type MutationRunStatus =
   | { state: "idle" }
   | { state: "starting"; runId: string; startedAt: string }
-  | { state: "running"; runId: string; progress: number; currentMutator: string | null }
+  | {
+      state: "running";
+      runId: string;
+      progress: number;
+      currentMutator: string | null;
+    }
   | { state: "completed"; runId: string; summary: MutationReportSummary }
   | { state: "failed"; runId: string; error: string; exitCode: number };
