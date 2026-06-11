@@ -406,8 +406,8 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
           missionId: opts.missionId,
           milestoneId: opts.milestoneId,
           unitId: opts.unitId,
-          event: "tool_call",
-          data: { note: "Timeout disabled — agent will run to completion", timeout },
+          event: "config_decision",
+          data: { decision: "timeout_disabled", note: "Agent will run to completion (no deadline)", timeout },
         });
       }
 

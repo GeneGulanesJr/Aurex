@@ -99,6 +99,16 @@ export function createMilestoneLoop(
         if (milestone.status === "completed") continue;
         throwIfAborted();
 
+        // Reset the per-milestone runtime-unit cache at the start of
+        // each iteration. The cache is populated by rememberRuntimeUnit()
+        // when workers complete, and consumed at the top of the
+        // worker+validation loop to backfill runtime-only fields
+        // (taskBranch/worktreePath/sessionId) that LaPis doesn't echo
+        // back on getWorkingUnitsForMilestone. Without this reset, a
+        // long mission would accumulate stale entries for every
+        // milestone it ever touched, leaking memory.
+        runtimeUnitsByMilestone.delete(milestone.id);
+
         // Update milestone status
         await lapis.updateMilestoneStatus(milestone.id, "in_progress");
         // Reset stagnation detector for this milestone
@@ -1125,8 +1135,8 @@ function selectWorkerTimeout(
       agentType: "orchestrator",
       missionId,
       milestoneId,
-      event: "tool_call",
-      data: { note: "selectWorkerTimeout", needsBuildWindow, timeout, simple: timeouts.simple, build: timeouts.build },
+      event: "config_decision",
+      data: { decision: "selectWorkerTimeout", needsBuildWindow, timeout, simple: timeouts.simple, build: timeouts.build },
     });
   }
   return timeout;
