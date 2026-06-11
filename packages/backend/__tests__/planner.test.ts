@@ -232,4 +232,44 @@ describe("planner", () => {
     const userMessage = callArgs.messages.find((m: any) => m.role === "user").content;
     expect(userMessage).not.toContain("Codebase Structure");
   });
+
+  it("injects codeSummary sections into the user message when provided", async () => {
+    const mockLapis = {
+      searchMemory: vi.fn().mockResolvedValue([]),
+      createMilestone: vi.fn().mockResolvedValue({ id: "ms-1" }),
+      createWorkingUnit: vi.fn().mockResolvedValue({ id: "u-1" }),
+      createContract: vi.fn().mockResolvedValue({ id: "c-1" }),
+      getContractHistory: vi.fn().mockResolvedValue([]),
+      createMissionLedger: vi.fn().mockResolvedValue({ missionId: "m-1", todos: [] }),
+      createTodo: vi.fn().mockResolvedValue({ id: "td-1" }),
+    } as unknown as LaPisClient;
+
+    const mockPinyx = createMockPinyx(JSON.stringify({
+      milestones: [{ title: "M1", description: "First", units: [{ description: "U1", declaredPaths: [], declaredModules: [] }], criteria: [], testCommands: [] }],
+    }));
+
+    const codeSummary: CodeSummary = {
+      files: 42,
+      symbols: 380,
+      edges: 120,
+      modules: [{ name: "auth", fileCount: 8 }],
+      entryPoints: ["src/index.ts"],
+      cycles: { count: 0, paths: [] },
+    };
+
+    const planner = createPlanner(mockLapis, mockPinyx as never, { codeSummary });
+    await planner.plan("Build auth", "m-1");
+
+    // The PiNyx chatStream call should have received the codeSummary data
+    // in the user message (planner.ts:123-135 builds codebaseSection and
+    // pushes it onto the user message, not the system message).
+    expect(mockPinyx.chatStream).toHaveBeenCalled();
+    const request = (mockPinyx.chatStream as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const userMessage: string = request.messages[1].content;
+    expect(userMessage).toContain("Total files: 42");
+    expect(userMessage).toContain("Symbols: 380");
+    expect(userMessage).toContain("Import edges: 120");
+    expect(userMessage).toContain("auth");
+    expect(userMessage).toContain("src/index.ts");
+  });
 });
