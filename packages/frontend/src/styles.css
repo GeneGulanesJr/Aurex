@@ -552,15 +552,19 @@ select:focus-visible {
   margin-top: 8px;
 }
 
-/* Pulse animation for active indicators */
+/* Pulse animation for tiny status dots (MissionActivityFeed, TelemetryBar).
+ * NOTE: this is the CSS-keyframe counterpart of `createPulse` in
+ * `agent-animations.ts`. The two animations are intentionally distinct:
+ * this one is a fast 1.5s loop used on 6-12px status indicators; the
+ * JS one is a slow 2.4s alternate cycle for larger milestone/worker
+ * dots. Keep them in sync when adjusting timing here.
+ */
 @keyframes pulse {
   0%, 100% {
-    opacity: 1;
-    transform: scale(1);
+    opacity: 0.85;
   }
   50% {
-    opacity: 0.4;
-    transform: scale(0.85);
+    opacity: 0.55;
   }
 }
 

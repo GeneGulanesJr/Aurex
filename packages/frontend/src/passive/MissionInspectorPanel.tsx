@@ -1,15 +1,20 @@
 import type { BumblebeeFinding, BumblebeeScanResult, Milestone, WsClientEvent } from "@aurex/shared";
+import type { AgentLogEntry, MissionError } from "../hooks/useMission";
 import { CodeContextPanel } from "./CodeContextPanel";
 import { MissionActivityFeed } from "./MissionActivityFeed";
+import { MissionDebugLog } from "./MissionDebugLog";
 import { SupplyChainPanel } from "./SupplyChainPanel";
 import { shouldShowSupplyChainTab, summarizeSupplyChainRisk } from "./missionUiModel";
 
 interface MissionInspectorPanelProps {
+  mission: { id: string; description: string; status: string };
   missionId: string;
   missionStatus: string;
   milestones: Milestone[];
   logs: Array<{ phase: string; message: string; timestamp: number; data?: Record<string, unknown> }>;
   events: WsClientEvent[];
+  errors: MissionError[];
+  agentLogs: Record<string, AgentLogEntry[]>;
   eventStreamCount: number;
   scanFindings: BumblebeeFinding[];
   isScanning: boolean;
@@ -40,6 +45,20 @@ export function MissionInspectorPanel(props: MissionInspectorPanelProps) {
           events={props.events}
           active={isMissionActive}
           limit={props.eventStreamCount}
+        />
+      </InspectorSection>
+
+      <InspectorSection
+        title="Debug Log"
+        badge="Copyable"
+      >
+        <MissionDebugLog
+          mission={props.mission}
+          milestones={props.milestones}
+          logs={props.logs}
+          events={props.events}
+          errors={props.errors}
+          agentLogs={props.agentLogs}
         />
       </InspectorSection>
 

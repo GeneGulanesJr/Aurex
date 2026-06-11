@@ -21,7 +21,15 @@ export function CheckpointPanel({ trigger }: CheckpointPanelProps) {
         <div style={{ marginBottom: "24px" }}>
           <h2 style={{ fontSize: "20px", fontWeight: 700, color: "var(--warning)", marginBottom: "8px" }}>Rescope Limit Reached</h2>
           <AttemptHistory history={trigger.attemptHistory ?? []} />
-          <p style={{ fontSize: "14px", color: "var(--text-secondary)", marginTop: "8px" }}>Review the attempts and decide: rescope or abort.</p>
+          <p style={{ fontSize: "14px", color: "var(--text-secondary)", marginTop: "8px" }}>Review the attempts and decide whether to continue work, rescope, or abort.</p>
+        </div>
+      );
+
+    case "validation_failed":
+      return (
+        <div style={{ marginBottom: "24px" }}>
+          <h2 style={{ fontSize: "20px", fontWeight: 700, color: "var(--warning)", marginBottom: "8px" }}>Validation Needs Direction</h2>
+          <p style={{ fontSize: "14px", color: "var(--text-secondary)" }}>The validator still found blocking issues after the configured retry path. Continue work, rescope, or abort.</p>
         </div>
       );
 

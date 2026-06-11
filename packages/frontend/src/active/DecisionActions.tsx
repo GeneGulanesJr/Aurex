@@ -29,13 +29,29 @@ export function DecisionActions({ onDecision, trigger }: DecisionActionsProps) {
         </>
       )}
 
-      {(trigger.kind === "rescope_limit" || trigger.kind === "unclassifiable_error") && (
+      {trigger.kind === "validation_failed" && (
         <>
-          <button onClick={() => onDecision("approve", { rescopeGuidance: guidance || "Re-plan this milestone to address the failure." })} style={{ ...btnBase, background: "var(--info)", color: "var(--bg-deep)" }}>Review & Rescope</button>
+          <button onClick={() => onDecision("approve", { guidance: guidance || "Continue with the current milestone scope and retry the failed work." })} style={{ ...btnBase, background: "var(--success)", color: "var(--bg-deep)" }}>Continue Work</button>
+          <button onClick={() => onDecision("approve", { rescopeGuidance: guidance || "Re-plan this milestone to address the failure." })} style={{ ...btnBase, background: "var(--info)", color: "var(--bg-deep)" }}>Rescope</button>
           <button onClick={() => onDecision("reject", { reason: "abort" })} style={{ ...btnBase, background: "var(--error)", color: "#fff" }}>Abort Mission</button>
-          {trigger.kind === "unclassifiable_error" && (
-            <button onClick={() => setShowGuidance(!showGuidance)} style={{ ...btnBase, background: "var(--bg-elevated)", color: "var(--text-primary)" }}>Provide Guidance</button>
-          )}
+          <button onClick={() => setShowGuidance(!showGuidance)} style={{ ...btnBase, background: "var(--bg-elevated)", color: "var(--text-primary)" }}>Add Guidance</button>
+        </>
+      )}
+
+      {trigger.kind === "rescope_limit" && (
+        <>
+          <button onClick={() => onDecision("approve", { guidance: guidance || "Continue with the current milestone scope and retry the failed work." })} style={{ ...btnBase, background: "var(--success)", color: "var(--bg-deep)" }}>Continue Work</button>
+          <button onClick={() => onDecision("approve", { rescopeGuidance: guidance || "Re-plan this milestone to address the failure." })} style={{ ...btnBase, background: "var(--info)", color: "var(--bg-deep)" }}>Rescope</button>
+          <button onClick={() => onDecision("reject", { reason: "abort" })} style={{ ...btnBase, background: "var(--error)", color: "#fff" }}>Abort Mission</button>
+          <button onClick={() => setShowGuidance(!showGuidance)} style={{ ...btnBase, background: "var(--bg-elevated)", color: "var(--text-primary)" }}>Add Guidance</button>
+        </>
+      )}
+
+      {trigger.kind === "unclassifiable_error" && (
+        <>
+          <button onClick={() => onDecision("approve", { rescopeGuidance: guidance || "Re-plan this milestone to address the runtime failure." })} style={{ ...btnBase, background: "var(--info)", color: "var(--bg-deep)" }}>Rescope</button>
+          <button onClick={() => onDecision("reject", { reason: "abort" })} style={{ ...btnBase, background: "var(--error)", color: "#fff" }}>Abort Mission</button>
+          <button onClick={() => setShowGuidance(!showGuidance)} style={{ ...btnBase, background: "var(--bg-elevated)", color: "var(--text-primary)" }}>Add Guidance</button>
         </>
       )}
 
@@ -73,7 +89,10 @@ export function DecisionActions({ onDecision, trigger }: DecisionActionsProps) {
             }}
             rows={3}
           />
-          <button onClick={() => onDecision("approve", { rescopeGuidance: guidance })} style={{ ...btnBase, background: "var(--info)", color: "var(--bg-deep)", marginTop: "8px" }}>Submit Guidance</button>
+          <div style={{ display: "flex", gap: "8px", marginTop: "8px", flexWrap: "wrap" }}>
+            <button onClick={() => onDecision("approve", { guidance })} style={{ ...btnBase, background: "var(--success)", color: "var(--bg-deep)" }}>Continue With Guidance</button>
+            <button onClick={() => onDecision("approve", { rescopeGuidance: guidance })} style={{ ...btnBase, background: "var(--info)", color: "var(--bg-deep)" }}>Rescope With Guidance</button>
+          </div>
         </div>
       )}
     </div>

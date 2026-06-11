@@ -275,6 +275,38 @@ describe("AgentSpawner", () => {
     vi.useRealTimers();
   });
 
+  it("completes a worker when write_handoff is accepted even without agent_end", async () => {
+    const lapis = createMockLapis();
+    const spawner = createAgentSpawner({
+      lapis,
+      agentDir: "/home/user/.pi/agent",
+      defaultTimeout: 120_000,
+    });
+
+    mockSession.prompt.mockResolvedValue(undefined);
+
+    const handle = await spawner.spawn(baseSpawnOpts);
+    const callOpts = mockCreateAgentSession.mock.calls[0][0];
+    const handoffTool = callOpts.customTools.find((tool: any) => tool.name === "write_handoff");
+
+    await handoffTool.execute("tc-1", {
+      featureName: "Classify refactor",
+      description: "Refactored classify",
+      implemented: "Extracted helper functions",
+      remaining: "none",
+      rationale: "The helpers isolate branching logic while preserving the public classifier behavior.",
+      assumptions: "Existing tests cover the behavior being preserved.",
+      unresolvedUncertainties: "none",
+      errorsEncountered: "none",
+      commandsRun: JSON.stringify([{ command: "npm test", exitCode: 0 }]),
+      gitCommitHash: "abc123",
+    });
+
+    const result = await handle.completed;
+    expect(result.status).toBe("completed");
+    expect(mockSession.abort).toHaveBeenCalledTimes(1);
+  });
+
   it("updates unit status to working when agent starts", async () => {
     const lapis = createMockLapis();
     const spawner = createAgentSpawner({

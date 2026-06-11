@@ -67,9 +67,11 @@ describe("milestone loop", () => {
       updateMilestoneStatus: vi.fn(),
       incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-2", retries: 0, rescopes: 0 }),
       getVerdicts: vi.fn().mockResolvedValue([
-        { verdict: "pass", validatorType: "validator_scrutiny" },
+        { verdict: "pass", validatorType: "validator_scrutiny", sessionId: "mock-session" },
       ]),
-      getSessionsForMilestone: vi.fn().mockResolvedValue([]),
+      getSessionsForMilestone: vi.fn().mockResolvedValue([
+        { sessionId: "mock-session", agentType: "validator_scrutiny", missionId: "m-1", milestoneId: "ms-2", terminatedAt: null },
+      ]),
       updateWorkingUnitStatus: vi.fn(),
       getWorkingUnitsForMilestone: vi.fn().mockResolvedValue([]),
       getContractHistory: vi.fn().mockResolvedValue([
@@ -114,9 +116,11 @@ describe("milestone loop", () => {
       updateMilestoneStatus: vi.fn(),
       incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 2, rescopes: 5 }),
       getVerdicts: vi.fn().mockResolvedValue([
-        { verdict: "fail", validatorType: "validator_scrutiny", classification: "blocking" },
+        { verdict: "fail", validatorType: "validator_scrutiny", classification: "blocking", sessionId: "mock-session" },
       ]),
-      getSessionsForMilestone: vi.fn().mockResolvedValue([]),
+      getSessionsForMilestone: vi.fn().mockResolvedValue([
+        { sessionId: "mock-session", agentType: "validator_scrutiny", missionId: "m-1", milestoneId: "ms-1", terminatedAt: null },
+      ]),
       updateWorkingUnitStatus: vi.fn(),
       getWorkingUnitsForMilestone: vi.fn().mockResolvedValue([]),
       getContractHistory: vi.fn().mockResolvedValue([

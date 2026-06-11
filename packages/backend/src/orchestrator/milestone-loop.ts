@@ -1,10 +1,10 @@
-import type { CheckpointTrigger, CompressionTrigger, Mission, Milestone, WorkingUnit, EscalationTrigger, EscalationContext, AgentType, AgentStatus, MilestoneStatus, ResearchFinding } from "@aurex/shared";
+import type { CheckpointTrigger, CompressionTrigger, Mission, Milestone, WorkingUnit, WorkerStatus, EscalationTrigger, EscalationContext, AgentType, AgentStatus, MilestoneStatus, ResearchFinding } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { PinyxClient } from "../clients/pinyx-client.js";
 import { QuotaExhaustedError } from "../clients/pinyx-quota-wrapper.js";
 import { createNegotiator } from "./negotiator.js";
 import { createWorktreeManager, type CreateValidatorWorktreeResult } from "./worktree.js";
-import { createAgentSpawner, TOOL_CALL_CAP_EXCEEDED } from "../agents/agent-spawner.js";
+import { createAgentSpawner, TOOL_CALL_CAP_EXCEEDED, type SpawnResult, type SpawnHandle } from "../agents/agent-spawner.js";
 import type { AgentLogger } from "../agents/agent-logger.js";
 import type { EventBus } from "../ws/events.js";
 import { buildValidatorContext, buildWorkerContext, buildResearchContext, type ValidatorUnitContext } from "../agents/context-builder.js";
@@ -28,6 +28,9 @@ const execFileAsync = promisify(execFile);
 // When disabled (0), the loop escalates to the user after retries, giving
 // the human direct control over whether to rescope, retry, or abort.
 const AUTO_RESCOPE_BATCH_LIMIT = 0;
+
+/** Max workers spawned concurrently within a single batch. Keeps API concurrency within model limits. */
+const MAX_CONCURRENT_WORKERS = 3;
 
 export type MilestoneLoopResult =
   | { status: "completed" }
@@ -62,10 +65,11 @@ export function createMilestoneLoop(
   const worktreeManager = createWorktreeManager(loopConfig.repoRoot);
   const integrationLifecycle = createIntegrationLifecycle(worktreeManager);
   let cumulativeCost = 0;
+  const runtimeUnitsByMilestone = new Map<string, Map<string, WorkingUnit>>();
   const spawner = createAgentSpawner({
     lapis,
     agentDir: loopConfig.agentDir,
-    defaultTimeout: 120_000,
+    defaultTimeout: 180_000,
     logger: loopConfig.logger,
     eventBus: loopConfig.eventBus,
     onCost: (missionId, totalCost, totalTokens, delta) => {
@@ -95,6 +99,16 @@ export function createMilestoneLoop(
         if (milestone.status === "completed") continue;
         throwIfAborted();
 
+        // Reset the per-milestone runtime-unit cache at the start of
+        // each iteration. The cache is populated by rememberRuntimeUnit()
+        // when workers complete, and consumed at the top of the
+        // worker+validation loop to backfill runtime-only fields
+        // (taskBranch/worktreePath/sessionId) that LaPis doesn't echo
+        // back on getWorkingUnitsForMilestone. Without this reset, a
+        // long mission would accumulate stale entries for every
+        // milestone it ever touched, leaking memory.
+        runtimeUnitsByMilestone.delete(milestone.id);
+
         // Update milestone status
         await lapis.updateMilestoneStatus(milestone.id, "in_progress");
         // Reset stagnation detector for this milestone
@@ -113,11 +127,31 @@ export function createMilestoneLoop(
         let loopActive = true;
         let researchFindings: ResearchFinding[] = await lapis.getFindings(mission.id).catch(() => [] as ResearchFinding[]);
         let hasRetriedFailedUnits = false;
+        let preResearchAttempted = false;
+        let hasResetIncompleteUnits = false;
         while (loopActive) {
           loopActive = false;
 
           // Fetch current units (may change after rescope)
-          const units = await lapis.getWorkingUnitsForMilestone(milestone.id).catch(() => [] as import("@aurex/shared").WorkingUnit[]);
+          const fetchedUnits = await lapis.getWorkingUnitsForMilestone(milestone.id).catch(() => [] as import("@aurex/shared").WorkingUnit[]);
+          const normalizedFetchedUnits = fetchedUnits.map(normalizeWorkingUnitForLoop);
+          const runtimeUnits = runtimeUnitsByMilestone.get(milestone.id);
+          const unitsWithRuntime = runtimeUnits
+            ? normalizedFetchedUnits.map((unit) => {
+                const runtime = runtimeUnits.get(unit.id);
+                return runtime
+                  ? {
+                      ...unit,
+                      taskBranch: unit.taskBranch || runtime.taskBranch,
+                      worktreePath: unit.worktreePath || runtime.worktreePath,
+                      sessionId: unit.sessionId || runtime.sessionId,
+                  }
+                  : unit;
+              })
+            : normalizedFetchedUnits;
+          const units = unitsWithRuntime.map((unit) =>
+            applyWorkingUnitScopeFallback(unit, mission, milestone, loopConfig.repoRoot),
+          );
           const contracts = await lapis.getContractHistory(milestone.id).catch(() => [] as any[]);
           const contract = contracts[0] as any;
 
@@ -131,7 +165,8 @@ export function createMilestoneLoop(
           // If no prior research findings exist (first milestone or first
           // loop iteration after a rescope), run research BEFORE workers
           // so they benefit from domain knowledge.
-          if (researchFindings.length === 0) {
+          if (researchFindings.length === 0 && !preResearchAttempted) {
+            preResearchAttempted = true;
             const preResearchPaths = units.flatMap((u: WorkingUnit) => u.declaredPaths);
             const preResearchModules = [...new Set(units.flatMap((u: WorkingUnit) => u.declaredModules))];
             const preResearchId = `research-${milestone.id}`;
@@ -154,7 +189,7 @@ export function createMilestoneLoop(
               skillFilePath: `${loopConfig.aurexRoot}/packages/backend/src/skills/research.md`,
               contextContent: preResearchContext,
               taskPrompt: `Research domain knowledge for milestone "${milestone.title}" BEFORE workers begin. Investigate the codebase areas relevant to the declared paths and modules. Submit findings using write_finding.`,
-              timeout: config.workerTimeouts.build,
+              timeout: config.workerTimeouts.testHeavy,
               model: config.modelHints.research,
             });
             activeHandles.add(preResearchHandle);
@@ -174,6 +209,30 @@ export function createMilestoneLoop(
           }
 
           // --- WORKER PHASE ---
+          // Reset any transient-status units (spawned/working/committing) back to
+          // planned. This handles re-entry after checkpoint/pause where workers
+          // were interrupted mid-flight. Without this, the worker phase skips them
+          // (it only picks up "planned") and validation incorrectly fails.
+          const transientStatuses: WorkerStatus[] = ["spawned", "working", "committing"];
+          const staleUnits = units.filter((u: WorkingUnit) => transientStatuses.includes(u.status));
+          if (staleUnits.length > 0 && !hasResetIncompleteUnits) {
+            hasResetIncompleteUnits = true;
+            loopConfig.eventBus?.emit({
+              type: "mission_log",
+              missionId: mission.id,
+              phase: "worker",
+              message: `Resetting ${staleUnits.length} stale unit(s) (${staleUnits.map((u) => u.status).join(", ")}) back to planned`,
+              data: { unitIds: staleUnits.map((u) => u.id) },
+            });
+            for (const u of staleUnits) {
+              await lapis.updateWorkingUnitStatus(u.id, "planned");
+            }
+            // Re-fetch units to get the updated statuses
+            const refreshed = await lapis.getWorkingUnitsForMilestone(milestone.id).catch(() => units);
+            units.length = 0;
+            units.push(...refreshed.map((unit: WorkingUnit) => applyWorkingUnitScopeFallback(unit, mission, milestone, loopConfig.repoRoot)));
+          }
+
           const pendingUnits = units.filter((u: WorkingUnit) => u.status === "planned");
           const completedUnits = units.filter((u: WorkingUnit) => u.status === "completed");
           completedCount = completedUnits.length;
@@ -205,14 +264,20 @@ export function createMilestoneLoop(
             batches.push(batch);
           }
 
-          // Process each batch concurrently
+          // Process each batch, limiting concurrent workers to MAX_CONCURRENT_WORKERS
           for (const batch of batches) {
-            const handles = await Promise.all(batch.map(async (unit) => {
+            const allHandles: Array<{ unit: WorkingUnit; agentId: string; worktreePath: string; taskBranch: string; handle: SpawnHandle }> = [];
+
+            // Spawn in chunks to stay within concurrency limits
+            for (let i = 0; i < batch.length; i += MAX_CONCURRENT_WORKERS) {
+              const chunk = batch.slice(i, i + MAX_CONCURRENT_WORKERS);
+              const handles = await Promise.all(chunk.map(async (unit) => {
               const agentId = `worker-${unit.id}`;
               const { worktreePath, taskBranch } = await worktreeManager.createWorktree(
                 agentId, unit.id, loopConfig.gitMainBranch,
               );
               await worktreeManager.installBranchGuard(worktreePath, taskBranch);
+              const workerTimeout = selectWorkerTimeout(unit, config.workerTimeouts, loopConfig.logger, mission.id, milestone.id);
               const contextContent = buildWorkerContext({
                 missionDescription: mission.description,
                 milestoneTitle: milestone.title,
@@ -257,20 +322,30 @@ export function createMilestoneLoop(
                 cwd: worktreePath,
                 skillFilePath: `${loopConfig.aurexRoot}/packages/backend/src/skills/worker.md`,
                 contextContent,
-                taskPrompt: `Implement: ${unit.description}\n\nFollow your skill instructions carefully. Use write_handoff when done.`,
-                timeout: config.workerTimeouts.simple,
+                taskPrompt: [
+                  `Implement: ${unit.description}`,
+                  "",
+                  "Research findings from the research agent are in your context under 'Research Findings'. Use them directly. Do NOT re-read files already documented there.",
+                  "",
+                  "Follow your skill instructions carefully.",
+                  "When useful work is committed, verification is blocked, or time is running short, call write_handoff immediately with partial/blocking details.",
+                ].join("\n"),
+                timeout: workerTimeout,
                 model: config.modelHints.worker,
               });
               activeHandles.add(handle);
 
               callbacks.onAgentStatus(agentId, "worker", "working", milestone.id);
-              return { unit, agentId, worktreePath, taskBranch, handle };
-            }));
+                return { unit, agentId, worktreePath, taskBranch, handle };
+              }));
+              allHandles.push(...handles);
+            }
 
-            await Promise.all(handles.map(async ({ unit, agentId, worktreePath, taskBranch, handle }) => {
+            await Promise.all(allHandles.map(async ({ unit, agentId, worktreePath, taskBranch, handle }) => {
               const result = await handle.completed;
               activeHandles.delete(handle);
               if (result.status === "completed") {
+                rememberRuntimeUnit(milestone.id, { ...unit, taskBranch, worktreePath, sessionId: result.sessionId, status: "completed" });
                 await lapis.updateWorkingUnitStatus(unit.id, "completed");
                 await markWorkerTodoProgress(lapis, {
                   missionId: mission.id,
@@ -290,6 +365,7 @@ export function createMilestoneLoop(
                   taskBranch, worktreePath,
                 });
               } else if (result.status === "timed_out") {
+                rememberRuntimeUnit(milestone.id, { ...unit, taskBranch, worktreePath, sessionId: result.sessionId, status: "timed_out" });
                 await lapis.updateWorkingUnitStatus(unit.id, "timed_out");
                 await markWorkerTodoProgress(lapis, {
                   missionId: mission.id,
@@ -305,6 +381,7 @@ export function createMilestoneLoop(
                 failedCount++;
                 failedUnitIds.push(unit.id);
               } else {
+                rememberRuntimeUnit(milestone.id, { ...unit, taskBranch, worktreePath, sessionId: result.sessionId, status: "failed" });
                 await lapis.updateWorkingUnitStatus(unit.id, "failed");
                 await markWorkerTodoProgress(lapis, {
                   missionId: mission.id,
@@ -370,6 +447,47 @@ export function createMilestoneLoop(
           if (config.costCap > 0 && cumulativeCost >= config.costCap) {
             const trigger: CheckpointTrigger = "cost_cap_exceeded";
             const summary = `Mission cost cap exceeded: $${cumulativeCost.toFixed(2)} >= $${config.costCap.toFixed(2)}`;
+            return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
+          }
+
+          const validatorUnitIds = new Set(validatorUnits.map((unit) => unit.id));
+          const incompleteUnits = units.filter((unit: WorkingUnit) => !validatorUnitIds.has(unit.id));
+          if (incompleteUnits.length > 0) {
+            const transientStatuses: WorkerStatus[] = ["spawned", "working", "committing"];
+            const allTransient = incompleteUnits.every((unit) => transientStatuses.includes(unit.status));
+            if (allTransient && !hasResetIncompleteUnits) {
+              hasResetIncompleteUnits = true;
+              for (const unit of incompleteUnits) {
+                await lapis.updateWorkingUnitStatus(unit.id, "planned");
+              }
+              await reconcileMissionLedger(lapis, {
+                missionId: mission.id,
+                milestoneId: milestone.id,
+                reason: "reset stale in-progress units before validation",
+                actorId: "orchestrator",
+              });
+              loopConfig.eventBus?.emit({
+                type: "mission_log",
+                missionId: mission.id,
+                phase: "validation",
+                message: `Validation skipped: ${incompleteUnits.length} unit(s) were not completed. Resetting stale in-progress units to continue work.`,
+                data: {
+                  incompleteUnits: incompleteUnits.map((unit) => ({ id: unit.id, status: unit.status })),
+                },
+              });
+              callbacks.onMilestoneProgress(milestone.id, "retrying", completedCount, units.length);
+              loopActive = true;
+              continue;
+            }
+
+            const trigger: CheckpointTrigger = "unclassifiable_error";
+            const summary = `Validation skipped: ${incompleteUnits.length} unit(s) are not completed, so the validator will not run.`;
+            callbacks.onError(mission.id, "validation_blocked_incomplete_units", summary, {
+              milestoneId: milestone.id,
+              recoverable: true,
+              details: { incompleteUnits: incompleteUnits.map((unit) => ({ id: unit.id, status: unit.status })) },
+            });
+            callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id, error: summary }, { summary });
             return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
           }
 
@@ -532,6 +650,41 @@ export function createMilestoneLoop(
           }
           const validatorCwd = validatorWorktree?.worktreePath ?? loopConfig.repoRoot;
 
+          const validatorRuntimeFailures: string[] = [];
+          const validatorRuntimeFailureTypes = new Set<"validator_scrutiny" | "validator_user_testing">();
+          const validatorResults: Array<{
+            validatorType: "validator_scrutiny" | "validator_user_testing";
+            sessionId: string;
+            result: SpawnResult;
+          }> = [];
+          const recordValidatorRuntimeFailure = (
+            validatorType: "validator_scrutiny" | "validator_user_testing",
+            message: string,
+          ) => {
+            if (validatorRuntimeFailureTypes.has(validatorType)) return;
+            validatorRuntimeFailureTypes.add(validatorType);
+            validatorRuntimeFailures.push(message);
+          };
+          const writeSyntheticValidatorVerdict = async (
+            sessionId: string,
+            validatorType: "validator_scrutiny" | "validator_user_testing",
+            findings: string,
+          ) => {
+            try {
+              await lapis.writeVerdict(sessionId, {
+                milestoneId: milestone.id,
+                contractId,
+                validatorType,
+                verdict: "fail",
+                findings,
+                failedUnitIds: [],
+                timestamp: new Date().toISOString(),
+              });
+            } catch (err) {
+              console.warn(`[milestone-loop] Failed to write synthetic validator verdict:`, err instanceof Error ? err.message : err);
+            }
+          };
+
           // Run all validator types concurrently — they share a read-only
           // merged worktree and don't modify state.
           await Promise.all(validatorTypes.map(async (validatorType) => {
@@ -543,6 +696,7 @@ export function createMilestoneLoop(
               baseBranch: loopConfig.gitMainBranch, units: validatorUnits,
               researchFindings,
               diffSummary: diffSummary || undefined,
+              validatorToolCallCap: config.validatorToolCallCap ?? 0,
               validatorWorktree: validatorWorktree
                 ? {
                     path: validatorWorktree.worktreePath,
@@ -561,41 +715,28 @@ export function createMilestoneLoop(
               taskPrompt: `Validate milestone "${milestone.title}" as ${validatorType}. Use write_verdict when done.`,
               timeout: config.workerTimeouts.testHeavy,
               model: config.modelHints[validatorType],
+              validatorToolCallCap: config.validatorToolCallCap ?? 0,
             });
             activeHandles.add(handle);
 
             callbacks.onAgentStatus(agentId, validatorType, "reviewing", milestone.id);
             const result = await handle.completed;
             activeHandles.delete(handle);
+            validatorResults.push({ validatorType, sessionId: handle.sessionId, result });
             callbacks.onAgentStatus(agentId, validatorType, result.status === "completed" ? "completed" : result.status, milestone.id);
 
             // Handle validators that didn't write a verdict:
             // 1. Cap-exceeded: session was aborted by tool-call cap
-            // 2. Completed but no verdict: model finished without calling write_verdict
-            // Both cases need a synthetic fail verdict so the negotiator
-            // can route to retry/rescope instead of hitting
-            // "No validator verdicts were recorded".
+            // 2. Timed out/failed/completed but no verdict: handled after
+            // getVerdicts so a sibling validator's verdict cannot mask the
+            // missing validator type.
             const isCapHit = result.status === "failed" && result.error?.includes(TOOL_CALL_CAP_EXCEEDED);
             if (isCapHit) {
               // Cap hit — model never had a chance to write verdict
-              try {
-                await lapis.writeVerdict(handle.sessionId, {
-                  milestoneId: milestone.id,
-                  contractId,
-                  validatorType: validatorType as "validator_scrutiny" | "validator_user_testing",
-                  verdict: "fail",
-                  findings: `Validator auto-failed: exceeded tool-call cap without producing a verdict. The model exhausted its tool-call budget.`,
-                  failedUnitIds: [],
-                  timestamp: new Date().toISOString(),
-                });
-              } catch (err) {
-                console.warn(`[milestone-loop] Failed to write synthetic cap-hit verdict:`, err instanceof Error ? err.message : err);
-              }
+              const findings = `Validator auto-failed: exceeded tool-call cap without producing a verdict. The model exhausted its configured tool-call budget.`;
+              recordValidatorRuntimeFailure(validatorType, `${validatorType} exceeded the configured validator tool-call cap.`);
+              await writeSyntheticValidatorVerdict(handle.sessionId, validatorType, findings);
             }
-            // For completed validators, the write_verdict tool should have been
-            // called by the model during the session. If it wasn't, the
-            // negotiator will see "No validator verdicts were recorded" and
-            // the stagnation detector will catch it on the second cycle.
 
             handle.dispose();
           }));
@@ -616,31 +757,76 @@ export function createMilestoneLoop(
           // --- NEGOTIATION PHASE ---
           let verdicts = await lapis.getVerdicts(milestone.id).catch(() => [] as import("@aurex/shared").ValidationVerdict[]);
 
-          // If validators completed but no verdicts were written (model didn't
-          // call write_verdict), write a synthetic fail verdict. This prevents
-          // the "No validator verdicts were recorded" → rescope death spiral.
-          if (verdicts.length === 0 && validatorTypes.length > 0) {
-            try {
-              const syntheticSessionId = `synthetic-${milestone.id}-${Date.now()}`;
-              await lapis.writeVerdict(syntheticSessionId, {
-                milestoneId: milestone.id,
-                contractId,
-                validatorType: (validatorTypes[0] ?? "validator_scrutiny") as "validator_scrutiny" | "validator_user_testing",
-                verdict: "fail",
-                findings: `Validator completed session without calling write_verdict. The model finished its review but did not submit a formal verdict. This is a model compliance issue — the validator skill instructs using write_verdict exactly once.`,
-                failedUnitIds: [],
-                timestamp: new Date().toISOString(),
-              });
-              // Re-fetch verdicts with the synthetic one included
-              verdicts = await lapis.getVerdicts(milestone.id).catch(() => [] as import("@aurex/shared").ValidationVerdict[]);
-            } catch (err) {
-              console.warn(`[milestone-loop] Failed to write synthetic no-verdict:`, err instanceof Error ? err.message : err);
+          // If any validator type finished without a verdict, write a
+          // synthetic fail verdict for auditability and surface it as a
+          // validator runtime/compliance checkpoint. This must be per type:
+          // otherwise a user-testing verdict can mask a missing scrutiny
+          // verdict and the negotiator reports "Missing scrutiny validator
+          // verdict" as if it were an ordinary validation failure.
+          let wroteSyntheticMissingVerdict = false;
+          const currentValidatorSessionIds = new Set(
+            validatorResults.map((result) => result.sessionId).filter((sessionId) => sessionId.length > 0),
+          );
+          let currentRunVerdicts = verdicts.filter(
+            (verdict) => verdict.sessionId && currentValidatorSessionIds.has(verdict.sessionId),
+          );
+          const verdictTypes = new Set(currentRunVerdicts.map((v) => v.validatorType ?? "validator_scrutiny"));
+          for (const validatorResult of validatorResults) {
+            if (verdictTypes.has(validatorResult.validatorType)) continue;
+
+            let findings: string;
+            if (validatorResult.result.status === "timed_out") {
+              findings = `Validator auto-failed: timed out before calling write_verdict. The model may have continued gathering context, but it did not submit a formal verdict before the validator timeout.`;
+              recordValidatorRuntimeFailure(
+                validatorResult.validatorType,
+                `${validatorResult.validatorType} timed out before submitting write_verdict.`,
+              );
+            } else if (validatorResult.result.status === "failed" && validatorResult.result.error?.includes(TOOL_CALL_CAP_EXCEEDED)) {
+              findings = `Validator auto-failed: exceeded tool-call cap without producing a verdict. The model exhausted its configured tool-call budget.`;
+              recordValidatorRuntimeFailure(
+                validatorResult.validatorType,
+                `${validatorResult.validatorType} exceeded the configured validator tool-call cap.`,
+              );
+            } else if (validatorResult.result.status === "failed") {
+              findings = `Validator auto-failed: session failed before calling write_verdict. Error: ${validatorResult.result.error ?? "unknown error"}.`;
+              recordValidatorRuntimeFailure(
+                validatorResult.validatorType,
+                `${validatorResult.validatorType} failed before submitting write_verdict.`,
+              );
+            } else {
+              findings = `Validator completed session without calling write_verdict. The model finished its review but did not submit a formal verdict. This is a model compliance issue — the validator skill instructs using write_verdict exactly once.`;
+              recordValidatorRuntimeFailure(
+                validatorResult.validatorType,
+                `${validatorResult.validatorType} completed without submitting write_verdict.`,
+              );
             }
+
+            await writeSyntheticValidatorVerdict(validatorResult.sessionId, validatorResult.validatorType, findings);
+            wroteSyntheticMissingVerdict = true;
+          }
+
+          if (wroteSyntheticMissingVerdict) {
+            verdicts = await lapis.getVerdicts(milestone.id).catch(() => [] as import("@aurex/shared").ValidationVerdict[]);
+            currentRunVerdicts = verdicts.filter(
+              (verdict) => verdict.sessionId && currentValidatorSessionIds.has(verdict.sessionId),
+            );
+          }
+
+          if (validatorRuntimeFailures.length > 0) {
+            const trigger: CheckpointTrigger = "unclassifiable_error";
+            const summary = [
+              "Validator did not produce a usable verdict.",
+              ...validatorRuntimeFailures,
+              "This is a validator runtime/compliance failure, not evidence that the milestone scope is wrong.",
+            ].join(" ");
+            callbacks.onError(mission.id, "validator_runtime_failure", summary, { milestoneId: milestone.id, recoverable: true });
+            callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id, error: summary }, { summary });
+            return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
           }
 
           await applyValidatorVerdictsToTodos(lapis, {
             missionId: mission.id,
-            verdicts,
+            verdicts: currentRunVerdicts,
             reason: "validator verdicts recorded",
           });
           await reconcileMissionLedger(lapis, {
@@ -654,12 +840,15 @@ export function createMilestoneLoop(
           const effectiveMaxRescopes = Math.min(config.maxRescopes, config.maxAutoRescopes ?? AUTO_RESCOPE_BATCH_LIMIT);
           const decision = await negotiator.negotiate(
             milestone.id, retryCounter.retries, retryCounter.rescopes,
-            config.maxValidatorRetries, effectiveMaxRescopes, verdicts,
+            config.maxValidatorRetries, effectiveMaxRescopes, currentRunVerdicts,
           );
 
           if (decision.decision === "escalate") {
-            const trigger: CheckpointTrigger = "rescope_limit";
-            const summary = `${decision.reason}. Aurex auto-rescopes at most ${effectiveMaxRescopes} times before asking for direction so missions do not rescope endlessly.`;
+            const trigger: CheckpointTrigger = "validation_failed";
+            const autoRescopeNote = effectiveMaxRescopes > 0
+              ? ` Aurex auto-rescopes at most ${effectiveMaxRescopes} times before asking for direction so missions do not rescope endlessly.`
+              : " Auto-rescope is disabled, so Aurex is asking for direction instead of re-planning automatically.";
+            const summary = `${decision.reason}.${autoRescopeNote}`;
             callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary });
             return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
           }
@@ -705,7 +894,7 @@ export function createMilestoneLoop(
                 milestone: { id: milestone.id, title: milestone.title, description: milestone.description },
                 model: config.modelHints.orchestrator,
                 reason: decision.reason,
-                verdicts,
+                verdicts: currentRunVerdicts,
                 researchFindings,
                 completedUnitSummaries: integrationUnits.map((u) => ({
                   description: u.description,
@@ -746,6 +935,7 @@ export function createMilestoneLoop(
               console.warn(`[milestone-loop] Failed to log rescope:`, err instanceof Error ? err.message : err);
             });
 
+            preResearchAttempted = false;
             loopActive = true;
             continue;
           }
@@ -848,4 +1038,167 @@ export function createMilestoneLoop(
       }
     },
   };
+
+  function rememberRuntimeUnit(milestoneId: string, unit: WorkingUnit) {
+    const units = runtimeUnitsByMilestone.get(milestoneId) ?? new Map<string, WorkingUnit>();
+    units.set(unit.id, unit);
+    runtimeUnitsByMilestone.set(milestoneId, units);
+  }
+}
+
+function normalizeWorkingUnitForLoop(unit: WorkingUnit): WorkingUnit {
+  const raw = unit as WorkingUnit & {
+    milestone_id?: string;
+    declared_paths?: unknown;
+    declared_modules?: unknown;
+    task_branch?: string;
+    worktree_path?: string;
+    session_id?: string;
+  };
+  const declaredPaths = Array.isArray(raw.declaredPaths)
+    ? raw.declaredPaths
+    : Array.isArray(raw.declared_paths)
+      ? raw.declared_paths
+      : [];
+  const declaredModules = Array.isArray(raw.declaredModules)
+    ? raw.declaredModules
+    : Array.isArray(raw.declared_modules)
+      ? raw.declared_modules
+      : [];
+  return {
+    ...unit,
+    milestoneId: raw.milestoneId ?? raw.milestone_id ?? "",
+    description: raw.description ?? "",
+    declaredPaths: declaredPaths.filter((item): item is string => typeof item === "string"),
+    declaredModules: declaredModules.filter((item): item is string => typeof item === "string"),
+    status: raw.status ?? "planned",
+    taskBranch: raw.taskBranch ?? raw.task_branch ?? "",
+    worktreePath: raw.worktreePath ?? raw.worktree_path ?? "",
+    sessionId: raw.sessionId ?? raw.session_id ?? "",
+  };
+}
+
+function applyWorkingUnitScopeFallback(
+  unit: WorkingUnit,
+  mission: Mission,
+  milestone: Milestone,
+  repoRoot: string,
+): WorkingUnit {
+  // Only fill in MISSING scope fields. Never rewrite a unit's description
+  // or declared scope that the planner explicitly provided — silently
+  // mutating identity is a footgun (a planner-produced refinement unit
+  // would have its semantic identity replaced with the milestone title).
+  if (unit.declaredPaths.length > 0 && unit.declaredModules.length > 0) {
+    return unit;
+  }
+
+  const inferredPaths = unit.declaredPaths.length > 0
+    ? unit.declaredPaths
+    : inferDeclaredPathsFromText([
+        mission.description,
+        milestone.title,
+        milestone.description,
+        unit.description,
+      ], repoRoot);
+  const inferredModules = unit.declaredModules.length > 0
+    ? unit.declaredModules
+    : inferModulesFromPaths(inferredPaths);
+
+  if (inferredPaths.length === unit.declaredPaths.length && inferredModules.length === unit.declaredModules.length) {
+    return unit;
+  }
+
+  if (inferredPaths.length === 0 && inferredModules.length === 0) {
+    // Nothing useful to fill in. Leave the unit alone — downstream code
+    // already tolerates empty scope arrays.
+    return unit;
+  }
+
+  return {
+    ...unit,
+    declaredPaths: inferredPaths,
+    declaredModules: inferredModules,
+  };
+}
+
+function selectWorkerTimeout(
+  unit: WorkingUnit,
+  timeouts: { simple: number; build: number; testHeavy: number },
+  logger: AgentLogger | undefined,
+  missionId: string,
+  milestoneId: string,
+): number {
+  // Only the unit description drives the timeout selection. Mission/milestone
+  // text is intentionally excluded — it would match "test|build|module" in
+  // nearly every mission and make the build-window branch the unconditional
+  // default, defeating the purpose of having two timeout tiers. Use narrow
+  // verbs that signal "this unit does a multi-step analysis" rather than
+  // generic programming keywords.
+  const unitText = unit.description.toLowerCase();
+  const needsBuildWindow = /\b(analy[sz]e|analysis|hotspot|complexity|refactor|decompose|extract|split)\b/.test(unitText)
+    && /\b(cargo|npm test|pytest|cargo test|build)\b/.test(unitText);
+  const timeout = needsBuildWindow ? Math.max(timeouts.simple, timeouts.build) : timeouts.simple;
+  if (logger) {
+    logger.log({
+      sessionId: "orchestrator",
+      agentType: "orchestrator",
+      missionId,
+      milestoneId,
+      event: "config_decision",
+      data: { decision: "selectWorkerTimeout", needsBuildWindow, timeout, simple: timeouts.simple, build: timeouts.build },
+    });
+  }
+  return timeout;
+}
+
+function inferDeclaredPathsFromText(textParts: string[], repoRoot: string): string[] {
+  const text = textParts.filter(Boolean).join(" ");
+  const paths = new Set<string>();
+  const normalizedRoot = repoRoot.replace(/\/+$/, "");
+
+  if (normalizedRoot.length > 0) {
+    const absolutePathPattern = new RegExp(`${escapeRegex(normalizedRoot)}/([^\\s\`"'<>\\)\\]\\}]+)`, "g");
+    for (const match of text.matchAll(absolutePathPattern)) {
+      addPath(paths, match[1]);
+    }
+  }
+
+  if (paths.size === 0) {
+    const relativePathPattern = /(?:^|[\s`"'(])([A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+\.(?:rs|ts|tsx|js|jsx|mjs|cjs|py|go|java|kt|swift|rb|php|cs|cpp|c|h|hpp|md|toml|json|ya?ml|css|scss|html|sql))/g;
+    for (const match of text.matchAll(relativePathPattern)) {
+      addPath(paths, match[1]);
+    }
+  }
+
+  return [...paths];
+}
+
+function inferModulesFromPaths(paths: string[]): string[] {
+  const modules = new Set<string>();
+  for (const filePath of paths) {
+    const parts = filePath.split("/").filter(Boolean);
+    const srcIndex = parts.lastIndexOf("src");
+    if (srcIndex >= 0 && parts[srcIndex + 1]) {
+      modules.add(parts[srcIndex + 1] === "mod.rs" && parts[srcIndex - 1] ? parts[srcIndex - 1] : parts[srcIndex + 1].replace(/\.[^.]+$/, ""));
+      continue;
+    }
+    if (parts.length > 1) {
+      modules.add(parts[parts.length - 2]);
+    }
+  }
+  return [...modules];
+}
+
+function addPath(paths: Set<string>, candidate: string | undefined): void {
+  const cleaned = candidate
+    ?.trim()
+    .replace(/[.,;:!?]+$/, "")
+    .replace(/^\/+/, "");
+  if (cleaned && cleaned.includes("/") && !cleaned.includes("..")) {
+    paths.add(cleaned);
+  }
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

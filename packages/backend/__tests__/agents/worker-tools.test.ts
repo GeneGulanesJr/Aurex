@@ -73,6 +73,28 @@ describe("worker tools", () => {
     expect(content[0].text).toContain("accepted");
   });
 
+  it("calls onHandoffAccepted after LaPis accepts a handoff", async () => {
+    const lapis = createMockLapis();
+    const onHandoffAccepted = vi.fn();
+    const tools = createWorkerTools(lapis, "unit-456", { onHandoffAccepted });
+    const handoffTool = tools.find((t) => t.name === "write_handoff")!;
+
+    await (handoffTool as any).execute("tc-1", {
+      featureName: "F",
+      description: "D",
+      implemented: "I",
+      remaining: "R",
+      rationale: "Detailed rationale",
+      assumptions: "A",
+      unresolvedUncertainties: "U",
+      errorsEncountered: "E",
+      commandsRun: "[]",
+      gitCommitHash: "deadbeef",
+    });
+
+    expect(onHandoffAccepted).toHaveBeenCalledTimes(1);
+  });
+
   it("write_handoff returns errors when rejected", async () => {
     const lapis = createMockLapis();
     (lapis.writeHandoff as any).mockResolvedValue({

@@ -13,6 +13,7 @@ describe("loadConfig", () => {
     delete process.env.WORKER_TIMEOUT_BUILD;
     delete process.env.WORKER_TIMEOUT_TEST_HEAVY;
     delete process.env.VALIDATOR_TIMEOUT;
+    delete process.env.VALIDATOR_TOOL_CALL_CAP;
     delete process.env.RESEARCH_TIMEOUT;
     delete process.env.MAX_VALIDATOR_RETRIES;
     delete process.env.MAX_RESCOPES_PER_MILESTONE;
@@ -49,7 +50,7 @@ describe("loadConfig", () => {
     process.env.REPO_ROOT = "/tmp/test-repo";
 
     const config = loadConfig();
-    expect(config.workerTimeouts.simple).toBe(120000);
+    expect(config.workerTimeouts.simple).toBe(180_000);
   });
 
   it("throws on missing required env vars", () => {
@@ -137,6 +138,21 @@ describe("loadConfig", () => {
     const config = loadConfig();
     expect(config.maxValidatorRetries).toBe(5);
     expect(config.maxRescopes).toBe(10);
+  });
+
+  it("defaults validator tool-call cap to unlimited", () => {
+    process.env.LAPIS_ENDPOINT = "http://localhost:9100";
+    process.env.REPO_ROOT = "/tmp/test-repo";
+    const config = loadConfig();
+    expect(config.validatorToolCallCap).toBe(0);
+  });
+
+  it("reads validator tool-call cap from env", () => {
+    process.env.LAPIS_ENDPOINT = "http://localhost:9100";
+    process.env.REPO_ROOT = "/tmp/test-repo";
+    process.env.VALIDATOR_TOOL_CALL_CAP = "80";
+    const config = loadConfig();
+    expect(config.validatorToolCallCap).toBe(80);
   });
 
   it("defaults maxConcurrentMissions to 3", () => {

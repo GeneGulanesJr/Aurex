@@ -39,6 +39,7 @@ export type StreamingChunk = {
 
 export type EscalationTrigger =
   | { kind: "milestone_complete"; milestoneId: string; releaseBranch?: string }
+  | { kind: "validation_failed"; milestoneId: string }
   | { kind: "rescope_limit"; milestoneId: string; attemptHistory?: AttemptSummary[] }
   | { kind: "unclassifiable_error"; milestoneId: string; error?: string; lastAttempt?: string }
   | { kind: "cost_cap_exceeded"; milestoneId: string }

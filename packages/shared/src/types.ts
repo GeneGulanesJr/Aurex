@@ -28,6 +28,8 @@ export interface MissionConfig {
   maxUnitsPerMilestone?: number;
   /** Max auto-rescopes before escalation. Default 2. */
   maxAutoRescopes?: number;
+  /** Max validator tool calls per session. 0 or undefined means unlimited. */
+  validatorToolCallCap?: number;
 }
 
 export interface Milestone {

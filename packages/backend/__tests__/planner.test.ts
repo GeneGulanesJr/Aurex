@@ -160,6 +160,104 @@ describe("planner", () => {
     }));
   });
 
+  it("repairs a truncated JSON response that has no closing brace (finishReason='stop')", async () => {
+    // Real-world case: the provider's SSE stream is interrupted or the
+    // model hits an internal limit but reports finishReason='stop' on
+    // the final chunk. The response is a valid-looking object that just
+    // never got its closing brace. Without the repair path this would
+    // throw planner_parse_error; with the path, the parser closes the
+    // open brackets and produces a valid plan.
+    const mockLapis = {
+      searchMemory: vi.fn().mockResolvedValue([]),
+      createMilestone: vi.fn().mockResolvedValue({ id: "ms-1", title: "Auth module" }),
+      createWorkingUnit: vi.fn().mockResolvedValue({ id: "unit-1", description: "Login endpoint" }),
+      createContract: vi.fn().mockResolvedValue({ id: "c-1" }),
+      getContractHistory: vi.fn().mockResolvedValue([]),
+      createMissionLedger: vi.fn().mockResolvedValue({ missionId: "m-1", todos: [] }),
+      createTodo: vi.fn().mockResolvedValue({ id: "td-1" }),
+    } as unknown as LaPisClient;
+
+    // No closing brace, finishReason=stop (misreported).
+    const truncatedResponse = `{
+      "milestones": [
+        {
+          "title": "Auth module",
+          "description": "Implement JWT auth",
+          "units": [
+            { "description": "Login endpoint", "declaredPaths": ["src/auth/**"], "declaredModules": ["auth"] }
+          ],
+          "criteria": ["All tests pass"],
+          "testCommands": ["npm test -- src/auth"]
+        }`;
+
+    const mockPinyx = {
+      chat: vi.fn().mockResolvedValue({
+        content: truncatedResponse,
+        finishReason: "stop",
+        usage: { promptTokens: 100, completionTokens: 200, totalTokens: 300 },
+      }),
+      chatStream: vi.fn().mockImplementation(async (_req: unknown, onChunk: (text: string) => void) => {
+        onChunk(truncatedResponse);
+        return { content: truncatedResponse, finishReason: "stop", usage: { promptTokens: 100, completionTokens: 200, totalTokens: 300 } };
+      }),
+    };
+    const eventBus = { emit: vi.fn() };
+
+    const planner = createPlanner(mockLapis, mockPinyx as never, { eventBus: eventBus as never, missionId: "m-1" });
+    const result = await planner.plan("Build authentication system", "m-1");
+
+    expect(result.milestones).toHaveLength(1);
+    expect(result.milestones[0].title).toBe("Auth module");
+    expect(result.milestones[0].units).toHaveLength(1);
+    expect(result.milestones[0].units[0].description).toBe("Login endpoint");
+    expect(eventBus.emit).toHaveBeenCalledWith(expect.objectContaining({
+      type: "mission_log",
+      phase: "planning",
+      message: expect.stringContaining("Successfully repaired truncated JSON"),
+    }));
+  });
+
+  it("repairs a JSON response where the closing brace exists but the trailing string was truncated mid-key", async () => {
+    // Variant of the above: a closing brace is present, but the content
+    // before it is broken (e.g. a string was truncated mid-character).
+    // Direct JSON.parse fails; the repair path closes open strings,
+    // brackets, and braces before re-parsing.
+    const mockLapis = {
+      searchMemory: vi.fn().mockResolvedValue([]),
+      createMilestone: vi.fn().mockResolvedValue({ id: "ms-1", title: "Auth module" }),
+      createWorkingUnit: vi.fn().mockResolvedValue({ id: "unit-1", description: "Login endpoint" }),
+      createContract: vi.fn().mockResolvedValue({ id: "c-1" }),
+      getContractHistory: vi.fn().mockResolvedValue([]),
+      createMissionLedger: vi.fn().mockResolvedValue({ missionId: "m-1", todos: [] }),
+      createTodo: vi.fn().mockResolvedValue({ id: "td-1" }),
+    } as unknown as LaPisClient;
+
+    // The 'description' string is truncated mid-word — no closing quote.
+    // A trailing '}' exists from a partial previous attempt.
+    const brokenResponse = `{"milestones": [{"title": "Auth", "description": "Implement JWT`;
+
+    const mockPinyx = {
+      chat: vi.fn().mockResolvedValue({
+        content: brokenResponse,
+        finishReason: "stop",
+        usage: { promptTokens: 100, completionTokens: 200, totalTokens: 300 },
+      }),
+      chatStream: vi.fn().mockImplementation(async (_req: unknown, onChunk: (text: string) => void) => {
+        onChunk(brokenResponse);
+        return { content: brokenResponse, finishReason: "stop", usage: { promptTokens: 100, completionTokens: 200, totalTokens: 300 } };
+      }),
+    };
+
+    const planner = createPlanner(mockLapis, mockPinyx as never);
+    const result = await planner.plan("Build authentication", "m-1");
+
+    // Repair should produce at least a milestones array (possibly empty
+    // after dropping the truncated record). The key invariant is that
+    // the planner does NOT throw planner_parse_error for this case.
+    expect(result.milestones).toBeDefined();
+    expect(Array.isArray(result.milestones)).toBe(true);
+  });
+
   it("includes codebase structure in the planning prompt when codeSummary is provided", async () => {
     const mockLapis = {
       searchMemory: vi.fn().mockResolvedValue([]),

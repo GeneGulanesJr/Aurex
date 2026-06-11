@@ -46,6 +46,8 @@ export interface ValidatorContextInput {
   researchFindings?: ResearchFinding[];
   /** Concatenated git diff for all working unit branches against baseBranch. */
   diffSummary?: string;
+  /** Optional validator tool-call cap. 0 or undefined means no per-session cap. */
+  validatorToolCallCap?: number;
   /**
    * Information about the merged validation worktree the validator is
    * spawned from. When present, the validator's read/bash tools operate
@@ -240,15 +242,18 @@ export function buildValidatorContext(input: ValidatorContextInput): string {
     );
   }
 
-  // Inject tool-call budget so the model can self-regulate
+  const cap = input.validatorToolCallCap ?? 0;
   sections.push(
     [
-      "## Tool-Call Budget",
+      "## Tool Use",
       "",
-      "You have a hard cap on tool calls per session. Be decisive:",
-      "- After reviewing the diff and running test commands, you have enough context to write a verdict.",
+      cap > 0
+        ? `This session has a configured cap of ${cap} tool calls. Be decisive.`
+        : "There is no per-session tool-call cap, but timeout and mission cost limits still apply. Use tools efficiently.",
+      "- After reviewing the diff and running test commands, you should have enough context to write a verdict.",
       "- Do NOT read every file in the diff exhaustively. The diff is already in your context.",
       "- Focus on the 2-3 files most likely to contain real issues.",
+      "- Docs and README files are valid context, but blocking findings must be grounded in changed code, contract criteria, handoff evidence, scope boundaries, or test output unless docs are declared scope.",
       "- Call `write_verdict` as soon as you can ground your decision in evidence.",
       "- An unforced failure (no verdict written) wastes an entire worker+validator cycle.",
     ].join("\n"),

@@ -128,9 +128,11 @@ function createMockLapis(): LaPisClient {
     getContractHistory: vi.fn().mockResolvedValue([]),
     getHandoffsForMilestone: vi.fn().mockResolvedValue([makeHandoff("u-1"), makeHandoff("u-done")]),
     getVerdicts: vi.fn().mockResolvedValue([
-      { verdict: "pass", validatorType: "validator_scrutiny" },
+      { verdict: "pass", validatorType: "validator_scrutiny", sessionId: "mock" },
     ]),
-    getSessionsForMilestone: vi.fn().mockResolvedValue([]),
+    getSessionsForMilestone: vi.fn().mockResolvedValue([
+      { sessionId: "mock", agentType: "validator_scrutiny", missionId: "m-1", milestoneId: "ms-1", terminatedAt: null },
+    ]),
     incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
     registerAgentSession: vi.fn().mockResolvedValue(undefined),
     logCost: vi.fn().mockResolvedValue(undefined),
@@ -141,6 +143,7 @@ function createMockLapis(): LaPisClient {
     getCodeSummary: vi.fn().mockResolvedValue({ files: 10, symbols: 100, edges: 20, modules: [], entryPoints: [], cycles: { count: 0, paths: [] } }),
     getFindings: vi.fn().mockResolvedValue([]),
     writeHandoff: vi.fn().mockResolvedValue({ accepted: true, errors: [] }),
+    writeVerdict: vi.fn().mockResolvedValue({ verdict: "fail", validatorType: "validator_scrutiny", sessionId: "mock" }),
     createCheckpoint: vi.fn().mockResolvedValue({ id: "cp-1", status: "pending" }),
     getCheckpoint: vi.fn().mockResolvedValue({ id: "cp-1", status: "resolved", decision: "approve" }),
     resolveCheckpoint: vi.fn().mockResolvedValue({ id: "cp-1", status: "resolved", decision: "approve" }),

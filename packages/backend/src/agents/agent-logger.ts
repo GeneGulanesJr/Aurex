@@ -9,7 +9,8 @@ export type AgentLogEvent =
   | "completed"
   | "timed_out"
   | "failed"
-  | "aborted";
+  | "aborted"
+  | "config_decision";
 
 export interface AgentLogEntry {
   sessionId: string;

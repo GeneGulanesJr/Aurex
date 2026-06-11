@@ -13,6 +13,10 @@ const { mockSession, mockCreateAgentSession } = vi.hoisted(() => {
   return { mockSession: session, mockCreateAgentSession: vi.fn().mockResolvedValue({ session }) };
 });
 
+const { mockExecAsync } = vi.hoisted(() => ({
+  mockExecAsync: vi.fn().mockResolvedValue({ stdout: "", stderr: "" }),
+}));
+
 vi.mock("@earendil-works/pi-coding-agent", () => {
   class MockResourceLoader {
     reload = vi.fn().mockResolvedValue(undefined);
@@ -29,7 +33,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => {
 });
 
 vi.mock("node:child_process", () => ({ exec: vi.fn(), execFile: vi.fn() }));
-vi.mock("node:util", () => ({ promisify: () => vi.fn().mockResolvedValue({ stdout: "", stderr: "" }) }));
+vi.mock("node:util", () => ({ promisify: () => mockExecAsync }));
 
 import { createMilestoneLoop } from "../src/orchestrator/milestone-loop";
 import type { LaPisClient } from "../src/clients/lapis-client";
@@ -64,12 +68,12 @@ function makeUnit(id: string, paths: string[], modules: string[]): WorkingUnit {
 }
 
 const passVerdict: ValidationVerdict = {
-  verdict: "pass", validatorType: "validator_scrutiny", sessionId: "s1",
+  verdict: "pass", validatorType: "validator_scrutiny", sessionId: "mock-session",
   milestoneId: "ms-1", contractId: "c-1", findings: "", failedUnitIds: [], timestamp: "",
 };
 
 const failVerdict: (failedIds: string[]) => ValidationVerdict = (failedIds) => ({
-  verdict: "fail", validatorType: "validator_scrutiny", sessionId: "s1",
+  verdict: "fail", validatorType: "validator_scrutiny", sessionId: "mock-session",
   milestoneId: "ms-1", contractId: "c-1", findings: "broke", failedUnitIds: failedIds,
   classification: "patchable", timestamp: "",
 });
@@ -96,7 +100,7 @@ function createMockLapis(units: WorkingUnit[], verdicts: ValidationVerdict[], ha
       return [passVerdict];
     }),
     getSessionsForMilestone: vi.fn().mockResolvedValue([
-      { sessionId: "s1", agentType: "validator_scrutiny", missionId: "m-1", milestoneId: "ms-1", terminatedAt: null },
+      { sessionId: "mock-session", agentType: "validator_scrutiny", missionId: "m-1", milestoneId: "ms-1", terminatedAt: null },
     ]),
     incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
     registerAgentSession: vi.fn().mockResolvedValue(undefined),
@@ -124,6 +128,7 @@ function createMockPinyx(): PinyxClient {
 describe("milestone loop — retry/rescope handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockExecAsync.mockResolvedValue({ stdout: "", stderr: "" });
     mockSession.subscribe.mockImplementation((fn: any) => {
       setTimeout(() => fn({ type: "agent_end" }), 0);
       return () => {};
@@ -166,6 +171,53 @@ describe("milestone loop — retry/rescope handling", () => {
     expect((lapis.incrementRetry as any).mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
+  it("keeps successful unit branch metadata across validator retry cycles", async () => {
+    const passUnit = makeUnit("u-pass", ["src/pass.ts"], ["pass"]);
+    const failUnit = makeUnit("u-fail", ["src/fail.ts"], ["fail"]);
+    const firstFail = failVerdict(["u-fail"]);
+    const lapis = createMockLapis([passUnit, failUnit], [firstFail]);
+
+    let unitFetchCount = 0;
+    (lapis.getWorkingUnitsForMilestone as any).mockImplementation(async () => {
+      unitFetchCount++;
+      if (unitFetchCount === 1) {
+        return [passUnit, failUnit];
+      }
+      return [
+        { ...passUnit, status: "completed", taskBranch: "", worktreePath: "", sessionId: "" },
+        { ...failUnit, status: "planned", taskBranch: "", worktreePath: "", sessionId: "" },
+      ];
+    });
+    (lapis.getVerdicts as any)
+      .mockResolvedValueOnce([firstFail])
+      .mockResolvedValueOnce([passVerdict]);
+    (lapis.incrementRetry as any)
+      .mockResolvedValueOnce({ milestoneId: "ms-1", retries: 0, rescopes: 0 })
+      .mockResolvedValueOnce({ milestoneId: "ms-1", retries: 1, rescopes: 0 });
+
+    const pinyx = createMockPinyx();
+    const callbacks = {
+      onEscalation: vi.fn(),
+      onAgentStatus: vi.fn(),
+      onMilestoneProgress: vi.fn(),
+      onCostUpdate: vi.fn(),
+      onError: vi.fn(),
+    };
+
+    const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
+      agentDir: "/test/.pi/agent", repoRoot: "/test/repo", gitMainBranch: "main",
+    });
+
+    const result = await loop.run(makeMission(), [makeMilestone()]);
+
+    expect(result.status).toBe("checkpoint_needed");
+    const calls = mockExecAsync.mock.calls.map((c: any) => `${c[0]} ${(c[1] as string[]).join(" ")}`);
+    const passBranchMerges = calls.filter((c: string) => c.includes("merge --no-ff --no-commit task/worker-u-pass/u-pass"));
+    const failBranchMerges = calls.filter((c: string) => c.includes("merge --no-ff --no-commit task/worker-u-fail/u-fail"));
+    expect(passBranchMerges.length).toBeGreaterThanOrEqual(2);
+    expect(failBranchMerges.length).toBeGreaterThanOrEqual(2);
+  });
+
   it("escalates to user instead of auto-rescoping when AUTO_RESCOPE_BATCH_LIMIT=0", async () => {
     const units = [makeUnit("u-1", ["src/auth/"], ["auth"])];
     const verdicts = [failVerdict(["u-1"])];
@@ -195,7 +247,7 @@ describe("milestone loop — retry/rescope handling", () => {
     // Should escalate to user instead of auto-rescoping
     expect(result.status).toBe("checkpoint_needed");
     if (result.status === "checkpoint_needed") {
-      expect(result.trigger).toBe("rescope_limit");
+      expect(result.trigger).toBe("validation_failed");
     }
 
     // PiNyx should NOT have been called — no auto-rescope
@@ -225,8 +277,8 @@ describe("milestone loop — retry/rescope handling", () => {
 
     expect(result.status).toBe("checkpoint_needed");
     if (result.status === "checkpoint_needed") {
-      expect(result.trigger).toBe("rescope_limit");
-      expect(result.summary).toContain("at most 0 times");
+      expect(result.trigger).toBe("validation_failed");
+      expect(result.summary).toContain("Auto-rescope is disabled");
     }
     expect(pinyx.chat).not.toHaveBeenCalled();
   });
@@ -256,7 +308,7 @@ describe("milestone loop — retry/rescope handling", () => {
 
     expect(result.status).toBe("checkpoint_needed");
     if (result.status === "checkpoint_needed") {
-      expect(result.trigger).toBe("rescope_limit");
+      expect(result.trigger).toBe("validation_failed");
     }
   });
 });

@@ -29,6 +29,48 @@ export interface CompressionResult {
   error?: string;
 }
 
+type RawValidationVerdict = Partial<ValidationVerdict> & {
+  milestone_id?: string;
+  contract_id?: string;
+  validator_type?: ValidationVerdict["validatorType"];
+  session_id?: string;
+  failed_unit_ids?: string[];
+};
+
+type RawAgentSessionRecord = Partial<AgentSessionRecord> & {
+  session_id?: string;
+  agent_type?: AgentType;
+  mission_id?: string;
+  milestone_id?: string | null;
+  unit_id?: string | null;
+  spawned_at?: string;
+  terminated_at?: string | null;
+};
+
+type RawWorkingUnit = Partial<WorkingUnit> & {
+  title?: string;
+  name?: string;
+  milestone_id?: string;
+  declared_paths?: string[];
+  declared_modules?: string[];
+  task_branch?: string;
+  worktree_path?: string;
+  session_id?: string;
+};
+
+type RawHandoffRecord = Partial<HandoffRecord> & {
+  mission_id?: string;
+  milestone_id?: string;
+  unit_id?: string;
+  feature_name?: string;
+  unresolved_uncertainties?: string;
+  errors_encountered?: string;
+  commands_run?: unknown;
+  git_commit_hash?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export interface LaPisClient {
   // Mission state
   createMission(description: string, config: MissionConfig): Promise<Mission>;
@@ -189,6 +231,102 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
     }
   }
 
+  function normalizeVerdict(raw: RawValidationVerdict): ValidationVerdict {
+    return {
+      ...raw,
+      id: raw.id ?? "",
+      milestoneId: raw.milestoneId ?? raw.milestone_id ?? "",
+      contractId: raw.contractId ?? raw.contract_id ?? "",
+      validatorType: raw.validatorType ?? raw.validator_type ?? "validator_scrutiny",
+      sessionId: raw.sessionId ?? raw.session_id ?? "",
+      verdict: raw.verdict ?? "fail",
+      classification: raw.classification,
+      findings: raw.findings ?? "",
+      failedUnitIds: raw.failedUnitIds ?? raw.failed_unit_ids ?? [],
+      timestamp: raw.timestamp ?? "",
+    };
+  }
+
+  function normalizeAgentSession(raw: RawAgentSessionRecord): AgentSessionRecord {
+    return {
+      ...raw,
+      sessionId: raw.sessionId ?? raw.session_id ?? "",
+      agentType: raw.agentType ?? raw.agent_type ?? "worker",
+      missionId: raw.missionId ?? raw.mission_id ?? "",
+      milestoneId: raw.milestoneId ?? raw.milestone_id ?? null,
+      unitId: raw.unitId ?? raw.unit_id ?? null,
+      spawnedAt: raw.spawnedAt ?? raw.spawned_at ?? "",
+      terminatedAt: raw.terminatedAt ?? raw.terminated_at ?? null,
+    };
+  }
+
+  function normalizeStringArray(value: unknown): string[] {
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  }
+
+  function normalizeWorkingUnit(raw: RawWorkingUnit): WorkingUnit {
+    return {
+      ...raw,
+      id: raw.id ?? "",
+      milestoneId: raw.milestoneId ?? raw.milestone_id ?? "",
+      description: raw.description ?? raw.title ?? raw.name ?? "",
+      declaredPaths: normalizeStringArray(raw.declaredPaths ?? raw.declared_paths),
+      declaredModules: normalizeStringArray(raw.declaredModules ?? raw.declared_modules),
+      status: raw.status ?? "planned",
+      taskBranch: raw.taskBranch ?? raw.task_branch ?? "",
+      worktreePath: raw.worktreePath ?? raw.worktree_path ?? "",
+      sessionId: raw.sessionId ?? raw.session_id ?? "",
+    };
+  }
+
+  function normalizeCommandRuns(value: unknown): { command: string; exitCode: number }[] {
+    const parsed = typeof value === "string" ? safeJsonParse(value) : value;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => {
+        const record = item as { command?: unknown; exitCode?: unknown; exit_code?: unknown };
+        const command = typeof record.command === "string" ? record.command : "";
+        const exitCode = typeof record.exitCode === "number"
+          ? record.exitCode
+          : typeof record.exit_code === "number"
+            ? record.exit_code
+            : Number(record.exitCode ?? record.exit_code);
+        return { command, exitCode };
+      })
+      .filter((item) => item.command.trim().length > 0 && Number.isFinite(item.exitCode));
+  }
+
+  function safeJsonParse(value: string): unknown {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return [];
+    }
+  }
+
+  function normalizeHandoffRecord(raw: RawHandoffRecord): HandoffRecord {
+    return {
+      ...raw,
+      id: raw.id ?? "",
+      missionId: raw.missionId ?? raw.mission_id ?? "",
+      milestoneId: raw.milestoneId ?? raw.milestone_id ?? "",
+      unitId: raw.unitId ?? raw.unit_id ?? "",
+      status: raw.status ?? "pending",
+      featureName: raw.featureName ?? raw.feature_name ?? "",
+      description: raw.description ?? "",
+      implemented: raw.implemented ?? "",
+      remaining: raw.remaining ?? "",
+      rationale: raw.rationale ?? "",
+      assumptions: raw.assumptions ?? "",
+      unresolvedUncertainties: raw.unresolvedUncertainties ?? raw.unresolved_uncertainties ?? "",
+      errorsEncountered: raw.errorsEncountered ?? raw.errors_encountered ?? "",
+      commandsRun: normalizeCommandRuns(raw.commandsRun ?? raw.commands_run),
+      gitCommitHash: raw.gitCommitHash ?? raw.git_commit_hash ?? "",
+      createdAt: raw.createdAt ?? raw.created_at ?? "",
+      updatedAt: raw.updatedAt ?? raw.updated_at ?? "",
+    };
+  }
+
   return {
     // Mission state
     createMission(description, config) {
@@ -210,11 +348,13 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
     },
 
     // Working units
-    createWorkingUnit(milestoneId, unit) {
-      return post(`/milestones/${milestoneId}/units`, unit);
+    async createWorkingUnit(milestoneId, unit) {
+      const created = await post<RawWorkingUnit>(`/milestones/${milestoneId}/units`, unit);
+      return normalizeWorkingUnit(created);
     },
-    getWorkingUnitsForMilestone(milestoneId) {
-      return get(`/milestones/${milestoneId}/units`);
+    async getWorkingUnitsForMilestone(milestoneId) {
+      const units = await get<RawWorkingUnit[]>(`/milestones/${milestoneId}/units`);
+      return units.map(normalizeWorkingUnit);
     },
     updateWorkingUnitStatus(id, status) {
       return patch(`/units/${id}/status`, { status });
@@ -224,8 +364,9 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
     writeHandoff(unitId, handoff) {
       return post(`/units/${unitId}/handoff`, handoff);
     },
-    getHandoffsForMilestone(milestoneId) {
-      return get(`/milestones/${milestoneId}/handoffs`);
+    async getHandoffsForMilestone(milestoneId) {
+      const handoffs = await get<RawHandoffRecord[]>(`/milestones/${milestoneId}/handoffs`);
+      return handoffs.map(normalizeHandoffRecord);
     },
 
     // Validation contracts
@@ -240,14 +381,17 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
     },
 
     // Validation verdicts
-    writeVerdict(sessionId, verdict) {
-      return post("/verdicts", { sessionId, ...verdict });
+    async writeVerdict(sessionId, verdict) {
+      const written = await post<RawValidationVerdict>("/verdicts", { sessionId, ...verdict });
+      return normalizeVerdict(written);
     },
-    classifyVerdict(verdictId, classification) {
-      return patch(`/verdicts/${verdictId}`, { classification });
+    async classifyVerdict(verdictId, classification) {
+      const verdict = await patch<RawValidationVerdict>(`/verdicts/${verdictId}`, { classification });
+      return normalizeVerdict(verdict);
     },
-    getVerdicts(milestoneId) {
-      return get(`/milestones/${milestoneId}/verdicts`);
+    async getVerdicts(milestoneId) {
+      const verdicts = await get<RawValidationVerdict[]>(`/milestones/${milestoneId}/verdicts`);
+      return verdicts.map(normalizeVerdict);
     },
 
     // Broadcasts
@@ -280,8 +424,9 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
     registerAgentSession(agentType, sessionId, missionId, milestoneId, unitId) {
       return post("/sessions", { agentType, sessionId, missionId, milestoneId, unitId });
     },
-    getSessionsForMilestone(milestoneId) {
-      return get(`/milestones/${milestoneId}/sessions`);
+    async getSessionsForMilestone(milestoneId) {
+      const sessions = await get<RawAgentSessionRecord[]>(`/milestones/${milestoneId}/sessions`);
+      return sessions.map(normalizeAgentSession);
     },
 
     // Memory

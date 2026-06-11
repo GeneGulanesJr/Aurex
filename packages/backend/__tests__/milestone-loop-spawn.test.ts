@@ -248,6 +248,185 @@ describe("milestone loop with spawner", () => {
     );
   });
 
+  it("infers worker scope from the mission target path when LaPis returns sparse units", async () => {
+    let eventSubscriber: (event: any) => void = () => {};
+    (mockSession.subscribe as any).mockImplementation((fn: any) => {
+      eventSubscriber = fn;
+      return () => {};
+    });
+    (mockSession.prompt as any).mockImplementation(async () => {
+      eventSubscriber({ type: "agent_end" });
+    });
+
+    const unit: WorkingUnit = {
+      id: "unit-1",
+      milestoneId: "ms-1",
+      description: "",
+      declaredPaths: [],
+      declaredModules: [],
+      status: "planned" as any,
+      taskBranch: "",
+      worktreePath: "",
+      sessionId: "",
+    };
+
+    const lapis = createMockLapis([unit]);
+    const pinyx = createMockPinyx();
+    const callbacks = {
+      onEscalation: vi.fn(),
+      onAgentStatus: vi.fn(),
+      onMilestoneProgress: vi.fn(),
+      onCostUpdate: vi.fn(),
+      onError: vi.fn(),
+    };
+
+    const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
+      agentDir: "/home/user/.pi/agent",
+      repoRoot: "/repo/GeneGulanesJr-PiNyx",
+      gitMainBranch: "main",
+    });
+
+    await loop.run(makeMission({
+      description: "Refactor /repo/GeneGulanesJr-PiNyx/pinyx/src/server/mod.rs to reduce complexity.",
+    }), [makeMilestone({
+      title: "Analyze server module",
+      description: "Analyze current server/mod.rs complexity and structure",
+    })]);
+
+    // Scope is filled in from the inferred paths, but the unit's own
+    // description is NOT rewritten — that was the prior behavior we
+    // removed because it silently overwrote planner identity.
+    expect(callbacks.onAgentStatus).toHaveBeenCalledWith(
+      "worker-unit-1", "worker", "spawned", "ms-1",
+      expect.objectContaining({
+        declaredPaths: ["pinyx/src/server/mod.rs"],
+        declaredModules: ["server"],
+        description: "",
+      }),
+    );
+  });
+
+  it("preserves a planner-provided unit description while still inferring missing scope", async () => {
+    // Scope-fallback safety: a unit that has a real description but no
+    // declaredPaths/declaredModules should get the scope filled in
+    // (paths inferred from the mission text) but the description must
+    // NOT be overwritten with the milestone title. This is the
+    // regression guard for the prior behavior that silently replaced
+    // unit.description when scope was empty.
+    let eventSubscriber: (event: any) => void = () => {};
+    (mockSession.subscribe as any).mockImplementation((fn: any) => {
+      eventSubscriber = fn;
+      return () => {};
+    });
+    (mockSession.prompt as any).mockImplementation(async () => {
+      eventSubscriber({ type: "agent_end" });
+    });
+
+    const unit: WorkingUnit = {
+      id: "unit-1",
+      milestoneId: "ms-1",
+      description: "Implement refactor of classify() to reduce cyclomatic complexity from 18 to < 10",
+      declaredPaths: [],
+      declaredModules: [],
+      status: "planned" as any,
+      taskBranch: "",
+      worktreePath: "",
+      sessionId: "",
+    };
+
+    const lapis = createMockLapis([unit]);
+    const pinyx = createMockPinyx();
+    const callbacks = {
+      onEscalation: vi.fn(),
+      onAgentStatus: vi.fn(),
+      onMilestoneProgress: vi.fn(),
+      onCostUpdate: vi.fn(),
+      onError: vi.fn(),
+    };
+
+    const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
+      agentDir: "/home/user/.pi/agent",
+      repoRoot: "/repo/GeneGulanesJr-PiNyx",
+      gitMainBranch: "main",
+    });
+
+    await loop.run(makeMission({
+      description: "Refactor /repo/GeneGulanesJr-PiNyx/pinyx/src/server/classify.rs to reduce complexity.",
+    }), [makeMilestone({
+      title: "Analyze server module",
+      description: "Analyze current server/classify.rs complexity and structure",
+    })]);
+
+    expect(callbacks.onAgentStatus).toHaveBeenCalledWith(
+      "worker-unit-1", "worker", "spawned", "ms-1",
+      expect.objectContaining({
+        declaredPaths: ["pinyx/src/server/classify.rs"],
+        declaredModules: ["server"],
+        // The planner's description is preserved verbatim.
+        description: "Implement refactor of classify() to reduce cyclomatic complexity from 18 to < 10",
+      }),
+    );
+  });
+
+  it("uses the selected worker timeout instead of disabling worker deadlines", async () => {
+    let eventSubscriber: (event: any) => void = () => {};
+    (mockSession.subscribe as any).mockImplementation((fn: any) => {
+      eventSubscriber = fn;
+      return () => {};
+    });
+    (mockSession.prompt as any).mockImplementation(async () => {
+      eventSubscriber({ type: "agent_end" });
+    });
+
+    const unit: WorkingUnit = {
+      id: "unit-1",
+      milestoneId: "ms-1",
+      description: "Create login endpoint",
+      declaredPaths: ["src/auth/login.ts"],
+      declaredModules: ["auth"],
+      status: "planned" as any,
+      taskBranch: "",
+      worktreePath: "",
+      sessionId: "",
+    };
+
+    const lapis = createMockLapis([unit]);
+    const pinyx = createMockPinyx();
+    const callbacks = {
+      onEscalation: vi.fn(),
+      onAgentStatus: vi.fn(),
+      onMilestoneProgress: vi.fn(),
+      onCostUpdate: vi.fn(),
+      onError: vi.fn(),
+    };
+    const logger = { log: vi.fn() };
+
+    const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
+      agentDir: "/home/user/.pi/agent",
+      repoRoot: "/repo",
+      gitMainBranch: "main",
+      logger,
+    });
+
+    await loop.run(makeMission({
+      configJson: {
+        ...makeMission().configJson,
+        workerTimeouts: { simple: 180_000, build: 300_000, testHeavy: 600_000 },
+      },
+    }), [makeMilestone()]);
+
+    expect(logger.log).toHaveBeenCalledWith(expect.objectContaining({
+      agentType: "orchestrator",
+      event: "config_decision",
+      data: expect.objectContaining({ decision: "selectWorkerTimeout", timeout: 180_000 }),
+    }));
+    expect(logger.log).not.toHaveBeenCalledWith(expect.objectContaining({
+      agentType: "worker",
+      event: "config_decision",
+      data: expect.objectContaining({ decision: "timeout_disabled" }),
+    }));
+  });
+
   it("retries a worker that completes without a handoff before validation", async () => {
     let eventSubscriber: (event: any) => void = () => {};
     (mockSession.subscribe as any).mockImplementation((fn: any) => {

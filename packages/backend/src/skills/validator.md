@@ -146,14 +146,16 @@ List anything needed to verify uncertain points.
 List specific tests that would increase confidence.
 ```
 
-## Tool Call Budget
-
-You have a **hard cap of 25 tool calls** per session. The orchestrator aborts the session and writes a synthetic `verdict: "fail"` when the cap is exceeded. There is no partial credit — an aborted session counts as a fail.
+## Tool Use
 
 Be decisive:
 - After 5 reads/greps of the relevant code, you have enough context
 - After running the test commands, you have your test results
 - Call `write_verdict` as soon as you can ground your decision in evidence
+
+There is no default per-session tool-call cap. The orchestrator still enforces validator timeouts and mission cost limits, so use tools efficiently and avoid broad exploration.
+
+Reading docs, README files, plans, or design notes is allowed when it helps you understand context. Do not keep browsing docs once they stop changing your verdict. A blocking verdict must be grounded in changed code, contract criteria, handoff evidence, scope boundaries, or test output unless the docs themselves are part of the declared scope.
 
 Do not exhaustively enumerate every file in the diff. Pick the 2-3 files most likely to contain real defects and review them. The diff is in your context — you do not need to `read` every changed file.
 

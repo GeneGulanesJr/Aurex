@@ -80,6 +80,57 @@ describe("LaPisClient (HTTP)", () => {
     expect(body.unitId).toBe("unit-1");
   });
 
+  it("normalizes snake_case working unit payloads from LaPis", async () => {
+    mockFetch.mockReturnValue(mockResponse([{
+      id: "u-1",
+      milestone_id: "ms-1",
+      description: "Do work",
+      declared_paths: ["src/server/mod.rs"],
+      declared_modules: ["server"],
+      status: "planned",
+      task_branch: "task/u-1",
+      worktree_path: "/tmp/wt",
+      session_id: "sess-1",
+    }]));
+
+    const units = await client.getWorkingUnitsForMilestone("ms-1");
+
+    expect(units[0]).toMatchObject({
+      id: "u-1",
+      milestoneId: "ms-1",
+      declaredPaths: ["src/server/mod.rs"],
+      declaredModules: ["server"],
+      taskBranch: "task/u-1",
+      worktreePath: "/tmp/wt",
+      sessionId: "sess-1",
+    });
+  });
+
+  it("defaults missing working unit scope arrays to empty arrays", async () => {
+    mockFetch.mockReturnValue(mockResponse([{ id: "u-1", milestone_id: "ms-1", description: "Do work" }]));
+
+    const units = await client.getWorkingUnitsForMilestone("ms-1");
+
+    expect(units[0]).toMatchObject({
+      id: "u-1",
+      milestoneId: "ms-1",
+      declaredPaths: [],
+      declaredModules: [],
+      status: "planned",
+    });
+  });
+
+  it("uses working unit title as description when description is absent", async () => {
+    mockFetch.mockReturnValue(mockResponse([{ id: "u-1", milestone_id: "ms-1", title: "Analyze classify" }]));
+
+    const units = await client.getWorkingUnitsForMilestone("ms-1");
+
+    expect(units[0]).toMatchObject({
+      id: "u-1",
+      description: "Analyze classify",
+    });
+  });
+
   it("getVerdicts fetches verdicts for a milestone", async () => {
     mockFetch.mockReturnValue(mockResponse([]));
     await client.getVerdicts("ms-1");
@@ -89,6 +140,55 @@ describe("LaPisClient (HTTP)", () => {
     );
   });
 
+  it("normalizes snake_case verdict payloads from LaPis", async () => {
+    mockFetch.mockReturnValue(mockResponse([{
+      id: "v-1",
+      milestone_id: "ms-1",
+      contract_id: "c-1",
+      validator_type: "validator_scrutiny",
+      session_id: "sess-1",
+      verdict: "pass",
+      findings: "Looks good",
+      failed_unit_ids: [],
+      timestamp: "2026-01-01",
+    }]));
+
+    const verdicts = await client.getVerdicts("ms-1");
+
+    expect(verdicts[0]).toMatchObject({
+      id: "v-1",
+      milestoneId: "ms-1",
+      contractId: "c-1",
+      validatorType: "validator_scrutiny",
+      sessionId: "sess-1",
+      verdict: "pass",
+      failedUnitIds: [],
+    });
+  });
+
+  it("normalizes snake_case session payloads from LaPis", async () => {
+    mockFetch.mockReturnValue(mockResponse([{
+      session_id: "sess-1",
+      agent_type: "validator_scrutiny",
+      mission_id: "m-1",
+      milestone_id: "ms-1",
+      unit_id: null,
+      spawned_at: "2026-01-01",
+      terminated_at: null,
+    }]));
+
+    const sessions = await client.getSessionsForMilestone("ms-1");
+
+    expect(sessions[0]).toMatchObject({
+      sessionId: "sess-1",
+      agentType: "validator_scrutiny",
+      missionId: "m-1",
+      milestoneId: "ms-1",
+      unitId: null,
+      terminatedAt: null,
+    });
+  });
+
   it("getHandoffsForMilestone fetches handoff records for a milestone", async () => {
     mockFetch.mockReturnValue(mockResponse([]));
     await client.getHandoffsForMilestone("ms-1");
@@ -96,6 +196,45 @@ describe("LaPisClient (HTTP)", () => {
       "http://localhost:9100/milestones/ms-1/handoffs",
       expect.objectContaining({ method: "GET" }),
     );
+  });
+
+  it("normalizes snake_case handoff records from LaPis", async () => {
+    mockFetch.mockReturnValue(mockResponse([{
+      id: "handoff-1",
+      mission_id: "m-1",
+      milestone_id: "ms-1",
+      unit_id: "u-1",
+      status: "accepted",
+      feature_name: "Analyze server",
+      description: "Analyzed server module",
+      implemented: "Recorded complexity hotspots",
+      remaining: "none",
+      rationale: "The analysis records concrete hotspots so follow-up workers can refactor the right functions.",
+      assumptions: "The source file path from the mission is correct.",
+      unresolved_uncertainties: "none",
+      errors_encountered: "none",
+      commands_run: [{ command: "cargo check", exit_code: 0 }],
+      git_commit_hash: "abc123",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:01Z",
+    }]));
+
+    const handoffs = await client.getHandoffsForMilestone("ms-1");
+
+    expect(handoffs[0]).toMatchObject({
+      id: "handoff-1",
+      missionId: "m-1",
+      milestoneId: "ms-1",
+      unitId: "u-1",
+      status: "accepted",
+      featureName: "Analyze server",
+      unresolvedUncertainties: "none",
+      errorsEncountered: "none",
+      commandsRun: [{ command: "cargo check", exitCode: 0 }],
+      gitCommitHash: "abc123",
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:01Z",
+    });
   });
 
   it("creates a mission todo ledger", async () => {
