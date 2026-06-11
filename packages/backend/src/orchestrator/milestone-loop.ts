@@ -149,9 +149,9 @@ export function createMilestoneLoop(
                   : unit;
               })
             : normalizedFetchedUnits;
-          const units = unitsWithRuntime.map((unit) =>
-            applyWorkingUnitScopeFallback(unit, mission, milestone, loopConfig.repoRoot),
-          );
+          const units = unitsWithRuntime
+            .map((unit) => applyWorkingUnitScopeFallback(unit, mission, milestone, loopConfig.repoRoot))
+            .filter((unit) => unit.status !== "superseded");
           const contracts = await lapis.getContractHistory(milestone.id).catch(() => [] as any[]);
           const contract = contracts[0] as any;
 
@@ -1135,8 +1135,7 @@ function selectWorkerTimeout(
   // verbs that signal "this unit does a multi-step analysis" rather than
   // generic programming keywords.
   const unitText = unit.description.toLowerCase();
-  const needsBuildWindow = /\b(analy[sz]e|analysis|hotspot|complexity|refactor|decompose|extract|split)\b/.test(unitText)
-    && /\b(cargo|npm test|pytest|cargo test|build)\b/.test(unitText);
+  const needsBuildWindow = /\b(analy[sz]e|analysis|inventory|measure|baseline|hotspot|complexity|dependency|dependencies|api|refactor|decompose|extract|split)\b/.test(unitText);
   const timeout = needsBuildWindow ? Math.max(timeouts.simple, timeouts.build) : timeouts.simple;
   if (logger) {
     logger.log({

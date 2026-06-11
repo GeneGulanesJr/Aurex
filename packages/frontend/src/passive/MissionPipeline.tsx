@@ -42,6 +42,7 @@ const workerStatusColor: Record<string, string> = {
   completed: "var(--success)",
   timed_out: "var(--warning)",
   failed: "var(--error)",
+  superseded: "var(--text-muted)",
 };
 
 const logEventColor: Record<string, string> = {

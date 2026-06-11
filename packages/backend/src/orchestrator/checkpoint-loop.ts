@@ -119,6 +119,19 @@ export async function runCheckpointLoop(
           eventBus.emit({ type: "mission_status", missionId, status: "failed" });
           return { status: "failed", milestones: currentMilestones, costCapApproved };
         }
+        const replacedUnits = rescopeUnits.filter((unit) => unit.status !== "completed");
+        for (const unit of replacedUnits) {
+          await lapis.updateWorkingUnitStatus(unit.id, "superseded");
+        }
+        if (replacedUnits.length > 0) {
+          eventBus.emit({
+            type: "mission_log",
+            missionId,
+            phase: "rescope",
+            message: `Superseded ${replacedUnits.length} incomplete unit(s) replaced by the new rescope plan.`,
+            data: { supersededUnitIds: replacedUnits.map((unit) => unit.id) },
+          });
+        }
         eventBus.emit({ type: "milestone_progress", milestoneId: cp.milestoneId, status: "rescoping", completedUnits: 0, totalUnits: result.units.length });
       }
     } else if (cp.trigger === "validation_failed" || cp.trigger === "rescope_limit") {

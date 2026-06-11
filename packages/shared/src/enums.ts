@@ -6,7 +6,7 @@ export type MilestoneStatus = "planned" | "in_progress" | "validating" | "rescop
 
 // Agent statuses
 export type AgentStatus = "spawned" | "planning" | "working" | "reviewing" | "researching" | "committing" | "completed" | "timed_out" | "failed";
-export type WorkerStatus = "planned" | "spawned" | "working" | "committing" | "completed" | "timed_out" | "failed";
+export type WorkerStatus = "planned" | "spawned" | "working" | "committing" | "completed" | "timed_out" | "failed" | "superseded";
 
 // Agent types
 export type AgentType = "orchestrator" | "worker" | "validator_scrutiny" | "validator_user_testing" | "research";

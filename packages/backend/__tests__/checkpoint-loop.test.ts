@@ -213,6 +213,95 @@ describe("checkpoint loop", () => {
     }));
   });
 
+  it("supersedes incomplete existing units when user rescopes a runtime failure", async () => {
+    const mission = makeMission();
+    const units: WorkingUnit[] = [
+      {
+        id: "u-done",
+        milestoneId: "ms-1",
+        description: "Already completed inventory",
+        declaredPaths: ["src/done.ts"],
+        declaredModules: ["done"],
+        status: "completed",
+        taskBranch: "task/done",
+        worktreePath: "/tmp/done",
+        sessionId: "s-done",
+      },
+      {
+        id: "u-timeout",
+        milestoneId: "ms-1",
+        description: "Timed out complexity analysis",
+        declaredPaths: ["src/server/mod.rs"],
+        declaredModules: ["server"],
+        status: "timed_out",
+        taskBranch: "task/timeout",
+        worktreePath: "/tmp/timeout",
+        sessionId: "s-timeout",
+      },
+    ];
+    const loop = {
+      run: vi.fn()
+        .mockResolvedValueOnce({ status: "checkpoint_needed", trigger: "unclassifiable_error", milestoneId: "ms-1", summary: "worker timed out after retry" })
+        .mockResolvedValueOnce({ status: "completed" }),
+    };
+    const checkpointManager: CheckpointManager = {
+      create: vi.fn().mockResolvedValue("cp-1"),
+      waitForResolution: vi.fn().mockResolvedValue({
+        id: "cp-1",
+        missionId: "m-1",
+        trigger: "unclassifiable_error",
+        milestoneId: "ms-1",
+        summary: "worker timed out after retry",
+        status: "resolved",
+        decision: "approve",
+        rescopeGuidance: "Break the timed-out analysis into smaller focused units.",
+        createdAt: "2026-01-01",
+      }),
+      resolve: vi.fn(),
+      getPendingForMission: vi.fn().mockResolvedValue([]),
+    };
+    const lapis = {
+      updateMissionStatus: vi.fn().mockResolvedValue(undefined),
+      createCheckpoint: vi.fn(),
+      getWorkingUnitsForMilestone: vi.fn().mockResolvedValue(units),
+      getVerdicts: vi.fn().mockResolvedValue([]),
+      getFindings: vi.fn().mockResolvedValue([]),
+      createWorkingUnit: vi.fn().mockResolvedValue(undefined),
+      updateWorkingUnitStatus: vi.fn().mockResolvedValue(undefined),
+      updateMilestoneStatus: vi.fn().mockResolvedValue(undefined),
+      getMission: vi.fn().mockResolvedValue(mission),
+    } as unknown as LaPisClient;
+    const pinyx = {
+      chat: vi.fn().mockResolvedValue({
+        content: JSON.stringify({
+          units: [
+            { description: "Analyze server functions", declaredPaths: ["src/server/mod.rs"], declaredModules: ["server"] },
+          ],
+        }),
+      }),
+    } as unknown as PinyxClient;
+    const eventBus = { emit: vi.fn() };
+
+    const result = await runCheckpointLoop(loop, {
+      missionId: "m-1",
+      mission,
+      milestones: [milestone],
+      costCapApproved: false,
+    }, {
+      checkpointManager,
+      lapis,
+      pinyx,
+      eventBus: eventBus as any,
+      setStatus: vi.fn(),
+    });
+
+    expect(result.status).toBe("completed");
+    expect(lapis.updateWorkingUnitStatus).toHaveBeenCalledWith("u-timeout", "superseded");
+    expect(lapis.updateWorkingUnitStatus).not.toHaveBeenCalledWith("u-done", "superseded");
+    expect(lapis.createWorkingUnit).toHaveBeenCalledWith("ms-1", expect.objectContaining({ description: "Analyze server functions" }));
+    expect(loop.run).toHaveBeenCalledTimes(2);
+  });
+
   it("does not auto-retry an unclassifiable_error checkpoint even when verdicts are present", async () => {
     // unclassifiable_error signals a runtime/compliance failure (validator
     // produced no verdict, integration aborted, etc.). Silently re-running

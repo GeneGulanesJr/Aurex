@@ -7,7 +7,7 @@ import type { AgentLogger } from "../agents/agent-logger.js";
 import { checkQuota, resetWindow } from "../enforcement/quota-gate.js";
 
 const defaultMissionConfig: Omit<MissionConfig, "modelHints"> = {
-  workerTimeouts: { simple: 180_000, build: 300_000, testHeavy: 600_000 },
+  workerTimeouts: { simple: 120_000, build: 300_000, testHeavy: 600_000 },
   costCap: 50,
   maxValidatorRetries: 2,
   maxRescopes: 5,
@@ -36,7 +36,7 @@ export async function missionRoutes(
     );
     const activeWorkers = unitsByMilestone
       .flat()
-      .filter((unit) => !["completed", "failed", "timed_out"].includes(unit.status));
+      .filter((unit) => !["completed", "failed", "timed_out", "superseded"].includes(unit.status));
     return { mission, milestones, activeWorkers, cost };
   }
   const FALLBACK_MODEL = "kilo/kilo-auto/free";
