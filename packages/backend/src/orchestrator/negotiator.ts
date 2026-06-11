@@ -10,15 +10,11 @@ interface NegotiateResult {
   failedUnitIds?: string[];
 }
 
-type VerdictLike = ValidationVerdict & {
-  validator_type?: ValidationVerdict["validatorType"];
-};
-
 export function createNegotiator(lapis: LaPisClient) {
   let priorSignature: string | null = null;
 
   function getValidatorType(verdict: ValidationVerdict): ValidationVerdict["validatorType"] {
-    return ((verdict as VerdictLike).validatorType ?? (verdict as VerdictLike).validator_type ?? "validator_scrutiny");
+    return verdict.validatorType ?? "validator_scrutiny";
   }
 
   function hashVerdicts(verdicts: ValidationVerdict[]): string {

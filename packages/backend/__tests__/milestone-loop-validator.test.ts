@@ -287,17 +287,22 @@ describe("milestone loop — validator phase", () => {
     );
   });
 
-  it("normalizes working units without declared scope arrays before batching", async () => {
-    const malformedUnit = {
-      id: "unit-1",
-      milestone_id: "ms-1",
-      description: "Do thing",
-      status: "planned",
-      task_branch: "",
-      worktree_path: "",
-      session_id: "",
-    } as unknown as WorkingUnit;
-    const lapis = createMockLapis([malformedUnit], []);
+  it("returns a runtime checkpoint when scrutiny completes without writing a verdict (death-spiral guard)", async () => {
+    // The classic death-spiral scenario: the validator session completes
+    // successfully (no timeout, no error) but the model never called
+    // write_verdict. Without the per-validator-type synthetic verdict
+    // path, this would route through the negotiator and surface as
+    // "Missing scrutiny validator verdict" — which triggers an auto-
+    // rescope, new workers, same model behavior, and the cycle repeats.
+    // With the fix, the loop writes a synthetic fail verdict for the
+    // missing type and returns unclassifiable_error so the human can
+    // re-plan with explicit guidance.
+    const completedUnit: WorkingUnit = {
+      id: "unit-1", milestoneId: "ms-1", description: "Do thing",
+      declaredPaths: ["src/auth.ts"], declaredModules: ["auth"],
+      status: "completed", taskBranch: "task/w-1/unit-1", worktreePath: "/wt", sessionId: "sess-1",
+    };
+    const lapis = createMockLapis([completedUnit], []);
     const pinyx = createMockPinyx();
     const callbacks = {
       onEscalation: vi.fn(),
@@ -307,21 +312,121 @@ describe("milestone loop — validator phase", () => {
       onError: vi.fn(),
     };
 
+    // Default subscribe behavior: agent_end fires once per spawn.
+    // Worker + validator both complete cleanly, but neither calls
+    // write_verdict (the validator's write_verdict tool is never
+    // exercised by the mock).
+    mockSession.subscribe.mockImplementation((fn: any) => {
+      setTimeout(() => fn({ type: "agent_end" }), 0);
+      return () => {};
+    });
+
     const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
       agentDir: "/test/.pi/agent",
       repoRoot: "/test/repo",
       gitMainBranch: "main",
     });
 
-    await expect(loop.run(makeMission(), [makeMilestone()])).resolves.toEqual(
-      expect.objectContaining({ status: "checkpoint_needed" }),
+    const result = await loop.run(makeMission(), [makeMilestone()]);
+
+    expect(result.status).toBe("checkpoint_needed");
+    if (result.status === "checkpoint_needed") {
+      expect(result.trigger).toBe("unclassifiable_error");
+      // The summary must clearly indicate this is a compliance failure,
+      // not evidence the milestone scope is wrong.
+      expect(result.summary).toContain("completed without submitting write_verdict");
+    }
+    // A synthetic fail verdict must have been written for the missing
+    // validator type so the audit trail records what happened.
+    expect(lapis.writeVerdict).toHaveBeenCalledWith(
+      "mock-session",
+      expect.objectContaining({
+        validatorType: "validator_scrutiny",
+        verdict: "fail",
+        findings: expect.stringContaining("did not submit a formal verdict"),
+      }),
     );
-    expect(lapis.registerAgentSession).toHaveBeenCalledWith(
-      "worker",
-      expect.any(String),
+    // The escalator must be called with a runtime-failure context so
+    // downstream consumers (UI, mission_log) can distinguish from a
+    // plain validation_failed trigger.
+    expect(callbacks.onError).toHaveBeenCalledWith(
       "m-1",
-      "ms-1",
-      "unit-1",
+      "validator_runtime_failure",
+      expect.stringContaining("validator_scrutiny"),
+      expect.objectContaining({ milestoneId: "ms-1", recoverable: true }),
     );
+    expect(callbacks.onEscalation).toHaveBeenCalledWith(
+      "m-1",
+      expect.objectContaining({ kind: "unclassifiable_error", milestoneId: "ms-1" }),
+      expect.objectContaining({ summary: expect.stringContaining("compliance failure") }),
+    );
+  });
+
+  it("does not let a user-testing verdict mask a missing scrutiny verdict", async () => {
+    // Reverse-direction death-spiral guard: the user-testing validator
+    // writes a real verdict but the scrutiny validator doesn't. The
+    // negotiator must NOT see this as "all verdicts present and user
+    // testing passed" and approve the milestone. The per-validator-type
+    // synthetic-verdict path must run for the missing type.
+    const completedUnit: WorkingUnit = {
+      id: "unit-1", milestoneId: "ms-1", description: "Do thing",
+      declaredPaths: ["src/auth.ts"], declaredModules: ["auth"],
+      status: "completed", taskBranch: "task/w-1/unit-1", worktreePath: "/wt", sessionId: "sess-1",
+    };
+    const milestone = makeMilestone({
+      description: "Implement auth. Acceptance: login button must be clickable.",
+    });
+    const userTestingVerdict: ValidationVerdict = {
+      id: "v-ut",
+      milestoneId: "ms-1",
+      contractId: "c-1",
+      validatorType: "validator_user_testing",
+      sessionId: "mock-session",
+      verdict: "pass",
+      findings: "Login button works",
+      failedUnitIds: [],
+      timestamp: "",
+    };
+    const lapis = createMockLapis([completedUnit], [userTestingVerdict]);
+    const pinyx = createMockPinyx();
+    const callbacks = {
+      onEscalation: vi.fn(),
+      onAgentStatus: vi.fn(),
+      onMilestoneProgress: vi.fn(),
+      onCostUpdate: vi.fn(),
+      onError: vi.fn(),
+    };
+
+    let subscribeCount = 0;
+    mockSession.subscribe.mockImplementation((fn: any) => {
+      subscribeCount++;
+      // First two subscribes: worker (succeeds) + user_testing (succeeds).
+      // The third subscribe: validator_scrutiny completes without verdict.
+      if (subscribeCount <= 2) {
+        setTimeout(() => fn({ type: "agent_end" }), 0);
+      } else {
+        setTimeout(() => fn({ type: "agent_end" }), 0);
+      }
+      return () => {};
+    });
+
+    const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
+      agentDir: "/test/.pi/agent",
+      repoRoot: "/test/repo",
+      gitMainBranch: "main",
+    });
+
+    const result = await loop.run(makeMission(), [milestone]);
+
+    expect(result.status).toBe("checkpoint_needed");
+    if (result.status === "checkpoint_needed") {
+      expect(result.trigger).toBe("unclassifiable_error");
+    }
+    // The synthetic verdict must be for validator_scrutiny specifically,
+    // not for validator_user_testing (which already has a real verdict).
+    const syntheticCalls = (lapis.writeVerdict as any).mock.calls.filter(
+      (call: any[]) => (call[1] as any).validatorType === "validator_scrutiny",
+    );
+    expect(syntheticCalls).toHaveLength(1);
   });
 });

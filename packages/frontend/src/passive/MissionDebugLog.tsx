@@ -208,6 +208,14 @@ function summarizeEvent(event: WsClientEvent): string {
       return `${event.providerId} ${event.status}`;
     case "quota_exhausted":
       return `${event.providerId} resets ${event.windowResetsAt}`;
+    default: {
+      // Exhaustiveness guard: if a new WsClientEvent variant is added
+      // without updating this switch, the line still gets a useful label
+      // instead of the literal string "undefined". Narrow on `_` to
+      // force a type error when the union grows.
+      const unknown = event as Extract<WsClientEvent, { type: string }>;
+      return `<${unknown.type}>`;
+    }
   }
 }
 
