@@ -18,17 +18,22 @@ describe("loadConfig", () => {
     delete process.env.MAX_VALIDATOR_RETRIES;
     delete process.env.MAX_RESCOPES_PER_MILESTONE;
     delete process.env.GIT_MAIN_BRANCH;
-    delete process.env.API_KEY;
     delete process.env.AUREX_ROOT;
     delete process.env.MAX_CONCURRENT_MISSIONS;
     delete process.env.QUOTA_ENABLED;
     delete process.env.QUOTA_WINDOW_HOURS;
     delete process.env.QUOTA_BURN_HOURS;
+    delete process.env.AUTH0_DOMAIN;
+    delete process.env.AUTH0_AUDIENCE;
+    delete process.env.AUTH0_CLIENT_ID;
   });
 
   it("reads LAPIS_ENDPOINT", () => {
     process.env.LAPIS_ENDPOINT = "http://localhost:9100";
     process.env.REPO_ROOT = "/tmp/test-repo";
+    process.env.AUTH0_DOMAIN = "test.us.auth0.com";
+    process.env.AUTH0_AUDIENCE = "https://api.test.io";
+    process.env.AUTH0_CLIENT_ID = "test-client-id";
 
     const config = loadConfig();
     expect(config.lapisEndpoint).toBe("http://localhost:9100");
@@ -39,6 +44,9 @@ describe("loadConfig", () => {
   it("does not require PINYX_ENDPOINT — PiNyx is configured via UI", () => {
     process.env.LAPIS_ENDPOINT = "http://localhost:9100";
     process.env.REPO_ROOT = "/tmp/test-repo";
+    process.env.AUTH0_DOMAIN = "test.us.auth0.com";
+    process.env.AUTH0_AUDIENCE = "https://api.test.io";
+    process.env.AUTH0_CLIENT_ID = "test-client-id";
 
     const config = loadConfig();
     expect((config as Record<string, unknown>).pinyxEndpoint).toBeUndefined();
@@ -48,6 +56,9 @@ describe("loadConfig", () => {
   it("provides timeout defaults", () => {
     process.env.LAPIS_ENDPOINT = "http://localhost:9100";
     process.env.REPO_ROOT = "/tmp/test-repo";
+    process.env.AUTH0_DOMAIN = "test.us.auth0.com";
+    process.env.AUTH0_AUDIENCE = "https://api.test.io";
+    process.env.AUTH0_CLIENT_ID = "test-client-id";
 
     const config = loadConfig();
     expect(config.workerTimeouts.simple).toBe(180_000);
@@ -60,6 +71,9 @@ describe("loadConfig", () => {
   it("defaults gitMainBranch to main", () => {
     process.env.LAPIS_ENDPOINT = "http://localhost:9100";
     process.env.REPO_ROOT = "/tmp/test-repo";
+    process.env.AUTH0_DOMAIN = "test.us.auth0.com";
+    process.env.AUTH0_AUDIENCE = "https://api.test.io";
+    process.env.AUTH0_CLIENT_ID = "test-client-id";
 
     const config = loadConfig();
     expect(config.gitMainBranch).toBe("main");
@@ -69,6 +83,9 @@ describe("loadConfig", () => {
     process.env.LAPIS_ENDPOINT = "http://localhost:9100";
     process.env.REPO_ROOT = "/tmp/test-repo";
     process.env.PORT = "8080";
+    process.env.AUTH0_DOMAIN = "test.us.auth0.com";
+    process.env.AUTH0_AUDIENCE = "https://api.test.io";
+    process.env.AUTH0_CLIENT_ID = "test-client-id";
     const config = loadConfig();
     expect(config.port).toBe(8080);
   });
@@ -76,28 +93,55 @@ describe("loadConfig", () => {
   it("defaults PORT to 3000", () => {
     process.env.LAPIS_ENDPOINT = "http://localhost:9100";
     process.env.REPO_ROOT = "/tmp/test-repo";
+    process.env.AUTH0_DOMAIN = "test.us.auth0.com";
+    process.env.AUTH0_AUDIENCE = "https://api.test.io";
+    process.env.AUTH0_CLIENT_ID = "test-client-id";
     const config = loadConfig();
     expect(config.port).toBe(3000);
   });
 
-  it("reads apiKey from env", () => {
+  it("reads Auth0 config from env", () => {
     process.env.LAPIS_ENDPOINT = "http://localhost:9100";
     process.env.REPO_ROOT = "/tmp/test-repo";
-    process.env.API_KEY = "secret123";
+    process.env.AUTH0_DOMAIN = "my-tenant.us.auth0.com";
+    process.env.AUTH0_AUDIENCE = "https://api.aurex.io";
+    process.env.AUTH0_CLIENT_ID = "abc123";
     const config = loadConfig();
-    expect(config.apiKey).toBe("secret123");
+    expect(config.auth0Domain).toBe("my-tenant.us.auth0.com");
+    expect(config.auth0Audience).toBe("https://api.aurex.io");
+    expect(config.auth0ClientId).toBe("abc123");
   });
 
-  it("defaults apiKey to null", () => {
+  it("throws when AUTH0_DOMAIN is missing", () => {
     process.env.LAPIS_ENDPOINT = "http://localhost:9100";
     process.env.REPO_ROOT = "/tmp/test-repo";
-    const config = loadConfig();
-    expect(config.apiKey).toBeNull();
+    // AUTH0_DOMAIN not set
+    expect(() => loadConfig()).toThrow("AUTH0_DOMAIN");
+  });
+
+  it("throws when AUTH0_AUDIENCE is missing", () => {
+    process.env.LAPIS_ENDPOINT = "http://localhost:9100";
+    process.env.REPO_ROOT = "/tmp/test-repo";
+    process.env.AUTH0_DOMAIN = "test.us.auth0.com";
+    // AUTH0_AUDIENCE not set
+    expect(() => loadConfig()).toThrow("AUTH0_AUDIENCE");
+  });
+
+  it("throws when AUTH0_CLIENT_ID is missing", () => {
+    process.env.LAPIS_ENDPOINT = "http://localhost:9100";
+    process.env.REPO_ROOT = "/tmp/test-repo";
+    process.env.AUTH0_DOMAIN = "test.us.auth0.com";
+    process.env.AUTH0_AUDIENCE = "https://api.test.io";
+    // AUTH0_CLIENT_ID not set
+    expect(() => loadConfig()).toThrow("AUTH0_CLIENT_ID");
   });
 
   it("reads MISSION_COST_CAP as float", () => {
     process.env.LAPIS_ENDPOINT = "http://localhost:9100";
     process.env.REPO_ROOT = "/tmp/test-repo";
+    process.env.AUTH0_DOMAIN = "test.us.auth0.com";
+    process.env.AUTH0_AUDIENCE = "https://api.test.io";
+    process.env.AUTH0_CLIENT_ID = "test-client-id";
     process.env.MISSION_COST_CAP = "99.5";
     const config = loadConfig();
     expect(config.missionCostCap).toBe(99.5);
@@ -106,6 +150,9 @@ describe("loadConfig", () => {
   it("defaults MISSION_COST_CAP to 50.0", () => {
     process.env.LAPIS_ENDPOINT = "http://localhost:9100";
     process.env.REPO_ROOT = "/tmp/test-repo";
+    process.env.AUTH0_DOMAIN = "test.us.auth0.com";
+    process.env.AUTH0_AUDIENCE = "https://api.test.io";
+    process.env.AUTH0_CLIENT_ID = "test-client-id";
     const config = loadConfig();
     expect(config.missionCostCap).toBe(50.0);
   });
@@ -113,6 +160,9 @@ describe("loadConfig", () => {
   it("reads custom worker timeouts", () => {
     process.env.LAPIS_ENDPOINT = "http://localhost:9100";
     process.env.REPO_ROOT = "/tmp/test-repo";
+    process.env.AUTH0_DOMAIN = "test.us.auth0.com";
+    process.env.AUTH0_AUDIENCE = "https://api.test.io";
+    process.env.AUTH0_CLIENT_ID = "test-client-id";
     process.env.WORKER_TIMEOUT_SIMPLE = "60000";
     process.env.WORKER_TIMEOUT_BUILD = "120000";
     process.env.WORKER_TIMEOUT_TEST_HEAVY = "300000";
@@ -125,6 +175,9 @@ describe("loadConfig", () => {
   it("defaults validator and research timeouts", () => {
     process.env.LAPIS_ENDPOINT = "http://localhost:9100";
     process.env.REPO_ROOT = "/tmp/test-repo";
+    process.env.AUTH0_DOMAIN = "test.us.auth0.com";
+    process.env.AUTH0_AUDIENCE = "https://api.test.io";
+    process.env.AUTH0_CLIENT_ID = "test-client-id";
     const config = loadConfig();
     expect(config.validatorTimeout).toBe(180000);
     expect(config.researchTimeout).toBe(120000);
@@ -133,6 +186,9 @@ describe("loadConfig", () => {
   it("reads maxValidatorRetries and maxRescopes", () => {
     process.env.LAPIS_ENDPOINT = "http://localhost:9100";
     process.env.REPO_ROOT = "/tmp/test-repo";
+    process.env.AUTH0_DOMAIN = "test.us.auth0.com";
+    process.env.AUTH0_AUDIENCE = "https://api.test.io";
+    process.env.AUTH0_CLIENT_ID = "test-client-id";
     process.env.MAX_VALIDATOR_RETRIES = "5";
     process.env.MAX_RESCOPES_PER_MILESTONE = "10";
     const config = loadConfig();
@@ -143,6 +199,9 @@ describe("loadConfig", () => {
   it("defaults validator tool-call cap to unlimited", () => {
     process.env.LAPIS_ENDPOINT = "http://localhost:9100";
     process.env.REPO_ROOT = "/tmp/test-repo";
+    process.env.AUTH0_DOMAIN = "test.us.auth0.com";
+    process.env.AUTH0_AUDIENCE = "https://api.test.io";
+    process.env.AUTH0_CLIENT_ID = "test-client-id";
     const config = loadConfig();
     expect(config.validatorToolCallCap).toBe(0);
   });
@@ -150,6 +209,9 @@ describe("loadConfig", () => {
   it("reads validator tool-call cap from env", () => {
     process.env.LAPIS_ENDPOINT = "http://localhost:9100";
     process.env.REPO_ROOT = "/tmp/test-repo";
+    process.env.AUTH0_DOMAIN = "test.us.auth0.com";
+    process.env.AUTH0_AUDIENCE = "https://api.test.io";
+    process.env.AUTH0_CLIENT_ID = "test-client-id";
     process.env.VALIDATOR_TOOL_CALL_CAP = "80";
     const config = loadConfig();
     expect(config.validatorToolCallCap).toBe(80);
@@ -158,6 +220,9 @@ describe("loadConfig", () => {
   it("defaults maxConcurrentMissions to 3", () => {
     process.env.LAPIS_ENDPOINT = "http://localhost:9100";
     process.env.REPO_ROOT = "/tmp/test-repo";
+    process.env.AUTH0_DOMAIN = "test.us.auth0.com";
+    process.env.AUTH0_AUDIENCE = "https://api.test.io";
+    process.env.AUTH0_CLIENT_ID = "test-client-id";
     const config = loadConfig();
     expect(config.maxConcurrentMissions).toBe(3);
   });
@@ -165,6 +230,9 @@ describe("loadConfig", () => {
   it("reads AUREX_ROOT from env", () => {
     process.env.LAPIS_ENDPOINT = "http://localhost:9100";
     process.env.REPO_ROOT = "/tmp/test-repo";
+    process.env.AUTH0_DOMAIN = "test.us.auth0.com";
+    process.env.AUTH0_AUDIENCE = "https://api.test.io";
+    process.env.AUTH0_CLIENT_ID = "test-client-id";
     process.env.AUREX_ROOT = "/opt/aurex";
     const config = loadConfig();
     expect(config.aurexRoot).toBe("/opt/aurex");
@@ -173,6 +241,9 @@ describe("loadConfig", () => {
   it("defaults AUREX_ROOT to REPO_ROOT", () => {
     process.env.LAPIS_ENDPOINT = "http://localhost:9100";
     process.env.REPO_ROOT = "/tmp/test-repo";
+    process.env.AUTH0_DOMAIN = "test.us.auth0.com";
+    process.env.AUTH0_AUDIENCE = "https://api.test.io";
+    process.env.AUTH0_CLIENT_ID = "test-client-id";
     const config = loadConfig();
     expect(config.aurexRoot).toBe("/tmp/test-repo");
   });
@@ -180,6 +251,9 @@ describe("loadConfig", () => {
   it("reads custom gitMainBranch", () => {
     process.env.LAPIS_ENDPOINT = "http://localhost:9100";
     process.env.REPO_ROOT = "/tmp/test-repo";
+    process.env.AUTH0_DOMAIN = "test.us.auth0.com";
+    process.env.AUTH0_AUDIENCE = "https://api.test.io";
+    process.env.AUTH0_CLIENT_ID = "test-client-id";
     process.env.GIT_MAIN_BRANCH = "develop";
     const config = loadConfig();
     expect(config.gitMainBranch).toBe("develop");
@@ -188,6 +262,9 @@ describe("loadConfig", () => {
   it("reads quota settings from env", () => {
     process.env.LAPIS_ENDPOINT = "http://localhost:9100";
     process.env.REPO_ROOT = "/tmp/test-repo";
+    process.env.AUTH0_DOMAIN = "test.us.auth0.com";
+    process.env.AUTH0_AUDIENCE = "https://api.test.io";
+    process.env.AUTH0_CLIENT_ID = "test-client-id";
     process.env.QUOTA_ENABLED = "true";
     process.env.QUOTA_WINDOW_HOURS = "10";
     process.env.QUOTA_BURN_HOURS = "2";
@@ -200,6 +277,9 @@ describe("loadConfig", () => {
   it("defaults quota settings to disabled with 5h window 1h burn", () => {
     process.env.LAPIS_ENDPOINT = "http://localhost:9100";
     process.env.REPO_ROOT = "/tmp/test-repo";
+    process.env.AUTH0_DOMAIN = "test.us.auth0.com";
+    process.env.AUTH0_AUDIENCE = "https://api.test.io";
+    process.env.AUTH0_CLIENT_ID = "test-client-id";
     const config = loadConfig();
     expect(config.quotaEnabled).toBe(false);
     expect(config.quotaWindowDurationMs).toBe(5 * 60 * 60 * 1000);
