@@ -60,6 +60,29 @@ export function createWorktreeManager(repoRoot: string): WorktreeManager {
       const taskBranch = `task/${agentId}/${taskId}`;
       const worktreePath = `${worktreeBase}/${agentId}-${taskId}`;
 
+      // Retry paths reuse the same agent/task identifiers. Detect stale
+      // state via `git worktree list --porcelain` and only clean up the
+      // specific stale worktree/branch we are about to recreate — never run
+      // a global `worktree prune`, which can also remove valid metadata
+      // for unrelated worktrees (e.g. siblings in a multi-mission run).
+      const existingWorktrees = await git(repoRoot, "worktree", "list", "--porcelain").catch(() => "");
+      const hasStaleWorktree = existingWorktrees
+        .split("\n")
+        .some((line) => line.startsWith("worktree ") && line.slice("worktree ".length).trim() === worktreePath);
+      if (hasStaleWorktree) {
+        try { await git(repoRoot, "worktree", "remove", worktreePath, "--force"); }
+        catch (err) {
+          console.warn(`[worktree] Failed to remove stale worktree ${worktreePath}:`, err instanceof Error ? err.message : err);
+        }
+      }
+      const branchList = await git(repoRoot, "branch", "--list", taskBranch).catch(() => "");
+      if (branchList.includes(taskBranch)) {
+        try { await git(repoRoot, "branch", "-D", taskBranch); }
+        catch (err) {
+          console.warn(`[worktree] Failed to delete stale branch ${taskBranch}:`, err instanceof Error ? err.message : err);
+        }
+      }
+
       // Stryker disable next-line StringLiteral: git command args —
       // mutant changing "branch" to "" would fail at runtime.
       await git(repoRoot, "branch", taskBranch, agentBranch);

@@ -19,6 +19,12 @@ RUN pnpm -r run build
 
 USER node
 
+# Allow git operations on mounted repository directories owned by a
+# different host UID (Docker volume mounts preserve host ownership).
+# The backend runs git worktree, branch, and merge commands against
+# ${REPO_ROOT}, so this must be configured for the running user.
+RUN git config --global --add safe.directory '*'
+
 EXPOSE 3000
 
 CMD ["node", "packages/backend/dist/server.js"]

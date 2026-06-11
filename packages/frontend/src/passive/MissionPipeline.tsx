@@ -30,6 +30,7 @@ const statusConfig: Record<string, { color: string; label: string; icon: string 
   in_progress: { color: "var(--accent)", label: "IN PROGRESS", icon: "●" },
   validating: { color: "var(--info)", label: "VALIDATING", icon: "◈" },
   rescoping: { color: "var(--warning)", label: "RESCOPING", icon: "↻" },
+  retrying: { color: "var(--warning)", label: "RETRYING", icon: "↻" },
   completed: { color: "var(--success)", label: "COMPLETED", icon: "✓" },
   failed: { color: "var(--error)", label: "FAILED", icon: "✕" },
 };
@@ -101,7 +102,7 @@ export function MissionPipeline({ mission, milestones, workers, cost, events, lo
     prevWorkerCountRef.current = chips.length;
   }, [workers.length]);
 
-  const activeMilestone = milestones.find((m) => m.status === "in_progress" || m.status === "validating");
+  const activeMilestone = milestones.find((m) => m.status === "in_progress" || m.status === "validating" || m.status === "retrying");
 
   return (
     <div className="mission-pipeline-shell">
@@ -213,11 +214,14 @@ export function MissionPipeline({ mission, milestones, workers, cost, events, lo
       </div>
 
       <MissionInspectorPanel
+        mission={mission}
         missionId={mission.id}
         missionStatus={mission.status}
         milestones={milestones}
         logs={logs}
         events={events}
+        errors={errors}
+        agentLogs={agentLogs}
         eventStreamCount={eventStreamCount}
         scanFindings={scanFindings}
         isScanning={isScanning}
@@ -234,7 +238,7 @@ function MilestoneDot({ status, active }: { status: MilestoneStatus; active: boo
   useEffect(() => {
     const el = dotRef.current;
     if (!el) return;
-    if (active && (status === "in_progress" || status === "validating")) {
+    if (active && (status === "in_progress" || status === "validating" || status === "retrying")) {
       const anim = createPulse(el);
       return () => { anim.pause(); };
     }

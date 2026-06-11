@@ -10,12 +10,20 @@ interface NegotiateResult {
   failedUnitIds?: string[];
 }
 
+type VerdictLike = ValidationVerdict & {
+  validator_type?: ValidationVerdict["validatorType"];
+};
+
 export function createNegotiator(lapis: LaPisClient) {
   let priorSignature: string | null = null;
 
+  function getValidatorType(verdict: ValidationVerdict): ValidationVerdict["validatorType"] {
+    return ((verdict as VerdictLike).validatorType ?? (verdict as VerdictLike).validator_type ?? "validator_scrutiny");
+  }
+
   function hashVerdicts(verdicts: ValidationVerdict[]): string {
     const data = verdicts
-      .map((v) => `${v.validatorType}:${v.verdict}:${v.findings}:${(v.failedUnitIds ?? []).sort().join(",")}`)
+      .map((v) => `${getValidatorType(v)}:${v.verdict}:${v.findings}:${(v.failedUnitIds ?? []).sort().join(",")}`)
       .sort()
       .join("|");
     return createHash("sha256").update(data).digest("hex").slice(0, 16);
@@ -41,7 +49,7 @@ export function createNegotiator(lapis: LaPisClient) {
       const sessions = await lapis.getSessionsForMilestone(milestoneId).catch(() => [] as any[]);
       const validVerdicts = verdicts.filter((v) => {
         if (!v.sessionId) return true; // Legacy verdicts without session tracking
-        const expectedType = (v.validatorType ?? "validator_scrutiny") as AgentType;
+        const expectedType = getValidatorType(v) as AgentType;
         const result = verifyCreatorSession(v.sessionId, expectedType, sessions as any[]);
         if (!result.valid) {
           console.warn(`[enforcement] Discarding verdict from session ${v.sessionId}: ${result.reason}`);
@@ -56,7 +64,7 @@ export function createNegotiator(lapis: LaPisClient) {
       // Verdicts are returned in insertion order, so the last one per type wins.
       const latestByType = new Map<string, ValidationVerdict>();
       for (const v of validVerdicts) {
-        const key = v.validatorType ?? "validator_scrutiny";
+        const key = getValidatorType(v);
         latestByType.set(key, v);
       }
       const latestVerdicts = [...latestByType.values()];
@@ -77,7 +85,7 @@ export function createNegotiator(lapis: LaPisClient) {
         return { decision: "escalate", reason: "No validator verdicts were recorded" };
       }
 
-      const scrutinyVerdict = latestVerdicts.find((v) => v.validatorType === "validator_scrutiny");
+      const scrutinyVerdict = latestVerdicts.find((v) => getValidatorType(v) === "validator_scrutiny");
       if (!scrutinyVerdict) {
         return { decision: "escalate", reason: "Missing scrutiny validator verdict" };
       }
@@ -90,7 +98,7 @@ export function createNegotiator(lapis: LaPisClient) {
 
       // User testing failure always blocks (override authority)
       const userTestFailure = latestVerdicts.find(
-        (v) => v.validatorType === "validator_user_testing" && v.verdict === "fail",
+        (v) => getValidatorType(v) === "validator_user_testing" && v.verdict === "fail",
       );
       if (userTestFailure) {
         if (retryCount < maxRetries) {
@@ -115,7 +123,7 @@ export function createNegotiator(lapis: LaPisClient) {
         // validator types (scarcity | user_testing), a non-scrutiny fail cannot
         // reach this point (user_testing fail exits earlier), so swapping the
         // predicate to `true` produces the same selected verdict.
-        (v) => v.validatorType === "validator_scrutiny" && v.verdict === "fail",
+        (v) => getValidatorType(v) === "validator_scrutiny" && v.verdict === "fail",
       );
       // Stryker disable next-line ConditionalExpression,LogicalOperator: equivalent
       // mutant — scrutinyFailure is always defined when execution reaches this

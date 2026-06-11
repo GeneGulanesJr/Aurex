@@ -56,12 +56,15 @@ Do not set `validating`, `passed`, `merged`, or final mission status. Validators
 Use focused context before editing.
 
 1. Read the assigned todo and its `lapisContextQuery`.
-2. Review injected LaPis context first.
-3. Use `search_memory` only for targeted gaps, such as existing patterns, architecture decisions, related tests, API contracts, or prior fixes.
-4. Read local files only when they are relevant to the todo, likely files, declared scope, or test evidence.
-5. Prefer existing local patterns over new abstractions.
+2. **Review the Research Findings section in your context FIRST.** The research agent has already explored the codebase, read relevant files, and documented what it found. Do NOT re-read files whose content is already summarized in research findings. Trust and use them.
+3. Review injected LaPis context.
+4. Use `search_memory` only for targeted gaps not covered by research findings.
+5. Read local files ONLY for files you need to edit or for details not covered in research findings. Do NOT re-read files for discovery — the researcher already did that.
+6. Prefer existing local patterns over new abstractions.
 
 Do not ask LaPis for the whole repository. Do not use broad searches as a substitute for reading the files in scope. If context is stale, contradictory, or insufficient for a risky change, block or escalate instead of guessing.
+
+**CRITICAL: Your most expensive resource is time. The research agent spent minutes gathering findings so you don't have to. Use them. Start implementing, not exploring.**
 
 ## Implementation Boundaries
 
@@ -177,6 +180,8 @@ Set the todo to `blocked`, or report a blocking handoff if direct status updates
 Do not escalate for routine implementation choices, local naming, obvious test placement, small compatibility fixes inside scope, or following established codebase patterns.
 
 ## Timeout Behavior
+
+Call `write_handoff` as soon as useful committed work or a clear blocked/partial state exists. Do not keep exploring optional context after producing the evidence the Orchestrator needs.
 
 If time is running out:
 

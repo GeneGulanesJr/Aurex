@@ -5,11 +5,14 @@ import type { WsClientEvent } from "@aurex/shared";
 import { MissionInspectorPanel } from "./MissionInspectorPanel";
 
 const baseProps = {
+  mission: { id: "m1", description: "Debug a mission", status: "running" },
   missionId: "m1",
   missionStatus: "running",
   milestones: [],
   logs: [{ phase: "planning", message: "Created plan", timestamp: 1000 }],
   events: [{ type: "mission_started", missionId: "m1" } as WsClientEvent],
+  errors: [],
+  agentLogs: {},
   eventStreamCount: 8,
   scanFindings: [],
   isScanning: false,
@@ -21,9 +24,13 @@ describe("MissionInspectorPanel", () => {
     const html = renderToStaticMarkup(createElement(MissionInspectorPanel, baseProps));
 
     expect(html).toContain("Activity");
+    expect(html).toContain("Debug");
+    expect(html).toContain("Mission Debug Log");
+    expect(html).toContain("Copy");
     expect(html).toContain("Code");
     expect(html).not.toContain("Supply");
     expect(html).toContain("Created plan");
+    expect(html).toContain("missionId: m1");
   });
 
   it("shows a supply tab when the latest scan has a summary", () => {

@@ -189,28 +189,34 @@ IMPORTANT: Use the codebase structure below to ensure your declared paths and mo
       } catch {
         // Try to extract first JSON object from the response
         const firstBrace = content.indexOf("{");
-        const lastBrace = content.lastIndexOf("}");
-        if (firstBrace >= 0 && lastBrace > firstBrace) {
-          try {
-            raw = JSON.parse(content.slice(firstBrace, lastBrace + 1));
-          } catch {
-            // If truncated (finish_reason=length), try to repair by closing open brackets
-            if (response.finishReason === "length") {
-              try {
-                const repaired = repairTruncatedJson(content.slice(firstBrace));
-                raw = JSON.parse(repaired);
-                emitLog("planning", `Successfully repaired truncated JSON`);
-              } catch {
-                emitError("planner_parse_error", `Planner returned truncated JSON that could not be repaired`, { recoverable: true, details: { preview: content.slice(0, 200), finishReason: response.finishReason } });
-                throw new Error(`Planner returned invalid JSON: ${content.slice(0, 200)}`);
-              }
-            } else {
-              emitError("planner_parse_error", `Planner returned invalid JSON`, { recoverable: true, details: { preview: content.slice(0, 200) } });
+        if (firstBrace >= 0) {
+          const lastBrace = content.lastIndexOf("}");
+          // Try direct parse first (when we have a closing brace)
+          let parseAttempted = false;
+          if (lastBrace > firstBrace) {
+            try {
+              raw = JSON.parse(content.slice(firstBrace, lastBrace + 1));
+              parseAttempted = true;
+            } catch {
+              // Direct parse failed, fall through to repair below
+            }
+          }
+          if (!parseAttempted) {
+            // Always attempt JSON repair — finishReason may report "stop" even when
+            // the response is genuinely truncated (e.g. SSE stream interrupted,
+            // provider internal limit, or finish_reason lost in final chunk).
+            // Also covers the case where there's no closing brace at all.
+            try {
+              const repaired = repairTruncatedJson(content.slice(firstBrace));
+              raw = JSON.parse(repaired);
+              emitLog("planning", `Successfully repaired truncated JSON (finishReason=${response.finishReason})`);
+            } catch {
+              emitError("planner_parse_error", `Planner returned invalid JSON that could not be repaired`, { recoverable: true, details: { preview: content.slice(0, 200), finishReason: response.finishReason } });
               throw new Error(`Planner returned invalid JSON: ${content.slice(0, 200)}`);
             }
           }
         } else {
-          emitError("planner_parse_error", `Planner returned invalid JSON`, { recoverable: true, details: { preview: content.slice(0, 200) } });
+          emitError("planner_parse_error", `Planner returned invalid JSON (no opening brace found)`, { recoverable: true, details: { preview: content.slice(0, 200) } });
           throw new Error(`Planner returned invalid JSON: ${content.slice(0, 200)}`);
         }
       }

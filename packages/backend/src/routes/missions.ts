@@ -7,10 +7,11 @@ import type { AgentLogger } from "../agents/agent-logger.js";
 import { checkQuota, resetWindow } from "../enforcement/quota-gate.js";
 
 const defaultMissionConfig: Omit<MissionConfig, "modelHints"> = {
-  workerTimeouts: { simple: 120000, build: 300000, testHeavy: 600000 },
+  workerTimeouts: { simple: 180_000, build: 300_000, testHeavy: 600_000 },
   costCap: 50,
   maxValidatorRetries: 2,
   maxRescopes: 5,
+  validatorToolCallCap: 0,
 };
 
 export async function missionRoutes(

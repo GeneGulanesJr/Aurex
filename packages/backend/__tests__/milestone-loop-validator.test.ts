@@ -175,4 +175,153 @@ describe("milestone loop — validator phase", () => {
     const result = await loop.run(makeMission(), [makeMilestone()]);
     expect(result.status).toBe("checkpoint_needed");
   });
+
+  it("returns a runtime checkpoint when scrutiny times out while user testing writes a verdict", async () => {
+    const completedUnit: WorkingUnit = {
+      id: "unit-1", milestoneId: "ms-1", description: "Do thing",
+      declaredPaths: ["src/auth.ts"], declaredModules: ["auth"],
+      status: "completed", taskBranch: "task/w-1/unit-1", worktreePath: "/wt", sessionId: "sess-1",
+    };
+    const userTestingVerdict: ValidationVerdict = {
+      id: "v-2",
+      milestoneId: "ms-1",
+      contractId: "c-1",
+      validatorType: "validator_user_testing",
+      sessionId: "mock-session",
+      verdict: "pass",
+      findings: "OK",
+      failedUnitIds: [],
+      timestamp: "",
+    };
+    const lapis = createMockLapis([completedUnit], [userTestingVerdict]);
+    const pinyx = createMockPinyx();
+    const callbacks = {
+      onEscalation: vi.fn(),
+      onAgentStatus: vi.fn(),
+      onMilestoneProgress: vi.fn(),
+      onCostUpdate: vi.fn(),
+      onError: vi.fn(),
+    };
+
+    let subscribeCount = 0;
+    mockSession.subscribe.mockImplementation((fn: any) => {
+      subscribeCount++;
+      if (subscribeCount === 2) {
+        return () => {};
+      }
+      setTimeout(() => fn({ type: "agent_end" }), 0);
+      return () => {};
+    });
+
+    const mission = makeMission({
+      configJson: {
+        ...makeMission().configJson,
+        workerTimeouts: { simple: 120_000, build: 300_000, testHeavy: 5 },
+      },
+    });
+    const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
+      agentDir: "/test/.pi/agent",
+      repoRoot: "/test/repo",
+      gitMainBranch: "main",
+    });
+
+    const result = await loop.run(mission, [makeMilestone()]);
+
+    expect(result.status).toBe("checkpoint_needed");
+    if (result.status === "checkpoint_needed") {
+      expect(result.trigger).toBe("unclassifiable_error");
+      expect(result.summary).toContain("validator_scrutiny timed out before submitting write_verdict");
+    }
+    expect(lapis.writeVerdict).toHaveBeenCalledWith(
+      "mock-session",
+      expect.objectContaining({
+        validatorType: "validator_scrutiny",
+        verdict: "fail",
+        findings: expect.stringContaining("timed out before calling write_verdict"),
+      }),
+    );
+    expect(callbacks.onEscalation).toHaveBeenCalledWith(
+      "m-1",
+      expect.objectContaining({ kind: "unclassifiable_error", milestoneId: "ms-1" }),
+      expect.objectContaining({ summary: expect.stringContaining("validator_scrutiny timed out") }),
+    );
+  });
+
+  it("does not spawn validators while working units are incomplete", async () => {
+    const staleUnit: WorkingUnit = {
+      id: "unit-1", milestoneId: "ms-1", description: "Do thing",
+      declaredPaths: ["src/auth.ts"], declaredModules: ["auth"],
+      status: "working", taskBranch: "task/w-1/unit-1", worktreePath: "/wt", sessionId: "sess-1",
+    };
+    const lapis = createMockLapis([staleUnit], []);
+    const pinyx = createMockPinyx();
+    const callbacks = {
+      onEscalation: vi.fn(),
+      onAgentStatus: vi.fn(),
+      onMilestoneProgress: vi.fn(),
+      onCostUpdate: vi.fn(),
+      onError: vi.fn(),
+    };
+
+    const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
+      agentDir: "/test/.pi/agent",
+      repoRoot: "/test/repo",
+      gitMainBranch: "main",
+    });
+
+    const result = await loop.run(makeMission(), [makeMilestone()]);
+
+    expect(result.status).toBe("checkpoint_needed");
+    if (result.status === "checkpoint_needed") {
+      expect(result.trigger).toBe("unclassifiable_error");
+      expect(result.summary).toContain("not completed");
+    }
+    expect(lapis.updateWorkingUnitStatus).toHaveBeenCalledWith("unit-1", "planned");
+    const registrations = (lapis.registerAgentSession as any).mock.calls.map((call: any[]) => call[0]);
+    expect(registrations).not.toContain("validator_scrutiny");
+    expect(callbacks.onError).toHaveBeenCalledWith(
+      "m-1",
+      "validation_blocked_incomplete_units",
+      expect.stringContaining("not completed"),
+      expect.objectContaining({ milestoneId: "ms-1", recoverable: true }),
+    );
+  });
+
+  it("normalizes working units without declared scope arrays before batching", async () => {
+    const malformedUnit = {
+      id: "unit-1",
+      milestone_id: "ms-1",
+      description: "Do thing",
+      status: "planned",
+      task_branch: "",
+      worktree_path: "",
+      session_id: "",
+    } as unknown as WorkingUnit;
+    const lapis = createMockLapis([malformedUnit], []);
+    const pinyx = createMockPinyx();
+    const callbacks = {
+      onEscalation: vi.fn(),
+      onAgentStatus: vi.fn(),
+      onMilestoneProgress: vi.fn(),
+      onCostUpdate: vi.fn(),
+      onError: vi.fn(),
+    };
+
+    const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
+      agentDir: "/test/.pi/agent",
+      repoRoot: "/test/repo",
+      gitMainBranch: "main",
+    });
+
+    await expect(loop.run(makeMission(), [makeMilestone()])).resolves.toEqual(
+      expect.objectContaining({ status: "checkpoint_needed" }),
+    );
+    expect(lapis.registerAgentSession).toHaveBeenCalledWith(
+      "worker",
+      expect.any(String),
+      "m-1",
+      "ms-1",
+      "unit-1",
+    );
+  });
 });

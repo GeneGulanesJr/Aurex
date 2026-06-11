@@ -148,7 +148,7 @@ describe("AgentSpawner — validator types", () => {
     );
   });
 
-  it("counts tool calls in a validator session and aborts when cap is exceeded", async () => {
+  it("does not cap validator tool calls by default", async () => {
     const lapis = createMockLapis();
     const spawner = createAgentSpawner({
       lapis,
@@ -156,9 +156,6 @@ describe("AgentSpawner — validator types", () => {
       defaultTimeout: 60_000,
     });
 
-    // Override the default subscribe mock: emit many tool_call events.
-    // The spawner should abort the session when the cap is exceeded
-    // (well before any agent_end). Default cap is now 40.
     mockSession.subscribe.mockImplementation((fn: any) => {
       for (let i = 0; i < 50; i++) {
         setTimeout(() => fn({
@@ -169,7 +166,7 @@ describe("AgentSpawner — validator types", () => {
           },
         }), i);
       }
-      // Never emit agent_end — the spawner should abort the session itself.
+      setTimeout(() => fn({ type: "agent_end" }), 60);
       return () => {};
     });
 
@@ -187,19 +184,19 @@ describe("AgentSpawner — validator types", () => {
     });
 
     const result = await handle.completed;
-    expect(result.status).toBe("failed");
-    expect(result.error).toContain("tool_call_cap");
+    expect(result.status).toBe("completed");
+    expect(mockSession.abort).not.toHaveBeenCalled();
   });
 
-  it("does NOT write a synthetic verdict when cap is exceeded (moved to milestone-loop)", async () => {
+  it("counts tool calls in a validator session and aborts when configured cap is exceeded", async () => {
     const lapis = createMockLapis();
     const spawner = createAgentSpawner({
       lapis,
       agentDir: "/test/.pi/agent",
       defaultTimeout: 60_000,
+      validatorToolCallCap: 40,
     });
 
-    // Emit 50 tool calls — exceeds the default cap of 40
     mockSession.subscribe.mockImplementation((fn: any) => {
       for (let i = 0; i < 50; i++) {
         setTimeout(() => fn({

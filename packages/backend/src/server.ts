@@ -128,6 +128,7 @@ async function main() {
       costCap: config.missionCostCap,
       maxValidatorRetries: config.maxValidatorRetries,
       maxRescopes: config.maxRescopes,
+      validatorToolCallCap: config.validatorToolCallCap,
     },
   });
   await app.register(checkpointRoutes, { lapis });

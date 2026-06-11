@@ -24,7 +24,7 @@ export interface AgentSpawnerConfig {
   logger?: AgentLogger;
   eventBus?: EventBus;
   maxConcurrent?: number;
-  /** Max tool calls for a validator session before auto-fail. Default 40. */
+  /** Max tool calls for a validator session before auto-fail. 0 disables the cap. Default 0. */
   validatorToolCallCap?: number;
   onCost?: (missionId: string, totalCost: number, totalTokens: number, delta: number) => void;
 }
@@ -43,6 +43,8 @@ export interface SpawnOptions {
   timeout?: number;
   /** PiNyx/OpenAI-compatible model id to use for this agent session. */
   model?: string;
+  /** Overrides the configured validator tool-call cap for this session. 0 disables the cap. */
+  validatorToolCallCap?: number;
 }
 
 export interface SpawnHandle {
@@ -61,7 +63,7 @@ export interface SpawnResult {
 }
 
 export function createAgentSpawner(config: AgentSpawnerConfig) {
-  const { lapis, agentDir, defaultTimeout, logger, eventBus, maxConcurrent, validatorToolCallCap = 40 } = config;
+  const { lapis, agentDir, defaultTimeout, logger, eventBus, maxConcurrent, validatorToolCallCap = 0 } = config;
   const activeHandles = new Map<string, SpawnHandle>();
   let missionCumulativeCost = 0;
   let missionCumulativeTokens = 0;
@@ -95,7 +97,10 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
 
       const timeout = opts.timeout ?? defaultTimeout;
       let sessionId = "";
-      const customTools = createCustomTools(lapis, opts, () => sessionId);
+      let onWorkerHandoffAccepted: (() => void) | undefined;
+      const customTools = createCustomTools(lapis, opts, () => sessionId, () => {
+        onWorkerHandoffAccepted?.();
+      });
       const tools = [...new Set([
         ...AGENT_TOOLS[opts.agentType],
         ...customTools.map((tool) => tool?.name).filter((name): name is string => Boolean(name)),
@@ -225,23 +230,33 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
       let settled = false;
       let toolCallCount = 0;
       const isValidatorSession = opts.agentType === "validator_scrutiny" || opts.agentType === "validator_user_testing";
-      const toolCallCap = isValidatorSession ? validatorToolCallCap : Infinity;
+      const effectiveValidatorToolCallCap = opts.validatorToolCallCap ?? validatorToolCallCap;
+      const toolCallCap = isValidatorSession && effectiveValidatorToolCallCap > 0 ? effectiveValidatorToolCallCap : Infinity;
+      const completeSuccessfully = (message: string) => {
+        if (settled) return;
+        settled = true;
+        logger?.log({
+          sessionId: session.sessionId,
+          agentType: opts.agentType,
+          missionId: opts.missionId,
+          milestoneId: opts.milestoneId,
+          unitId: opts.unitId,
+          event: "completed",
+        });
+        emitOutput(opts, "completed", message);
+        resolveCompleted({ status: "completed", sessionId: session.sessionId });
+      };
+
+      onWorkerHandoffAccepted = () => {
+        completeSuccessfully("Worker handoff accepted; ending session.");
+        session.abort();
+      };
 
       const unsubscribe = session.subscribe(async (event: any) => {
         if (settled) return;
 
         if (event.type === "agent_end") {
-          settled = true;
-          logger?.log({
-            sessionId: session.sessionId,
-            agentType: opts.agentType,
-            missionId: opts.missionId,
-            milestoneId: opts.milestoneId,
-            unitId: opts.unitId,
-            event: "completed",
-          });
-          emitOutput(opts, "completed", "Agent completed successfully");
-          resolveCompleted({ status: "completed", sessionId: session.sessionId });
+          completeSuccessfully("Agent completed successfully");
         }
 
         if (event.type === "message_update") {
@@ -269,11 +284,9 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
           const toolInput = (event.assistantMessageEvent?.toolCall?.arguments ?? event.assistantMessageEvent?.toolCall?.input) as Record<string, unknown> | undefined;
           if (toolName) {
             toolCallCount++;
-            // Validator tool-call cap enforcement: abort and force a
-            // synthetic fail verdict if the model keeps making tool calls
-            // without producing a verdict. The cap is the only thing
-            // bounding the validator's runtime — the Pi SDK session loop
-            // has no built-in maxSteps.
+            // Optional validator tool-call cap enforcement. By default
+            // validators rely on timeout/cost bounds, but deployments can
+            // configure a hard cap for tighter control.
             if (toolCallCount > toolCallCap) {
               settled = true;
               session.abort();
@@ -360,22 +373,43 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
         }
       });
 
-      const timeoutId = setTimeout(() => {
-        if (!settled) {
-          settled = true;
-          session.abort();
-          logger?.log({
-            sessionId: session.sessionId,
-            agentType: opts.agentType,
-            missionId: opts.missionId,
-            milestoneId: opts.milestoneId,
-            unitId: opts.unitId,
-            event: "timed_out",
-          });
-          emitOutput(opts, "timed_out", "Agent timed out");
-          resolveCompleted({ status: "timed_out", sessionId: session.sessionId });
+      // timeout <= 0 disables the deadline entirely — agent runs until it
+      // finishes naturally or is aborted for other reasons (cost cap, tool
+      // cap, explicit abort). Useful for free-tier models that need more
+      // than 5 minutes to complete thorough exploration.
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      if (timeout > 0) {
+        timeoutId = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            session.abort();
+            logger?.log({
+              sessionId: session.sessionId,
+              agentType: opts.agentType,
+              missionId: opts.missionId,
+              milestoneId: opts.milestoneId,
+              unitId: opts.unitId,
+              event: "timed_out",
+            });
+            emitOutput(opts, "timed_out", "Agent timed out");
+            resolveCompleted({ status: "timed_out", sessionId: session.sessionId });
+          }
+        }, timeout);
+        // Avoid keeping the process alive solely because of the timeout
+        if (typeof timeoutId === "object" && timeoutId && "unref" in timeoutId) {
+          (timeoutId as { unref: () => void }).unref();
         }
-      }, timeout);
+      } else {
+        logger?.log({
+          sessionId: session.sessionId,
+          agentType: opts.agentType,
+          missionId: opts.missionId,
+          milestoneId: opts.milestoneId,
+          unitId: opts.unitId,
+          event: "tool_call",
+          data: { note: "Timeout disabled — agent will run to completion", timeout },
+        });
+      }
 
       logger?.log({
         sessionId: session.sessionId,
@@ -437,7 +471,9 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
       activeHandles.set(session.sessionId, handle);
 
       completed.finally(() => {
-        clearTimeout(timeoutId);
+        if (timeout > 0 && typeof timeoutId !== "undefined") {
+          clearTimeout(timeoutId);
+        }
         unsubscribe();
         activeHandles.delete(session.sessionId);
       });
@@ -518,12 +554,13 @@ function createCustomTools(
   lapis: LaPisClient,
   opts: SpawnOptions,
   getSessionId: () => string,
+  onWorkerHandoffAccepted?: () => void,
 ) {
   if (opts.agentType === "worker") {
     if (!opts.unitId) {
       throw new Error("worker spawn requires unitId");
     }
-    return createWorkerTools(lapis, opts.unitId);
+    return createWorkerTools(lapis, opts.unitId, { onHandoffAccepted: onWorkerHandoffAccepted });
   }
 
   if (opts.agentType === "validator_scrutiny" || opts.agentType === "validator_user_testing") {

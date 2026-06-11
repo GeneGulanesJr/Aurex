@@ -34,6 +34,47 @@ describe("WorktreeManager", () => {
     expect(calls.some((c) => c.includes("worktree add"))).toBe(true);
   });
 
+  it("does not run cleanup commands when no stale worktree or branch is registered", async () => {
+    // Default mock returns empty stdout for every git call, so
+    // `worktree list --porcelain` reports no stale worktrees and
+    // `branch --list` reports no stale branch. createWorktree should
+    // therefore skip the cleanup commands entirely.
+    const manager = createWorktreeManager("/repo/root");
+    await manager.createWorktree("worker-a", "auth-001", "main");
+
+    const calls = mockExecAsync.mock.calls.map((c) => `${c[0]} ${(c[1] as string[]).join(" ")}`);
+    expect(calls.some((c) => c.includes("worktree remove /repo/root/.git-worktrees/worker-a-auth-001 --force"))).toBe(false);
+    expect(calls.some((c) => c.includes("branch -D task/worker-a/auth-001"))).toBe(false);
+    expect(calls.some((c) => c.includes("worktree prune"))).toBe(false);
+  });
+
+  it("cleans stale retry worktree and branch before creating a worker worktree", async () => {
+    // Simulate a stale state: `worktree list --porcelain` reports the
+    // worktree we're about to create, and `branch --list` reports the
+    // branch. The manager should remove both, then continue.
+    const staleWorktreePath = "/repo/root/.git-worktrees/worker-a-auth-001";
+    const staleBranch = "task/worker-a/auth-001";
+    mockExecAsync.mockImplementation(async (_cmd: string, args: string[]) => {
+      if (args.includes("worktree") && args.includes("list") && args.includes("--porcelain")) {
+        return { stdout: `worktree ${staleWorktreePath}\nHEAD abcdef\n`, stderr: "" };
+      }
+      if (args.includes("branch") && args.includes("--list")) {
+        return { stdout: `${staleBranch}\n`, stderr: "" };
+      }
+      return { stdout: "", stderr: "" };
+    });
+
+    const manager = createWorktreeManager("/repo/root");
+    await manager.createWorktree("worker-a", "auth-001", "main");
+
+    const calls = mockExecAsync.mock.calls.map((c) => `${c[0]} ${(c[1] as string[]).join(" ")}`);
+    expect(calls.some((c) => c.includes(`worktree remove ${staleWorktreePath} --force`))).toBe(true);
+    expect(calls.some((c) => c.includes(`branch -D ${staleBranch}`))).toBe(true);
+    // The global `worktree prune` must NOT be invoked — it would clobber
+    // valid sibling worktree metadata in a multi-mission run.
+    expect(calls.some((c) => c.includes("worktree prune"))).toBe(false);
+  });
+
   it("merges task branch to develop", async () => {
     const manager = createWorktreeManager("/repo/root");
     await manager.mergeToTarget("task/worker-a/auth-001", "develop");

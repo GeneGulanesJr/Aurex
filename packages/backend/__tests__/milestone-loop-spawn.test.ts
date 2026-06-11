@@ -248,6 +248,64 @@ describe("milestone loop with spawner", () => {
     );
   });
 
+  it("infers worker scope from the mission target path when LaPis returns sparse units", async () => {
+    let eventSubscriber: (event: any) => void = () => {};
+    (mockSession.subscribe as any).mockImplementation((fn: any) => {
+      eventSubscriber = fn;
+      return () => {};
+    });
+    (mockSession.prompt as any).mockImplementation(async () => {
+      eventSubscriber({ type: "agent_end" });
+    });
+
+    const unit: WorkingUnit = {
+      id: "unit-1",
+      milestoneId: "ms-1",
+      description: "",
+      declaredPaths: [],
+      declaredModules: [],
+      status: "planned" as any,
+      taskBranch: "",
+      worktreePath: "",
+      sessionId: "",
+    };
+
+    const lapis = createMockLapis([unit]);
+    const pinyx = createMockPinyx();
+    const callbacks = {
+      onEscalation: vi.fn(),
+      onAgentStatus: vi.fn(),
+      onMilestoneProgress: vi.fn(),
+      onCostUpdate: vi.fn(),
+      onError: vi.fn(),
+    };
+
+    const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
+      agentDir: "/home/user/.pi/agent",
+      repoRoot: "/repo/GeneGulanesJr-PiNyx",
+      gitMainBranch: "main",
+    });
+
+    await loop.run(makeMission({
+      description: "Refactor /repo/GeneGulanesJr-PiNyx/pinyx/src/server/mod.rs to reduce complexity.",
+    }), [makeMilestone({
+      title: "Analyze server module",
+      description: "Analyze current server/mod.rs complexity and structure",
+    })]);
+
+    // Scope is filled in from the inferred paths, but the unit's own
+    // description is NOT rewritten — that was the prior behavior we
+    // removed because it silently overwrote planner identity.
+    expect(callbacks.onAgentStatus).toHaveBeenCalledWith(
+      "worker-unit-1", "worker", "spawned", "ms-1",
+      expect.objectContaining({
+        declaredPaths: ["pinyx/src/server/mod.rs"],
+        declaredModules: ["server"],
+        description: "",
+      }),
+    );
+  });
+
   it("retries a worker that completes without a handoff before validation", async () => {
     let eventSubscriber: (event: any) => void = () => {};
     (mockSession.subscribe as any).mockImplementation((fn: any) => {

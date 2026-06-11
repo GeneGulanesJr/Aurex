@@ -366,6 +366,27 @@ describe("negotiator", () => {
     expect(result.decision).toBe("pass");
   });
 
+  it("accepts snake_case validator_type verdicts from LaPis payloads", async () => {
+    const verdicts = [
+      {
+        id: "v-1",
+        milestoneId: "ms-1",
+        contractId: "c-1",
+        validator_type: "validator_scrutiny",
+        sessionId: "s-1",
+        verdict: "pass",
+        findings: "Looks good",
+        failedUnitIds: [],
+        timestamp: "",
+      },
+    ] as unknown as ValidationVerdict[];
+    const mockLapis = mockLapisWithSessions(verdicts);
+    const negotiator = createNegotiator(mockLapis);
+    const result = await negotiator.negotiate("ms-1", 0, 0, 2, 5);
+
+    expect(result.decision).toBe("pass");
+  });
+
   // ---------------------------------------------------------------------------
   // L75 mutants: the scrutinyFailure `find` predicate.
   // To kill these, the FIRST validVerdict must NOT be a scrutiny fail, and

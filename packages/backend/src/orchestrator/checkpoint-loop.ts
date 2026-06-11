@@ -121,6 +121,52 @@ export async function runCheckpointLoop(
         }
         eventBus.emit({ type: "milestone_progress", milestoneId: cp.milestoneId, status: "rescoping", completedUnits: 0, totalUnits: result.units.length });
       }
+    } else if (cp.trigger === "validation_failed" || cp.trigger === "rescope_limit") {
+      // "Continue without rescope" recovery: only allowed when the failure
+      // is a validation outcome (validation_failed) or the rescope pipeline
+      // couldn't make progress (rescope_limit). For unclassifiable_error the
+      // cause is a runtime/compliance failure (validator produced no verdict,
+      // worker crashed, integration aborted) — silently re-running is unsafe
+      // because the failure mode is unlikely to change without a re-plan.
+      const units = await lapis.getWorkingUnitsForMilestone(cp.milestoneId).catch(() => [] as import("@aurex/shared").WorkingUnit[]);
+      const verdicts = await lapis.getVerdicts(cp.milestoneId).catch(() => [] as import("@aurex/shared").ValidationVerdict[]);
+      const failedUnitIds = new Set(
+        verdicts
+          .filter((v) => v.verdict === "fail")
+          .flatMap((v) => v.failedUnitIds ?? []),
+      );
+
+      // If we have no signal at all (no verdicts, or verdicts fetch failed
+      // silently), do NOT auto-retry. The checkpoint should fall through to
+      // the user picking Rescope/Abort — silently resetting completed units
+      // would redo finished work with no new information.
+      if (failedUnitIds.size === 0 && verdicts.length === 0) {
+        eventBus.emit({
+          type: "mission_log",
+          missionId,
+          phase: "checkpoint",
+          message: "No validator verdicts available to determine retryable units. Awaiting human direction (Rescope or Abort).",
+          data: { guidance: resolved.guidance ?? null, retriedUnitIds: [] },
+        });
+      } else {
+        const unitsToRetry = failedUnitIds.size > 0
+          ? units.filter((u) => failedUnitIds.has(u.id))
+          : units.filter((u) => u.status === "completed" || u.status === "failed" || u.status === "timed_out");
+
+        for (const unit of unitsToRetry) {
+          await lapis.updateWorkingUnitStatus(unit.id, "planned");
+        }
+        await lapis.updateMilestoneStatus(cp.milestoneId, "in_progress").catch(() => {});
+        eventBus.emit({
+          type: "mission_log",
+          missionId,
+          phase: "checkpoint",
+          message: unitsToRetry.length > 0
+            ? `Continuing milestone without rescope; queued ${unitsToRetry.length} unit(s) for another work attempt.`
+            : "Continuing milestone without rescope; rerunning validation on current work.",
+          data: { guidance: resolved.guidance ?? null, retriedUnitIds: unitsToRetry.map((u) => u.id) },
+        });
+      }
     }
 
     if (cp.trigger === "milestone_complete") {

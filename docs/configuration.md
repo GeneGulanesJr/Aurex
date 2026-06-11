@@ -37,12 +37,13 @@ The source of truth is [`.env.example`](../.env.example). This document explains
 | `MISSION_COST_CAP` | float | `50.0` | USD cap per mission. The milestone loop pauses + escalates when exceeded. | [`config.ts:83`](../packages/backend/src/config.ts) |
 | `MAX_VALIDATOR_RETRIES` | int | `2` | Max times the negotiator may retry a failed milestone with a new worker. After this, the milestone escalates. | [`config.ts:81`](../packages/backend/src/config.ts) |
 | `MAX_RESCOPES_PER_MILESTONE` | int | `2` | Max times a single milestone may be re-scoped. Note: `.env.example` ships `5`; the code default is `2`. | [`config.ts:82`](../packages/backend/src/config.ts) |
+| `VALIDATOR_TOOL_CALL_CAP` | int | `0` | Optional per-validator tool-call cap. `0` disables the cap; validator timeout and mission cost cap still apply. | [`config.ts`](../packages/backend/src/config.ts) |
 
 ## Agent timeouts (milliseconds)
 
 | Variable | Default | Effect | Source |
 |---|---|---|---|
-| `WORKER_TIMEOUT_SIMPLE` | `120000` (2 min) | Per-attempt timeout for "simple" workers (e.g. small text changes). | [`config.ts:74`](../packages/backend/src/config.ts) |
+| `WORKER_TIMEOUT_SIMPLE` | `180000` (3 min) | Per-attempt timeout for "simple" workers (e.g. small text changes). Default was raised from 2 min to 3 min — most worker sessions need the extra time even on simple units, and the worker self-terminates via `write_handoff` long before the deadline. | [`config.ts:74`](../packages/backend/src/config.ts) |
 | `WORKER_TIMEOUT_BUILD` | `300000` (5 min) | Per-attempt timeout for "build" workers (dependency installs, codegen). | [`config.ts:75`](../packages/backend/src/config.ts) |
 | `WORKER_TIMEOUT_TEST_HEAVY` | `600000` (10 min) | Per-attempt timeout for "test-heavy" workers (running full test suites). | [`config.ts:76`](../packages/backend/src/config.ts) |
 | `VALIDATOR_TIMEOUT` | `180000` (3 min) | Per-validator timeout. | [`config.ts:78`](../packages/backend/src/config.ts) |
@@ -110,6 +111,7 @@ MAX_CONCURRENT_MISSIONS=3
 MISSION_COST_CAP=50.00
 MAX_VALIDATOR_RETRIES=2
 MAX_RESCOPES_PER_MILESTONE=5
+VALIDATOR_TOOL_CALL_CAP=0
 
 # GitHub (only needed for the GitHub repo picker)
 GITHUB_CLIENT_ID=Iv23lijYF4sZMcU62MjT

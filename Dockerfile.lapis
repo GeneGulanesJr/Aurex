@@ -10,6 +10,12 @@ RUN npm install
 
 RUN mkdir -p /root/.pi/memory
 
+# Allow git operations on mounted repository directories owned by a
+# different host UID (Docker volume mounts preserve host ownership).
+# Without this, git refuses to operate on the directory as a security
+# safeguard ("dubious ownership").
+RUN git config --global --add safe.directory '*'
+
 EXPOSE 9100
 
 HEALTHCHECK --interval=5s --timeout=3s --start-period=15s --retries=10 \

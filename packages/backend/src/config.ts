@@ -16,6 +16,7 @@ export interface AppConfig {
   // Mission limits
   maxValidatorRetries: number;
   maxRescopes: number;
+  validatorToolCallCap: number;
   missionCostCap: number;
 
   // Git
@@ -71,7 +72,7 @@ export function loadConfig(): AppConfig {
     lapisEndpoint: env("LAPIS_ENDPOINT"),
 
     workerTimeouts: {
-      simple: envInt("WORKER_TIMEOUT_SIMPLE", 120_000),
+      simple: envInt("WORKER_TIMEOUT_SIMPLE", 180_000),
       build: envInt("WORKER_TIMEOUT_BUILD", 300_000),
       testHeavy: envInt("WORKER_TIMEOUT_TEST_HEAVY", 600_000),
     },
@@ -80,6 +81,7 @@ export function loadConfig(): AppConfig {
 
     maxValidatorRetries: envInt("MAX_VALIDATOR_RETRIES", 2),
     maxRescopes: envInt("MAX_RESCOPES_PER_MILESTONE", 2),
+    validatorToolCallCap: Math.max(0, envInt("VALIDATOR_TOOL_CALL_CAP", 0)),
     missionCostCap: envFloat("MISSION_COST_CAP", 50.0),
 
     repoRoot: env("REPO_ROOT"),

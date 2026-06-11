@@ -356,4 +356,40 @@ describe("buildValidatorContext", () => {
 
     expect(ctx).not.toContain("## Merged Validation Worktree");
   });
+
+  it("does not claim a hard validator tool-call cap by default", () => {
+    const ctx = buildValidatorContext({
+      validatorType: "validator_scrutiny",
+      missionDescription: "Build auth",
+      milestoneTitle: "Auth module",
+      milestoneDescription: "JWT auth",
+      contractId: "contract-1",
+      contractCriteria: [],
+      testCommands: [],
+      acceptanceBehavior: "",
+      baseBranch: "main",
+      units: [],
+    });
+
+    expect(ctx).toContain("There is no per-session tool-call cap");
+    expect(ctx).not.toContain("You have a hard cap");
+  });
+
+  it("includes configured validator tool-call cap when present", () => {
+    const ctx = buildValidatorContext({
+      validatorType: "validator_scrutiny",
+      missionDescription: "Build auth",
+      milestoneTitle: "Auth module",
+      milestoneDescription: "JWT auth",
+      contractId: "contract-1",
+      contractCriteria: [],
+      testCommands: [],
+      acceptanceBehavior: "",
+      baseBranch: "main",
+      units: [],
+      validatorToolCallCap: 80,
+    });
+
+    expect(ctx).toContain("configured cap of 80 tool calls");
+  });
 });

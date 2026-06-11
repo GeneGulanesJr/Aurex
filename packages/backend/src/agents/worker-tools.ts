@@ -4,7 +4,11 @@ import { Type } from "@sinclair/typebox";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { Handoff } from "@aurex/shared";
 
-export function createWorkerTools(lapis: LaPisClient, unitId: string) {
+export function createWorkerTools(
+  lapis: LaPisClient,
+  unitId: string,
+  opts?: { onHandoffAccepted?: () => void },
+) {
   const writeHandoff = defineTool({
     name: "write_handoff",
     label: "Write Handoff",
@@ -47,6 +51,7 @@ export function createWorkerTools(lapis: LaPisClient, unitId: string) {
       const result = await lapis.writeHandoff(unitId, handoff);
 
       if (result.accepted) {
+        opts?.onHandoffAccepted?.();
         return {
           content: [{ type: "text" as const, text: "Handoff accepted. Your work has been recorded." }],
           details: {},

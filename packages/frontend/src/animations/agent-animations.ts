@@ -2,9 +2,8 @@ import { animate } from "animejs";
 
 export function createPulse(element: HTMLElement) {
   return animate(element, {
-    scale: [1, 1.1],
-    opacity: [1, 0.7],
-    duration: 800,
+    opacity: [0.85, 0.55],
+    duration: 2400,
     ease: "inOutSine",
     loop: true,
     direction: "alternate",
