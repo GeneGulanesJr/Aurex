@@ -1132,10 +1132,10 @@ function selectWorkerTimeout(
   // text is intentionally excluded — it would match "test|build|module" in
   // nearly every mission and make the build-window branch the unconditional
   // default, defeating the purpose of having two timeout tiers. Use narrow
-  // verbs that signal "this unit does a multi-step analysis" rather than
-  // generic programming keywords.
+  // terms that signal "this unit does multi-step repo analysis" rather than
+  // ordinary implementation work.
   const unitText = unit.description.toLowerCase();
-  const needsBuildWindow = /\b(analy[sz]e|analysis|inventory|measure|baseline|hotspot|complexity|dependency|dependencies|api|refactor|decompose|extract|split)\b/.test(unitText);
+  const needsBuildWindow = /\b(analy[sz]e|analysis|inventory|measure|baseline|hotspot|complexity|dependency|dependencies|refactor|decompose|extract|split)\b/.test(unitText);
   const timeout = needsBuildWindow ? Math.max(timeouts.simple, timeouts.build) : timeouts.simple;
   if (logger) {
     logger.log({
