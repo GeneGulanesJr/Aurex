@@ -146,7 +146,7 @@ function createMockLapis(): LaPisClient {
     resolveCheckpoint: vi.fn().mockResolvedValue({ id: "cp-1", status: "resolved", decision: "approve" }),
     getPendingCheckpoints: vi.fn().mockResolvedValue([]),
     listMissions: vi.fn().mockResolvedValue([]),
-    runCompression: vi.fn().mockResolvedValue(undefined),
+    runCompression: vi.fn().mockResolvedValue({ summary: "compressed", tokensSaved: 0 }),
     setSetting: vi.fn().mockResolvedValue(undefined),
   } as unknown as LaPisClient;
 }
@@ -465,5 +465,41 @@ describe("MissionRunner", () => {
     expect(checkpointTriggers).toContain("milestone_complete");
     expect(lapis.updateMissionStatus).toHaveBeenCalledWith("m-1", "completed");
     expect(runner.getStatus().state).toBe("completed");
+  });
+
+  it("indexes the repo, persists repoName, and passes codeSummary to the planner", async () => {
+    const lapis = createMockLapis();
+    // Force the indexing path: empty summary first → calls indexRepo
+    (lapis.getCodeSummary as ReturnType<typeof vi.fn>).mockResolvedValue({
+      files: 0, symbols: 0, edges: 0, modules: [], entryPoints: [], cycles: { count: 0, paths: [] },
+    });
+    (lapis.indexRepo as ReturnType<typeof vi.fn>).mockResolvedValue({ files: 50, symbols: 200 });
+    // Second getCodeSummary call (post-index) returns populated data
+    (lapis.getCodeSummary as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ files: 0, symbols: 0, edges: 0, modules: [], entryPoints: [], cycles: { count: 0, paths: [] } })
+      .mockResolvedValueOnce({ files: 50, symbols: 200, edges: 80, modules: [{ name: "auth", fileCount: 4 }], entryPoints: ["src/index.ts"], cycles: { count: 0, paths: [] } });
+
+    const runner = createMissionRunner({
+      lapis,
+      eventBus: mockEventBus as any,
+      agentDir: "/test/.pi/agent",
+      repoRoot: "/test/repo",
+      aurexRoot: "/test/aurex",
+      gitMainBranch: "main",
+    });
+
+    const done = runner.waitForCompletion();
+    runner.start("m-1");
+    await done;
+
+    // 1. indexRepo was called with (repoPath, repoName)
+    expect(lapis.indexRepo).toHaveBeenCalledWith("/test/repo", "repo");
+
+    // 2. setSetting persisted the repoName for the dashboard route
+    const repoNameSetting = (lapis.setSetting as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) => call[0] === "mission:m-1:repoName",
+    );
+    expect(repoNameSetting).toBeDefined();
+    expect(repoNameSetting?.[1]).toBe("repo");
   });
 });

@@ -220,13 +220,18 @@ async function main() {
     assert(res.status === 200);
   });
 
-  // Compression stub
-  console.log('\n--- Compression (stub) ---');
-  await check('POST /missions/:id/compression returns skipped', async () => {
+  // Compression (real)
+  console.log('\n--- Compression ---');
+  await check('POST /missions/:id/compression returns CompressionResult', async () => {
     const res = await request('POST', `/missions/${missionId}/compression`, { trigger: 'manual' });
     assert(res.status === 200);
-    assert(res.body.accepted === true);
-    assert(res.body.skipped === true);
+    assert(typeof res.body.summary === 'string' || res.body.summary === null);
+    assert(typeof res.body.tokensSaved === 'number');
+    assert(res.body.tokensSaved >= 0);
+    // error is optional; if present, must be a string
+    if (res.body.error !== undefined) {
+      assert(typeof res.body.error === 'string');
+    }
   });
 
   // Memory search
