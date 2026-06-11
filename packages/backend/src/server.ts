@@ -19,6 +19,7 @@ import type { ExposureCatalog } from "@aurex/shared";
 import { createBumblebeeRunner } from "./orchestrator/bumblebee-runner.js";
 import { bumblebeeRoutes } from "./routes/bumblebee.js";
 import { quotaRoutes } from "./routes/quota.js";
+import { registerUpdateRoutes } from "./routes/update.js";
 
 async function main() {
   const config = loadConfig();
@@ -153,6 +154,9 @@ async function main() {
 
   // Quota / coding plan routes
   await app.register(quotaRoutes, { lapis, config });
+
+  // Self-update detection + apply
+  registerUpdateRoutes(app, { eventBus, aurexRoot: config.aurexRoot, gitMainBranch: config.gitMainBranch });
 
   // Start
   try {
