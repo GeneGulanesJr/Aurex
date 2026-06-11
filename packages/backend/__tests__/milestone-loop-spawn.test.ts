@@ -293,15 +293,14 @@ describe("milestone loop with spawner", () => {
       description: "Analyze current server/mod.rs complexity and structure",
     })]);
 
-    // Scope is filled in from the inferred paths, but the unit's own
-    // description is NOT rewritten — that was the prior behavior we
-    // removed because it silently overwrote planner identity.
+    // Scope and description are filled from milestone/mission context when
+    // LaPis returns a sparse unit with no actionable task text.
     expect(callbacks.onAgentStatus).toHaveBeenCalledWith(
       "worker-unit-1", "worker", "spawned", "ms-1",
       expect.objectContaining({
         declaredPaths: ["pinyx/src/server/mod.rs"],
         declaredModules: ["server"],
-        description: "",
+        description: "Analyze current server/mod.rs complexity and structure",
       }),
     );
   });
@@ -368,7 +367,7 @@ describe("milestone loop with spawner", () => {
     );
   });
 
-  it("uses the selected worker timeout instead of disabling worker deadlines", async () => {
+  it("disables hard wall-clock deadlines for worker agents", async () => {
     let eventSubscriber: (event: any) => void = () => {};
     (mockSession.subscribe as any).mockImplementation((fn: any) => {
       eventSubscriber = fn;
@@ -416,21 +415,19 @@ describe("milestone loop with spawner", () => {
     }), [makeMilestone()]);
 
     expect(logger.log).toHaveBeenCalledWith(expect.objectContaining({
-      agentType: "orchestrator",
-      event: "config_decision",
-      data: expect.objectContaining({ decision: "selectWorkerTimeout", timeout: 180_000 }),
-    }));
-    expect(logger.log).not.toHaveBeenCalledWith(expect.objectContaining({
       agentType: "worker",
       event: "config_decision",
-      data: expect.objectContaining({ decision: "timeout_disabled" }),
+      data: expect.objectContaining({
+        decision: "timeout_disabled",
+        timeout: 0,
+      }),
     }));
   });
 
   it.each([
     "Inventory current public API and dependencies",
     "Measure baseline complexity and identify hotspots",
-  ])("uses build timeout for analysis-heavy worker unit: %s", async (description) => {
+  ])("does not hard-timeout analysis-heavy worker unit: %s", async (description) => {
     let eventSubscriber: (event: any) => void = () => {};
     (mockSession.subscribe as any).mockImplementation((fn: any) => {
       eventSubscriber = fn;
@@ -481,14 +478,76 @@ describe("milestone loop with spawner", () => {
     })]);
 
     expect(logger.log).toHaveBeenCalledWith(expect.objectContaining({
-      agentType: "orchestrator",
+      agentType: "worker",
       event: "config_decision",
-      data: expect.objectContaining({
-        decision: "selectWorkerTimeout",
-        needsBuildWindow: true,
-        timeout: 300_000,
-      }),
+      data: expect.objectContaining({ decision: "timeout_disabled", timeout: 0 }),
     }));
+  });
+
+  it("falls back to milestone text when worker unit description is empty", async () => {
+    let eventSubscriber: (event: any) => void = () => {};
+    (mockSession.subscribe as any).mockImplementation((fn: any) => {
+      eventSubscriber = fn;
+      return () => {};
+    });
+    (mockSession.prompt as any).mockImplementation(async () => {
+      eventSubscriber({ type: "agent_end" });
+    });
+
+    const unit: WorkingUnit = {
+      id: "unit-1",
+      milestoneId: "ms-1",
+      description: "",
+      declaredPaths: ["pinyx/src/server/mod.rs"],
+      declaredModules: ["server"],
+      status: "planned" as any,
+      taskBranch: "",
+      worktreePath: "",
+      sessionId: "",
+    };
+
+    const lapis = createMockLapis([unit]);
+    const pinyx = createMockPinyx();
+    const callbacks = {
+      onEscalation: vi.fn(),
+      onAgentStatus: vi.fn(),
+      onMilestoneProgress: vi.fn(),
+      onCostUpdate: vi.fn(),
+      onError: vi.fn(),
+    };
+    const logger = { log: vi.fn() };
+
+    const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
+      agentDir: "/home/user/.pi/agent",
+      repoRoot: "/repo/GeneGulanesJr-PiNyx",
+      gitMainBranch: "main",
+      logger,
+    });
+
+    await loop.run(makeMission({
+      configJson: {
+        ...makeMission().configJson,
+        workerTimeouts: { simple: 180_000, build: 300_000, testHeavy: 600_000 },
+      },
+    }), [makeMilestone({
+      title: "Analyze current server/mod.rs structure and complexity hotspots",
+      description: "Analyze current server/mod.rs structure and complexity hotspots",
+    })]);
+
+    expect(logger.log).toHaveBeenCalledWith(expect.objectContaining({
+      agentType: "worker",
+      event: "config_decision",
+      data: expect.objectContaining({ decision: "timeout_disabled", timeout: 0 }),
+    }));
+    expect(callbacks.onAgentStatus).toHaveBeenCalledWith(
+      "worker-unit-1", "worker", "spawned", "ms-1",
+      expect.objectContaining({
+        description: "Analyze current server/mod.rs structure and complexity hotspots",
+      }),
+    );
+    expect(mockSession.prompt).toHaveBeenCalledWith(expect.stringContaining(
+      "Implement: Analyze current server/mod.rs structure and complexity hotspots",
+    ));
   });
 
   it("retries a worker that completes without a handoff before validation", async () => {

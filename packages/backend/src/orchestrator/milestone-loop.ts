@@ -29,8 +29,8 @@ const execFileAsync = promisify(execFile);
 // the human direct control over whether to rescope, retry, or abort.
 const AUTO_RESCOPE_BATCH_LIMIT = 0;
 
-/** Max workers spawned concurrently within a single batch. Keeps API concurrency within model limits. */
-const MAX_CONCURRENT_WORKERS = 3;
+/** Max active agent sessions in a milestone loop. Keeps API concurrency within model limits. */
+const MAX_ACTIVE_AGENTS = 2;
 
 export type MilestoneLoopResult =
   | { status: "completed" }
@@ -72,6 +72,7 @@ export function createMilestoneLoop(
     defaultTimeout: 180_000,
     logger: loopConfig.logger,
     eventBus: loopConfig.eventBus,
+    maxConcurrent: MAX_ACTIVE_AGENTS,
     onCost: (missionId, totalCost, totalTokens, delta) => {
       cumulativeCost = totalCost;
       callbacks.onCostUpdate(missionId, totalCost, totalTokens, delta);
@@ -151,6 +152,7 @@ export function createMilestoneLoop(
             : normalizedFetchedUnits;
           const units = unitsWithRuntime
             .map((unit) => applyWorkingUnitScopeFallback(unit, mission, milestone, loopConfig.repoRoot))
+            .map((unit) => applyWorkingUnitDescriptionFallback(unit, mission, milestone))
             .filter((unit) => unit.status !== "superseded");
           const contracts = await lapis.getContractHistory(milestone.id).catch(() => [] as any[]);
           const contract = contracts[0] as any;
@@ -264,20 +266,17 @@ export function createMilestoneLoop(
             batches.push(batch);
           }
 
-          // Process each batch, limiting concurrent workers to MAX_CONCURRENT_WORKERS
+          // Process each batch, limiting concurrent workers to MAX_ACTIVE_AGENTS
           for (const batch of batches) {
-            const allHandles: Array<{ unit: WorkingUnit; agentId: string; worktreePath: string; taskBranch: string; handle: SpawnHandle }> = [];
-
             // Spawn in chunks to stay within concurrency limits
-            for (let i = 0; i < batch.length; i += MAX_CONCURRENT_WORKERS) {
-              const chunk = batch.slice(i, i + MAX_CONCURRENT_WORKERS);
+            for (let i = 0; i < batch.length; i += MAX_ACTIVE_AGENTS) {
+              const chunk = batch.slice(i, i + MAX_ACTIVE_AGENTS);
               const handles = await Promise.all(chunk.map(async (unit) => {
               const agentId = `worker-${unit.id}`;
               const { worktreePath, taskBranch } = await worktreeManager.createWorktree(
                 agentId, unit.id, loopConfig.gitMainBranch,
               );
               await worktreeManager.installBranchGuard(worktreePath, taskBranch);
-              const workerTimeout = selectWorkerTimeout(unit, config.workerTimeouts, loopConfig.logger, mission.id, milestone.id);
               const contextContent = buildWorkerContext({
                 missionDescription: mission.description,
                 milestoneTitle: milestone.title,
@@ -330,7 +329,7 @@ export function createMilestoneLoop(
                   "Follow your skill instructions carefully.",
                   "When useful work is committed, verification is blocked, or time is running short, call write_handoff immediately with partial/blocking details.",
                 ].join("\n"),
-                timeout: workerTimeout,
+                timeout: 0,
                 model: config.modelHints.worker,
               });
               activeHandles.add(handle);
@@ -338,73 +337,72 @@ export function createMilestoneLoop(
               callbacks.onAgentStatus(agentId, "worker", "working", milestone.id);
                 return { unit, agentId, worktreePath, taskBranch, handle };
               }));
-              allHandles.push(...handles);
-            }
 
-            await Promise.all(allHandles.map(async ({ unit, agentId, worktreePath, taskBranch, handle }) => {
-              const result = await handle.completed;
-              activeHandles.delete(handle);
-              if (result.status === "completed") {
-                rememberRuntimeUnit(milestone.id, { ...unit, taskBranch, worktreePath, sessionId: result.sessionId, status: "completed" });
-                await lapis.updateWorkingUnitStatus(unit.id, "completed");
-                await markWorkerTodoProgress(lapis, {
+              await Promise.all(handles.map(async ({ unit, agentId, worktreePath, taskBranch, handle }) => {
+                const result = await handle.completed;
+                activeHandles.delete(handle);
+                if (result.status === "completed") {
+                  rememberRuntimeUnit(milestone.id, { ...unit, taskBranch, worktreePath, sessionId: result.sessionId, status: "completed" });
+                  await lapis.updateWorkingUnitStatus(unit.id, "completed");
+                  await markWorkerTodoProgress(lapis, {
+                    missionId: mission.id,
+                    unit: { ...unit, taskBranch, worktreePath },
+                    workerId: agentId,
+                    status: "implemented",
+                    reason: "worker completed successfully",
+                    branch: taskBranch,
+                    notes: [`Worker ${agentId} completed unit ${unit.id}`],
+                  });
+                  callbacks.onAgentStatus(agentId, "worker", "completed", milestone.id);
+                  completedCount++;
+                  integrationUnits.push({ ...unit, taskBranch, worktreePath });
+                  validatorUnits.push({
+                    id: unit.id, description: unit.description,
+                    declaredPaths: unit.declaredPaths, declaredModules: unit.declaredModules,
+                    taskBranch, worktreePath,
+                  });
+                } else if (result.status === "timed_out") {
+                  rememberRuntimeUnit(milestone.id, { ...unit, taskBranch, worktreePath, sessionId: result.sessionId, status: "timed_out" });
+                  await lapis.updateWorkingUnitStatus(unit.id, "timed_out");
+                  await markWorkerTodoProgress(lapis, {
+                    missionId: mission.id,
+                    unit: { ...unit, taskBranch, worktreePath },
+                    workerId: agentId,
+                    status: "blocked",
+                    reason: "worker timed out",
+                    branch: taskBranch,
+                    notes: [`Worker ${agentId} timed out before completing unit ${unit.id}`],
+                  });
+                  callbacks.onAgentStatus(agentId, "worker", "timed_out", milestone.id);
+                  callbacks.onError(mission.id, "worker_timeout", `Worker "${unit.description}" timed out`, { workerId: agentId, milestoneId: milestone.id, recoverable: true });
+                  failedCount++;
+                  failedUnitIds.push(unit.id);
+                } else {
+                  rememberRuntimeUnit(milestone.id, { ...unit, taskBranch, worktreePath, sessionId: result.sessionId, status: "failed" });
+                  await lapis.updateWorkingUnitStatus(unit.id, "failed");
+                  await markWorkerTodoProgress(lapis, {
+                    missionId: mission.id,
+                    unit: { ...unit, taskBranch, worktreePath },
+                    workerId: agentId,
+                    status: "blocked",
+                    reason: "worker failed",
+                    branch: taskBranch,
+                    notes: [`Worker ${agentId} failed unit ${unit.id}`],
+                  });
+                  callbacks.onAgentStatus(agentId, "worker", "failed", milestone.id);
+                  callbacks.onError(mission.id, "worker_failed", `Worker "${unit.description}" failed`, { workerId: agentId, milestoneId: milestone.id, recoverable: true });
+                  failedCount++;
+                  failedUnitIds.push(unit.id);
+                }
+                await reconcileMissionLedger(lapis, {
                   missionId: mission.id,
-                  unit: { ...unit, taskBranch, worktreePath },
-                  workerId: agentId,
-                  status: "implemented",
-                  reason: "worker completed successfully",
-                  branch: taskBranch,
-                  notes: [`Worker ${agentId} completed unit ${unit.id}`],
+                  milestoneId: milestone.id,
+                  reason: `worker ${result.status}`,
+                  actorId: "orchestrator",
                 });
-                callbacks.onAgentStatus(agentId, "worker", "completed", milestone.id);
-                completedCount++;
-                integrationUnits.push({ ...unit, taskBranch, worktreePath });
-                validatorUnits.push({
-                  id: unit.id, description: unit.description,
-                  declaredPaths: unit.declaredPaths, declaredModules: unit.declaredModules,
-                  taskBranch, worktreePath,
-                });
-              } else if (result.status === "timed_out") {
-                rememberRuntimeUnit(milestone.id, { ...unit, taskBranch, worktreePath, sessionId: result.sessionId, status: "timed_out" });
-                await lapis.updateWorkingUnitStatus(unit.id, "timed_out");
-                await markWorkerTodoProgress(lapis, {
-                  missionId: mission.id,
-                  unit: { ...unit, taskBranch, worktreePath },
-                  workerId: agentId,
-                  status: "blocked",
-                  reason: "worker timed out",
-                  branch: taskBranch,
-                  notes: [`Worker ${agentId} timed out before completing unit ${unit.id}`],
-                });
-                callbacks.onAgentStatus(agentId, "worker", "timed_out", milestone.id);
-                callbacks.onError(mission.id, "worker_timeout", `Worker "${unit.description}" timed out`, { workerId: agentId, milestoneId: milestone.id, recoverable: true });
-                failedCount++;
-                failedUnitIds.push(unit.id);
-              } else {
-                rememberRuntimeUnit(milestone.id, { ...unit, taskBranch, worktreePath, sessionId: result.sessionId, status: "failed" });
-                await lapis.updateWorkingUnitStatus(unit.id, "failed");
-                await markWorkerTodoProgress(lapis, {
-                  missionId: mission.id,
-                  unit: { ...unit, taskBranch, worktreePath },
-                  workerId: agentId,
-                  status: "blocked",
-                  reason: "worker failed",
-                  branch: taskBranch,
-                  notes: [`Worker ${agentId} failed unit ${unit.id}`],
-                });
-                callbacks.onAgentStatus(agentId, "worker", "failed", milestone.id);
-                callbacks.onError(mission.id, "worker_failed", `Worker "${unit.description}" failed`, { workerId: agentId, milestoneId: milestone.id, recoverable: true });
-                failedCount++;
-                failedUnitIds.push(unit.id);
-              }
-              await reconcileMissionLedger(lapis, {
-                missionId: mission.id,
-                milestoneId: milestone.id,
-                reason: `worker ${result.status}`,
-                actorId: "orchestrator",
-              });
-              handle.dispose();
-            }));
+                handle.dispose();
+              }));
+            }
 
             callbacks.onMilestoneProgress(milestone.id, "in_progress", completedCount, units.length);
           }
@@ -1084,10 +1082,8 @@ function applyWorkingUnitScopeFallback(
   milestone: Milestone,
   repoRoot: string,
 ): WorkingUnit {
-  // Only fill in MISSING scope fields. Never rewrite a unit's description
-  // or declared scope that the planner explicitly provided — silently
-  // mutating identity is a footgun (a planner-produced refinement unit
-  // would have its semantic identity replaced with the milestone title).
+  // Only fill in MISSING scope fields. Never rewrite declared scope that the
+  // planner explicitly provided — silently mutating identity is a footgun.
   if (unit.declaredPaths.length > 0 && unit.declaredModules.length > 0) {
     return unit;
   }
@@ -1121,33 +1117,25 @@ function applyWorkingUnitScopeFallback(
   };
 }
 
-function selectWorkerTimeout(
+function applyWorkingUnitDescriptionFallback(
   unit: WorkingUnit,
-  timeouts: { simple: number; build: number; testHeavy: number },
-  logger: AgentLogger | undefined,
-  missionId: string,
-  milestoneId: string,
-): number {
-  // Only the unit description drives the timeout selection. Mission/milestone
-  // text is intentionally excluded — it would match "test|build|module" in
-  // nearly every mission and make the build-window branch the unconditional
-  // default, defeating the purpose of having two timeout tiers. Use narrow
-  // terms that signal "this unit does multi-step repo analysis" rather than
-  // ordinary implementation work.
-  const unitText = unit.description.toLowerCase();
-  const needsBuildWindow = /\b(analy[sz]e|analysis|inventory|measure|baseline|hotspot|complexity|dependency|dependencies|refactor|decompose|extract|split)\b/.test(unitText);
-  const timeout = needsBuildWindow ? Math.max(timeouts.simple, timeouts.build) : timeouts.simple;
-  if (logger) {
-    logger.log({
-      sessionId: "orchestrator",
-      agentType: "orchestrator",
-      missionId,
-      milestoneId,
-      event: "config_decision",
-      data: { decision: "selectWorkerTimeout", needsBuildWindow, timeout, simple: timeouts.simple, build: timeouts.build },
-    });
+  mission: Mission,
+  milestone: Milestone,
+): WorkingUnit {
+  if (unit.description.trim().length > 0) {
+    return unit;
   }
-  return timeout;
+
+  const description = [
+    milestone.description,
+    milestone.title,
+    mission.description,
+  ].find((text) => text.trim().length > 0)?.trim() ?? "Complete assigned working unit";
+
+  return {
+    ...unit,
+    description,
+  };
 }
 
 function inferDeclaredPathsFromText(textParts: string[], repoRoot: string): string[] {

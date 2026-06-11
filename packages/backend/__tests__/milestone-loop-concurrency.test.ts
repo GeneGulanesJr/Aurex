@@ -174,6 +174,42 @@ describe("milestone loop — concurrent worker spawning", () => {
     expect(workerRegs.length).toBe(2);
   });
 
+  it("caps active worker agents at two", async () => {
+    const units: WorkingUnit[] = [
+      { id: "u-1", milestoneId: "ms-1", description: "Auth", declaredPaths: ["src/auth/"], declaredModules: ["auth"], status: "planned", taskBranch: "", worktreePath: "", sessionId: "" },
+      { id: "u-2", milestoneId: "ms-1", description: "API", declaredPaths: ["src/api/"], declaredModules: ["api"], status: "planned", taskBranch: "", worktreePath: "", sessionId: "" },
+      { id: "u-3", milestoneId: "ms-1", description: "Billing", declaredPaths: ["src/billing/"], declaredModules: ["billing"], status: "planned", taskBranch: "", worktreePath: "", sessionId: "" },
+    ];
+    const lapis = createMockLapis(units);
+    const pinyx = createMockPinyx();
+    const statusLog: string[] = [];
+    const callbacks = {
+      onEscalation: vi.fn(),
+      onAgentStatus: vi.fn().mockImplementation((id: string, type: string, status: string) => {
+        if (type === "worker") statusLog.push(`${id}:${status}`);
+      }),
+      onCostUpdate: vi.fn(),
+      onError: vi.fn(),
+      onMilestoneProgress: vi.fn(),
+    };
+
+    const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
+      agentDir: "/test/.pi/agent", repoRoot: "/test/repo", gitMainBranch: "main",
+    });
+
+    await loop.run(makeMission(), [makeMilestone()]);
+
+    const spawnedIndexes = statusLog
+      .map((entry, index) => entry.endsWith(":spawned") ? index : -1)
+      .filter((index) => index >= 0);
+    const firstCompletion = statusLog.findIndex((entry) => entry.endsWith(":completed"));
+
+    expect(spawnedIndexes).toHaveLength(3);
+    expect(spawnedIndexes[0]).toBeLessThan(firstCompletion);
+    expect(spawnedIndexes[1]).toBeLessThan(firstCompletion);
+    expect(spawnedIndexes[2]).toBeGreaterThan(firstCompletion);
+  });
+
   it("serializes overlapping workers", async () => {
     // Two units with overlapping scope
     const units: WorkingUnit[] = [
