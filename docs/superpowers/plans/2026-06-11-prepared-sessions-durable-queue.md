@@ -10,6 +10,8 @@
 
 **Repo root:** `/workspace/Aurex/`
 
+**Reviewer update:** This PR is intentionally a design-plan PR, not the runtime implementation. The first executable implementation should stop at shared contracts, stores/services, dry-run reconciliation, and tests with all behavior-changing feature flags defaulted off. Any follow-up PR that changes `POST /api/missions` dispatch must include a direct-runner fallback and restart/stale-work integration tests before enabling the durable path by default.
+
 **Primary constraints:**
 
 - Preserve the public mission creation API and dashboard behavior during early rollout.
@@ -280,6 +282,8 @@ Expected: shared typecheck and tests pass.
 
 The implementation should prefer LaPis-backed persistence so state survives backend restarts. If LaPis lacks a needed compare-and-set operation, implement a narrow adapter method first and keep the backend store interface stable.
 
+Before active queue rollout, verify whether LaPis can support compare-and-set semantics for queue claims. If it cannot, add a small LaPis endpoint/operation for conditional `status + claimToken` updates rather than emulating locks only in Aurex memory.
+
 ### `prepared_agent_sessions`
 
 Required indexes or query paths:
@@ -309,6 +313,35 @@ Append-only session lifecycle events. Useful for audit and replay, but not requi
 ### `reconciliation_runs` optional table/resource
 
 Stores stale scan summaries for operations/debugging.
+
+---
+
+## Implementation cutline for the first code PR
+
+The first code PR should be deliberately smaller than the full architecture. It should include only:
+
+- shared type/event/REST contracts,
+- queue and prepared-session store interfaces,
+- in-memory fake stores for deterministic tests,
+- LaPis-backed store adapters where current LaPis APIs are sufficient,
+- claim-token transition helpers,
+- dry-run stale reconciliation,
+- admin/debug route skeletons if they can be added without changing mission behavior.
+
+It should not include:
+
+- default durable dispatch for `POST /api/missions`,
+- dashboard changes,
+- active stale-work mutation,
+- validator/researcher migration,
+- secret/env/MCP runtime injection.
+
+Exit criteria for the first code PR:
+
+- all new behavior is behind flags defaulted off,
+- state transition helpers have unit coverage,
+- stale reconciliation dry-run uses a fixed-clock test,
+- no existing mission route behavior changes when flags are unset.
 
 ---
 
