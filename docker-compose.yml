@@ -14,11 +14,17 @@ services:
       - "8888:8888"   # Prometheus scrape endpoint for collector self-metrics
     volumes:
       - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
-    healthcheck:
-      test: ["CMD", "wget", "-qO", "/dev/null", "http://localhost:13133/"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
+    # NOTE: The otel-collector-contrib image is distroless (no shell,
+    # wget, curl). Docker CMD healthchecks cannot run inside it. The
+    # collector's built-in health_check extension exposes
+    # http://localhost:13133/ which can be checked from other containers
+    # or the Docker host. Remove Docker-level healthcheck to avoid
+    # false "unhealthy" states blocking dependent services.
+    # healthcheck:
+    #   test: ["CMD", "wget", "-qO", "/dev/null", "http://localhost:13133/"]
+    #   interval: 5s
+    #   timeout: 3s
+    #   retries: 5
     restart: unless-stopped
 
   lapis:
@@ -79,7 +85,7 @@ services:
     depends_on:
       lapis: { condition: service_healthy }
       pinyx: { condition: service_healthy }
-      otel-collector: { condition: service_healthy }
+      otel-collector: { condition: service_started }
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 5s
