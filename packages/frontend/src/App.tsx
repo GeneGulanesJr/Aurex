@@ -110,6 +110,7 @@ export function App() {
   const { connected } = useWebSocket(combinedHandler, {
     missionId: missionsState.selectedMissionId,
     getToken,
+    enabled: isAuthenticated,
   });
 
   // Browser notifications + tab badge
