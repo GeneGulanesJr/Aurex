@@ -1,4 +1,4 @@
-import type { CheckpointDecision, ExposureCatalog, MutationReportSummary, MutationRunStatus } from "@aurex/shared";
+import type { CheckpointDecision, ExposureCatalog, MutationReportSummary, MutationRunStatus, UpdateStatusResponse } from "@aurex/shared";
 import type { CreateMissionResponse, GetMissionResponse, CheckpointResponse, HealthResponse, AgentLogResponse, TriggerScanResponse, ListScansResponse, GetScanResultsResponse, BumblebeeStatusResponse, QuotaStatusResponse, PrefireRequest, PrefireResponse, CalculatePrefireRequest, CalculatePrefireResponse, QuotaConfigUpdateRequest } from "@aurex/shared";
 
 export type CurrentMissionPayload = GetMissionResponse;
@@ -499,4 +499,22 @@ export async function getMutationRunStatus(repoName: string, runId: string): Pro
   const res = await apiFetch(`/api/repos/${repoName}/mutation/${runId}`);
   if (!res.ok) throw new Error(`Failed to get mutation run status: ${res.status}`);
   return res.json() as Promise<MutationRunStatus>;
+}
+
+export async function getUpdateStatus(): Promise<UpdateStatusResponse> {
+  const res = await apiFetch("/api/update/status");
+  if (!res.ok) throw new Error(`Failed to fetch update status: ${res.status}`);
+  return res.json() as Promise<UpdateStatusResponse>;
+}
+
+export async function checkForUpdates(): Promise<UpdateStatusResponse> {
+  const res = await apiFetch("/api/update/check", { method: "POST" });
+  if (!res.ok) throw new Error(`Failed to check for updates: ${res.status}`);
+  return res.json() as Promise<UpdateStatusResponse>;
+}
+
+export async function applyUpdate(): Promise<{ started: boolean }> {
+  const res = await apiFetch("/api/update/apply", { method: "POST" });
+  if (!res.ok) throw new Error(`Failed to apply update: ${res.status}`);
+  return res.json() as Promise<{ started: boolean }>;
 }

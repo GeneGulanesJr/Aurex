@@ -126,3 +126,11 @@ export interface CalculatePrefireResponse {
   windowDurationMs: number;
   timeline: Array<{ time: string; event: string }>;
 }
+
+export interface UpdateStatusResponse {
+  updateAvailable: boolean;
+  currentSha: string;
+  latestSha: string;
+  behindBy: number;
+  lastChecked: string | null;
+}
