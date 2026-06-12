@@ -314,7 +314,7 @@ export function createMilestoneLoop(
                 reason: "worker spawned",
                 actorId: "orchestrator",
               });
-              const workerTimeout = selectWorkerTimeout(unit, contract?.content?.testCommands ?? [], config.workerTimeouts);
+              const workerTimeout = selectWorkerTimeout(unit, config.workerTimeouts);
               const handle = await spawner.spawn({
                 agentType: "worker",
                 agentId,
@@ -1073,26 +1073,26 @@ export function createMilestoneLoop(
 
 function selectWorkerTimeout(
   unit: WorkingUnit,
-  testCommands: string[],
   workerTimeouts: Mission["configJson"]["workerTimeouts"],
 ): number {
-  const text = [unit.description, ...unit.declaredModules, ...unit.declaredPaths, ...testCommands]
+  const timeouts = workerTimeouts ?? { simple: 300_000, build: 600_000, testHeavy: 600_000 };
+  const text = [unit.description, ...unit.declaredModules, ...unit.declaredPaths]
     .join(" ")
     .toLowerCase();
 
   if (/\b(test|vitest|jest|playwright|cypress|pytest|cargo test|go test|e2e|integration)\b/.test(text)) {
-    return workerTimeouts.testHeavy;
+    return timeouts.testHeavy;
   }
 
   if (/\b(build|compile|bundle|install|migration|codegen|generate|docker)\b/.test(text)) {
-    return workerTimeouts.build;
+    return timeouts.build;
   }
 
   if (/\b(analy[sz]e|inventory|measure|audit|research|map|hotspot|complexity)\b/.test(text)) {
-    return workerTimeouts.testHeavy;
+    return timeouts.testHeavy;
   }
 
-  return workerTimeouts.simple;
+  return timeouts.simple;
 }
 
 

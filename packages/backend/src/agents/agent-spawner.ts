@@ -277,12 +277,13 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
 
       let refreshTimeoutOnActivity: (activity: string) => void = () => {};
       const activeToolExecutions = new Set<string>();
+      let toolExecCounter = 0;
 
       const unsubscribe = session.subscribe(async (event: any) => {
         if (settled) return;
 
         if (event.type === "tool_execution_start") {
-          const id = typeof event.toolCallId === "string" ? event.toolCallId : `${event.toolName ?? "tool"}:${Date.now()}`;
+          const id = typeof event.toolCallId === "string" ? event.toolCallId : `${event.toolName ?? "tool"}:${++toolExecCounter}`;
           activeToolExecutions.add(id);
           refreshTimeoutOnActivity(`tool_start:${event.toolName ?? "unknown"}`);
         }
@@ -292,7 +293,17 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
         }
 
         if (event.type === "tool_execution_end") {
-          if (typeof event.toolCallId === "string") activeToolExecutions.delete(event.toolCallId);
+          if (typeof event.toolCallId === "string") {
+            activeToolExecutions.delete(event.toolCallId);
+          } else if (event.toolName) {
+            const prefix = `${event.toolName}:`;
+            for (const id of activeToolExecutions) {
+              if (id.startsWith(prefix)) {
+                activeToolExecutions.delete(id);
+                break;
+              }
+            }
+          }
           logger?.log({
             sessionId: session.sessionId,
             agentType: opts.agentType,
@@ -300,7 +311,16 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
             milestoneId: opts.milestoneId,
             unitId: opts.unitId,
             event: "tool_result",
-            data: { tool: event.toolName, isError: event.isError, result: event.result },
+            data: {
+            tool: event.toolName,
+            isError: event.isError,
+            resultTruncated: typeof event.result === "string"
+              ? event.result.slice(0, 200)
+              : undefined,
+            resultLength: typeof event.result === "string"
+              ? event.result.length
+              : undefined,
+          },
           });
           refreshTimeoutOnActivity(`tool_end:${event.toolName ?? "unknown"}`);
         }
@@ -438,6 +458,7 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
       // window while maxTimeout keeps runaway sessions bounded.
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
       const timeoutStartedAt = Date.now();
+      let lastTimeoutLogAt = 0;
       const extendTimeoutOnActivity = opts.extendTimeoutOnActivity === true;
       const maxTimeout = Math.max(timeout, opts.maxTimeout ?? timeout);
       const fireTimeout = () => {
@@ -497,15 +518,18 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
         if (remainingTotal <= 0) return;
         const nextDelay = Math.min(timeout, remainingTotal);
         scheduleTimeout(nextDelay);
-        logger?.log({
-          sessionId: session.sessionId,
-          agentType: opts.agentType,
-          missionId: opts.missionId,
-          milestoneId: opts.milestoneId,
-          unitId: opts.unitId,
-          event: "config_decision",
-          data: { decision: "timeout_extended", activity, nextDelay, maxTimeout, elapsed },
-        });
+        if (elapsed - lastTimeoutLogAt >= 10_000) {
+          lastTimeoutLogAt = elapsed;
+          logger?.log({
+            sessionId: session.sessionId,
+            agentType: opts.agentType,
+            missionId: opts.missionId,
+            milestoneId: opts.milestoneId,
+            unitId: opts.unitId,
+            event: "config_decision",
+            data: { decision: "timeout_extended", activity, nextDelay, maxTimeout, elapsed },
+          });
+        }
       };
       if (timeout > 0) {
         scheduleTimeout(timeout);
