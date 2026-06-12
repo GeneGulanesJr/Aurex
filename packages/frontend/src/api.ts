@@ -11,15 +11,25 @@ export interface ActiveMission {
 }
 
 let _getToken: (() => Promise<string>) | null = null;
+let _onAuthError: (() => void) | null = null;
 
 export function setTokenGetter(fn: () => Promise<string>): void {
   _getToken = fn;
 }
 
+export function setAuthErrorHandler(fn: () => void): void {
+  _onAuthError = fn;
+}
+
 async function authHeaders(): Promise<HeadersInit> {
   if (!_getToken) return {};
-  const token = await _getToken();
-  return { Authorization: `Bearer ${token}` };
+  try {
+    const token = await _getToken();
+    return { Authorization: `Bearer ${token}` };
+  } catch {
+    _onAuthError?.();
+    throw new Error("Authentication required");
+  }
 }
 
 async function apiFetch(url: string, opts?: RequestInit): Promise<Response> {

@@ -24,7 +24,7 @@ import { SettingsPanel } from "./active/SettingsPanel";
 import { QuotaPanel } from "./active/QuotaPanel";
 import { TopBar } from "./frame/TopBar";
 import { TelemetryBar } from "./frame/TelemetryBar";
-import { setTokenGetter } from "./api";
+import { setTokenGetter, setAuthErrorHandler } from "./api";
 import { submitCheckpoint, createMission, restartMission, getRepoHotspots, getRepoSuggestions, getRepoReadiness, listRepoScans } from "./api";
 import type { WsClientEvent, CheckpointDecision } from "@aurex/shared";
 import type { CodeSummaryResponse, CodeHotspotsResponse, RepoSuggestion, RepoReadinessProfile } from "./api";
@@ -32,13 +32,16 @@ import type { BumblebeeScanResult, BumblebeeFinding } from "@aurex/shared";
 
 export function App() {
   const { theme, setTheme } = useTheme();
-  const { isAuthenticated, isLoading: authLoading, getToken } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, getToken, logout } = useAuth();
 
   useEffect(() => {
     if (isAuthenticated) {
       setTokenGetter(getToken);
+      setAuthErrorHandler(() => {
+        logout();
+      });
     }
-  }, [isAuthenticated, getToken]);
+  }, [isAuthenticated, getToken, logout]);
 
   const github = useGitHub();
   const pinyxStatus = usePinyxStatus();

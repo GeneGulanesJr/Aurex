@@ -24,7 +24,6 @@ export interface AppConfig {
 
   auth0Domain: string;
   auth0Audience: string;
-  auth0ClientId: string;
 
   maxConcurrentMissions: number;
 
@@ -82,7 +81,6 @@ export function loadConfig(): AppConfig {
     port: envInt("PORT", 3000),
     auth0Domain: env("AUTH0_DOMAIN"),
     auth0Audience: env("AUTH0_AUDIENCE"),
-    auth0ClientId: env("AUTH0_CLIENT_ID"),
     maxConcurrentMissions: envInt("MAX_CONCURRENT_MISSIONS", 3),
 
     quotaEnabled: process.env.QUOTA_ENABLED === "true",
