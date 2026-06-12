@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildWsUrl, parseWsMessage } from "./useWebSocket";
+import { buildWsUrl, parseWsMessage, buildPostAuthMessages } from "./useWebSocket";
 
 describe("buildWsUrl", () => {
   it("uses ws: for http", () => {
@@ -26,5 +26,21 @@ describe("parseWsMessage", () => {
 
   it("returns null for invalid JSON", () => {
     expect(parseWsMessage("not json")).toBeNull();
+  });
+});
+
+
+describe("buildPostAuthMessages", () => {
+  it("defers replay and mission subscription until after auth acknowledgement", () => {
+    expect(buildPostAuthMessages("7", "mission-1").map((message) => JSON.parse(message))).toEqual([
+      { type: "replay", lastSeq: 7 },
+      { event: "subscribe_mission", missionId: "mission-1" },
+    ]);
+  });
+
+  it("omits replay when the stored sequence is invalid", () => {
+    expect(buildPostAuthMessages("not-a-number", "mission-1").map((message) => JSON.parse(message))).toEqual([
+      { event: "subscribe_mission", missionId: "mission-1" },
+    ]);
   });
 });

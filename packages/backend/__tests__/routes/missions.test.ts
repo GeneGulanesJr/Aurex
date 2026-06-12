@@ -1,8 +1,16 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import Fastify from "fastify";
+
+vi.mock("../../src/clients/github-client", () => ({
+  listRepos: vi.fn(),
+}));
+
 import { missionRoutes } from "../../src/routes/missions";
+import { listRepos } from "../../src/clients/github-client";
 import type { LaPisClient } from "../../src/clients/lapis-client";
 import type { MissionRunnerPool } from "../../src/orchestrator/mission-runner-pool";
+
+const mockedListRepos = vi.mocked(listRepos);
 
 function createMockPool(activeMissions: Array<{ missionId: string; state: string; queuePosition?: number }> = []): MissionRunnerPool {
   return {
@@ -18,6 +26,9 @@ function createMockPool(activeMissions: Array<{ missionId: string; state: string
 }
 
 describe("POST /api/missions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
   it("creates a mission and returns missionId", async () => {
     const app = Fastify();
     const mockLapis = {
@@ -149,6 +160,106 @@ describe("POST /api/missions", () => {
         modelHints: expect.objectContaining({ orchestrator: "kilo/kilo-auto/free" }),
       }),
     );
+  });
+
+
+  it("normalizes and authorizes cloneUrl against the connected GitHub repositories", async () => {
+    const app = Fastify();
+    const mockLapis = {
+      getSetting: vi.fn().mockImplementation((key: string) => {
+        if (key === "github_token") return Promise.resolve({ access_token: "gh-token" });
+        return Promise.resolve(null);
+      }),
+      createMission: vi.fn().mockResolvedValue({ id: "m-1", status: "planning" }),
+    } as unknown as LaPisClient;
+    mockedListRepos.mockResolvedValue([
+      {
+        id: 1,
+        full_name: "octocat/hello-world",
+        clone_url: "https://github.com/octocat/hello-world.git",
+        private: false,
+        default_branch: "main",
+        updated_at: "2026-06-12T00:00:00Z",
+      },
+    ] as any);
+
+    app.register(missionRoutes, { lapis: mockLapis, pool: createMockPool() });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/missions",
+      payload: {
+        description: "Build auth system",
+        cloneUrl: "https://github.com/octocat/hello-world",
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(mockedListRepos).toHaveBeenCalledWith("gh-token");
+    expect(mockLapis.createMission).toHaveBeenCalledWith(
+      "Build auth system",
+      expect.objectContaining({
+        cloneUrl: "https://github.com/octocat/hello-world.git",
+      }),
+    );
+  });
+
+  it("rejects cloneUrl values outside the connected GitHub repositories", async () => {
+    const app = Fastify();
+    const mockLapis = {
+      getSetting: vi.fn().mockImplementation((key: string) => {
+        if (key === "github_token") return Promise.resolve({ access_token: "gh-token" });
+        return Promise.resolve(null);
+      }),
+      createMission: vi.fn(),
+    } as unknown as LaPisClient;
+    mockedListRepos.mockResolvedValue([
+      {
+        id: 1,
+        full_name: "octocat/hello-world",
+        clone_url: "https://github.com/octocat/hello-world.git",
+        private: false,
+        default_branch: "main",
+        updated_at: "2026-06-12T00:00:00Z",
+      },
+    ] as any);
+
+    app.register(missionRoutes, { lapis: mockLapis, pool: createMockPool() });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/missions",
+      payload: {
+        description: "Build auth system",
+        cloneUrl: "https://github.com/other/repo.git",
+      },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(mockLapis.createMission).not.toHaveBeenCalled();
+  });
+
+  it("rejects cloneUrl when GitHub is not connected", async () => {
+    const app = Fastify();
+    const mockLapis = {
+      getSetting: vi.fn().mockResolvedValue(null),
+      createMission: vi.fn(),
+    } as unknown as LaPisClient;
+
+    app.register(missionRoutes, { lapis: mockLapis, pool: createMockPool() });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/missions",
+      payload: {
+        description: "Build auth system",
+        cloneUrl: "https://github.com/octocat/hello-world.git",
+      },
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(mockedListRepos).not.toHaveBeenCalled();
+    expect(mockLapis.createMission).not.toHaveBeenCalled();
   });
 
   it("rejects missing description", async () => {

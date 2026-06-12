@@ -5,6 +5,52 @@ import type { LaPisClient } from "../clients/lapis-client.js";
 import type { MissionRunnerPool, PoolMissionStatus } from "../orchestrator/mission-runner-pool.js";
 import type { AgentLogger } from "../agents/agent-logger.js";
 import { checkQuota, resetWindow } from "../enforcement/quota-gate.js";
+import { listRepos } from "../clients/github-client.js";
+import { normalizeGitHubCloneUrl } from "../orchestrator/repo-prep.js";
+
+
+interface GitHubTokenSetting {
+  access_token: string;
+}
+
+async function authorizeMissionCloneUrl(
+  lapis: LaPisClient,
+  cloneUrl: string,
+): Promise<{ ok: true; cloneUrl: string } | { ok: false; status: number; error: string }> {
+  let normalizedCloneUrl: string;
+  try {
+    normalizedCloneUrl = normalizeGitHubCloneUrl(cloneUrl);
+  } catch {
+    return { ok: false, status: 400, error: "Invalid GitHub clone URL" };
+  }
+
+  const tokenData = await lapis.getSetting<GitHubTokenSetting>("github_token");
+  if (!tokenData?.access_token) {
+    return { ok: false, status: 401, error: "GitHub is not connected" };
+  }
+
+  let repos;
+  try {
+    repos = await listRepos(tokenData.access_token);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "unknown";
+    console.error("[missions] listRepos error:", message);
+    return { ok: false, status: 502, error: "Failed to fetch repos from GitHub" };
+  }
+
+  const allowed = repos.some(
+    (candidate) => normalizeGitHubCloneUrl(candidate.clone_url) === normalizedCloneUrl,
+  );
+  if (!allowed) {
+    return {
+      ok: false,
+      status: 403,
+      error: "Repository is not available to this GitHub connection",
+    };
+  }
+
+  return { ok: true, cloneUrl: normalizedCloneUrl };
+}
 
 const defaultMissionConfig: Omit<MissionConfig, "modelHints"> = {
   workerTimeouts: { simple: 120_000, build: 300_000, testHeavy: 600_000 },
@@ -63,6 +109,15 @@ export async function missionRoutes(
       return reply.status(400).send({ error: "description is required" });
     }
 
+    let authorizedCloneUrl: string | undefined;
+    if (cloneUrl) {
+      const authorization = await authorizeMissionCloneUrl(lapis, cloneUrl);
+      if (!authorization.ok) {
+        return reply.status(authorization.status).send({ error: authorization.error });
+      }
+      authorizedCloneUrl = authorization.cloneUrl;
+    }
+
     const quotaConfig = await lapis.getSetting<QuotaConfig>("quota_config");
     if (quotaConfig?.enabled) {
       const allWindows = (await lapis.getSetting<Record<string, QuotaWindow>>("quota_windows")) ?? {};
@@ -102,7 +157,7 @@ export async function missionRoutes(
     const config: MissionConfig = {
       ...missionConfig,
       modelHints,
-      ...(cloneUrl && { cloneUrl }),
+      ...(authorizedCloneUrl && { cloneUrl: authorizedCloneUrl }),
     };
     const mission = await lapis.createMission(description, config);
     pool.submit(mission.id);
