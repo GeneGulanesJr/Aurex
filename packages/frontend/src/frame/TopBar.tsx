@@ -1,5 +1,6 @@
 import { ThemePicker } from "./ThemePicker";
 import type { ThemeId } from "../hooks/useTheme";
+import type { UpdateStatus } from "../hooks/useUpdateStatus";
 
 interface TopBarProps {
   connected: boolean;
@@ -15,6 +16,7 @@ interface TopBarProps {
   onOpenSettings?: () => void;
   onOpenQuota?: () => void;
   quotaStatus?: string | null;
+  updateStatus?: UpdateStatus | null;
 }
 
 function StatusDot({ color }: { color: string }) {
@@ -52,7 +54,7 @@ function StatusItem({ color, label }: { color: string; label: string }) {
   );
 }
 
-export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, githubUser, pinyxConfigured, onOpenIntegrations, sidebarCollapsed, onToggleSidebar, onOpenSettings, onOpenQuota, quotaStatus }: TopBarProps) {
+export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, githubUser, pinyxConfigured, onOpenIntegrations, sidebarCollapsed, onToggleSidebar, onOpenSettings, onOpenQuota, quotaStatus, updateStatus }: TopBarProps) {
   const dotColor = connected ? "var(--success)" : "var(--error)";
   return (
     <header
@@ -219,6 +221,47 @@ export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, 
             title="Settings"
           >
             ⚙
+          </button>
+        )}
+        {updateStatus && (updateStatus.updateAvailable || updateStatus.applying) && (
+          <button
+            onClick={updateStatus.applying ? undefined : updateStatus.apply}
+            className="hide-on-mobile"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              background: "transparent",
+              border: "1px solid var(--border)",
+              borderRadius: "4px",
+              color: updateStatus.applying ? "var(--text-muted)" : "var(--success)",
+              cursor: updateStatus.applying ? "wait" : "pointer",
+              padding: "3px 8px",
+              fontFamily: '"JetBrains Mono", monospace',
+              fontSize: "10px",
+              letterSpacing: "0.5px",
+            }}
+            title={updateStatus.applying ? "Updating..." : `${updateStatus.behindBy} commit(s) behind`}
+          >
+            {updateStatus.applying ? (
+              <>
+                <span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>↻</span>
+                <span style={{ fontSize: "8px", letterSpacing: "1px" }}>UPDATING</span>
+              </>
+            ) : (
+              <>
+                <span style={{
+                  display: "inline-block",
+                  width: "6px",
+                  height: "6px",
+                  borderRadius: "50%",
+                  background: "var(--success)",
+                  boxShadow: "0 0 6px var(--success)",
+                  animation: "pulse-dot 2s ease-in-out infinite",
+                }} />
+                <span style={{ fontSize: "8px", letterSpacing: "1px" }}>UPDATE</span>
+              </>
+            )}
           </button>
         )}
         <ThemePicker current={theme} onChange={onThemeChange} />

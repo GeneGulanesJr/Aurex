@@ -1,12 +1,15 @@
 # Aurex — Full Stack
-# Usage:  docker compose build && docker compose up
-# Stops:  Ctrl+C  or  docker compose down
+# Usage:  docker compose up --build -d    (rebuild + restart, data persists in volumes)
+# Stops:  docker compose down             (data persists in volumes)
+# Reset:  docker compose down -v          (destroys volumes + all data)
 
 services:
   lapis:
     build: { context: ., dockerfile: Dockerfile.lapis }
     ports: ["9100:9100"]
     volumes:
+      # lapis-data persists GitHub login, PiNyx API keys, mission history
+      - lapis-data:/root/.pi
       - ${REPO_ROOT:-/tmp}:/workspace
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:9100/health').then(r=>r.json()).then(j=>{if(j.status!=='ok')process.exit(1)})"]
@@ -47,7 +50,7 @@ services:
       ZAI_API_KEY: ${ZAI_API_KEY:-}
     volumes:
       - ${REPO_ROOT:-/tmp}:/workspace
-      - .:/aurex:ro
+      - .:/aurex
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -70,3 +73,4 @@ services:
 
 volumes:
   pinyx-data:
+  lapis-data:

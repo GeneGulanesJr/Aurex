@@ -10,6 +10,7 @@ export default defineConfig({
         target: "ws://localhost:3000",
         ws: true,
       },
+      "/health": "http://localhost:3000",
     },
   },
 });
