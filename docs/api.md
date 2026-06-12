@@ -14,18 +14,19 @@ For shared request/response shapes see [`packages/shared/src/rest.ts`](../packag
 
 ## Quick index
 
-| Group | Endpoints |
-|---|---|
-| **Missions** | [`POST /api/missions`](#post-apimissions), [`GET /api/missions/active`](#get-apimissionsactive), [`GET /api/missions/current`](#get-apimissionscurrent), [`GET /api/missions/:id`](#get-apimissionsid), [`GET /api/missions/:id/agent-logs`](#get-apimissionsidagent-logs), [`POST /api/missions/:id/abort`](#post-apimissionsidabort), [`POST /api/missions/:id/restart`](#post-apimissionsidrestart) |
-| **Checkpoints** | [`POST /api/missions/:id/checkpoints`](#post-apimissionsidcheckpoints) |
-| **GitHub** | [`GET /api/github/config`](#get-apigithubconfig), [`POST /api/github/config`](#post-apigithubconfig), [`GET /api/github/connect`](#get-apigithubconnect), [`GET /api/github/callback`](#get-apigithubcallback), [`GET /api/github/status`](#get-apigithubstatus), [`POST /api/github/disconnect`](#post-apigithubdisconnect), [`GET /api/github/repos`](#get-apigithubrepos), [`POST /api/github/repos/prepare`](#post-apigithubreposprepare) |
-| **Code Context** | [`GET /api/missions/:missionId/code/summary`](#get-apimissionsmissionidcodesummary), [`GET /api/missions/:missionId/code/graph`](#get-apimissionsmissionidcodegraph), [`GET /api/missions/:missionId/code/hotspots`](#get-apimissionsmissionidcodehotspots) |
-| **PiNyx** | [`GET /api/pinyx/status`](#get-apipinyxstatus), [`GET /api/pinyx/config`](#get-apipinyxconfig), [`POST /api/pinyx/config`](#post-apipinyxconfig), [`GET /api/pinyx/models`](#get-apipinyxmodels) |
-| **Quota** | [`GET /api/quota`](#get-apiquota), [`POST /api/quota/config`](#post-apiquotaconfig), [`POST /api/quota/prefire`](#post-apiquotaprefire), [`POST /api/quota/reset`](#post-apiquotareset), [`POST /api/quota/calculate-prefire`](#post-apiquotacalculate-prefire) |
-| **Mutation testing** | [`GET /api/repos/:repoName/mutation`](#get-apireposreponamemutation), [`POST /api/repos/:repoName/mutation/run`](#post-apireposreponamemutationrun), [`GET /api/repos/:repoName/mutation/:runId`](#get-apireposreponamemutationrunid) |
-| **Repo Explore** | [`POST /api/repos/:repoName/explore`](#post-apireposreponameexplore), [`GET /api/repos/:repoName/summary`](#get-apireposreponamesummary), [`GET /api/repos/:repoName/hotspots`](#get-apireposreponamehotspots), [`GET /api/repos/:repoName/readiness`](#get-apireposreponamereadiness), [`POST /api/repos/:repoName/scans`](#post-apireposreponamescans), [`GET /api/repos/:repoName/scans`](#get-apireposreponamescans-1), [`GET /api/repos/:repoName/scans/:scanId`](#get-apireposreponamescansscanid), [`GET /api/repos/:repoName/suggestions`](#get-apireposreponamesuggestions) |
-| **Bumblebee (supply chain)** | [`GET /api/bumblebee/status`](#get-apibumblebeestatus), [`GET /api/bumblebee/catalog`](#get-apibumblebeecatalog), [`POST /api/bumblebee/catalog`](#post-apibumblebeecatalog), [`POST /api/missions/:missionId/scans`](#post-apimissionsmissionidscans), [`GET /api/missions/:missionId/scans`](#get-apimissionsmissionidscans), [`GET /api/missions/:missionId/scans/:scanId`](#get-apimissionsmissionidscansscanid) |
-| **WebSocket** | [`/ws`](#websocket-ws) |
+| Group                        | Endpoints                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Missions**                 | [`POST /api/missions`](#post-apimissions), [`GET /api/missions/active`](#get-apimissionsactive), [`GET /api/missions/current`](#get-apimissionscurrent), [`GET /api/missions/:id`](#get-apimissionsid), [`GET /api/missions/:id/agent-logs`](#get-apimissionsidagent-logs), [`POST /api/missions/:id/abort`](#post-apimissionsidabort), [`POST /api/missions/:id/restart`](#post-apimissionsidrestart)                                                                                                                                                                               |
+| **Checkpoints**              | [`POST /api/missions/:id/checkpoints`](#post-apimissionsidcheckpoints)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| **GitHub**                   | [`GET /api/github/config`](#get-apigithubconfig), [`POST /api/github/config`](#post-apigithubconfig), [`GET /api/github/connect`](#get-apigithubconnect), [`GET /api/github/callback`](#get-apigithubcallback), [`GET /api/github/status`](#get-apigithubstatus), [`POST /api/github/disconnect`](#post-apigithubdisconnect), [`GET /api/github/repos`](#get-apigithubrepos), [`POST /api/github/repos/prepare`](#post-apigithubreposprepare)                                                                                                                                        |
+| **Code Context**             | [`GET /api/missions/:missionId/code/summary`](#get-apimissionsmissionidcodesummary), [`GET /api/missions/:missionId/code/graph`](#get-apimissionsmissionidcodegraph), [`GET /api/missions/:missionId/code/hotspots`](#get-apimissionsmissionidcodehotspots)                                                                                                                                                                                                                                                                                                                          |
+| **PiNyx**                    | [`GET /api/pinyx/status`](#get-apipinyxstatus), [`GET /api/pinyx/config`](#get-apipinyxconfig), [`POST /api/pinyx/config`](#post-apipinyxconfig), [`GET /api/pinyx/models`](#get-apipinyxmodels)                                                                                                                                                                                                                                                                                                                                                                                     |
+| **Quota**                    | [`GET /api/quota`](#get-apiquota), [`POST /api/quota/config`](#post-apiquotaconfig), [`POST /api/quota/prefire`](#post-apiquotaprefire), [`POST /api/quota/reset`](#post-apiquotareset), [`POST /api/quota/calculate-prefire`](#post-apiquotacalculate-prefire)                                                                                                                                                                                                                                                                                                                      |
+| **Mutation testing**         | [`GET /api/repos/:repoName/mutation`](#get-apireposreponamemutation), [`POST /api/repos/:repoName/mutation/run`](#post-apireposreponamemutationrun), [`GET /api/repos/:repoName/mutation/:runId`](#get-apireposreponamemutationrunid)                                                                                                                                                                                                                                                                                                                                                |
+| **Repo Explore**             | [`POST /api/repos/:repoName/explore`](#post-apireposreponameexplore), [`GET /api/repos/:repoName/summary`](#get-apireposreponamesummary), [`GET /api/repos/:repoName/hotspots`](#get-apireposreponamehotspots), [`GET /api/repos/:repoName/readiness`](#get-apireposreponamereadiness), [`POST /api/repos/:repoName/scans`](#post-apireposreponamescans), [`GET /api/repos/:repoName/scans`](#get-apireposreponamescans-1), [`GET /api/repos/:repoName/scans/:scanId`](#get-apireposreponamescansscanid), [`GET /api/repos/:repoName/suggestions`](#get-apireposreponamesuggestions) |
+| **Bumblebee (supply chain)** | [`GET /api/bumblebee/status`](#get-apibumblebeestatus), [`GET /api/bumblebee/catalog`](#get-apibumblebeecatalog), [`POST /api/bumblebee/catalog`](#post-apibumblebeecatalog), [`POST /api/missions/:missionId/scans`](#post-apimissionsmissionidscans), [`GET /api/missions/:missionId/scans`](#get-apimissionsmissionidscans), [`GET /api/missions/:missionId/scans/:scanId`](#get-apimissionsmissionidscansscanid)                                                                                                                                                                 |
+| **Durable Execution**        | [`POST /api/agent-sessions/prepare`](#post-apiagent-sessionsprepare), [`POST /api/agent-sessionssessionidstart`](#post-apiagent-sessionssessionidstart), [`GET /api/execution-queue`](#get-apiexecution-queue), [`POST /api/execution-queue/reconcile`](#post-apiexecution-queuereconcile)                                                                                                                                                                                                                                                                                           |
+| **WebSocket**                | [`/ws`](#websocket-ws)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 ---
 
@@ -294,6 +295,67 @@ List past scans for a mission.
 ### `GET /api/missions/:missionId/scans/:scanId`
 
 Fetch a specific scan by id.
+
+## Durable Execution Control Plane
+
+Prepared agent sessions and the execution queue are the first phase of durable mission execution. These debug/control routes are implemented in `packages/backend/src/routes/agent-sessions.ts` and `packages/backend/src/routes/execution-queue.ts`. They do not change the default `POST /api/missions` behavior until the durable mission dispatch feature flags are enabled.
+
+Feature flags:
+
+| Variable                          |            Default | Purpose                                                                                            |
+| --------------------------------- | -----------------: | -------------------------------------------------------------------------------------------------- |
+| `AUREX_DURABLE_QUEUE_ENABLED`     |            `false` | Reserved for switching mission dispatch from direct runner submission to queue-backed dispatch.    |
+| `AUREX_PREPARED_SESSIONS_ENABLED` |            `false` | Reserved for requiring prepared-session launch boundaries in orchestrator flows.                   |
+| `AUREX_STALE_RECONCILER_ENABLED`  |            `false` | Reserved for scheduled/automatic stale reconciliation.                                             |
+| `AUREX_STALE_RECONCILER_DRY_RUN`  |             `true` | Keeps manual reconciliation non-mutating unless explicitly disabled in the request/default config. |
+| `AUREX_QUEUE_WORKER_POLL_MS`      |             `1000` | Future queue worker poll interval.                                                                 |
+| `AUREX_QUEUE_WORKER_ID`           | `<hostname>:<pid>` | Queue worker identity for claim metadata.                                                          |
+
+### `POST /api/agent-sessions/prepare`
+
+Prepare an agent session without launching it.
+
+- **Body:** `{ "missionId": string, "milestoneId"?: string | null, "unitId"?: string | null, "role": PreparedAgentRole, "config": { "model": string, "prompt": string, ... }, "maxAttempts"?: number }`
+- **Response (201):** `{ "sessionId": string, "status": "prepared", "session": PreparedAgentSession }`
+
+### `POST /api/agent-sessions/:sessionId/start`
+
+Queue a prepared session for launch by creating an `agent_session_start` execution job and linking it back to the session.
+
+- **Response (202):** `{ "sessionId": string, "queueJobId": string, "status": "queued" }`
+
+### `GET /api/agent-sessions/:sessionId`
+
+Inspect a prepared session.
+
+- **Response:** `{ "session": PreparedAgentSession }`
+
+### `POST /api/agent-sessions/:sessionId/messages`
+
+Accept follow-up input for sessions that are `running` or `waiting_for_input`.
+
+- **Body:** `{ "message": string }`
+- **Response:** `{ "accepted": boolean }`
+
+### `POST /api/agent-sessions/:sessionId/cancel`
+
+Cancel a prepared, queued, running, or waiting session.
+
+- **Response:** `{ "session": PreparedAgentSession }`
+
+### `GET /api/execution-queue`
+
+Inspect durable execution queue jobs.
+
+- **Query:** `?status=queued|claimed|running|succeeded|failed|cancelled|stale|requeued&missionId=...&sessionId=...`
+- **Response:** `{ "jobs": ExecutionQueueJob[] }`
+
+### `POST /api/execution-queue/reconcile`
+
+Run stale-work reconciliation manually. Defaults to dry-run behavior unless the body sets `dryRun: false` and the server config allows active reconciliation.
+
+- **Body:** `{ "dryRun"?: boolean }`
+- **Response (202):** `{ "summary": ReconciliationRunSummary }`
 
 ---
 

@@ -1,5 +1,19 @@
 // packages/shared/src/rest.ts
-import type { Mission, Milestone, WorkingUnit, CostSummary, BumblebeeScanResult, BumblebeeFinding, ExposureCatalog, QuotaProviderStatus } from "./types.js";
+import type { PreparedAgentRole, ExecutionJobStatus } from "./enums.js";
+import type {
+  Mission,
+  Milestone,
+  WorkingUnit,
+  CostSummary,
+  BumblebeeScanResult,
+  BumblebeeFinding,
+  ExposureCatalog,
+  QuotaProviderStatus,
+  PreparedAgentSession,
+  PreparedAgentSessionConfig,
+  ExecutionQueueJob,
+  ReconciliationRunSummary,
+} from "./types.js";
 
 export interface CreateMissionRequest {
   description: string;
@@ -98,7 +112,12 @@ export interface QuotaConfigUpdateRequest {
   enabled?: boolean;
   windowDurationMs?: number;
   burnDurationMs?: number;
-  providers?: Array<{ providerId: string; tracked: boolean; windowDurationMs?: number; burnDurationMs?: number }>;
+  providers?: Array<{
+    providerId: string;
+    tracked: boolean;
+    windowDurationMs?: number;
+    burnDurationMs?: number;
+  }>;
 }
 
 export interface PrefireRequest {
@@ -125,4 +144,60 @@ export interface CalculatePrefireResponse {
   burnDurationMs: number;
   windowDurationMs: number;
   timeline: Array<{ time: string; event: string }>;
+}
+
+export interface PrepareAgentSessionRequest {
+  missionId: string;
+  milestoneId?: string | null;
+  unitId?: string | null;
+  role: PreparedAgentRole;
+  config: Partial<PreparedAgentSessionConfig> &
+    Pick<PreparedAgentSessionConfig, "model" | "prompt">;
+  maxAttempts?: number;
+}
+
+export interface PrepareAgentSessionResponse {
+  sessionId: string;
+  status: PreparedAgentSession["status"];
+  session: PreparedAgentSession;
+}
+
+export interface StartAgentSessionResponse {
+  sessionId: string;
+  queueJobId: string;
+  status: PreparedAgentSession["status"];
+}
+
+export interface GetAgentSessionResponse {
+  session: PreparedAgentSession;
+}
+
+export interface AgentSessionMessageRequest {
+  message: string;
+}
+
+export interface AgentSessionMessageResponse {
+  accepted: boolean;
+}
+
+export interface CancelAgentSessionResponse {
+  session: PreparedAgentSession;
+}
+
+export interface ListExecutionQueueResponse {
+  jobs: ExecutionQueueJob[];
+}
+
+export interface ReconcileExecutionQueueRequest {
+  dryRun?: boolean;
+}
+
+export interface ReconcileExecutionQueueResponse {
+  summary: ReconciliationRunSummary;
+}
+
+export interface ExecutionQueueQuery {
+  status?: ExecutionJobStatus;
+  missionId?: string;
+  sessionId?: string;
 }

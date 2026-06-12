@@ -1,31 +1,85 @@
 // packages/shared/src/enums.ts
 
 // Mission lifecycle
-export type MissionStatus = "planning" | "running" | "paused" | "completed" | "failed" | "aborted";
-export type MilestoneStatus = "planned" | "in_progress" | "validating" | "rescoping" | "retrying" | "completed" | "failed";
+export type MissionStatus =
+  | "planning"
+  | "running"
+  | "paused"
+  | "completed"
+  | "failed"
+  | "aborted";
+export type MilestoneStatus =
+  | "planned"
+  | "in_progress"
+  | "validating"
+  | "rescoping"
+  | "retrying"
+  | "completed"
+  | "failed";
 
 // Agent statuses
-export type AgentStatus = "spawned" | "planning" | "working" | "reviewing" | "researching" | "committing" | "completed" | "timed_out" | "failed";
-export type WorkerStatus = "planned" | "spawned" | "working" | "committing" | "completed" | "timed_out" | "failed" | "superseded";
+export type AgentStatus =
+  | "spawned"
+  | "planning"
+  | "working"
+  | "reviewing"
+  | "researching"
+  | "committing"
+  | "completed"
+  | "timed_out"
+  | "failed";
+export type WorkerStatus =
+  | "planned"
+  | "spawned"
+  | "working"
+  | "committing"
+  | "completed"
+  | "timed_out"
+  | "failed"
+  | "superseded";
 
 // Agent types
-export type AgentType = "orchestrator" | "worker" | "validator_scrutiny" | "validator_user_testing" | "research";
+export type AgentType =
+  | "orchestrator"
+  | "worker"
+  | "validator_scrutiny"
+  | "validator_user_testing"
+  | "research";
 
 // Negotiation
 export type NegotiatorVerdict = "pass" | "retry" | "rescope" | "escalate";
 
 // Broadcasts
-export type BroadcastLifecycle = "active" | "superseded" | "archived" | "expired";
+export type BroadcastLifecycle =
+  | "active"
+  | "superseded"
+  | "archived"
+  | "expired";
 export type BroadcastCategory = "info" | "warning" | "decision" | "constraint";
 
 // Research
-export type ResearchLifecycle = "unverified" | "verified" | "superseded" | "rejected" | "expired";
+export type ResearchLifecycle =
+  | "unverified"
+  | "verified"
+  | "superseded"
+  | "rejected"
+  | "expired";
 export type ResearchRelevance = "high" | "medium" | "low";
 
 // Checkpoints
-export type CheckpointTrigger = "milestone_complete" | "validation_failed" | "rescope_limit" | "unclassifiable_error" | "cost_cap_exceeded" | "quota_exhausted";
+export type CheckpointTrigger =
+  | "milestone_complete"
+  | "validation_failed"
+  | "rescope_limit"
+  | "unclassifiable_error"
+  | "cost_cap_exceeded"
+  | "quota_exhausted";
 
-export type QuotaStatus = "unlimited" | "active" | "exhausted" | "window_expired";
+export type QuotaStatus =
+  | "unlimited"
+  | "active"
+  | "exhausted"
+  | "window_expired";
 /**
  * User-initiated decision on a checkpoint.
  *
@@ -38,4 +92,67 @@ export type QuotaStatus = "unlimited" | "active" | "exhausted" | "window_expired
 export type CheckpointDecision = "approve" | "reject";
 
 // Compression
-export type CompressionTrigger = "post_milestone" | "manual" | "budget_threshold";
+export type CompressionTrigger =
+  | "post_milestone"
+  | "manual"
+  | "budget_threshold";
+
+// Prepared sessions / durable execution queue
+export type PreparedAgentRole =
+  | "orchestrator"
+  | "researcher"
+  | "worker"
+  | "validator_scrutiny"
+  | "validator_user_testing"
+  | "merge_manager"
+  | "final_audit";
+
+export type PreparedAgentSessionStatus =
+  | "prepared"
+  | "queued"
+  | "starting"
+  | "running"
+  | "waiting_for_input"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "lost";
+
+export type ExecutionJobType =
+  | "mission_start"
+  | "mission_resume"
+  | "mission_abort"
+  | "agent_session_start"
+  | "agent_session_resume"
+  | "agent_session_cancel"
+  | "validator_start"
+  | "checkpoint_timeout"
+  | "stale_reconciliation";
+
+export type ExecutionJobStatus =
+  | "queued"
+  | "claimed"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "stale"
+  | "requeued";
+
+export type ExecutionFailureCode =
+  | "CLAIM_EXPIRED"
+  | "HEARTBEAT_TIMEOUT"
+  | "SESSION_START_TIMEOUT"
+  | "SESSION_LOST"
+  | "MISSION_NO_PROGRESS"
+  | "WORKTREE_PREP_FAILED"
+  | "REPO_PREP_FAILED"
+  | "SETUP_COMMAND_FAILED"
+  | "PINYX_UNAVAILABLE"
+  | "LAPIS_UNAVAILABLE"
+  | "QUOTA_EXHAUSTED"
+  | "MODEL_UNAVAILABLE"
+  | "VALIDATION_TIMEOUT"
+  | "USER_ABORTED"
+  | "MAX_ATTEMPTS_EXHAUSTED"
+  | "UNKNOWN";
