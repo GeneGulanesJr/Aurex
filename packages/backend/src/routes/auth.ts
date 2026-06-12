@@ -8,13 +8,15 @@ export interface Auth0User {
   picture?: string;
 }
 
-let jwksCache: ReturnType<typeof createRemoteJWKSet> | null = null;
+const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
 function getJWKS(domain: string) {
-  if (!jwksCache) {
-    jwksCache = createRemoteJWKSet(new URL(`https://${domain}/.well-known/jwks.json`));
+  let jwks = jwksCache.get(domain);
+  if (!jwks) {
+    jwks = createRemoteJWKSet(new URL(`https://${domain}/.well-known/jwks.json`));
+    jwksCache.set(domain, jwks);
   }
-  return jwksCache;
+  return jwks;
 }
 
 const SKIP_PATHS = ["/health", "/api/github/callback"];

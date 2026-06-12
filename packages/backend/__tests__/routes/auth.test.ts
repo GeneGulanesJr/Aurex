@@ -1,14 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import Fastify from "fastify";
-import { registerGlobalAuth } from "../../src/routes/auth";
+import { registerGlobalAuth, verifyJwt } from "../../src/routes/auth";
 
 vi.mock("jose", () => ({
   jwtVerify: vi.fn(),
   createRemoteJWKSet: vi.fn(() => "mocked-jwks"),
 }));
 
-import { jwtVerify } from "jose";
+import { jwtVerify, createRemoteJWKSet } from "jose";
 const mockedJwtVerify = vi.mocked(jwtVerify);
+const mockedCreateRemoteJWKSet = vi.mocked(createRemoteJWKSet);
 
 const TEST_DOMAIN = "test.us.auth0.com";
 const TEST_AUDIENCE = "https://api.test.io";
@@ -71,6 +72,28 @@ describe("auth middleware", () => {
       name: "Test User",
       picture: "https://img.example.com/photo.jpg",
     });
+  });
+
+
+  it("caches JWKS resolvers per Auth0 domain", async () => {
+    mockedJwtVerify.mockResolvedValue({
+      payload: { sub: "auth0|123" },
+      protectedHeader: {},
+    } as any);
+
+    await verifyJwt(VALID_TOKEN, "tenant-a.us.auth0.com", TEST_AUDIENCE);
+    await verifyJwt(VALID_TOKEN, "tenant-b.us.auth0.com", TEST_AUDIENCE);
+    await verifyJwt(VALID_TOKEN, "tenant-a.us.auth0.com", TEST_AUDIENCE);
+
+    expect(mockedCreateRemoteJWKSet).toHaveBeenCalledTimes(2);
+    expect(mockedCreateRemoteJWKSet).toHaveBeenNthCalledWith(
+      1,
+      new URL("https://tenant-a.us.auth0.com/.well-known/jwks.json"),
+    );
+    expect(mockedCreateRemoteJWKSet).toHaveBeenNthCalledWith(
+      2,
+      new URL("https://tenant-b.us.auth0.com/.well-known/jwks.json"),
+    );
   });
 
   it("always allows /health endpoint", async () => {

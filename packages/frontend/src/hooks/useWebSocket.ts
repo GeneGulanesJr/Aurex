@@ -15,6 +15,17 @@ export function parseWsMessage(data: string): { seq?: number; event?: WsClientEv
   try { return JSON.parse(data); } catch { return null; }
 }
 
+export function buildPostAuthMessages(lastSeq: string | null, missionId?: string | null): string[] {
+  const messages: string[] = [];
+  if (lastSeq && !isNaN(Number(lastSeq))) {
+    messages.push(JSON.stringify({ type: "replay", lastSeq: Number(lastSeq) }));
+  }
+  if (missionId) {
+    messages.push(JSON.stringify({ event: "subscribe_mission", missionId }));
+  }
+  return messages;
+}
+
 export interface UseWebSocketOptions {
   missionId?: string | null;
   getToken?: () => Promise<string>;
@@ -41,8 +52,6 @@ export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: Use
       if (optsRef.current?.enabled === false) return;
 
       const ws = new WebSocket(buildWsUrl(window.location.host, window.location.protocol));
-      let authenticated = !optsRef.current?.getToken;
-
       ws.onopen = async () => {
         if (!mountedRef.current) { ws.close(); return; }
         reconnectDelayRef.current = RECONNECT_BASE_DELAY;
@@ -57,18 +66,10 @@ export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: Use
           }
         }
 
-        // Send replay request from last known sequence
-        const lastSeq = localStorage.getItem(LAST_SEQ_KEY);
-        if (lastSeq && !isNaN(Number(lastSeq))) {
-          ws.send(JSON.stringify({ type: "replay", lastSeq: Number(lastSeq) }));
+        if (!optsRef.current?.getToken) {
+          sendPostAuthMessages(ws);
+          setConnected(true);
         }
-
-        // Subscribe to selected mission
-        if (optsRef.current?.missionId) {
-          ws.send(JSON.stringify({ event: "subscribe_mission", missionId: optsRef.current.missionId }));
-        }
-
-        setConnected(true);
       };
 
       ws.onclose = () => {
@@ -95,6 +96,16 @@ export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: Use
         }
       }
 
+      function sendPostAuthMessages(socket: WebSocket) {
+        // Send replay request from last known sequence only after the server has
+        // accepted authentication. Sending this while JWT verification is still
+        // pending can race with the backend's pre-auth guard.
+        const lastSeq = localStorage.getItem(LAST_SEQ_KEY);
+        for (const message of buildPostAuthMessages(lastSeq, optsRef.current?.missionId)) {
+          socket.send(message);
+        }
+      }
+
       ws.onmessage = (msg) => {
         const parsed = parseWsMessage(msg.data);
         if (!parsed) return;
@@ -106,7 +117,8 @@ export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: Use
 
         // Handle auth response
         if (parsed.type === "auth_ok") {
-          authenticated = true;
+          sendPostAuthMessages(ws);
+          setConnected(true);
           return;
         }
 

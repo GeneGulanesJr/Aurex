@@ -26,6 +26,7 @@ import { createSettingsPreparedSessionStore } from "./sessions/prepared-session-
 import { createPreparedSessionService } from "./sessions/prepared-session-service.js";
 import { agentSessionRoutes } from "./routes/agent-sessions.js";
 import { executionQueueRoutes } from "./routes/execution-queue.js";
+import { createExecutionWorker } from "./queue/execution-worker.js";
 
 async function main() {
   const config = loadConfig();
@@ -202,14 +203,38 @@ async function main() {
   registerUpdateRoutes(app, { eventBus, aurexRoot: config.aurexRoot, gitMainBranch: config.gitMainBranch });
 
   // Durable execution queue / prepared agent sessions
-  await app.register(agentSessionRoutes, { service: preparedSessionService });
-  await app.register(executionQueueRoutes, {
-    queue: executionQueue,
-    sessions: preparedSessions,
-    eventBus,
-    reconcilerDryRunDefault: config.staleReconcilerDryRun,
-    activeReconciliationEnabled: config.staleReconcilerEnabled,
-  });
+  const executionWorker = config.durableQueueEnabled
+    ? createExecutionWorker(
+        {
+          queue: executionQueue,
+          eventBus,
+          handlers: {
+            agent_session_start: async (_jobId, _claimToken) => {
+              const job = await executionQueue.get(_jobId);
+              if (!job?.sessionId) {
+                throw new Error("agent_session_start job is missing sessionId");
+              }
+              await preparedSessions.updateStatus(job.sessionId, "running");
+            },
+          },
+        },
+        { workerId: config.queueWorkerId, pollMs: config.queueWorkerPollMs },
+      )
+    : null;
+
+  if (config.preparedSessionsEnabled) {
+    await app.register(agentSessionRoutes, { service: preparedSessionService });
+  }
+  if (config.durableQueueEnabled) {
+    await app.register(executionQueueRoutes, {
+      queue: executionQueue,
+      sessions: preparedSessions,
+      eventBus,
+      reconcilerDryRunDefault: config.staleReconcilerDryRun,
+      activeReconciliationEnabled: config.staleReconcilerEnabled,
+    });
+    executionWorker?.start();
+  }
 
   // Start
   try {
@@ -230,6 +255,7 @@ async function main() {
       new Promise<void>((resolve) => setTimeout(resolve, 30_000)),
     ]);
     console.log("[shutdown] Agents drained, closing server");
+    await executionWorker?.stop();
     await app.close();
     await telemetry.shutdown();
     process.exit(0);
