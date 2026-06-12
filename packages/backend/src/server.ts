@@ -21,6 +21,11 @@ import { bumblebeeRoutes } from "./routes/bumblebee.js";
 import { quotaRoutes } from "./routes/quota.js";
 import { registerUpdateRoutes } from "./routes/update.js";
 import { startTelemetry } from "./telemetry.js";
+import { createSettingsExecutionQueueStore } from "./queue/execution-queue-store.js";
+import { createSettingsPreparedSessionStore } from "./sessions/prepared-session-store.js";
+import { createPreparedSessionService } from "./sessions/prepared-session-service.js";
+import { agentSessionRoutes } from "./routes/agent-sessions.js";
+import { executionQueueRoutes } from "./routes/execution-queue.js";
 
 async function main() {
   const config = loadConfig();
@@ -195,6 +200,16 @@ async function main() {
 
   // Self-update detection + apply
   registerUpdateRoutes(app, { eventBus, aurexRoot: config.aurexRoot, gitMainBranch: config.gitMainBranch });
+
+  // Durable execution queue / prepared agent sessions
+  await app.register(agentSessionRoutes, { service: preparedSessionService });
+  await app.register(executionQueueRoutes, {
+    queue: executionQueue,
+    sessions: preparedSessions,
+    eventBus,
+    reconcilerDryRunDefault: config.staleReconcilerDryRun,
+    activeReconciliationEnabled: config.staleReconcilerEnabled,
+  });
 
   // Start
   try {
