@@ -54,7 +54,7 @@ export function registerUpdateRoutes(app: FastifyInstance, deps: UpdateRouteDeps
         const logCount = await exec("git", [
           "log", "--oneline", `${localHead}..${latestSha}`,
         ], { cwd: aurexRoot }).catch(() => "");
-        behindBy = logCount ? logCount.split("\n").filter(Boolean).length : 0;
+        behindBy = logCount ? logCount.split("\n").filter(Boolean).length : 1;
         updateAvailable = true;
         lastChecked = new Date().toISOString();
         eventBus.emit({
@@ -84,21 +84,14 @@ export function registerUpdateRoutes(app: FastifyInstance, deps: UpdateRouteDeps
 
   captureBuildSha();
 
-  function scheduleDaily8am(): void {
+  let lastCheckHour = -1;
+  setInterval(() => {
     const now = new Date();
-    const next8am = new Date(now);
-    next8am.setHours(8, 0, 0, 0);
-    if (next8am.getTime() <= now.getTime()) {
-      next8am.setDate(next8am.getDate() + 1);
+    if (now.getHours() === 8 && now.getMinutes() === 0 && lastCheckHour !== now.getDate()) {
+      lastCheckHour = now.getDate();
+      checkForUpdates();
     }
-    const delay = next8am.getTime() - now.getTime();
-    setTimeout(async () => {
-      await checkForUpdates();
-      scheduleDaily8am();
-    }, delay);
-  }
-
-  scheduleDaily8am();
+  }, 60_000);
 
   app.get("/api/update/status", async () => {
     if (!currentSha) {

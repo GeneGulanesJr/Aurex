@@ -8,6 +8,7 @@ services:
     build: { context: ., dockerfile: Dockerfile.lapis }
     ports: ["9100:9100"]
     volumes:
+      # lapis-data persists GitHub login, PiNyx API keys, mission history
       - lapis-data:/root/.pi
       - ${REPO_ROOT:-/tmp}:/workspace
     healthcheck:

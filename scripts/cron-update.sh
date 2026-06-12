@@ -27,10 +27,16 @@ rm -f "$FLAG"
 
 cd "$PROJECT_DIR" || { echo "$LOG_PREFIX ERROR: Cannot cd to $PROJECT_DIR"; exit 1; }
 
+PREV_SHA="$(git rev-parse HEAD)"
+
 echo "$LOG_PREFIX Pulling latest code..."
 git pull origin main || { echo "$LOG_PREFIX ERROR: git pull failed"; exit 1; }
 
 echo "$LOG_PREFIX Rebuilding containers..."
-docker compose up --build -d || { echo "$LOG_PREFIX ERROR: docker compose rebuild failed"; exit 1; }
+if ! docker compose up --build -d; then
+  echo "$LOG_PREFIX ERROR: docker compose rebuild failed. Rolling back to $PREV_SHA..."
+  git checkout "$PREV_SHA" && docker compose up --build -d
+  exit 1
+fi
 
 echo "$LOG_PREFIX Update complete."

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { WsClientEvent, UpdateStatusResponse } from "@aurex/shared";
-import { getUpdateStatus, checkForUpdates, applyUpdate } from "../api";
+import { getUpdateStatus, checkForUpdates, applyUpdate, getHealth } from "../api";
 
 interface UseUpdateStatusDeps {
   onWsEvent: (handler: (event: WsClientEvent) => void) => void;
@@ -28,6 +28,7 @@ export function useUpdateStatus(deps: UseUpdateStatusDeps): UpdateStatus {
     lastChecked: null,
   });
   const [applying, setApplying] = useState(false);
+  const applyingRef = useRef(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -52,30 +53,34 @@ export function useUpdateStatus(deps: UseUpdateStatusDeps): UpdateStatus {
     try {
       const result = await checkForUpdates();
       setStatus(result);
-    } catch {}
+    } catch (err) {
+      console.warn("[update] Manual check failed:", err);
+    }
   }, []);
 
   const apply = useCallback(async () => {
-    if (applying) return;
+    if (applyingRef.current) return;
+    applyingRef.current = true;
     setApplying(true);
     try {
       await applyUpdate();
       setStatus((prev) => ({ ...prev, updateAvailable: false }));
       pollRef.current = setInterval(() => {
-        fetch("/health", { cache: "no-store" })
-          .then((r) => r.json())
+        getHealth()
           .then((data) => {
             if (data.status === "ok" || data.status === "degraded") {
               if (pollRef.current) clearInterval(pollRef.current);
+              applyingRef.current = false;
               setApplying(false);
             }
           })
           .catch(() => {});
       }, 2000);
     } catch {
+      applyingRef.current = false;
       setApplying(false);
     }
-  }, [applying]);
+  }, []);
 
   useEffect(() => {
     return () => {
