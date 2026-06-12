@@ -11,11 +11,15 @@
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 FLAG="$PROJECT_DIR/.update-pending"
+LOCK="$PROJECT_DIR/.update.lock"
 LOG_PREFIX="[$(date '+%Y-%m-%d %H:%M:%S')]"
 
 if [ ! -f "$FLAG" ]; then
   exit 0
 fi
+
+exec 200>"$LOCK"
+flock -n 200 || { echo "$LOG_PREFIX Another update is already running"; exit 0; }
 
 echo "$LOG_PREFIX Update flag detected. Starting rebuild..."
 

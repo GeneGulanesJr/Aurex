@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { execFile } from "child_process";
-import { writeFile, access } from "fs/promises";
+import { writeFile } from "fs/promises";
 import { join } from "path";
 import type { EventBus } from "../ws/events.js";
 import type { UpdateStatusResponse } from "@aurex/shared";
@@ -54,7 +54,7 @@ export function registerUpdateRoutes(app: FastifyInstance, deps: UpdateRouteDeps
         const logCount = await exec("git", [
           "log", "--oneline", `${localHead}..${latestSha}`,
         ], { cwd: aurexRoot }).catch(() => "");
-        behindBy = logCount ? logCount.split("\n").filter(Boolean).length : 1;
+        behindBy = logCount ? logCount.split("\n").filter(Boolean).length : 0;
         updateAvailable = true;
         lastChecked = new Date().toISOString();
         eventBus.emit({
