@@ -7,3 +7,4 @@ packages/*/dist/
 .aurex-workspace/
 .stryker-tmp/
 reports/
+certs/

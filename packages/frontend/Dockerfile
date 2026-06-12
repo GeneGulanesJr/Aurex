@@ -29,6 +29,12 @@ RUN apk add --no-cache curl
 COPY --from=build /app/packages/frontend/dist /usr/share/nginx/html
 COPY packages/frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
+# Copy certs and fix permissions for non-root nginx user
+COPY certs/ /etc/nginx/certs/
+RUN chown -R nginx:nginx /etc/nginx/certs/ && \
+    chmod 644 /etc/nginx/certs/cert.pem && \
+    chmod 640 /etc/nginx/certs/key.pem
+
 # Run nginx as non-root
 RUN mkdir -p /var/cache/nginx /run && \
     chown -R nginx:nginx /var/cache/nginx /run && \
@@ -36,4 +42,4 @@ RUN mkdir -p /var/cache/nginx /run && \
 
 USER nginx
 
-EXPOSE 80
+EXPOSE 80 443

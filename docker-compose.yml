@@ -102,7 +102,7 @@ services:
         VITE_AUTH0_DOMAIN: ${VITE_AUTH0_DOMAIN:-}
         VITE_AUTH0_CLIENT_ID: ${VITE_AUTH0_CLIENT_ID:-}
         VITE_AUTH0_AUDIENCE: ${VITE_AUTH0_AUDIENCE:-}
-    ports: ["8080:80"]
+    ports: ["8080:443"]
     depends_on:
       backend: { condition: service_healthy }
     restart: unless-stopped
