@@ -20,9 +20,14 @@ import { createBumblebeeRunner } from "./orchestrator/bumblebee-runner.js";
 import { bumblebeeRoutes } from "./routes/bumblebee.js";
 import { quotaRoutes } from "./routes/quota.js";
 import { registerUpdateRoutes } from "./routes/update.js";
+import { startTelemetry } from "./telemetry.js";
 
 async function main() {
   const config = loadConfig();
+  const telemetry = startTelemetry();
+  if (telemetry.enabled) {
+    console.log("[startup] OpenTelemetry metrics enabled");
+  }
   const lapis = createLaPisClient({ lapisEndpoint: config.lapisEndpoint });
   const eventBus = createEventBus();
   const agentLogger = createAgentLogger();
@@ -92,6 +97,7 @@ async function main() {
   }
 
   const app = Fastify({ logger: true });
+  telemetry.registerFastifyMetrics(app);
   await app.register(websocket);
 
   // Auth (no-op if API_KEY not set)
@@ -178,6 +184,7 @@ async function main() {
     ]);
     console.log("[shutdown] Agents drained, closing server");
     await app.close();
+    await telemetry.shutdown();
     process.exit(0);
   }
 

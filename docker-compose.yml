@@ -4,6 +4,23 @@
 # Reset:  docker compose down -v          (destroys volumes + all data)
 
 services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.129.1
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+      - "9464:9464"   # Prometheus scrape endpoint for Aurex app metrics
+      - "8888:8888"   # Prometheus scrape endpoint for collector self-metrics
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://localhost:13133/"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
   lapis:
     build: { context: ., dockerfile: Dockerfile.lapis }
     ports: ["9100:9100"]
@@ -48,6 +65,11 @@ services:
       GITHUB_CALLBACK_URL: ${GITHUB_CALLBACK_URL:-http://localhost:3000/api/github/callback}
       GITHUB_FRONTEND_URL: ${GITHUB_FRONTEND_URL:-http://localhost:8080}
       ZAI_API_KEY: ${ZAI_API_KEY:-}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-aurex-backend}
+      OTEL_METRICS_EXPORTER: ${OTEL_METRICS_EXPORTER:-otlp}
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:-http://otel-collector:4318/v1/metrics}
+      OTEL_METRIC_EXPORT_INTERVAL: ${OTEL_METRIC_EXPORT_INTERVAL:-15000}
+      OTEL_METRIC_EXPORT_TIMEOUT: ${OTEL_METRIC_EXPORT_TIMEOUT:-10000}
     volumes:
       - ${REPO_ROOT:-/tmp}:/workspace
       - .:/aurex
@@ -56,6 +78,7 @@ services:
     depends_on:
       lapis: { condition: service_healthy }
       pinyx: { condition: service_healthy }
+      otel-collector: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 5s

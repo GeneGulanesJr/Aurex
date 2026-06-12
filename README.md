@@ -88,6 +88,7 @@ Three color themes are built in: **Solar Flare** (amber), **Frost Command** (cya
 | **Frontend** | React, Vite, Tailwind CSS, anime.js |
 | **Shared State** | LaPis (SQLite-backed HTTP API) |
 | **LLM Gateway** | PiNyx (proxies all model calls) |
+| **Observability** | OpenTelemetry Collector; Prometheus-compatible metrics endpoint |
 | **Testing** | Vitest (700 tests across 71 files), Stryker (mutation testing) |
 | **Tooling** | pnpm workspaces, TypeScript, @earendil-works/pi-coding-agent |
 
@@ -111,8 +112,12 @@ docker compose build && docker compose up
 | Backend API | http://localhost:3000 |
 | Shared State (LaPis) | http://localhost:9100 |
 | LLM Gateway (PiNyx) | http://localhost:7331 |
+| App Metrics (OpenTelemetry Collector) | http://localhost:9464/metrics |
+| Collector Self-Metrics | http://localhost:8888/metrics |
 
 The bundled PiNyx is the real Rust gateway with no providers configured by default. Open the dashboard's **Integrations → Connection** tab to add a provider, or **Integrations → Keys** to enter an API key for one of the built-ins. To run the offline mock instead, use `docker compose -f docker-compose.e2e.yml up`.
+
+OpenTelemetry Collector is bundled as a metrics bridge only: the backend exports OTLP metrics to the collector, and the collector exposes Prometheus-compatible scrape endpoints. Prometheus and Grafana are intentionally not bundled; point your external monitoring system at `http://<aurex-host>:9464/metrics` for Aurex app metrics and `http://<aurex-host>:8888/metrics` for collector self-metrics.
 
 ### Local Development
 
@@ -188,6 +193,10 @@ All config is via environment variables. Key ones:
 | `QUOTA_ENABLED` | `false` | Enable the coding-plan quota gate |
 | `QUOTA_WINDOW_HOURS` | `5` | Quota measurement window in hours |
 | `QUOTA_BURN_HOURS` | `1` | Quota budget window in hours |
+| `OTEL_SERVICE_NAME` | `aurex-backend` | Service name attached to backend metrics |
+| `OTEL_METRICS_EXPORTER` | `otlp` | Set to `none` to disable backend metric export |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | `http://localhost:4318/v1/metrics` | OTLP HTTP metrics endpoint for local backend runs |
+| `OTEL_METRIC_EXPORT_INTERVAL` | `15000` ms | Backend metric export interval |
 
 Full list in [`.env.example`](./.env.example). Per-variable narrative with code references — see [`docs/configuration.md`](./docs/configuration.md).
 
