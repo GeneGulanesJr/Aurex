@@ -10,13 +10,31 @@ export interface ActiveMission {
   description?: string;
 }
 
-function authHeaders(): HeadersInit {
-  const token = import.meta.env.VITE_AUREX_API_KEY;
-  return token ? { Authorization: `Bearer ${token}` } : {};
+let _getToken: (() => Promise<string>) | null = null;
+let _onAuthError: (() => void) | null = null;
+
+export function setTokenGetter(fn: () => Promise<string>): void {
+  _getToken = fn;
 }
 
-function apiFetch(url: string, opts?: RequestInit): Promise<Response> {
-  return fetch(url, { ...opts, headers: { ...authHeaders(), ...opts?.headers } });
+export function setAuthErrorHandler(fn: () => void): void {
+  _onAuthError = fn;
+}
+
+async function authHeaders(): Promise<HeadersInit> {
+  if (!_getToken) return {};
+  try {
+    const token = await _getToken();
+    return { Authorization: `Bearer ${token}` };
+  } catch {
+    _onAuthError?.();
+    throw new Error("Authentication required");
+  }
+}
+
+async function apiFetch(url: string, opts?: RequestInit): Promise<Response> {
+  const headers = await authHeaders();
+  return fetch(url, { ...opts, headers: { ...headers, ...opts?.headers } });
 }
 
 export async function createMission(description: string, cloneUrl?: string): Promise<CreateMissionResponse> {
