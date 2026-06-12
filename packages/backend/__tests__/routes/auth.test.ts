@@ -100,4 +100,22 @@ describe("auth middleware", () => {
     const res = await app.inject({ method: "GET", url: "/api/github/callback" });
     expect(res.statusCode).toBe(200);
   });
+
+  it("skips auth for skip paths with query strings", async () => {
+    const app = Fastify();
+    registerGlobalAuth(app, TEST_DOMAIN, TEST_AUDIENCE);
+    app.get("/api/github/callback", async () => ({ ok: true }));
+
+    const res = await app.inject({ method: "GET", url: "/api/github/callback?code=abc&state=xyz" });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("skips auth for /health with query string", async () => {
+    const app = Fastify();
+    registerGlobalAuth(app, TEST_DOMAIN, TEST_AUDIENCE);
+    app.get("/health", async () => ({ status: "ok" }));
+
+    const res = await app.inject({ method: "GET", url: "/health?format=json" });
+    expect(res.statusCode).toBe(200);
+  });
 });

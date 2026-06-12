@@ -8,6 +8,12 @@ const domain = import.meta.env.VITE_AUTH0_DOMAIN as string;
 const clientId = import.meta.env.VITE_AUTH0_CLIENT_ID as string;
 const audience = import.meta.env.VITE_AUTH0_AUDIENCE as string;
 
+if (!domain || !clientId || !audience) {
+  throw new Error(
+    "Missing Auth0 env vars: set VITE_AUTH0_DOMAIN, VITE_AUTH0_CLIENT_ID, VITE_AUTH0_AUDIENCE",
+  );
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <Auth0Provider

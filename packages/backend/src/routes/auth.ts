@@ -21,7 +21,8 @@ const SKIP_PATHS = ["/health", "/api/github/callback"];
 
 function shouldSkip(url: string): boolean {
   if (url.startsWith("/ws")) return true;
-  return SKIP_PATHS.some((p) => url === p);
+  const path = url.split("?")[0];
+  return SKIP_PATHS.some((p) => path === p);
 }
 
 export async function verifyJwt(
