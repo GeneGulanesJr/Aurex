@@ -19,14 +19,15 @@ import type { ExposureCatalog } from "@aurex/shared";
 import { createBumblebeeRunner } from "./orchestrator/bumblebee-runner.js";
 import { bumblebeeRoutes } from "./routes/bumblebee.js";
 import { quotaRoutes } from "./routes/quota.js";
-import { createSettingsExecutionQueueStore } from "./queue/execution-queue-store.js";
-import { createSettingsPreparedSessionStore } from "./sessions/prepared-session-store.js";
-import { createPreparedSessionService } from "./sessions/prepared-session-service.js";
-import { agentSessionRoutes } from "./routes/agent-sessions.js";
-import { executionQueueRoutes } from "./routes/execution-queue.js";
+import { registerUpdateRoutes } from "./routes/update.js";
+import { startTelemetry } from "./telemetry.js";
 
 async function main() {
   const config = loadConfig();
+  const telemetry = startTelemetry();
+  if (telemetry.enabled) {
+    console.log("[startup] OpenTelemetry metrics enabled");
+  }
   const lapis = createLaPisClient({ lapisEndpoint: config.lapisEndpoint });
   const eventBus = createEventBus();
   const agentLogger = createAgentLogger();
@@ -114,12 +115,15 @@ async function main() {
   }
 
   const app = Fastify({ logger: true });
+  telemetry.registerFastifyMetrics(app);
   await app.register(websocket);
 
-  // Auth (no-op if API_KEY not set)
-  registerGlobalAuth(app, config.apiKey);
+  registerGlobalAuth(app, config.auth0Domain, config.auth0Audience);
 
-  registerWebSocketRoutes(app, eventBus, config.apiKey);
+  registerWebSocketRoutes(app, eventBus, {
+    auth0Domain: config.auth0Domain,
+    auth0Audience: config.auth0Audience,
+  });
 
   // Health endpoint
   app.get("/health", async () => {
@@ -189,16 +193,8 @@ async function main() {
   // Quota / coding plan routes
   await app.register(quotaRoutes, { lapis, config });
 
-  // Prepared session and durable execution queue debug/control routes.
-  await app.register(agentSessionRoutes, { service: preparedSessionService });
-  await app.register(executionQueueRoutes, {
-    queue: executionQueue,
-    sessions: preparedSessions,
-    eventBus,
-    reconcilerDryRunDefault: config.staleReconcilerDryRun,
-    activeReconciliationEnabled:
-      config.staleReconcilerEnabled && !config.staleReconcilerDryRun,
-  });
+  // Self-update detection + apply
+  registerUpdateRoutes(app, { eventBus, aurexRoot: config.aurexRoot, gitMainBranch: config.gitMainBranch });
 
   // Start
   try {
@@ -220,6 +216,7 @@ async function main() {
     ]);
     console.log("[shutdown] Agents drained, closing server");
     await app.close();
+    await telemetry.shutdown();
     process.exit(0);
   }
 

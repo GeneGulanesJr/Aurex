@@ -146,58 +146,10 @@ export interface CalculatePrefireResponse {
   timeline: Array<{ time: string; event: string }>;
 }
 
-export interface PrepareAgentSessionRequest {
-  missionId: string;
-  milestoneId?: string | null;
-  unitId?: string | null;
-  role: PreparedAgentRole;
-  config: Partial<PreparedAgentSessionConfig> &
-    Pick<PreparedAgentSessionConfig, "model" | "prompt">;
-  maxAttempts?: number;
-}
-
-export interface PrepareAgentSessionResponse {
-  sessionId: string;
-  status: PreparedAgentSession["status"];
-  session: PreparedAgentSession;
-}
-
-export interface StartAgentSessionResponse {
-  sessionId: string;
-  queueJobId: string;
-  status: PreparedAgentSession["status"];
-}
-
-export interface GetAgentSessionResponse {
-  session: PreparedAgentSession;
-}
-
-export interface AgentSessionMessageRequest {
-  message: string;
-}
-
-export interface AgentSessionMessageResponse {
-  accepted: boolean;
-}
-
-export interface CancelAgentSessionResponse {
-  session: PreparedAgentSession;
-}
-
-export interface ListExecutionQueueResponse {
-  jobs: ExecutionQueueJob[];
-}
-
-export interface ReconcileExecutionQueueRequest {
-  dryRun?: boolean;
-}
-
-export interface ReconcileExecutionQueueResponse {
-  summary: ReconciliationRunSummary;
-}
-
-export interface ExecutionQueueQuery {
-  status?: ExecutionJobStatus;
-  missionId?: string;
-  sessionId?: string;
+export interface UpdateStatusResponse {
+  updateAvailable: boolean;
+  currentSha: string;
+  latestSha: string;
+  behindBy: number;
+  lastChecked: string | null;
 }

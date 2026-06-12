@@ -3,6 +3,7 @@ import { useWebSocket } from "./hooks/useWebSocket";
 import { useMissions } from "./hooks/useMissions";
 import { useMission } from "./hooks/useMission";
 import { useTheme } from "./hooks/useTheme";
+import { useAuth } from "./hooks/useAuth";
 import { useGitHub } from "./hooks/useGitHub";
 import { usePinyxStatus } from "./hooks/usePinyxStatus";
 import { useBreakpoint } from "./hooks/useBreakpoint";
@@ -12,15 +13,18 @@ import { useSettings } from "./hooks/useSettings";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useSupplyChain } from "./hooks/useSupplyChain";
 import { useQuota } from "./hooks/useQuota";
+import { useUpdateStatus } from "./hooks/useUpdateStatus";
 import { MissionSidebar } from "./active/MissionSidebar";
 import { StatusBoard } from "./passive/StatusBoard";
 import { EscalationOverlay } from "./active/EscalationOverlay";
 import { IntegrationsPanel } from "./active/IntegrationsPanel";
+import { LoginScreen } from "./frame/LoginScreen";
 import { getSessionState, clearSessionState } from "./lib/sessionState";
 import { SettingsPanel } from "./active/SettingsPanel";
 import { QuotaPanel } from "./active/QuotaPanel";
 import { TopBar } from "./frame/TopBar";
 import { TelemetryBar } from "./frame/TelemetryBar";
+import { setTokenGetter, setAuthErrorHandler } from "./api";
 import { submitCheckpoint, createMission, restartMission, getRepoHotspots, getRepoSuggestions, getRepoReadiness, listRepoScans } from "./api";
 import type { WsClientEvent, CheckpointDecision } from "@aurex/shared";
 import type { CodeSummaryResponse, CodeHotspotsResponse, RepoSuggestion, RepoReadinessProfile } from "./api";
@@ -28,6 +32,17 @@ import type { BumblebeeScanResult, BumblebeeFinding } from "@aurex/shared";
 
 export function App() {
   const { theme, setTheme } = useTheme();
+  const { isAuthenticated, isLoading: authLoading, getToken, logout } = useAuth();
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      setTokenGetter(getToken);
+      setAuthErrorHandler(() => {
+        logout();
+      });
+    }
+  }, [isAuthenticated, getToken, logout]);
+
   const github = useGitHub();
   const pinyxStatus = usePinyxStatus();
   const systemReady = github.connected && pinyxStatus.configured;
@@ -86,6 +101,8 @@ export function App() {
 
   const [latestNotifEvent, setLatestNotifEvent] = useState<WsClientEvent | null>(null);
 
+  const updateWsHandlerRef = useRef<((event: WsClientEvent) => void) | null>(null);
+
   const combinedHandler = useCallback((event: WsClientEvent) => {
     missionsWsHandler(event);
     missionWsHandler(event);
@@ -94,11 +111,19 @@ export function App() {
     if (event.type === "escalation" || event.type === "mission_completed") {
       setLatestNotifEvent(event);
     }
+    if (updateWsHandlerRef.current) updateWsHandlerRef.current(event);
   }, [missionsWsHandler, missionWsHandler, supplyChainWsHandler]);
+
+  const updateStatus = useUpdateStatus({
+    onWsEvent: useCallback((handler: (event: WsClientEvent) => void) => {
+      updateWsHandlerRef.current = handler;
+    }, []),
+  });
 
   const { connected } = useWebSocket(combinedHandler, {
     missionId: missionsState.selectedMissionId,
-    apiKey: import.meta.env.VITE_AUREX_API_KEY || undefined,
+    getToken,
+    enabled: isAuthenticated,
   });
 
   // Browser notifications + tab badge
@@ -207,6 +232,11 @@ export function App() {
     onToggleSidebar: toggleSidebar,
   });
 
+  // Auth gate
+  if (!isAuthenticated && !authLoading) {
+    return <LoginScreen />;
+  }
+
   // Connecting overlay
   if (!connected) {
     return (
@@ -262,6 +292,7 @@ export function App() {
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenQuota={() => setQuotaOpen(true)}
         quotaStatus={quotaStatus?.providers?.find(p => p.tracked)?.status ?? null}
+        updateStatus={updateStatus}
       />
       <div className="app-workspace" style={{ gridTemplateColumns: gridColumns }}>
         {!bp.isMobile && (

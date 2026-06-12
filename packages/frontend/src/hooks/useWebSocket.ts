@@ -17,7 +17,8 @@ export function parseWsMessage(data: string): { seq?: number; event?: WsClientEv
 
 export interface UseWebSocketOptions {
   missionId?: string | null;
-  apiKey?: string;
+  getToken?: () => Promise<string>;
+  enabled?: boolean;
 }
 
 export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: UseWebSocketOptions) {
@@ -30,23 +31,30 @@ export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: Use
   const mountedRef = useRef(true);
   const optsRef = useRef(opts);
   optsRef.current = opts;
+  const connectFnRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
 
     function connect() {
       if (!mountedRef.current) return;
+      if (optsRef.current?.enabled === false) return;
 
       const ws = new WebSocket(buildWsUrl(window.location.host, window.location.protocol));
-      let authenticated = !optsRef.current?.apiKey;
+      let authenticated = !optsRef.current?.getToken;
 
-      ws.onopen = () => {
+      ws.onopen = async () => {
         if (!mountedRef.current) { ws.close(); return; }
         reconnectDelayRef.current = RECONNECT_BASE_DELAY;
 
-        // Send auth if api key is configured
-        if (optsRef.current?.apiKey) {
-          ws.send(JSON.stringify({ type: "auth", token: optsRef.current.apiKey }));
+        if (optsRef.current?.getToken) {
+          try {
+            const token = await optsRef.current.getToken();
+            ws.send(JSON.stringify({ type: "auth", token }));
+          } catch {
+            ws.close(4003, "Auth failed");
+            return;
+          }
         }
 
         // Send replay request from last known sequence
@@ -129,8 +137,11 @@ export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: Use
       wsRef.current = ws;
     }
 
+    connectFnRef.current = connect;
+
     function scheduleReconnect() {
       if (!mountedRef.current) return;
+      if (optsRef.current?.enabled === false) return;
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = setTimeout(() => {
         connect();
@@ -150,6 +161,19 @@ export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: Use
       wsRef.current = null;
     };
   }, []);
+
+  // Connect when enabled flips to true; disconnect when disabled
+  useEffect(() => {
+    if (opts?.enabled === false) {
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    } else if (opts?.enabled === true && !wsRef.current && mountedRef.current && connectFnRef.current) {
+      reconnectDelayRef.current = RECONNECT_BASE_DELAY;
+      connectFnRef.current();
+    }
+  }, [opts?.enabled]);
 
   // Re-subscribe when mission changes
   useEffect(() => {

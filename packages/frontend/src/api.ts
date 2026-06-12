@@ -1,4 +1,4 @@
-import type { CheckpointDecision, ExposureCatalog, MutationReportSummary, MutationRunStatus } from "@aurex/shared";
+import type { CheckpointDecision, ExposureCatalog, MutationReportSummary, MutationRunStatus, UpdateStatusResponse } from "@aurex/shared";
 import type { CreateMissionResponse, GetMissionResponse, CheckpointResponse, HealthResponse, AgentLogResponse, TriggerScanResponse, ListScansResponse, GetScanResultsResponse, BumblebeeStatusResponse, QuotaStatusResponse, PrefireRequest, PrefireResponse, CalculatePrefireRequest, CalculatePrefireResponse, QuotaConfigUpdateRequest } from "@aurex/shared";
 
 export type CurrentMissionPayload = GetMissionResponse;
@@ -10,13 +10,31 @@ export interface ActiveMission {
   description?: string;
 }
 
-function authHeaders(): HeadersInit {
-  const token = import.meta.env.VITE_AUREX_API_KEY;
-  return token ? { Authorization: `Bearer ${token}` } : {};
+let _getToken: (() => Promise<string>) | null = null;
+let _onAuthError: (() => void) | null = null;
+
+export function setTokenGetter(fn: () => Promise<string>): void {
+  _getToken = fn;
 }
 
-function apiFetch(url: string, opts?: RequestInit): Promise<Response> {
-  return fetch(url, { ...opts, headers: { ...authHeaders(), ...opts?.headers } });
+export function setAuthErrorHandler(fn: () => void): void {
+  _onAuthError = fn;
+}
+
+async function authHeaders(): Promise<HeadersInit> {
+  if (!_getToken) return {};
+  try {
+    const token = await _getToken();
+    return { Authorization: `Bearer ${token}` };
+  } catch {
+    _onAuthError?.();
+    throw new Error("Authentication required");
+  }
+}
+
+async function apiFetch(url: string, opts?: RequestInit): Promise<Response> {
+  const headers = await authHeaders();
+  return fetch(url, { ...opts, headers: { ...headers, ...opts?.headers } });
 }
 
 export async function createMission(description: string, cloneUrl?: string): Promise<CreateMissionResponse> {
@@ -491,4 +509,22 @@ export async function getMutationRunStatus(repoName: string, runId: string): Pro
   const res = await apiFetch(`/api/repos/${repoName}/mutation/${runId}`);
   if (!res.ok) throw new Error(`Failed to get mutation run status: ${res.status}`);
   return res.json() as Promise<MutationRunStatus>;
+}
+
+export async function getUpdateStatus(): Promise<UpdateStatusResponse> {
+  const res = await apiFetch("/api/update/status");
+  if (!res.ok) throw new Error(`Failed to fetch update status: ${res.status}`);
+  return res.json() as Promise<UpdateStatusResponse>;
+}
+
+export async function checkForUpdates(): Promise<UpdateStatusResponse> {
+  const res = await apiFetch("/api/update/check", { method: "POST" });
+  if (!res.ok) throw new Error(`Failed to check for updates: ${res.status}`);
+  return res.json() as Promise<UpdateStatusResponse>;
+}
+
+export async function applyUpdate(): Promise<{ started: boolean }> {
+  const res = await apiFetch("/api/update/apply", { method: "POST" });
+  if (!res.ok) throw new Error(`Failed to apply update: ${res.status}`);
+  return res.json() as Promise<{ started: boolean }>;
 }

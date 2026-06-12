@@ -59,6 +59,20 @@ The source of truth is [`.env.example`](../.env.example). This document explains
 
 PiNyx (the LLM gateway) is **not configured via environment variables**. Provider URLs, API keys, and model selection live in the **Integrations → Connection / Keys / Models** tabs in the dashboard and are persisted into LaPis settings. The `/api/pinyx/*` endpoints in [`docs/api.md`](./api.md#pinyx) are how the Integrations panel reads and writes those settings. The bundled PiNyx is reachable inside Docker at `http://pinyx:7331` and locally at `http://localhost:7331`; you only need to know that URL when running the stack out of Docker.
 
+
+## OpenTelemetry metrics
+
+Aurex runs an OpenTelemetry Collector in Docker Compose as a metrics bridge only. The backend exports OTLP metrics to the collector, the collector exposes Aurex application metrics at `http://localhost:9464/metrics`, and collector self-metrics are exposed separately at `http://localhost:8888/metrics`. Backend HTTP metric labels use normalized Fastify route templates; unmatched requests are labeled `unmatched` to avoid high-cardinality URL labels. Prometheus and Grafana are intentionally not bundled so an external monitoring system can scrape those endpoints.
+
+| Variable | Type | Default | Effect | Source |
+|---|---|---|---|---|
+| `OTEL_SERVICE_NAME` | string | `aurex-backend` | Service name attached to backend metric resource attributes. Docker Compose passes this to the backend container. | [`.env.example`](../.env.example), [`docker-compose.yml`](../docker-compose.yml) |
+| `OTEL_METRICS_EXPORTER` | string | `otlp` in Docker / `.env.example`; unset disables export | Backend metrics exporter selector. Set to `none` to disable backend metric export without removing the collector. | [`packages/backend/src/telemetry.ts`](../packages/backend/src/telemetry.ts) |
+| `OTEL_SDK_DISABLED` | bool | `false` | When `true`, disables backend OpenTelemetry metric export. | [`packages/backend/src/telemetry.ts`](../packages/backend/src/telemetry.ts) |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | URL | `http://localhost:4318/v1/metrics` locally, `http://otel-collector:4318/v1/metrics` in Docker | OTLP HTTP endpoint used by the backend metric exporter. | [`.env.example`](../.env.example), [`docker-compose.yml`](../docker-compose.yml) |
+| `OTEL_METRIC_EXPORT_INTERVAL` | int (ms) | `15000` | How often the backend pushes metric batches to the collector. | [`packages/backend/src/telemetry.ts`](../packages/backend/src/telemetry.ts) |
+| `OTEL_METRIC_EXPORT_TIMEOUT` | int (ms) | `10000` | Metric export timeout. | [`packages/backend/src/telemetry.ts`](../packages/backend/src/telemetry.ts) |
+
 ## GitHub App OAuth
 
 These are the **public** GitHub App client values for the bundled Aurex GitHub App. You only need to override them if you've registered your own GitHub App.

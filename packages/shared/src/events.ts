@@ -130,67 +130,7 @@ export type WsClientEvent =
     }
   | { type: "quota_exhausted"; providerId: string; windowResetsAt: string }
   | { type: "mutation_progress"; runId: string; repoName: string; line: string }
-  | {
-      type: "agent_session_prepared";
-      missionId: string;
-      sessionId: string;
-      role: PreparedAgentRole;
-    }
-  | {
-      type: "agent_session_queued";
-      missionId: string;
-      sessionId: string;
-      queueJobId: string;
-    }
-  | { type: "agent_session_started"; missionId: string; sessionId: string }
-  | {
-      type: "agent_session_heartbeat";
-      missionId: string;
-      sessionId: string;
-      timestamp: string;
-    }
-  | { type: "agent_session_completed"; missionId: string; sessionId: string }
-  | {
-      type: "agent_session_failed";
-      missionId: string;
-      sessionId: string;
-      failureCode: ExecutionFailureCode;
-      message: string;
-    }
-  | {
-      type: "agent_session_lost";
-      missionId: string;
-      sessionId: string;
-      lastHeartbeatAt: string | null;
-    }
-  | {
-      type: "execution_job_queued";
-      missionId: string;
-      jobId: string;
-      jobType: ExecutionJobType;
-    }
-  | {
-      type: "execution_job_claimed";
-      missionId: string;
-      jobId: string;
-      claimedBy: string;
-    }
-  | {
-      type: "execution_job_requeued";
-      missionId: string;
-      jobId: string;
-      reason: string;
-    }
-  | {
-      type: "execution_job_failed";
-      missionId: string;
-      jobId: string;
-      failureCode: ExecutionFailureCode;
-    }
-  | {
-      type: "stale_reconciliation_completed";
-      summary: ReconciliationRunSummary;
-    };
+  | { type: "update_available"; currentSha: string; latestSha: string; behindBy: number };
 
 export type StreamingChunk = {
   delta: string;

@@ -1,13 +1,26 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import Fastify from "fastify";
 import websocket from "@fastify/websocket";
 import { createEventBus, registerWebSocketRoutes } from "../../src/ws/events";
+
+vi.mock("jose", () => ({
+  jwtVerify: vi.fn(),
+  createRemoteJWKSet: vi.fn(() => "mocked-jwks"),
+}));
+
+import { jwtVerify } from "jose";
+const mockedJwtVerify = vi.mocked(jwtVerify);
+
+const TEST_AUTH_CONFIG = {
+  auth0Domain: "test.us.auth0.com",
+  auth0Audience: "https://api.test.io",
+};
 
 async function createApp() {
   const app = Fastify();
   const eventBus = createEventBus();
   await app.register(websocket);
-  registerWebSocketRoutes(app, eventBus);
+  registerWebSocketRoutes(app, eventBus, TEST_AUTH_CONFIG);
   await app.ready();
   return { app, eventBus };
 }
@@ -30,12 +43,26 @@ function waitForMessages(ws: any, count: number, timeoutMs = 2000): Promise<any[
 }
 
 describe("websocket routes", () => {
-  it("sends hello and streams events with sequence numbers", async () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("sends hello and streams events with sequence numbers after auth", async () => {
+    mockedJwtVerify.mockResolvedValueOnce({
+      payload: { sub: "auth0|test", email: "test@example.com" },
+      protectedHeader: {},
+    } as any);
+
     const { app, eventBus } = await createApp();
     const ws = await app.injectWS("/ws");
 
-    // Wait for hello message
-    const initial = await waitForMessages(ws, 1);
+    // Authenticate the WS connection
+    ws.send(JSON.stringify({ type: "auth", token: "valid.jwt.token" }));
+
+    // Wait for hello message (sent after successful auth)
+    const initial = await waitForMessages(ws, 2);
+    const authOk = initial.find((m) => m.type === "auth_ok");
+    expect(authOk).toBeDefined();
     const hello = initial.find((m) => m.type === "hello");
     expect(hello).toBeDefined();
     expect(typeof hello.seq).toBe("number");
@@ -59,7 +86,12 @@ describe("websocket routes", () => {
     await app.close();
   });
 
-  it("supports replay of missed events", async () => {
+  it("supports replay of missed events after auth", async () => {
+    mockedJwtVerify.mockResolvedValueOnce({
+      payload: { sub: "auth0|test", email: "test@example.com" },
+      protectedHeader: {},
+    } as any);
+
     const { app, eventBus } = await createApp();
 
     // Emit events before connecting
@@ -73,8 +105,11 @@ describe("websocket routes", () => {
 
     const ws = await app.injectWS("/ws");
 
+    // Authenticate first
+    ws.send(JSON.stringify({ type: "auth", token: "valid.jwt.token" }));
+
     // Wait for hello
-    await waitForMessages(ws, 1);
+    await waitForMessages(ws, 2);
 
     // Request replay from seq 0
     ws.send(JSON.stringify({ type: "replay", lastSeq: 0 }));
@@ -86,6 +121,21 @@ describe("websocket routes", () => {
 
     const replayedEvent = replayMsgs.find((m) => m.replayed === true);
     expect(replayedEvent).toBeDefined();
+
+    ws.close();
+    await app.close();
+  });
+
+  it("closes connection with invalid auth token", async () => {
+    mockedJwtVerify.mockRejectedValueOnce(new Error("Invalid JWT"));
+
+    const { app } = await createApp();
+    const ws = await app.injectWS("/ws");
+
+    ws.send(JSON.stringify({ type: "auth", token: "bad-token" }));
+
+    // Wait briefly for the close to occur
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
     ws.close();
     await app.close();
