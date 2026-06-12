@@ -2,6 +2,25 @@ import type { PrepareAgentSessionRequest } from "@aurex/shared";
 import type { ExecutionQueueStore } from "../queue/execution-queue-store.js";
 import type { PreparedSessionStore } from "./prepared-session-store.js";
 
+/**
+ * Thrown when a session operation is rejected because the session's current
+ * status does not allow it (e.g. starting a completed session).
+ */
+export class SessionConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SessionConflictError";
+  }
+}
+
+const CANCELLABLE_STATUSES = new Set([
+  "prepared",
+  "queued",
+  "starting",
+  "running",
+  "waiting_for_input",
+]);
+
 export interface PreparedSessionService {
   prepare(
     input: PrepareAgentSessionRequest,
@@ -31,7 +50,7 @@ export function createPreparedSessionService(deps: {
       if (!session)
         throw new Error(`Prepared agent session ${sessionId} not found`);
       if (!["prepared", "queued"].includes(session.status)) {
-        throw new Error(
+        throw new SessionConflictError(
           `Prepared agent session ${sessionId} cannot be started from ${session.status}`,
         );
       }
@@ -53,7 +72,15 @@ export function createPreparedSessionService(deps: {
     get(sessionId) {
       return sessions.get(sessionId);
     },
-    cancel(sessionId) {
+    async cancel(sessionId) {
+      const session = await sessions.get(sessionId);
+      if (!session)
+        throw new Error(`Prepared agent session ${sessionId} not found`);
+      if (!CANCELLABLE_STATUSES.has(session.status)) {
+        throw new SessionConflictError(
+          `Prepared agent session ${sessionId} cannot be cancelled from ${session.status}`,
+        );
+      }
       return sessions.cancel(sessionId);
     },
     async acceptMessage(sessionId, message) {

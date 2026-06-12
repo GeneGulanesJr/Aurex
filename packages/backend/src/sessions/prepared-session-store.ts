@@ -61,6 +61,36 @@ function iso(now: Date): string {
   return now.toISOString();
 }
 
+const TERMINAL_SESSION_STATUSES: ReadonlySet<PreparedAgentSessionStatus> =
+  new Set(["completed", "failed", "cancelled", "lost"]);
+
+const NON_TERMINAL_SESSION_STATUSES: ReadonlySet<PreparedAgentSessionStatus> =
+  new Set(["prepared", "queued", "starting", "running", "waiting_for_input"]);
+
+/** Allowed "from" states for each mutation operation. */
+const ALLOWED_SESSION_TRANSITIONS: Record<
+  string,
+  ReadonlySet<PreparedAgentSessionStatus>
+> = {
+  linkQueueJob: new Set(["prepared"]),
+  heartbeat: new Set(["starting", "running", "waiting_for_input"]),
+  fail: NON_TERMINAL_SESSION_STATUSES,
+  markLost: new Set(["running"]),
+  cancel: NON_TERMINAL_SESSION_STATUSES,
+};
+
+function assertSessionTransition(
+  operation: string,
+  session: PreparedAgentSession,
+): void {
+  const allowed = ALLOWED_SESSION_TRANSITIONS[operation];
+  if (allowed && !allowed.has(session.status)) {
+    throw new Error(
+      `Prepared agent session ${session.id} cannot ${operation} from status "${session.status}"`,
+    );
+  }
+}
+
 function cloneSession(session: PreparedAgentSession): PreparedAgentSession {
   return {
     ...session,
@@ -170,15 +200,14 @@ export function createInMemoryPreparedSessionStore(
             : session.startedAt,
         lastHeartbeatAt:
           status === "running" ? timestamp : session.lastHeartbeatAt,
-        completedAt: ["completed", "failed", "cancelled", "lost"].includes(
-          status,
-        )
+        completedAt: TERMINAL_SESSION_STATUSES.has(status)
           ? timestamp
           : session.completedAt,
       });
     },
     async linkQueueJob(sessionId, queueJobId, now = new Date()) {
       const session = await requireSession(sessionId);
+      assertSessionTransition("linkQueueJob", session);
       return write({
         ...session,
         status: "queued",
@@ -188,10 +217,12 @@ export function createInMemoryPreparedSessionStore(
     },
     async heartbeat(sessionId, now = new Date()) {
       const session = await requireSession(sessionId);
+      assertSessionTransition("heartbeat", session);
       return write({ ...session, lastHeartbeatAt: iso(now) });
     },
     async fail(sessionId, code, message, now = new Date()) {
       const session = await requireSession(sessionId);
+      assertSessionTransition("fail", session);
       return write({
         ...session,
         status: "failed",
@@ -202,6 +233,7 @@ export function createInMemoryPreparedSessionStore(
     },
     async markLost(sessionId, code, message, now = new Date()) {
       const session = await requireSession(sessionId);
+      assertSessionTransition("markLost", session);
       return write({
         ...session,
         status: "lost",
@@ -212,6 +244,7 @@ export function createInMemoryPreparedSessionStore(
     },
     async cancel(sessionId, now = new Date()) {
       const session = await requireSession(sessionId);
+      assertSessionTransition("cancel", session);
       return write({ ...session, status: "cancelled", completedAt: iso(now) });
     },
   };

@@ -4,6 +4,7 @@ import type {
   PrepareAgentSessionRequest,
 } from "@aurex/shared";
 import type { PreparedSessionService } from "../sessions/prepared-session-service.js";
+import { SessionConflictError } from "../sessions/prepared-session-service.js";
 
 export interface AgentSessionRouteDeps {
   service: PreparedSessionService;
@@ -50,6 +51,9 @@ export async function agentSessionRoutes(
         const result = await service.start(req.params.sessionId);
         return reply.code(202).send(result);
       } catch (err) {
+        if (err instanceof SessionConflictError) {
+          return reply.code(409).send({ error: err.message });
+        }
         return reply.code(404).send({
           error: err instanceof Error ? err.message : "session not found",
         });
@@ -102,6 +106,9 @@ export async function agentSessionRoutes(
         const session = await service.cancel(req.params.sessionId);
         return { session };
       } catch (err) {
+        if (err instanceof SessionConflictError) {
+          return reply.code(409).send({ error: err.message });
+        }
         return reply.code(404).send({
           error: err instanceof Error ? err.message : "session not found",
         });

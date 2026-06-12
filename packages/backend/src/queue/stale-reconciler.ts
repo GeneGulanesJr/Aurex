@@ -36,7 +36,11 @@ function increment(
   action: ReconciliationAction,
 ): void {
   summary.actions.push(action);
-  if (action.action === "requeue" || action.action === "release_claim")
+  if (
+    action.action === "requeue" ||
+    action.action === "release_claim" ||
+    action.action === "retry_session"
+  )
     summary.wouldRequeue++;
   if (action.action === "mark_lost") summary.wouldMarkLost++;
   if (action.action === "fail_terminal") summary.wouldFail++;

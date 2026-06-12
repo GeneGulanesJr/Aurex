@@ -83,6 +83,28 @@ function assertClaim(job: ExecutionQueueJob, claimToken: string): void {
   }
 }
 
+/** Allowed "from" states for each mutation operation. */
+const ALLOWED_TRANSITIONS: Record<string, ReadonlySet<ExecutionJobStatus>> = {
+  markRunning: new Set(["claimed"]),
+  heartbeat: new Set(["claimed", "running"]),
+  complete: new Set(["running"]),
+  fail: new Set(["queued", "claimed", "running"]),
+  requeue: new Set(["claimed", "running", "stale"]),
+  cancel: new Set(["queued", "claimed", "running"]),
+};
+
+function assertTransition(
+  operation: string,
+  job: ExecutionQueueJob,
+): void {
+  const allowed = ALLOWED_TRANSITIONS[operation];
+  if (allowed && !allowed.has(job.status)) {
+    throw new Error(
+      `Execution job ${job.id} cannot ${operation} from status "${job.status}"`,
+    );
+  }
+}
+
 export function createInMemoryExecutionQueueStore(
   initialJobs: ExecutionQueueJob[] = [],
 ): ExecutionQueueStore {
@@ -172,6 +194,7 @@ export function createInMemoryExecutionQueueStore(
     async markRunning(jobId, claimToken, now = new Date()) {
       const job = jobs.get(jobId);
       if (!job) throw new Error(`Execution job ${jobId} not found`);
+      assertTransition("markRunning", job);
       assertClaim(job, claimToken);
       return write({
         ...job,
@@ -183,12 +206,14 @@ export function createInMemoryExecutionQueueStore(
     async heartbeat(jobId, claimToken, now = new Date()) {
       const job = jobs.get(jobId);
       if (!job) throw new Error(`Execution job ${jobId} not found`);
+      assertTransition("heartbeat", job);
       assertClaim(job, claimToken);
       return write({ ...job, heartbeatAt: iso(now), updatedAt: iso(now) });
     },
     async complete(jobId, claimToken, now = new Date()) {
       const job = jobs.get(jobId);
       if (!job) throw new Error(`Execution job ${jobId} not found`);
+      assertTransition("complete", job);
       assertClaim(job, claimToken);
       return write({
         ...job,
@@ -200,6 +225,7 @@ export function createInMemoryExecutionQueueStore(
     async fail(jobId, claimToken, code, message, now = new Date()) {
       const job = jobs.get(jobId);
       if (!job) throw new Error(`Execution job ${jobId} not found`);
+      assertTransition("fail", job);
       if (claimToken !== null) assertClaim(job, claimToken);
       return write({
         ...job,
@@ -213,6 +239,7 @@ export function createInMemoryExecutionQueueStore(
     async requeue(jobId, code, message, now = new Date()) {
       const job = jobs.get(jobId);
       if (!job) throw new Error(`Execution job ${jobId} not found`);
+      assertTransition("requeue", job);
       return write({
         ...job,
         status: "queued",
@@ -229,6 +256,7 @@ export function createInMemoryExecutionQueueStore(
     async cancel(jobId, now = new Date()) {
       const job = jobs.get(jobId);
       if (!job) throw new Error(`Execution job ${jobId} not found`);
+      assertTransition("cancel", job);
       return write({
         ...job,
         status: "cancelled",
