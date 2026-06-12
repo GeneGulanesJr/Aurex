@@ -23,7 +23,7 @@ import { registerUpdateRoutes } from "./routes/update.js";
 import { startTelemetry } from "./telemetry.js";
 import { createSettingsExecutionQueueStore } from "./queue/execution-queue-store.js";
 import { createSettingsPreparedSessionStore } from "./sessions/prepared-session-store.js";
-import { createPreparedSessionService } from "./sessions/prepared-session-service.js";
+import { createPreparedSessionService, createPreparedSessionStartHandler } from "./sessions/prepared-session-service.js";
 import { agentSessionRoutes } from "./routes/agent-sessions.js";
 import { executionQueueRoutes } from "./routes/execution-queue.js";
 import { createExecutionWorker } from "./queue/execution-worker.js";
@@ -209,13 +209,10 @@ async function main() {
           queue: executionQueue,
           eventBus,
           handlers: {
-            agent_session_start: async (_jobId, _claimToken) => {
-              const job = await executionQueue.get(_jobId);
-              if (!job?.sessionId) {
-                throw new Error("agent_session_start job is missing sessionId");
-              }
-              await preparedSessions.updateStatus(job.sessionId, "running");
-            },
+            agent_session_start: createPreparedSessionStartHandler({
+              queue: executionQueue,
+              sessions: preparedSessions,
+            }),
           },
         },
         { workerId: config.queueWorkerId, pollMs: config.queueWorkerPollMs },

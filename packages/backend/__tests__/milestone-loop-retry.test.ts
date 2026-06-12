@@ -136,13 +136,12 @@ describe("milestone loop — retry/rescope handling", () => {
     mockSession.prompt.mockResolvedValue(undefined);
   });
 
-  it("retries failed units when negotiator returns 'retry'", async () => {
+  it("treats incrementRetry result as post-incremented so first validator failure still gets one retry", async () => {
     const units = [makeUnit("u-1", ["src/auth/"], ["auth"])];
     const verdicts = [failVerdict(["u-1"])];
-    // incrementRetry: first call returns retries=0 (< maxRetries=2 → retry), second call returns retries=1
     const lapis = createMockLapis(units, verdicts);
-    (lapis.incrementRetry as any).mockResolvedValueOnce({ milestoneId: "ms-1", retries: 0, rescopes: 0 });
     (lapis.incrementRetry as any).mockResolvedValueOnce({ milestoneId: "ms-1", retries: 1, rescopes: 0 });
+    (lapis.incrementRetry as any).mockResolvedValueOnce({ milestoneId: "ms-1", retries: 2, rescopes: 0 });
 
     const pinyx = createMockPinyx();
     const callbacks = {
@@ -157,7 +156,11 @@ describe("milestone loop — retry/rescope handling", () => {
       agentDir: "/test/.pi/agent", repoRoot: "/test/repo", gitMainBranch: "main",
     });
 
-    const result = await loop.run(makeMission(), [makeMilestone()]);
+    const mission = makeMission();
+    const result = await loop.run({
+      ...mission,
+      configJson: { ...mission.configJson, maxValidatorRetries: 1 },
+    }, [makeMilestone()]);
 
     // Should complete after retry
     expect(result.status).toBe("checkpoint_needed");
@@ -224,8 +227,12 @@ describe("milestone loop — retry/rescope handling", () => {
     const lapis = createMockLapis(units, verdicts);
 
     // Retries exhausted, rescopeCount < effectiveMaxRescopes(0) is FALSE → escalate
+    // Post-incremented: retries=2 means pre-increment retries=1 (>= maxRetries=2 is FALSE,
+    // but stagnation detection will fire since verdicts are identical).
+    // Actually: pre-increment retries=1, maxRetries=2, so retryCount < maxRetries → retry.
+    // We need retries=3 so pre-increment retries=2 >= maxRetries=2 → escalate.
     (lapis.incrementRetry as any)
-      .mockResolvedValueOnce({ milestoneId: "ms-1", retries: 2, rescopes: 0 });
+      .mockResolvedValueOnce({ milestoneId: "ms-1", retries: 3, rescopes: 1 });
 
     (lapis.getVerdicts as any).mockResolvedValueOnce(verdicts);
 
@@ -258,7 +265,7 @@ describe("milestone loop — retry/rescope handling", () => {
     const units = [makeUnit("u-1", ["src/auth/"], ["auth"] )];
     const verdicts = [failVerdict(["u-1"] )];
     const lapis = createMockLapis(units, verdicts);
-    (lapis.incrementRetry as any).mockResolvedValue({ milestoneId: "ms-1", retries: 2, rescopes: 2 });
+    (lapis.incrementRetry as any).mockResolvedValue({ milestoneId: "ms-1", retries: 3, rescopes: 3 });
 
     const pinyx = createMockPinyx();
     const callbacks = {
@@ -288,8 +295,9 @@ describe("milestone loop — retry/rescope handling", () => {
     const verdicts = [failVerdict(["u-1"])];
     const lapis = createMockLapis(units, verdicts);
 
-    // All limits exhausted
-    (lapis.incrementRetry as any).mockResolvedValue({ milestoneId: "ms-1", retries: 5, rescopes: 5 });
+    // All limits exhausted — post-increment values; pre-increment retries=4 >= maxRetries=2,
+    // pre-increment rescopes=4 >= effectiveMaxRescopes=0 → escalate
+    (lapis.incrementRetry as any).mockResolvedValue({ milestoneId: "ms-1", retries: 6, rescopes: 6 });
 
     const pinyx = createMockPinyx();
     const callbacks = {

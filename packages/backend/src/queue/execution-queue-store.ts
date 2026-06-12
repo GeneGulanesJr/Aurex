@@ -277,6 +277,10 @@ export function createSettingsExecutionQueueStore(
 ): ExecutionQueueStore {
   let memory = createInMemoryExecutionQueueStore();
 
+  // Serialize write operations so concurrent enqueue/claim/fail calls
+  // don't overwrite each other's hydrate-modify-persist cycles.
+  let writeChain: Promise<void> = Promise.resolve();
+
   async function hydrate(): Promise<void> {
     const state = await lapis.getSetting<QueueState>(key);
     memory = createInMemoryExecutionQueueStore(state?.jobs ?? []);
@@ -289,10 +293,21 @@ export function createSettingsExecutionQueueStore(
   }
 
   async function withPersistence<T>(fn: () => Promise<T>): Promise<T> {
-    await hydrate();
-    const result = await fn();
-    await persist();
-    return result;
+    // Chain onto the write chain so only one hydrate-modify-persist
+    // cycle runs at a time. Read-only operations (list, get) can run
+    // concurrently outside the chain.
+    const prev = writeChain;
+    let release: () => void;
+    writeChain = new Promise((resolve) => { release = resolve; });
+    try {
+      await prev;
+      await hydrate();
+      const result = await fn();
+      await persist();
+      return result;
+    } finally {
+      release!();
+    }
   }
 
   return {

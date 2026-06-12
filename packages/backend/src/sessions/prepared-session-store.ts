@@ -260,6 +260,10 @@ export function createSettingsPreparedSessionStore(
 ): PreparedSessionStore {
   let memory = createInMemoryPreparedSessionStore();
 
+  // Serialize write operations so concurrent mutations don't overwrite
+  // each other's hydrate-modify-persist cycles.
+  let writeChain: Promise<void> = Promise.resolve();
+
   async function hydrate(): Promise<void> {
     const state = await lapis.getSetting<SessionState>(key);
     memory = createInMemoryPreparedSessionStore(state?.sessions ?? []);
@@ -272,10 +276,18 @@ export function createSettingsPreparedSessionStore(
   }
 
   async function withPersistence<T>(fn: () => Promise<T>): Promise<T> {
-    await hydrate();
-    const result = await fn();
-    await persist();
-    return result;
+    const prev = writeChain;
+    let release: () => void;
+    writeChain = new Promise((resolve) => { release = resolve; });
+    try {
+      await prev;
+      await hydrate();
+      const result = await fn();
+      await persist();
+      return result;
+    } finally {
+      release!();
+    }
   }
 
   return {

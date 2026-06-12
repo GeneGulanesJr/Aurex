@@ -94,3 +94,37 @@ export function createPreparedSessionService(deps: {
     },
   };
 }
+
+/**
+ * Creates a queue handler for `agent_session_start` jobs.
+ *
+ * When no real agent launcher is wired (current state), the handler
+ * explicitly fails the session and job instead of silently marking it
+ * "running". This prevents stale-session ghosts that the reconciler
+ * would later have to clean up.
+ *
+ * When a real launcher is wired later, replace this handler or pass a
+ * `launchAgent` callback.
+ */
+export function createPreparedSessionStartHandler(deps: {
+  queue: ExecutionQueueStore;
+  sessions: PreparedSessionStore;
+}): (jobId: string, claimToken: string) => Promise<void> {
+  const { queue, sessions } = deps;
+  return async (jobId, _claimToken) => {
+    const job = await queue.get(jobId);
+    if (!job?.sessionId) {
+      throw new Error("agent_session_start job is missing sessionId");
+    }
+    // No real agent launcher is wired yet. Fail explicitly so the
+    // session doesn't become a ghost "running" with no heartbeat.
+    // Then throw so the worker moves the queue job to "failed" instead
+    // of marking it "succeeded".
+    await sessions.fail(
+      job.sessionId,
+      "UNKNOWN",
+      "Agent launcher not wired — durable session start is not yet connected to a real agent process. Enable AUREX_DURABLE_QUEUE_ENABLED=false until the launcher integration is complete.",
+    );
+    throw new Error("agent_session_start: agent launcher not wired");
+  };
+}

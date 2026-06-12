@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createInMemoryExecutionQueueStore } from "../src/queue/execution-queue-store";
-import { createPreparedSessionService } from "../src/sessions/prepared-session-service";
+import { createPreparedSessionService, createPreparedSessionStartHandler } from "../src/sessions/prepared-session-service";
 import { createInMemoryPreparedSessionStore } from "../src/sessions/prepared-session-store";
 import { createExecutionWorker } from "../src/queue/execution-worker";
 
@@ -54,7 +54,7 @@ describe("prepared session service", () => {
 
 
 describe("prepared session execution worker", () => {
-  it("runs agent_session_start jobs by marking sessions running", async () => {
+  it("fails agent_session_start jobs instead of marking sessions running when no launcher is wired", async () => {
     const sessions = createInMemoryPreparedSessionStore();
     const queue = createInMemoryExecutionQueueStore();
     const service = createPreparedSessionService({ sessions, queue });
@@ -69,11 +69,7 @@ describe("prepared session execution worker", () => {
       {
         queue,
         handlers: {
-          agent_session_start: async (jobId) => {
-            const job = await queue.get(jobId);
-            if (!job?.sessionId) throw new Error("missing sessionId");
-            await sessions.updateStatus(job.sessionId, "running");
-          },
+          agent_session_start: createPreparedSessionStartHandler({ queue, sessions }),
         },
       },
       { workerId: "worker-1", pollMs: 1000 },
@@ -82,10 +78,14 @@ describe("prepared session execution worker", () => {
     await worker.tick();
 
     await expect(queue.get(start.queueJobId)).resolves.toMatchObject({
-      status: "succeeded",
+      status: "failed",
+      failureCode: "UNKNOWN",
     });
     await expect(sessions.get(session.id)).resolves.toMatchObject({
-      status: "running",
+      status: "failed",
+    });
+    await expect(sessions.get(session.id)).resolves.toMatchObject({
+      failureMessage: expect.stringContaining("not wired"),
     });
   });
 });

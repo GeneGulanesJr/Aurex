@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createInMemoryExecutionQueueStore } from "../src/queue/execution-queue-store";
+import { createInMemoryExecutionQueueStore, createSettingsExecutionQueueStore } from "../src/queue/execution-queue-store";
 
 const now = new Date("2026-06-11T00:00:00.000Z");
 
@@ -51,5 +51,28 @@ describe("execution queue store", () => {
       failureCode: "CLAIM_EXPIRED",
       failureMessage: "claim expired",
     });
+  });
+
+  it("serializes settings-backed mutations so concurrent enqueues do not overwrite each other", async () => {
+    let state: unknown = { jobs: [] };
+    const lapis = {
+      getSetting: async () => state,
+      setSetting: async (_key: string, value: unknown) => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        state = value;
+      },
+    };
+    const queue = createSettingsExecutionQueueStore(lapis as any);
+
+    await Promise.all([
+      queue.enqueue({ type: "mission_start", missionId: "m-1" }, now),
+      queue.enqueue({ type: "mission_start", missionId: "m-2" }, now),
+    ]);
+
+    await expect(queue.list()).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ missionId: "m-1" }),
+      expect.objectContaining({ missionId: "m-2" }),
+    ]));
+    await expect(queue.list()).resolves.toHaveLength(2);
   });
 });

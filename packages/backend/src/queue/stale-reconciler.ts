@@ -162,12 +162,29 @@ export async function reconcileStaleWork(
       );
       increment(summary, staleAction);
       if (!dryRun) {
-        await deps.sessions.fail(
-          session.id,
-          staleAction.failureCode,
-          staleAction.reason,
-          now,
-        );
+        if (staleAction.action === "fail_terminal") {
+          await deps.sessions.fail(
+            session.id,
+            staleAction.failureCode,
+            staleAction.reason,
+            now,
+          );
+        } else {
+          // Requeue: reset session to queued and requeue the linked job
+          if (session.queueJobId) {
+            try {
+              await deps.queue.requeue(
+                session.queueJobId,
+                staleAction.failureCode,
+                staleAction.reason,
+                now,
+              );
+            } catch {
+              // Job may have already completed or been removed
+            }
+          }
+          await deps.sessions.updateStatus(session.id, "queued", now);
+        }
       }
     }
     if (

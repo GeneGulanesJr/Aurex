@@ -68,4 +68,44 @@ describe("stale reconciler", () => {
       failureCode: "CLAIM_EXPIRED",
     });
   });
+
+  it("actively retries stale starting sessions instead of failing them", async () => {
+    const queue = createInMemoryExecutionQueueStore();
+    const sessions = createInMemoryPreparedSessionStore();
+    const session = await sessions.prepare(
+      {
+        missionId: "m-1",
+        role: "worker",
+        config: { model: "gpt-test", prompt: "Do work" },
+      },
+      base,
+    );
+    const job = await queue.enqueue(
+      { type: "agent_session_start", missionId: "m-1", sessionId: session.id },
+      base,
+    );
+    const claim = await queue.claimNext("worker-a", base);
+    await sessions.linkQueueJob(session.id, job.id, base);
+    await sessions.updateStatus(session.id, "starting", base);
+    // Mark job running with a recent heartbeat so it doesn't also trigger
+    // the running-job heartbeat check (only the session should be stale).
+    const recent = new Date("2026-06-11T00:10:30.000Z");
+    await queue.markRunning(job.id, claim!.claimToken, recent);
+
+    const summary = await reconcileStaleWork(
+      { queue, sessions },
+      { dryRun: false, now: later },
+    );
+
+    expect(summary.actions).toContainEqual(expect.objectContaining({
+      targetType: "agent_session",
+      targetId: session.id,
+      action: "retry_session",
+      failureCode: "SESSION_START_TIMEOUT",
+    }));
+    await expect(sessions.get(session.id)).resolves.toMatchObject({
+      status: "queued",
+      failureCode: null,
+    });
+  });
 });

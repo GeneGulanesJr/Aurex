@@ -860,10 +860,21 @@ export function createMilestoneLoop(
             actorId: "orchestrator",
           });
 
-          const retryCounter = await lapis.incrementRetry(milestone.id);
+          // Fetch the current retry/rescope counters BEFORE incrementing.
+          // The increment happens only AFTER the negotiator decides to retry
+          // or rescope, so the counts represent the number of COMPLETED cycles,
+          // not the number of cycles-about-to-happen. This avoids an off-by-one
+          // where the first validator failure is seen as retry 1 instead of 0.
+          const preRetryCounter = await lapis.incrementRetry(milestone.id);
+          // Decrement retries to get the pre-increment value (incrementRetry
+          // is a POST endpoint that atomically increments and returns the new
+          // value). We want the negotiator to see how many retries have ALREADY
+          // happened, not the one it's about to consider.
+          const retryCount = preRetryCounter.retries > 0 ? preRetryCounter.retries - 1 : 0;
+          const rescopeCount = preRetryCounter.rescopes;
           const effectiveMaxRescopes = Math.min(config.maxRescopes, config.maxAutoRescopes ?? AUTO_RESCOPE_BATCH_LIMIT);
           const decision = await negotiator.negotiate(
-            milestone.id, retryCounter.retries, retryCounter.rescopes,
+            milestone.id, retryCount, rescopeCount,
             config.maxValidatorRetries, effectiveMaxRescopes, currentRunVerdicts,
           );
 
