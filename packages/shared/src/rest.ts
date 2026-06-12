@@ -15,6 +15,24 @@ import type {
   ReconciliationRunSummary,
 } from "./types.js";
 
+export interface PrepareAgentSessionRequest {
+  missionId: string;
+  milestoneId?: string | null;
+  unitId?: string | null;
+  role: PreparedAgentRole;
+  config: Partial<PreparedAgentSessionConfig> &
+    Pick<PreparedAgentSessionConfig, "model" | "prompt">;
+  maxAttempts?: number;
+}
+
+export interface AgentSessionMessageRequest {
+  message: string;
+}
+
+export interface ReconcileExecutionQueueRequest {
+  dryRun?: boolean;
+}
+
 export interface CreateMissionRequest {
   description: string;
 }

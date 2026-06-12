@@ -130,6 +130,13 @@ export type WsClientEvent =
     }
   | { type: "quota_exhausted"; providerId: string; windowResetsAt: string }
   | { type: "mutation_progress"; runId: string; repoName: string; line: string }
+  | {
+      type: "execution_job_claimed";
+      missionId: string;
+      jobId: string;
+      claimedBy: string;
+    }
+  | { type: "stale_reconciliation_completed"; summary: ReconciliationRunSummary }
   | { type: "update_available"; currentSha: string; latestSha: string; behindBy: number };
 
 export type StreamingChunk = {
