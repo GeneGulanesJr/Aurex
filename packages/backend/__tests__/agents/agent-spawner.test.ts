@@ -234,13 +234,109 @@ describe("AgentSpawner", () => {
 
     mockSession.prompt.mockReturnValue(new Promise(() => {}));
 
-    const handle = await spawner.spawn({ ...baseSpawnOpts, timeout: 5_000 });
+    const handle = await spawner.spawn({
+      ...baseSpawnOpts,
+      agentType: "research",
+      unitId: undefined,
+      timeout: 5_000,
+    });
 
     await vi.advanceTimersByTimeAsync(5_100);
 
     const result = await handle.completed;
     expect(result.status).toBe("timed_out");
     expect(result.sessionId).toBe("test-session-123");
+    expect(mockSession.abort).toHaveBeenCalled();
+
+    vi.useRealTimers();
+  });
+
+
+  it("extends timeout when an active agent continues doing tool work", async () => {
+    vi.useFakeTimers();
+    const lapis = createMockLapis();
+    const spawner = createAgentSpawner({
+      lapis,
+      agentDir: "/home/user/.pi/agent",
+      defaultTimeout: 5_000,
+    });
+
+    let eventSubscriber: (event: any) => void = () => {};
+    mockSession.subscribe.mockImplementation((fn: any) => {
+      eventSubscriber = fn;
+      return () => {};
+    });
+    mockSession.prompt.mockReturnValue(new Promise(() => {}));
+
+    const handle = await spawner.spawn({
+      ...baseSpawnOpts,
+      timeout: 5_000,
+      extendTimeoutOnActivity: true,
+      maxTimeout: 20_000,
+    });
+
+    await vi.advanceTimersByTimeAsync(4_000);
+    eventSubscriber({
+      type: "message_update",
+      assistantMessageEvent: {
+        toolCall: { name: "read", arguments: { path: "src/index.ts" } },
+      },
+    });
+
+    await vi.advanceTimersByTimeAsync(4_900);
+    expect(mockSession.abort).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(200);
+    const result = await handle.completed;
+
+    expect(result.status).toBe("timed_out");
+    expect(mockSession.abort).toHaveBeenCalled();
+
+    vi.useRealTimers();
+  });
+
+
+  it("does not abort during an active long-running tool until max timeout is exhausted", async () => {
+    vi.useFakeTimers();
+    const lapis = createMockLapis();
+    const logger = createAgentLogger();
+    const spawner = createAgentSpawner({
+      lapis,
+      agentDir: "/home/user/.pi/agent",
+      defaultTimeout: 5_000,
+      logger,
+    });
+
+    let eventSubscriber: (event: any) => void = () => {};
+    mockSession.subscribe.mockImplementation((fn: any) => {
+      eventSubscriber = fn;
+      return () => {};
+    });
+    mockSession.prompt.mockReturnValue(new Promise(() => {}));
+
+    const handle = await spawner.spawn({
+      ...baseSpawnOpts,
+      timeout: 5_000,
+      extendTimeoutOnActivity: true,
+      maxTimeout: 12_000,
+    });
+
+    await vi.advanceTimersByTimeAsync(4_000);
+    eventSubscriber({
+      type: "tool_execution_start",
+      toolCallId: "bash-1",
+      toolName: "bash",
+      args: { command: "pnpm test" },
+    });
+
+    await vi.advanceTimersByTimeAsync(5_100);
+    expect(mockSession.abort).not.toHaveBeenCalled();
+    expect(logger.getEntries({ event: "config_decision" }).some((entry) => (entry.data as any)?.activity === "active_tool_execution")).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(3_000);
+    const result = await handle.completed;
+
+    expect(result.status).toBe("timed_out");
     expect(mockSession.abort).toHaveBeenCalled();
 
     vi.useRealTimers();
@@ -264,7 +360,12 @@ describe("AgentSpawner", () => {
       eventSubscriber({ type: "agent_end" });
     });
 
-    const handle = await spawner.spawn({ ...baseSpawnOpts, timeout: 5_000 });
+    const handle = await spawner.spawn({
+      ...baseSpawnOpts,
+      agentType: "research",
+      unitId: undefined,
+      timeout: 5_000,
+    });
 
     const result = await handle.completed;
     expect(result.status).toBe("completed");
@@ -470,7 +571,11 @@ describe("AgentSpawner", () => {
         eventSubscriber({ type: "agent_end" });
       });
 
-      const handle = await spawner.spawn(baseSpawnOpts);
+      const handle = await spawner.spawn({
+        ...baseSpawnOpts,
+        agentType: "research",
+        unitId: undefined,
+      });
       await handle.completed;
 
       const completed = logger.getEntries({ event: "completed" });

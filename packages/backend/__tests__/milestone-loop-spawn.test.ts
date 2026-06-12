@@ -367,7 +367,7 @@ describe("milestone loop with spawner", () => {
     );
   });
 
-  it("disables hard wall-clock deadlines for worker agents", async () => {
+  it("uses configured wall-clock deadlines for worker agents", async () => {
     let eventSubscriber: (event: any) => void = () => {};
     (mockSession.subscribe as any).mockImplementation((fn: any) => {
       eventSubscriber = fn;
@@ -414,20 +414,17 @@ describe("milestone loop with spawner", () => {
       },
     }), [makeMilestone()]);
 
-    expect(logger.log).toHaveBeenCalledWith(expect.objectContaining({
+    expect(logger.log).not.toHaveBeenCalledWith(expect.objectContaining({
       agentType: "worker",
       event: "config_decision",
-      data: expect.objectContaining({
-        decision: "timeout_disabled",
-        timeout: 0,
-      }),
+      data: expect.objectContaining({ decision: "timeout_disabled" }),
     }));
   });
 
   it.each([
     "Inventory current public API and dependencies",
     "Measure baseline complexity and identify hotspots",
-  ])("does not hard-timeout analysis-heavy worker unit: %s", async (description) => {
+  ])("gives analysis-heavy worker unit a configured deadline: %s", async (description) => {
     let eventSubscriber: (event: any) => void = () => {};
     (mockSession.subscribe as any).mockImplementation((fn: any) => {
       eventSubscriber = fn;
@@ -477,10 +474,10 @@ describe("milestone loop with spawner", () => {
       description: "Analyze and map current complexity hotspots",
     })]);
 
-    expect(logger.log).toHaveBeenCalledWith(expect.objectContaining({
+    expect(logger.log).not.toHaveBeenCalledWith(expect.objectContaining({
       agentType: "worker",
       event: "config_decision",
-      data: expect.objectContaining({ decision: "timeout_disabled", timeout: 0 }),
+      data: expect.objectContaining({ decision: "timeout_disabled" }),
     }));
   });
 
@@ -534,10 +531,10 @@ describe("milestone loop with spawner", () => {
       description: "Analyze current server/mod.rs structure and complexity hotspots",
     })]);
 
-    expect(logger.log).toHaveBeenCalledWith(expect.objectContaining({
+    expect(logger.log).not.toHaveBeenCalledWith(expect.objectContaining({
       agentType: "worker",
       event: "config_decision",
-      data: expect.objectContaining({ decision: "timeout_disabled", timeout: 0 }),
+      data: expect.objectContaining({ decision: "timeout_disabled" }),
     }));
     expect(callbacks.onAgentStatus).toHaveBeenCalledWith(
       "worker-unit-1", "worker", "spawned", "ms-1",
@@ -548,6 +545,64 @@ describe("milestone loop with spawner", () => {
     expect(mockSession.prompt).toHaveBeenCalledWith(expect.stringContaining(
       "Implement: Analyze current server/mod.rs structure and complexity hotspots",
     ));
+  });
+
+
+  it("retries timed-out workers once, then checkpoints instead of stalling", async () => {
+    (mockSession.subscribe as any).mockImplementation(() => () => {});
+    (mockSession.prompt as any).mockResolvedValue(undefined);
+
+    const unit: WorkingUnit = {
+      id: "unit-timeout",
+      milestoneId: "ms-1",
+      description: "Create login endpoint",
+      declaredPaths: ["src/auth/login.ts"],
+      declaredModules: ["auth"],
+      status: "planned" as any,
+      taskBranch: "",
+      worktreePath: "",
+      sessionId: "",
+    };
+
+    const lapis = createMockLapis([unit]);
+    (lapis.getFindings as any).mockResolvedValue([
+      { id: "finding-1", missionId: "m-1", domain: ["auth"], title: "Existing context", content: "Skip pre-worker research", relevance: "low", status: "active", createdAt: "2026-01-01T00:00:00Z" },
+    ]);
+    (lapis.getContractHistory as any).mockResolvedValue([{
+      id: "contract-1",
+      content: { criteria: ["works"], testCommands: [], acceptanceBehavior: "" },
+    }]);
+    const callbacks = {
+      onEscalation: vi.fn(),
+      onAgentStatus: vi.fn(),
+      onMilestoneProgress: vi.fn(),
+      onCostUpdate: vi.fn(),
+      onError: vi.fn(),
+    };
+
+    const loop = createMilestoneLoop(lapis, createMockPinyx(), callbacks, {
+      agentDir: "/home/user/.pi/agent",
+      repoRoot: "/repo",
+      gitMainBranch: "main",
+    });
+
+    const result = await loop.run(makeMission({
+      configJson: {
+        ...makeMission().configJson,
+        workerTimeouts: { simple: 5, build: 5, testHeavy: 5 },
+      },
+    }), [makeMilestone()]);
+
+    expect(result.status).toBe("checkpoint_needed");
+    expect(result.summary).toContain("timed out after retry");
+    expect(mockCreateAgentSession).toHaveBeenCalledTimes(2);
+    expect(lapis.updateWorkingUnitStatus).toHaveBeenCalledWith("unit-timeout", "planned");
+    expect(callbacks.onError).toHaveBeenCalledWith(
+      "m-1",
+      "worker_timeout",
+      expect.stringContaining("timed out"),
+      expect.objectContaining({ recoverable: true }),
+    );
   });
 
   it("retries a worker that completes without a handoff before validation", async () => {
