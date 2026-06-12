@@ -31,6 +31,12 @@ async function main() {
   const lapis = createLaPisClient({ lapisEndpoint: config.lapisEndpoint });
   const eventBus = createEventBus();
   const agentLogger = createAgentLogger();
+  const executionQueue = createSettingsExecutionQueueStore(lapis);
+  const preparedSessions = createSettingsPreparedSessionStore(lapis);
+  const preparedSessionService = createPreparedSessionService({
+    sessions: preparedSessions,
+    queue: executionQueue,
+  });
 
   // Startup healthcheck — LaPis is required
   try {
@@ -63,9 +69,15 @@ async function main() {
     maxConcurrent: config.maxConcurrentMissions,
     onPostMilestoneScan: async (missionId: string, root: string) => {
       try {
-        await bumblebeeRunner.triggerScan(missionId, { profile: "project", root });
+        await bumblebeeRunner.triggerScan(missionId, {
+          profile: "project",
+          root,
+        });
       } catch (err) {
-        console.warn(`[bumblebee] Auto-scan failed for mission ${missionId}:`, err instanceof Error ? err.message : err);
+        console.warn(
+          `[bumblebee] Auto-scan failed for mission ${missionId}:`,
+          err instanceof Error ? err.message : err,
+        );
       }
     },
   });
@@ -77,7 +89,10 @@ async function main() {
       pool.submit(mission.id);
     }
   } catch (err) {
-    console.warn("[startup] Could not check for paused missions:", err instanceof Error ? err.message : err);
+    console.warn(
+      "[startup] Could not check for paused missions:",
+      err instanceof Error ? err.message : err,
+    );
   }
 
   // Seed quota config from env vars if not already present in LaPis
@@ -93,7 +108,10 @@ async function main() {
       console.log("[startup] Seeded initial quota_config from env vars");
     }
   } catch (err) {
-    console.warn("[startup] Could not seed quota_config:", err instanceof Error ? err.message : err);
+    console.warn(
+      "[startup] Could not seed quota_config:",
+      err instanceof Error ? err.message : err,
+    );
   }
 
   const app = Fastify({ logger: true });
@@ -109,15 +127,23 @@ async function main() {
 
   // Health endpoint
   app.get("/health", async () => {
-    const lapisOk = await lapis.ping().then(() => true, () => false);
+    const lapisOk = await lapis.ping().then(
+      () => true,
+      () => false,
+    );
     let pinyxOk = false;
     try {
-      const pinyxConfig = await lapis.getSetting<{ endpoint: string }>("pinyx_config");
+      const pinyxConfig = await lapis.getSetting<{ endpoint: string }>(
+        "pinyx_config",
+      );
       if (pinyxConfig?.endpoint) {
-        const res = await fetch(`${pinyxConfig.endpoint.replace(/\/$/, "")}/v1/models`, {
-          method: "GET",
-          signal: AbortSignal.timeout(3000),
-        });
+        const res = await fetch(
+          `${pinyxConfig.endpoint.replace(/\/$/, "")}/v1/models`,
+          {
+            method: "GET",
+            signal: AbortSignal.timeout(3000),
+          },
+        );
         pinyxOk = res.ok;
       }
     } catch {
@@ -158,7 +184,11 @@ async function main() {
   registerMutationRoutes(app, { lapis, eventBus });
 
   // Bumblebee routes
-  await app.register(bumblebeeRoutes, { lapis, bumblebeeClient, bumblebeeRunner });
+  await app.register(bumblebeeRoutes, {
+    lapis,
+    bumblebeeClient,
+    bumblebeeRunner,
+  });
 
   // Quota / coding plan routes
   await app.register(quotaRoutes, { lapis, config });

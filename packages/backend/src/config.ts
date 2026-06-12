@@ -30,6 +30,14 @@ export interface AppConfig {
   quotaEnabled: boolean;
   quotaWindowDurationMs: number;
   quotaBurnDurationMs: number;
+
+  // Durable execution control plane
+  durableQueueEnabled: boolean;
+  preparedSessionsEnabled: boolean;
+  staleReconcilerEnabled: boolean;
+  staleReconcilerDryRun: boolean;
+  queueWorkerPollMs: number;
+  queueWorkerId: string;
 }
 
 function env(key: string, fallback?: string): string {
@@ -86,5 +94,18 @@ export function loadConfig(): AppConfig {
     quotaEnabled: process.env.QUOTA_ENABLED === "true",
     quotaWindowDurationMs: envInt("QUOTA_WINDOW_HOURS", 5) * 60 * 60 * 1000,
     quotaBurnDurationMs: envInt("QUOTA_BURN_HOURS", 1) * 60 * 60 * 1000,
+
+    durableQueueEnabled: process.env.AUREX_DURABLE_QUEUE_ENABLED === "true",
+    preparedSessionsEnabled:
+      process.env.AUREX_PREPARED_SESSIONS_ENABLED === "true",
+    staleReconcilerEnabled:
+      process.env.AUREX_STALE_RECONCILER_ENABLED === "true",
+    staleReconcilerDryRun:
+      process.env.AUREX_STALE_RECONCILER_DRY_RUN !== "false",
+    queueWorkerPollMs: envInt("AUREX_QUEUE_WORKER_POLL_MS", 1000),
+    queueWorkerId: env(
+      "AUREX_QUEUE_WORKER_ID",
+      `${process.env.HOSTNAME ?? "local"}:${process.pid}`,
+    ),
   };
 }

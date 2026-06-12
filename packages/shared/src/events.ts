@@ -1,6 +1,20 @@
 // packages/shared/src/events.ts
-import type { AgentType, AgentStatus, MilestoneStatus, CheckpointDecision } from "./enums.js";
-import type { AttemptSummary, EscalationContext, BumblebeeFinding, BumblebeeScanSummary } from "./types.js";
+import type {
+  AgentType,
+  AgentStatus,
+  MilestoneStatus,
+  CheckpointDecision,
+  PreparedAgentRole,
+  ExecutionFailureCode,
+  ExecutionJobType,
+} from "./enums.js";
+import type {
+  AttemptSummary,
+  EscalationContext,
+  BumblebeeFinding,
+  BumblebeeScanSummary,
+  ReconciliationRunSummary,
+} from "./types.js";
 
 export type AgentOutputEventType =
   | "spawned"
@@ -13,22 +27,107 @@ export type AgentOutputEventType =
   | "aborted";
 
 export type WsClientEvent =
-  | { type: "agent_status"; agentId: string; agentType: AgentType; status: AgentStatus; milestoneId: string; workerSnapshot?: { declaredPaths: string[]; declaredModules: string[]; taskBranch: string; worktreePath: string; sessionId: string; description: string } }
-  | { type: "milestone_progress"; milestoneId: string; status: MilestoneStatus; completedUnits: number; totalUnits: number }
-  | { type: "cost_update"; missionId: string; totalCost: number; totalTokens: number; delta: number }
-  | { type: "escalation"; missionId: string; checkpointId: string; trigger: EscalationTrigger; context: EscalationContext }
+  | {
+      type: "agent_status";
+      agentId: string;
+      agentType: AgentType;
+      status: AgentStatus;
+      milestoneId: string;
+      workerSnapshot?: {
+        declaredPaths: string[];
+        declaredModules: string[];
+        taskBranch: string;
+        worktreePath: string;
+        sessionId: string;
+        description: string;
+      };
+    }
+  | {
+      type: "milestone_progress";
+      milestoneId: string;
+      status: MilestoneStatus;
+      completedUnits: number;
+      totalUnits: number;
+    }
+  | {
+      type: "cost_update";
+      missionId: string;
+      totalCost: number;
+      totalTokens: number;
+      delta: number;
+    }
+  | {
+      type: "escalation";
+      missionId: string;
+      checkpointId: string;
+      trigger: EscalationTrigger;
+      context: EscalationContext;
+    }
   | { type: "mission_queued"; missionId: string; queuePosition: number }
   | { type: "mission_started"; missionId: string }
   | { type: "mission_completed"; missionId: string; finalState: string }
   | { type: "mission_status"; missionId: string; status: string }
-  | { type: "milestones_set"; missionId: string; milestones: Array<{ id: string; missionId: string; title: string; description: string; orderIndex: number; status: MilestoneStatus; validationContractId: string }> }
-  | { type: "mission_log"; missionId: string; phase: string; message: string; data?: Record<string, unknown> }
-  | { type: "mission_error"; missionId: string; code: string; message: string; workerId?: string; milestoneId?: string; recoverable: boolean; details?: Record<string, unknown> }
-  | { type: "agent_output"; missionId: string; agentId: string; agentType: AgentType; eventType: AgentOutputEventType; message: string; timestamp: string; data?: Record<string, unknown> }
+  | {
+      type: "milestones_set";
+      missionId: string;
+      milestones: Array<{
+        id: string;
+        missionId: string;
+        title: string;
+        description: string;
+        orderIndex: number;
+        status: MilestoneStatus;
+        validationContractId: string;
+      }>;
+    }
+  | {
+      type: "mission_log";
+      missionId: string;
+      phase: string;
+      message: string;
+      data?: Record<string, unknown>;
+    }
+  | {
+      type: "mission_error";
+      missionId: string;
+      code: string;
+      message: string;
+      workerId?: string;
+      milestoneId?: string;
+      recoverable: boolean;
+      details?: Record<string, unknown>;
+    }
+  | {
+      type: "agent_output";
+      missionId: string;
+      agentId: string;
+      agentType: AgentType;
+      eventType: AgentOutputEventType;
+      message: string;
+      timestamp: string;
+      data?: Record<string, unknown>;
+    }
   | { type: "scan_started"; missionId: string; scanId: string; profile: string }
-  | { type: "scan_completed"; missionId: string; scanId: string; summary: BumblebeeScanSummary }
-  | { type: "scan_finding"; missionId: string; scanId: string; finding: BumblebeeFinding }
-  | { type: "quota_update"; providerId: string; status: string; remainingBurnMs: number; remainingWindowMs: number; burnExpiresAt: string | null }
+  | {
+      type: "scan_completed";
+      missionId: string;
+      scanId: string;
+      summary: BumblebeeScanSummary;
+    }
+  | {
+      type: "scan_finding";
+      missionId: string;
+      scanId: string;
+      finding: BumblebeeFinding;
+    }
+  | {
+      type: "quota_update";
+      providerId: string;
+      status: string;
+      remainingBurnMs: number;
+      remainingWindowMs: number;
+      burnExpiresAt: string | null;
+    }
   | { type: "quota_exhausted"; providerId: string; windowResetsAt: string }
   | { type: "mutation_progress"; runId: string; repoName: string; line: string }
   | { type: "update_available"; currentSha: string; latestSha: string; behindBy: number };
@@ -41,8 +140,17 @@ export type StreamingChunk = {
 export type EscalationTrigger =
   | { kind: "milestone_complete"; milestoneId: string; releaseBranch?: string }
   | { kind: "validation_failed"; milestoneId: string }
-  | { kind: "rescope_limit"; milestoneId: string; attemptHistory?: AttemptSummary[] }
-  | { kind: "unclassifiable_error"; milestoneId: string; error?: string; lastAttempt?: string }
+  | {
+      kind: "rescope_limit";
+      milestoneId: string;
+      attemptHistory?: AttemptSummary[];
+    }
+  | {
+      kind: "unclassifiable_error";
+      milestoneId: string;
+      error?: string;
+      lastAttempt?: string;
+    }
   | { kind: "cost_cap_exceeded"; milestoneId: string }
   | { kind: "quota_exhausted"; milestoneId: string; windowResetsAt: string };
 
