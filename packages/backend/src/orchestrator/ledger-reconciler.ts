@@ -190,7 +190,7 @@ export async function applyValidatorVerdictsToTodos(lapis: LaPisClient, input: V
 
   const updated: MissionTodo[] = [];
   for (const verdict of input.verdicts) {
-    const failedIds = new Set(verdict.failedUnitIds ?? []);
+    const failedIds = new Set(Array.isArray(verdict.failedUnitIds) ? verdict.failedUnitIds : []);
     const candidateTodos = failedIds.size > 0
       ? todos.filter((todo) => failedIds.has(todo.id) || failedIds.has(todo.goal) || todoMatchesAnyUnitId(todo, failedIds))
       : todos.filter((todo) => todo.status === "implemented" || todo.status === "validating");

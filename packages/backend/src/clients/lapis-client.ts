@@ -242,7 +242,7 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
       verdict: raw.verdict ?? "fail",
       classification: raw.classification,
       findings: raw.findings ?? "",
-      failedUnitIds: raw.failedUnitIds ?? raw.failed_unit_ids ?? [],
+      failedUnitIds: Array.isArray(raw.failedUnitIds) ? raw.failedUnitIds : Array.isArray(raw.failed_unit_ids) ? raw.failed_unit_ids : [],
       timestamp: raw.timestamp ?? "",
     };
   }

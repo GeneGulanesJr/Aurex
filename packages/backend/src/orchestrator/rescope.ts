@@ -57,7 +57,7 @@ function buildRescopeUserMessage(input: RescopeInput): string {
       .map((v) => {
         const details = [`Validator: ${v.validatorType}`, `Findings: ${v.findings}`];
         if (v.classification) details.push(`Classification: ${v.classification}`);
-        if (v.failedUnitIds && v.failedUnitIds.length > 0) details.push(`Failed units: ${v.failedUnitIds.join(", ")}`);
+        if (Array.isArray(v.failedUnitIds) && v.failedUnitIds.length > 0) details.push(`Failed units: ${v.failedUnitIds.join(", ")}`);
         return details.join("\n");
       });
     if (verdictSummaries.length > 0) {

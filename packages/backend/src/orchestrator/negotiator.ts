@@ -19,7 +19,7 @@ export function createNegotiator(lapis: LaPisClient) {
 
   function hashVerdicts(verdicts: ValidationVerdict[]): string {
     const data = verdicts
-      .map((v) => `${getValidatorType(v)}:${v.verdict}:${v.findings}:${(v.failedUnitIds ?? []).sort().join(",")}`)
+      .map((v) => `${getValidatorType(v)}:${v.verdict}:${v.findings}:${(Array.isArray(v.failedUnitIds) ? v.failedUnitIds : []).sort().join(",")}`)
       .sort()
       .join("|");
     return createHash("sha256").update(data).digest("hex").slice(0, 16);

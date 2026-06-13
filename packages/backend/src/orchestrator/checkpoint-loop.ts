@@ -146,7 +146,7 @@ export async function runCheckpointLoop(
       const failedUnitIds = new Set(
         verdicts
           .filter((v) => v.verdict === "fail")
-          .flatMap((v) => v.failedUnitIds ?? []),
+          .flatMap((v) => Array.isArray(v.failedUnitIds) ? v.failedUnitIds : []),
       );
 
       // If we have no signal at all (no verdicts, or verdicts fetch failed

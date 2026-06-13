@@ -236,6 +236,13 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
       const workerHandoffRequired = opts.agentType === "worker"
         && customTools.some((tool) => tool?.name === "write_handoff");
       let toolCallCount = 0;
+      // Repeated-tool-call loop detection. When an LLM calls the same tool
+      // with the same arguments repeatedly (e.g. a stuck `cd` or `ls` loop),
+      // the session will never make progress but each call refreshes the
+      // activity-extended timeout, burning maxTimeout worth of tokens.
+      // Abort early when the same call repeats beyond LOOP_DETECTION_THRESHOLD.
+      const LOOP_DETECTION_THRESHOLD = 5;
+      const recentToolCalls: string[] = [];
       const isValidatorSession = opts.agentType === "validator_scrutiny" || opts.agentType === "validator_user_testing";
       const effectiveValidatorToolCallCap = opts.validatorToolCallCap ?? validatorToolCallCap;
       const toolCallCap = isValidatorSession && effectiveValidatorToolCallCap > 0 ? effectiveValidatorToolCallCap : Infinity;
@@ -360,6 +367,41 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
           const toolInput = (event.assistantMessageEvent?.toolCall?.arguments ?? event.assistantMessageEvent?.toolCall?.input) as Record<string, unknown> | undefined;
           if (toolName) {
             toolCallCount++;
+
+            // Loop detection: track a signature of (toolName + serialized args).
+            // If the same call repeats beyond the threshold, the LLM is stuck
+            // in a loop that activity-extended timeouts would otherwise let
+            // run for the full maxTimeout. Abort immediately with a clear error.
+            const toolSignature = `${toolName}:${JSON.stringify(toolInput ?? {})}`;
+            recentToolCalls.push(toolSignature);
+            if (recentToolCalls.length > LOOP_DETECTION_THRESHOLD) {
+              recentToolCalls.shift();
+            }
+            if (
+              recentToolCalls.length === LOOP_DETECTION_THRESHOLD
+              && recentToolCalls.every((sig) => sig === toolSignature)
+            ) {
+              settled = true;
+              session.abort();
+              const errMsg = `tool_call_loop_detected: ${toolName} called ${LOOP_DETECTION_THRESHOLD} times consecutively with identical arguments`;
+              logger?.log({
+                sessionId: session.sessionId,
+                agentType: opts.agentType,
+                missionId: opts.missionId,
+                milestoneId: opts.milestoneId,
+                unitId: opts.unitId,
+                event: "failed",
+                data: { error: errMsg, tool: toolName, toolCallCount },
+              });
+              emitOutput(opts, "failed", errMsg, { error: errMsg, tool: toolName });
+              resolveCompleted({
+                status: "failed",
+                sessionId: session.sessionId,
+                error: errMsg,
+              });
+              return;
+            }
+
             // Optional validator tool-call cap enforcement. By default
             // validators rely on timeout/cost bounds, but deployments can
             // configure a hard cap for tighter control.
@@ -408,20 +450,29 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
 
           const usage = event.assistantMessageEvent?.usage;
           if (usage) {
+            const promptTokens = usage.promptTokens ?? 0;
+            const completionTokens = usage.completionTokens ?? 0;
+            const tokenDelta = (promptTokens + completionTokens) - cumulativeTokens;
             const rawCost = usage.cost;
-            const delta = typeof rawCost === "number"
+            let delta = typeof rawCost === "number"
               ? rawCost
               : typeof rawCost?.total === "number"
                 ? rawCost.total
                 : 0;
-            if (delta === 0 && rawCost != null && typeof rawCost !== "number" && typeof rawCost?.total !== "number") {
-              console.warn("[spawner] Unexpected usage.cost shape:", rawCost);
+
+            // If cost is 0 (model registered with no pricing), estimate from tokens.
+            // MiniMax-M3: ~$0.10/M input, ~$0.30/M output (conservative defaults).
+            if (delta === 0 && (promptTokens > 0 || completionTokens > 0)) {
+              const estimatedCost = (promptTokens * 0.0000001) + (completionTokens * 0.0000003);
+              delta = estimatedCost;
             }
-            if (delta === 0 && typeof usage.totalTokens !== "number") return;
+
+            // Always track tokens even if cost is 0
+            const newCumulativeTokens = cumulativeTokens + promptTokens + completionTokens;
             cumulativeCost += delta;
-            cumulativeTokens += usage.totalTokens ?? 0;
+            cumulativeTokens = newCumulativeTokens;
             missionCumulativeCost += delta;
-            missionCumulativeTokens += usage.totalTokens ?? 0;
+            missionCumulativeTokens = newCumulativeTokens;
 
             logger?.log({
               sessionId: session.sessionId,
@@ -433,7 +484,7 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
               data: { cost: delta, cumulativeCost, cumulativeTokens, missionCumulativeCost, missionCumulativeTokens },
             });
 
-            emitOutput(opts, "cost_update", `Cost: $${delta.toFixed(4)}`, { cost: delta, cumulativeCost, cumulativeTokens, missionCumulativeCost, missionCumulativeTokens });
+            emitOutput(opts, "cost_update", `Cost: $${delta.toFixed(4)} (${promptTokens}+${completionTokens} tokens)`, { cost: delta, cumulativeCost, cumulativeTokens, missionCumulativeCost, missionCumulativeTokens, promptTokens, completionTokens });
 
             lapis.logCost({
               missionId: opts.missionId,
@@ -761,7 +812,7 @@ async function resolvePinyxModel(lapis: LaPisClient, modelId: string | undefined
       input: ["text"],
       contextWindow: 128_000,
       maxTokens: 16_384,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      cost: resolveModelCost(modelId),
       compat: {
         supportsDeveloperRole: false,
         supportsReasoningEffort: false,
@@ -777,4 +828,36 @@ async function resolvePinyxModel(lapis: LaPisClient, modelId: string | undefined
   const result = { model, modelRegistry, authStorage };
   pinyxModelCache.set(cacheKey, result);
   return result;
+}
+
+/** Resolve per-token cost (USD) for known models. Returns 0 for unknown models,
+ *  which causes the spawner's token-based fallback to estimate cost instead. */
+function resolveModelCost(modelId: string): { input: number; output: number; cacheRead: number; cacheWrite: number } {
+  // Pricing per 1 token (USD). Convert from per-million by dividing by 1,000,000.
+  const KNOWN_COSTS: Record<string, { input: number; output: number }> = {
+    // MiniMax
+    "minimax/MiniMax-M3": { input: 0.1 / 1_000_000, output: 0.3 / 1_000_000 },
+    "minimax/MiniMax-M1": { input: 0.1 / 1_000_000, output: 0.3 / 1_000_000 },
+    // OpenAI
+    "openai/gpt-4o": { input: 2.5 / 1_000_000, output: 10 / 1_000_000 },
+    "openai/gpt-4o-mini": { input: 0.15 / 1_000_000, output: 0.6 / 1_000_000 },
+    "openai/o3": { input: 2.0 / 1_000_000, output: 8.0 / 1_000_000 },
+    "openai/o4-mini": { input: 1.1 / 1_000_000, output: 4.4 / 1_000_000 },
+    // Anthropic
+    "anthropic/claude-sonnet-4-20250514": { input: 3.0 / 1_000_000, output: 15.0 / 1_000_000 },
+    "anthropic/claude-3.5-sonnet": { input: 3.0 / 1_000_000, output: 15.0 / 1_000_000 },
+    // Google
+    "google/gemini-2.5-pro": { input: 1.25 / 1_000_000, output: 10.0 / 1_000_000 },
+    "google/gemini-2.5-flash": { input: 0.15 / 1_000_000, output: 0.6 / 1_000_000 },
+  };
+
+  // Try exact match first, then prefix match
+  const exact = KNOWN_COSTS[modelId];
+  if (exact) return { input: exact.input, output: exact.output, cacheRead: 0, cacheWrite: 0 };
+
+  const prefix = modelId.split("/")[0] + "/";
+  const prefixMatch = Object.entries(KNOWN_COSTS).find(([k]) => k.startsWith(prefix));
+  if (prefixMatch) return { input: prefixMatch[1].input, output: prefixMatch[1].output, cacheRead: 0, cacheWrite: 0 };
+
+  return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 }

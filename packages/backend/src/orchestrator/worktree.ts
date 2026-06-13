@@ -47,8 +47,20 @@ export function createWorktreeManager(repoRoot: string): WorktreeManager {
     for (const arg of args) sanitizeGitArg(arg);
     // Stryker disable next-line MethodExpression: stdout → stderr mutant
     // is equivalent when git output goes to either stream in test mocks.
-    const { stdout } = await execFileAsync("git", ["-C", cwd, ...args]);
-    return stdout.trim();
+    try {
+      const { stdout } = await execFileAsync("git", ["-C", cwd, ...args]);
+      return stdout.trim();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("not a git repository")) {
+        throw new Error(
+          `Git operation failed: ${cwd} is not a git repository. ` +
+          `Ensure the mission has a valid clone URL and the repo was cloned successfully. ` +
+          `Original error: ${msg}`,
+        );
+      }
+      throw err;
+    }
   }
 
   return {

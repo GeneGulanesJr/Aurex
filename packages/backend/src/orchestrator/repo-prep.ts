@@ -56,7 +56,17 @@ export async function prepareRepoForMission({
   parentRepoRoot,
   cloneUrl,
 }: PrepareRepoOptions): Promise<PrepareRepoResult> {
-  if (!cloneUrl) return { repoPath: parentRepoRoot, repoStatus: "updated" };
+  if (!cloneUrl) {
+    // When no cloneUrl is provided, parentRepoRoot must already be a git repo.
+    // In Docker, /workspace is just a volume mount point — not a repo itself.
+    if (!(await pathExists(path.join(parentRepoRoot, ".git")))) {
+      throw new Error(
+        `No cloneUrl provided and ${parentRepoRoot} is not a git repository. ` +
+        "Provide a GitHub clone URL when creating the mission.",
+      );
+    }
+    return { repoPath: parentRepoRoot, repoStatus: "updated" };
+  }
 
   const normalizedCloneUrl = normalizeGitHubCloneUrl(cloneUrl);
   const reposRoot = path.join(parentRepoRoot, "repos");
