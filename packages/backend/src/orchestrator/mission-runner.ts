@@ -76,6 +76,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         all[providerId] = w;
         await lapis.setSetting("quota_windows", all);
       },
+      onQuotaUpdate: (event) => eventBus.emit(event),
     });
   }
 

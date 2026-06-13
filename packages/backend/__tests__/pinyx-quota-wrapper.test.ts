@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { createQuotaAwarePinyxClient, QuotaExhaustedError } from "../src/clients/pinyx-quota-wrapper.js";
 import { createQuotaWindow, recordFirstLLMCall } from "../src/enforcement/quota-gate.js";
 import type { PinyxClient, ChatResponse } from "../src/clients/pinyx-client.js";
-import type { QuotaWindow, QuotaConfig } from "@aurex/shared";
+import type { QuotaWindow, QuotaConfig, WsClientEvent } from "@aurex/shared";
 
 const HOUR = 60 * 60 * 1000;
 
@@ -277,5 +277,106 @@ describe("createQuotaAwarePinyxClient", () => {
     }
 
     vi.useRealTimers();
+  });
+
+  describe("quota_update emission", () => {
+    it("does not call onQuotaUpdate when quota is disabled", async () => {
+      const onQuotaUpdate = vi.fn();
+      const inner = mockPinyxClient();
+      const client = createQuotaAwarePinyxClient(inner, {
+        getQuotaConfig: async () => disabledConfig,
+        getQuotaWindow: async () => null,
+        saveQuotaWindow: async () => {},
+        onQuotaUpdate,
+      });
+
+      await client.chat({ model: "kilo/kilo-auto/free", messages: [{ role: "user", content: "hi" }] });
+      expect(onQuotaUpdate).not.toHaveBeenCalled();
+    });
+
+    it("does not call onQuotaUpdate for an untracked provider", async () => {
+      const onQuotaUpdate = vi.fn();
+      const inner = mockPinyxClient();
+      const client = createQuotaAwarePinyxClient(inner, {
+        getQuotaConfig: async () => defaultConfig,
+        getQuotaWindow: async () => null,
+        saveQuotaWindow: async () => {},
+        onQuotaUpdate,
+      });
+
+      await client.chat({ model: "zai/glm-5", messages: [{ role: "user", content: "hi" }] });
+      expect(onQuotaUpdate).not.toHaveBeenCalled();
+    });
+
+    it("emits quota_update on first tracked LLM call", async () => {
+      const onQuotaUpdate = vi.fn();
+      const inner = mockPinyxClient();
+      const window = createQuotaWindow({ now: new Date() });
+
+      const client = createQuotaAwarePinyxClient(inner, {
+        getQuotaConfig: async () => defaultConfig,
+        getQuotaWindow: async () => window,
+        saveQuotaWindow: async () => {},
+        onQuotaUpdate,
+      });
+
+      await client.chat({ model: "kilo/kilo-auto/free", messages: [{ role: "user", content: "hi" }] });
+      expect(onQuotaUpdate).toHaveBeenCalledOnce();
+      const event = onQuotaUpdate.mock.calls[0][0] as WsClientEvent;
+      expect(event.type).toBe("quota_update");
+      expect(event.providerId).toBe("kilo");
+      expect(event.status).toBe("active");
+      expect(event.remainingBurnMs).toBeGreaterThan(0);
+      expect(event.burnExpiresAt).not.toBeNull();
+    });
+
+    it("emits quota_update with exhausted status before throwing", async () => {
+      const onQuotaUpdate = vi.fn();
+      const inner = mockPinyxClient();
+      const now = new Date();
+      const window = createQuotaWindow({ now, burnDurationMs: HOUR });
+      const withCall = recordFirstLLMCall(window, now);
+
+      const client = createQuotaAwarePinyxClient(inner, {
+        getQuotaConfig: async () => defaultConfig,
+        getQuotaWindow: async () => withCall,
+        saveQuotaWindow: async () => {},
+        onQuotaUpdate,
+      });
+
+      const afterBurn = new Date(now.getTime() + HOUR + 1000);
+      vi.setSystemTime(afterBurn);
+
+      await expect(
+        client.chat({ model: "kilo/kilo-auto/free", messages: [{ role: "user", content: "hi" }] }),
+      ).rejects.toThrow(QuotaExhaustedError);
+
+      expect(onQuotaUpdate).toHaveBeenCalledOnce();
+      const event = onQuotaUpdate.mock.calls[0][0] as WsClientEvent;
+      expect(event.type).toBe("quota_update");
+      expect(event.providerId).toBe("kilo");
+      expect(event.status).toBe("exhausted");
+      expect(event.remainingBurnMs).toBe(0);
+
+      vi.useRealTimers();
+    });
+
+    it("emits quota_update from chatStream as well", async () => {
+      const onQuotaUpdate = vi.fn();
+      const inner = mockPinyxClient();
+      const window = createQuotaWindow({ now: new Date() });
+
+      const client = createQuotaAwarePinyxClient(inner, {
+        getQuotaConfig: async () => defaultConfig,
+        getQuotaWindow: async () => window,
+        saveQuotaWindow: async () => {},
+        onQuotaUpdate,
+      });
+
+      await client.chatStream({ model: "kilo/kilo-auto/free", messages: [{ role: "user", content: "hi" }] }, () => {});
+      expect(onQuotaUpdate).toHaveBeenCalledOnce();
+      const event = onQuotaUpdate.mock.calls[0][0] as WsClientEvent;
+      expect(event.type).toBe("quota_update");
+    });
   });
 });
