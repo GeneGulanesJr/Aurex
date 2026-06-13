@@ -75,6 +75,59 @@ function createAurexRepository(deps) {
       sqlRun('UPDATE working_units SET status = ? WHERE id = ?', [status, id]);
     },
 
+    // --- Worker Handoffs ---
+    createHandoff({
+      id,
+      unitId,
+      missionId,
+      milestoneId,
+      featureName,
+      description,
+      implemented,
+      remaining,
+      rationale,
+      assumptions,
+      unresolvedUncertainties,
+      errorsEncountered,
+      commandsRun,
+      gitCommitHash,
+    }) {
+      sqlRun(
+        `INSERT INTO handoffs (
+          id, unit_id, mission_id, milestone_id,
+          feature_name, description, implemented, remaining, rationale,
+          assumptions, unresolved_uncertainties, errors_encountered,
+          commands_run, git_commit_hash
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          unitId,
+          missionId || '',
+          milestoneId || '',
+          featureName || '',
+          description || '',
+          implemented || '',
+          remaining || '',
+          rationale || '',
+          assumptions || '',
+          unresolvedUncertainties || '',
+          errorsEncountered || '',
+          JSON.stringify(commandsRun || []),
+          gitCommitHash || '',
+        ],
+      );
+      return sqlJson('SELECT * FROM handoffs WHERE id = ?', [id]);
+    },
+    getHandoffsForMilestone(milestoneId) {
+      return sqlJson('SELECT * FROM handoffs WHERE milestone_id = ?', [milestoneId]);
+    },
+    getHandoffsForMission(missionId) {
+      return sqlJson('SELECT * FROM handoffs WHERE mission_id = ?', [missionId]);
+    },
+    getHandoffForUnit(unitId) {
+      return sqlJson('SELECT * FROM handoffs WHERE unit_id = ?', [unitId]);
+    },
+
     // --- Validation Contracts ---
     createContract({ id, milestoneId, version, content, supersedes }) {
       sqlRun(

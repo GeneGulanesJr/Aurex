@@ -95,6 +95,9 @@ function buildRoutes(deps) {
 
     // Handoffs
     { method: 'POST', pattern: '/units/:unitId/handoff', handler: handoffs.writeHandoff(aurex) },
+    { method: 'GET', pattern: '/milestones/:milestoneId/handoffs', handler: handoffs.getHandoffsForMilestone(aurex) },
+    { method: 'GET', pattern: '/missions/:missionId/handoffs', handler: handoffs.getHandoffsForMission(aurex) },
+    { method: 'GET', pattern: '/units/:unitId/handoff', handler: handoffs.getHandoffForUnit(aurex) },
 
     // Contracts
     { method: 'POST', pattern: '/milestones/:milestoneId/contracts', handler: contracts.createContract(aurex) },

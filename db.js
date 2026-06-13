@@ -449,7 +449,7 @@ function runMigrations() {
     console.error('[db] Failed to read user_version:', e.message);
   }
 
-  if (version >= 19) {
+  if (version >= 22) {
     return { migrated: false, version };
   }
 
@@ -474,6 +474,7 @@ function runMigrations() {
     { to: 19, run: runMigrationV19 },
     { to: 20, run: runMigrationV20 },
     { to: 21, run: runMigrationV21 },
+    { to: 22, run: runMigrationV22 },
   ];
 
   const fromVersion = version;
@@ -1313,6 +1314,42 @@ function runMigrationV21() {
     });
   } catch (e) {
     errors.push(`V21: ${e.message}`);
+  }
+  return errors;
+}
+
+function runMigrationV22() {
+  const errors = [];
+  try {
+    withTransaction(() => {
+      sqlRaw(`
+        CREATE TABLE IF NOT EXISTS handoffs (
+          id                         TEXT PRIMARY KEY,
+          unit_id                    TEXT NOT NULL,
+          mission_id                 TEXT NOT NULL DEFAULT '',
+          milestone_id               TEXT NOT NULL DEFAULT '',
+          feature_name               TEXT NOT NULL DEFAULT '',
+          description                TEXT NOT NULL DEFAULT '',
+          implemented                TEXT NOT NULL DEFAULT '',
+          remaining                  TEXT NOT NULL DEFAULT '',
+          rationale                  TEXT NOT NULL DEFAULT '',
+          assumptions                TEXT NOT NULL DEFAULT '',
+          unresolved_uncertainties   TEXT NOT NULL DEFAULT '',
+          errors_encountered         TEXT NOT NULL DEFAULT '',
+          commands_run               TEXT NOT NULL DEFAULT '[]',
+          git_commit_hash            TEXT NOT NULL DEFAULT '',
+          status                     TEXT NOT NULL DEFAULT 'accepted',
+          created_at                 TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at                 TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+      `);
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_handoffs_unit      ON handoffs(unit_id)');
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_handoffs_milestone ON handoffs(milestone_id)');
+      sqlRaw('CREATE INDEX IF NOT EXISTS idx_handoffs_mission   ON handoffs(mission_id)');
+      sqlRaw('PRAGMA user_version = 22');
+    });
+  } catch (e) {
+    errors.push(`V22: ${e.message}`);
   }
   return errors;
 }

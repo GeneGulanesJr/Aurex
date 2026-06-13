@@ -9,7 +9,7 @@
 --   doc-index repository: doc_repos, doc_files, doc_sections, doc FTS, links, terms, code blocks.
 --   trust-sync repository: symbol_links and trust_adjustments because they bridge memories and code symbols.
 --   analytics repository: read-only aggregate queries across feature-owned tables.
-PRAGMA user_version = 10;
+PRAGMA user_version = 11;
 
 -- ═══════════════════════════════════════════════════════════
 -- MEMORY REPOSITORY: WORKSPACES  (v4 — formal project isolation)
@@ -741,3 +741,34 @@ CREATE TABLE IF NOT EXISTS todo_events (
 );
 CREATE INDEX IF NOT EXISTS idx_todo_events_mission ON todo_events(mission_id);
 CREATE INDEX IF NOT EXISTS idx_todo_events_todo ON todo_events(todo_id);
+
+-- ═══════════════════════════════════════════════════════════
+-- AUREX HANDOFFS  (worker → orchestrator structured completion)
+-- ═══════════════════════════════════════════════════════════
+-- Worker agents call write_handoff to signal completed work. The
+-- milestone-loop reads getHandoffsForMilestone to validate that each
+-- completed worker session produced a structured handoff. Without
+-- this table, handoffs cannot be persisted and the orchestrator
+-- treats all workers as missing-handoff failures.
+CREATE TABLE IF NOT EXISTS handoffs (
+  id                         TEXT PRIMARY KEY,
+  unit_id                    TEXT NOT NULL,
+  mission_id                 TEXT NOT NULL DEFAULT '',
+  milestone_id               TEXT NOT NULL DEFAULT '',
+  feature_name               TEXT NOT NULL DEFAULT '',
+  description                TEXT NOT NULL DEFAULT '',
+  implemented                TEXT NOT NULL DEFAULT '',
+  remaining                  TEXT NOT NULL DEFAULT '',
+  rationale                  TEXT NOT NULL DEFAULT '',
+  assumptions                TEXT NOT NULL DEFAULT '',
+  unresolved_uncertainties   TEXT NOT NULL DEFAULT '',
+  errors_encountered         TEXT NOT NULL DEFAULT '',
+  commands_run               TEXT NOT NULL DEFAULT '[]',
+  git_commit_hash            TEXT NOT NULL DEFAULT '',
+  status                     TEXT NOT NULL DEFAULT 'accepted',
+  created_at                 TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at                 TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_handoffs_unit      ON handoffs(unit_id);
+CREATE INDEX IF NOT EXISTS idx_handoffs_milestone ON handoffs(milestone_id);
+CREATE INDEX IF NOT EXISTS idx_handoffs_mission   ON handoffs(mission_id);
