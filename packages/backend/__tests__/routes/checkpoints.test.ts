@@ -4,6 +4,7 @@ import { checkpointRoutes } from "../../src/routes/checkpoints";
 
 function createMockLapis() {
   return {
+    getCheckpoint: vi.fn().mockResolvedValue({ id: "cp-uuid-1", missionId: "m-1", status: "pending" }),
     resolveCheckpoint: vi.fn().mockResolvedValue({ id: "cp-uuid-1", status: "resolved" }),
   };
 }
@@ -88,5 +89,39 @@ describe("POST /api/missions/:id/checkpoints", () => {
     });
 
     expect(response.statusCode).toBe(400);
+  });
+
+  it("404s when the checkpoint belongs to a different mission", async () => {
+    const app = Fastify();
+    const lapis = createMockLapis();
+    (lapis.getCheckpoint as any).mockResolvedValue({ id: "cp-x", missionId: "other-mission", status: "pending" });
+
+    app.register(checkpointRoutes, { lapis: lapis as any });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/missions/m-1/checkpoints",
+      payload: { checkpointId: "cp-x", decision: "approve" },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(lapis.resolveCheckpoint).not.toHaveBeenCalled();
+  });
+
+  it("404s when the checkpoint does not exist", async () => {
+    const app = Fastify();
+    const lapis = createMockLapis();
+    (lapis.getCheckpoint as any).mockRejectedValue(new Error("not found"));
+
+    app.register(checkpointRoutes, { lapis: lapis as any });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/missions/m-1/checkpoints",
+      payload: { checkpointId: "cp-missing", decision: "approve" },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(lapis.resolveCheckpoint).not.toHaveBeenCalled();
   });
 });

@@ -1,11 +1,12 @@
 import { useState, useCallback } from "react";
-import { useQuota } from "../hooks/useQuota";
+import type { QuotaState } from "../hooks/useQuota";
 import { calculatePrefire } from "../api";
 import type { QuotaProviderStatus } from "@aurex/shared";
 
 interface QuotaPanelProps {
   open: boolean;
   onClose: () => void;
+  quota: QuotaState;
 }
 
 function formatDuration(ms: number): string {
@@ -31,8 +32,8 @@ const STATUS_STYLES: Record<string, { color: string; label: string }> = {
   window_expired: { color: "var(--warning, #eab308)", label: "WINDOW EXPIRED" },
 };
 
-export function QuotaPanel({ open, onClose }: QuotaPanelProps) {
-  const { status, loading, prefire, reset, updateConfig, refresh } = useQuota();
+export function QuotaPanel({ open, onClose, quota }: QuotaPanelProps) {
+  const { status, loading, prefire, reset, updateConfig, refresh } = quota;
   const [prefireTime, setPrefireTime] = useState("");
   const [prefireResult, setPrefireResult] = useState<Array<{ time: string; event: string }> | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -242,7 +243,7 @@ export function QuotaPanel({ open, onClose }: QuotaPanelProps) {
             )}
 
             <button
-              onClick={refresh as unknown as () => void}
+              onClick={refresh}
               style={{
                 background: "transparent",
                 border: "none",

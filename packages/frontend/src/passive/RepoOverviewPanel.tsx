@@ -1,5 +1,6 @@
 import { useRef, useEffect } from "react";
 import { staggerEntrance } from "../animations/stagger";
+import { MutationPanel } from "../active/MutationPanel";
 import type { BumblebeeFinding, BumblebeeScanResult } from "@aurex/shared";
 import type { CodeSummaryResponse, CodeHotspotsResponse, RepoSuggestion, SuggestionTier, SuggestionCategory, RepoReadinessProfile } from "../api";
 
@@ -40,7 +41,7 @@ const categoryIcons: Record<SuggestionCategory, string> = {
   style: "✨",
 };
 
-export function RepoOverviewPanel({ fullName, summary, hotspots, suggestions, readiness, packageScan, packageFindings, loading, onStartMission }: RepoOverviewPanelProps) {
+export function RepoOverviewPanel({ repoName, fullName, summary, hotspots, suggestions, readiness, packageScan, packageFindings, loading, onStartMission }: RepoOverviewPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -325,6 +326,11 @@ export function RepoOverviewPanel({ fullName, summary, hotspots, suggestions, re
           </div>
         </div>
       )}
+
+      {/* Mutation testing */}
+      <div className="overview-section" style={{ opacity: 0, marginBottom: "16px" }}>
+        <MutationPanel repoName={repoName} />
+      </div>
 
     </div>
   );

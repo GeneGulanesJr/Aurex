@@ -20,9 +20,23 @@ export async function checkpointRoutes(
 
   app.post("/api/missions/:id/checkpoints", async (request, reply) => {
     const body = request.body as CheckpointBody;
+    const missionId = (request.params as { id: string }).id;
 
     if (!body.checkpointId || !body.decision) {
       return reply.status(400).send({ error: "checkpointId and decision are required" });
+    }
+
+    // Verify the checkpoint exists and belongs to the mission in the path.
+    // Without this, the :id path param is decorative and any valid
+    // checkpointId can be resolved regardless of which mission owns it.
+    let checkpoint;
+    try {
+      checkpoint = await lapis.getCheckpoint(body.checkpointId);
+    } catch {
+      return reply.status(404).send({ error: "checkpoint not found" });
+    }
+    if (checkpoint.missionId !== missionId) {
+      return reply.status(404).send({ error: "checkpoint does not belong to this mission" });
     }
 
     // Dedup check

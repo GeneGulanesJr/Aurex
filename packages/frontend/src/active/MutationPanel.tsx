@@ -1,19 +1,32 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { MutationReportSummary, MutationRunStatus } from "@aurex/shared";
-import { runMutationTests, getMutationRunStatus } from "../api";
+import { runMutationTests, getMutationRunStatus, getMutationSummary } from "../api";
 import { scoreBand, bandColorVar } from "./mutation-score";
 
 interface Props {
   repoName: string;
-  summary: MutationReportSummary;
 }
 
-export function MutationPanel({ repoName, summary }: Props) {
+export function MutationPanel({ repoName }: Props) {
+  const [summary, setSummary] = useState<MutationReportSummary | null>(null);
+  const [summaryError, setSummaryError] = useState(false);
   const [runStatus, setRunStatus] = useState<MutationRunStatus>({ state: "idle" });
-  const band = scoreBand(summary.score);
 
   // Keep the poll handle in a ref so we can clean it up on unmount.
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Load the latest mutation summary for this repo on mount (and when the
+  // repo changes). Previously this was a required prop that no caller ever
+  // supplied, so the panel was effectively unreachable — wire it here so the
+  // component is self-contained.
+  useEffect(() => {
+    let cancelled = false;
+    setSummaryError(false);
+    getMutationSummary(repoName)
+      .then((s) => { if (!cancelled) setSummary(s); })
+      .catch(() => { if (!cancelled) setSummaryError(true); });
+    return () => { cancelled = true; };
+  }, [repoName]);
 
   useEffect(() => {
     return () => {
@@ -31,6 +44,9 @@ export function MutationPanel({ repoName, summary }: Props) {
         try {
           const status = await getMutationRunStatus(repoName, runId);
           setRunStatus(status);
+          if (status.state === "completed" && status.summary) {
+            setSummary(status.summary);
+          }
           if (status.state === "completed" || status.state === "failed") {
             if (pollRef.current) clearInterval(pollRef.current);
           }
@@ -48,7 +64,23 @@ export function MutationPanel({ repoName, summary }: Props) {
     }
   }, [repoName]);
 
-  if (!summary.strykerConfigured) {
+  if (summaryError) {
+    return (
+      <div data-testid="mutation-panel" className="rounded-md border border-border bg-bg-surface p-3">
+        <div className="flex items-center gap-2">
+          <span className="h-1.5 w-1.5 rounded-full bg-text-muted" />
+          <span className="font-mono text-[10px] uppercase tracking-[2px] text-text-secondary">
+            Mutation Testing
+          </span>
+        </div>
+        <p className="mt-2 text-[13px] text-text-muted">
+          Could not load mutation data for this repo.
+        </p>
+      </div>
+    );
+  }
+
+  if (summary && !summary.strykerConfigured) {
     return (
       <div data-testid="mutation-panel" className="rounded-md border border-border bg-bg-surface p-3">
         <div className="flex items-center gap-2">
@@ -63,6 +95,22 @@ export function MutationPanel({ repoName, summary }: Props) {
       </div>
     );
   }
+
+  if (!summary) {
+    return (
+      <div data-testid="mutation-panel" className="rounded-md border border-border bg-bg-surface p-3">
+        <div className="flex items-center gap-2">
+          <span className="h-1.5 w-1.5 rounded-full bg-text-muted" />
+          <span className="font-mono text-[10px] uppercase tracking-[2px] text-text-secondary">
+            Mutation Testing
+          </span>
+        </div>
+        <p className="mt-2 text-[13px] text-text-muted">Loading mutation data…</p>
+      </div>
+    );
+  }
+
+  const band = scoreBand(summary.score);
 
   return (
     <div data-testid="mutation-panel" className="rounded-md border border-border bg-bg-surface p-3">

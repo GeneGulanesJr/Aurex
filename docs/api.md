@@ -4,7 +4,7 @@
 
 - **Base URL (default):** `http://localhost:3000`
 - **WebSocket URL:** `ws://localhost:3000/ws`
-- **Auth:** If `API_KEY` is set in the backend environment, the API key must be sent as `Authorization: Bearer <key>` on REST requests and as a `auth` message on the WebSocket.
+- **Auth:** Auth0 JWT verification via the `jose` library (configured with `AUTH0_DOMAIN` and `AUTH0_AUDIENCE` env vars). REST requests must send `Authorization: Bearer <jwt>`; the WebSocket must send a `{ "type": "auth", "token": "<jwt>" }` message after connecting. Set `AUTH_DISABLED=true` to disable verification (local dev only). `/health`, `/api/github/callback`, and `/ws*` are exempt from auth.
 - **Content type:** `application/json` for request and response bodies.
 - **Error envelope:** `{ "error": "<message>" }` for REST errors. Some endpoints add a typed discriminator (e.g. `{ "error": "quota_exhausted", "providerId": "...", "remainingMs": ..., "windowResetsAt": "..." }`).
 
@@ -25,8 +25,19 @@ For shared request/response shapes see [`packages/shared/src/rest.ts`](../packag
 | **Mutation testing**         | [`GET /api/repos/:repoName/mutation`](#get-apireposreponamemutation), [`POST /api/repos/:repoName/mutation/run`](#post-apireposreponamemutationrun), [`GET /api/repos/:repoName/mutation/:runId`](#get-apireposreponamemutationrunid)                                                                                                                                                                                                                                                                                                                                                |
 | **Repo Explore**             | [`POST /api/repos/:repoName/explore`](#post-apireposreponameexplore), [`GET /api/repos/:repoName/summary`](#get-apireposreponamesummary), [`GET /api/repos/:repoName/hotspots`](#get-apireposreponamehotspots), [`GET /api/repos/:repoName/readiness`](#get-apireposreponamereadiness), [`POST /api/repos/:repoName/scans`](#post-apireposreponamescans), [`GET /api/repos/:repoName/scans`](#get-apireposreponamescans-1), [`GET /api/repos/:repoName/scans/:scanId`](#get-apireposreponamescansscanid), [`GET /api/repos/:repoName/suggestions`](#get-apireposreponamesuggestions) |
 | **Bumblebee (supply chain)** | [`GET /api/bumblebee/status`](#get-apibumblebeestatus), [`GET /api/bumblebee/catalog`](#get-apibumblebeecatalog), [`POST /api/bumblebee/catalog`](#post-apibumblebeecatalog), [`POST /api/missions/:missionId/scans`](#post-apimissionsmissionidscans), [`GET /api/missions/:missionId/scans`](#get-apimissionsmissionidscans), [`GET /api/missions/:missionId/scans/:scanId`](#get-apimissionsmissionidscansscanid)                                                                                                                                                                 |
-| **Durable Execution**        | [`POST /api/agent-sessions/prepare`](#post-apiagent-sessionsprepare), [`POST /api/agent-sessionssessionidstart`](#post-apiagent-sessionssessionidstart), [`GET /api/execution-queue`](#get-apiexecution-queue), [`POST /api/execution-queue/reconcile`](#post-apiexecution-queuereconcile)                                                                                                                                                                                                                                                                                           |
+| **Durable Execution**        | [`POST /api/agent-sessions/prepare`](#post-apiagent-sessionsprepare), [`POST /api/agent-sessions/:sessionId/start`](#post-apiagent-sessionssessionidstart), [`GET /api/execution-queue`](#get-apiexecution-queue), [`POST /api/execution-queue/reconcile`](#post-apiexecution-queuereconcile)                                                                                                                                                                                                                                                                                           |
 | **WebSocket**                | [`/ws`](#websocket-ws)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+
+---
+
+## Health
+
+### `GET /health`
+
+Liveness + reachability check (auth-exempt). Probes LaPis (`ping`) and PiNyx (config endpoint `/v1/models`).
+
+- **Response (200):** `{ "status": "ok" | "degraded", "lapis": boolean, "pinyx": boolean }` — `ok` only when both dependencies are reachable; `degraded` otherwise.
+- **Source:** `packages/backend/src/server.ts:136`
 
 ---
 
@@ -40,7 +51,7 @@ Start a new mission.
 - **Quota preflight:** if `quota_config` is enabled in LaPis, this checks each tracked provider's current window and returns `429 quota_exhausted` if any are out of budget.
 - **Side effect:** resolves the default model from PiNyx's `/v1/models` (or falls back to `kilo/kilo-auto/free`), creates the mission in LaPis, and submits it to the in-process mission runner pool.
 - **Response (201):** `{ "missionId": string, "status": string }`
-- **Source:** `packages/backend/src/routes/missions.ts:59`
+- **Source:** `packages/backend/src/routes/missions.ts:107`
 
 ### `GET /api/missions/active`
 
@@ -48,7 +59,7 @@ List running missions, optionally with recently completed/failed missions append
 
 - **Query:** `?includeHistory=N` — number of recent terminal missions to append (0–50, default 10; `0` = pool only).
 - **Response:** `{ "missions": PoolMissionStatus[] }` (pool entries, then completed/failed history from LaPis, newest first, deduped against the pool)
-- **Source:** `packages/backend/src/routes/missions.ts:125`
+- **Source:** `packages/backend/src/routes/missions.ts:182`
 
 ### `GET /api/missions/current`
 
@@ -56,7 +67,7 @@ Get the currently focused mission. Picks the first in-flight mission in the pool
 
 - **Response:** the hydrated payload (see `GET /api/missions/:id`).
 - **Errors:** `404` if no active mission or the focused mission can't be found in LaPis.
-- **Source:** `packages/backend/src/routes/missions.ts:111`
+- **Source:** `packages/backend/src/routes/missions.ts:168`
 
 ### `GET /api/missions/:id`
 
@@ -64,7 +75,7 @@ Get a hydrated mission payload: mission, milestones, active (non-terminal) worke
 
 - **Response:** `{ "mission": Mission, "milestones": Milestone[], "activeWorkers": WorkingUnit[], "cost": { "totalCost": number, "totalTokens": number, "entries": number } }`
 - **Errors:** `404` if not found.
-- **Source:** `packages/backend/src/routes/missions.ts:193`
+- **Source:** `packages/backend/src/routes/missions.ts:258`
 
 ### `GET /api/missions/:id/agent-logs`
 
@@ -72,7 +83,7 @@ Stream of agent lifecycle log entries for a mission. Requires the backend to hav
 
 - **Response:** `{ "logs": Array<{ sessionId, agentType, missionId, milestoneId, unitId, event, message, timestamp, data? }> }`
 - **Errors:** `503` if the agent logger is not available; `404` if the mission is not found.
-- **Source:** `packages/backend/src/routes/missions.ts:202`
+- **Source:** `packages/backend/src/routes/missions.ts:267`
 
 ### `POST /api/missions/:id/abort`
 
@@ -80,7 +91,7 @@ Abort a running mission.
 
 - **Response:** `{ "aborted": true }`
 - **Errors:** `404` if the mission is not in the runner pool.
-- **Source:** `packages/backend/src/routes/missions.ts:160`
+- **Source:** `packages/backend/src/routes/missions.ts:217`
 
 ### `POST /api/missions/:id/restart`
 
@@ -88,7 +99,7 @@ Restart a completed, failed, or aborted mission. Resets status to `planning` and
 
 - **Response:** `{ "restarted": true, "missionId": string, "status": "planning" }`
 - **Errors:** `409` if the mission is currently active in the pool, or if its LaPis status is not in `["failed", "aborted", "completed"]`. `404` if not found.
-- **Source:** `packages/backend/src/routes/missions.ts:170`
+- **Source:** `packages/backend/src/routes/missions.ts:227`
 
 ---
 
@@ -98,8 +109,11 @@ Restart a completed, failed, or aborted mission. Resets status to `planning` and
 
 Submit a human decision on an open checkpoint (e.g. approve the latest attempt, re-scope, or abort).
 
-- **Body:** the checkpoint-decision shape from `@aurex/shared` (see [`packages/shared/src/types.ts`](../packages/shared/src/types.ts)).
-- **Response:** the resolved checkpoint result.
+- **Body:** `{ "checkpointId": string, "decision": CheckpointDecision, "guidance"?: string, "reason"?: string, "rescopeGuidance"?: string }` (`CheckpointDecision` from `@aurex/shared`).
+- **Ownership:** the checkpoint must belong to the mission in the `:id` path param; a mismatch returns `404`.
+- **Dedup:** re-submitting the same `checkpointId` returns `{ "accepted": true, "duplicate": true }` without re-resolving.
+- **Response (200):** `{ "accepted": true }` (or `{ "accepted": true, "duplicate": true }`).
+- **Errors:** `400` if `checkpointId`/`decision` are missing; `404` if the checkpoint is missing or owned by a different mission.
 - **Source:** `packages/backend/src/routes/checkpoints.ts:21`
 
 ---
@@ -220,7 +234,7 @@ Latest mutation score for the repo (or 404 if no run yet).
 
 ### `POST /api/repos/:repoName/mutation/run`
 
-Kick off a Stryker run against the repo. Returns immediately; the run is observable via `GET /api/repos/:repoName/mutation/run/:runId`.
+Kick off a Stryker run against the repo. Returns immediately; the run is observable via `GET /api/repos/:repoName/mutation/:runId`.
 
 ### `GET /api/repos/:repoName/mutation/:runId`
 
