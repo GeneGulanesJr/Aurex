@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { getQuotaStatus, prefireQuota, resetQuota, updateQuotaConfig } from "../api";
-import type { QuotaStatusResponse, PrefireRequest, QuotaConfigUpdateRequest } from "@aurex/shared";
+import type { QuotaStatusResponse, PrefireRequest, QuotaConfigUpdateRequest, WsClientEvent } from "@aurex/shared";
 
 const POLL_INTERVAL = 30_000;
 
@@ -13,11 +13,14 @@ export interface QuotaState {
   refresh: () => void;
 }
 
-export function useQuota(wsUrl?: string): QuotaState {
+interface UseQuotaDeps {
+  /** Registers a handler that receives events from the shared WebSocket stream. */
+  onWsEvent: (handler: (event: WsClientEvent) => void) => void;
+}
+
+export function useQuota({ onWsEvent }: UseQuotaDeps): QuotaState {
   const [quotaStatus, setQuotaStatus] = useState<QuotaStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
-  const wsRef = useRef<WebSocket | null>(null);
 
   const refresh = useCallback(() => {
     getQuotaStatus()
@@ -27,34 +30,21 @@ export function useQuota(wsUrl?: string): QuotaState {
 
   useEffect(() => {
     refresh();
-    intervalRef.current = setInterval(refresh, POLL_INTERVAL);
+    const interval = setInterval(refresh, POLL_INTERVAL);
+    return () => clearInterval(interval);
+  }, [refresh]);
 
-    if (wsUrl) {
-      try {
-        const ws = new WebSocket(wsUrl);
-        ws.onmessage = (event) => {
-          try {
-            const msg = JSON.parse(event.data);
-            if (msg.event?.type === "quota_update" || msg.event?.type === "quota_exhausted") {
-              refresh();
-            }
-          } catch { /* ignore non-JSON messages */ }
-        };
-        ws.onerror = () => { /* ws connection failed, polling continues */ };
-        wsRef.current = ws;
-
-        return () => {
-          if (intervalRef.current) clearInterval(intervalRef.current);
-          ws.close();
-          wsRef.current = null;
-        };
-      } catch { /* WebSocket construction failed, polling continues */ }
-    }
-
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [refresh, wsUrl]);
+  // Subscribe to the shared WebSocket stream so the quota UI reflects
+  // quota_update / quota_exhausted events in real time instead of waiting up
+  // to POLL_INTERVAL. Previously this hook opened its own (never-supplied)
+  // WebSocket; it now rides the single shared connection owned by useWebSocket.
+  useEffect(() => {
+    onWsEvent((event: WsClientEvent) => {
+      if (event.type === "quota_update" || event.type === "quota_exhausted") {
+        refresh();
+      }
+    });
+  }, [onWsEvent, refresh]);
 
   const prefire = useCallback(async (opts?: PrefireRequest & { providerId?: string }) => {
     await prefireQuota(opts);

@@ -72,7 +72,13 @@ export function App() {
   const { state: missionsState, selectMission, removeMission, addOptimisticMission, markMissionRestarted, handleWsEvent: missionsWsHandler } = useMissions();
   const { state, dispatch, handleWsEvent: missionWsHandler } = useMission(missionsState.selectedMissionId);
   const { state: supplyChainState, triggerScan: triggerSupplyChainScan, handleWsEvent: supplyChainWsHandler } = useSupplyChain(missionsState.selectedMissionId);
-  const { status: quotaStatus } = useQuota();
+  const quotaWsHandlerRef = useRef<((event: WsClientEvent) => void) | null>(null);
+  const quota = useQuota({
+    onWsEvent: useCallback((handler: (event: WsClientEvent) => void) => {
+      quotaWsHandlerRef.current = handler;
+    }, []),
+  });
+  const quotaStatus = quota.status;
   const eventsRef = useRef<WsClientEvent[]>([]);
 
   const bp = useBreakpoint();
@@ -112,6 +118,7 @@ export function App() {
       setLatestNotifEvent(event);
     }
     if (updateWsHandlerRef.current) updateWsHandlerRef.current(event);
+    if (quotaWsHandlerRef.current) quotaWsHandlerRef.current(event);
   }, [missionsWsHandler, missionWsHandler, supplyChainWsHandler]);
 
   const updateStatus = useUpdateStatus({
@@ -372,7 +379,7 @@ export function App() {
         </>
       )}
       <IntegrationsPanel open={integrationsOpen} github={github} onClose={() => setIntegrationsOpen(false)} onPinyxConfigUpdate={() => void pinyxStatus.refresh()} initialPinyxTab={restoredPinyxTab ?? undefined} />
-      <QuotaPanel open={quotaOpen} onClose={() => setQuotaOpen(false)} />
+      <QuotaPanel open={quotaOpen} onClose={() => setQuotaOpen(false)} quota={quota} />
       <SettingsPanel
         open={settingsOpen}
         settings={settings}
