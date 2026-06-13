@@ -69,7 +69,21 @@ export function registerGlobalAuth(
   app: FastifyInstance,
   auth0Domain: string,
   auth0Audience: string,
+  authDisabled = false,
 ): void {
+  if (authDisabled) {
+    // Skip auth — attach a stub user so downstream code doesn't break
+    app.addHook("onRequest", async (request) => {
+      if (!shouldSkip(request.url)) {
+        (request as any).user = {
+          sub: "local-dev",
+          email: "dev@aurex.local",
+          name: "Dev User",
+        };
+      }
+    });
+    return;
+  }
   const authHook = createAuthHook(auth0Domain, auth0Audience);
   app.addHook("onRequest", authHook);
 }

@@ -199,11 +199,14 @@ export function App() {
   const handleRetryMission = useCallback(async () => {
     if (!state.mission) return;
     try {
-      const { missionId } = await restartMission(state.mission.id);
+      const missionId = state.mission.id;
+      dispatch({ type: "RESET" });
+      const { missionId: restartedId } = await restartMission(missionId);
       dispatch({ type: "CLEAR_ERRORS" });
-      selectMission(missionId);
+      markMissionRestarted(missionId);
+      selectMission(restartedId);
     } catch {}
-  }, [state.mission, dispatch, selectMission]);
+  }, [state.mission, dispatch, selectMission, markMissionRestarted]);
 
   // Keyboard shortcuts
   const { helpOpen, setHelpOpen } = useKeyboardShortcuts({

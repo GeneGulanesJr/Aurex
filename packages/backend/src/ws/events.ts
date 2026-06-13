@@ -72,6 +72,7 @@ export function createEventBus(): EventBus {
 export interface WsAuthConfig {
   auth0Domain: string;
   auth0Audience: string;
+  authDisabled?: boolean;
 }
 
 export function registerWebSocketRoutes(
@@ -80,16 +81,28 @@ export function registerWebSocketRoutes(
   authConfig: WsAuthConfig,
 ): void {
   app.get("/ws", { websocket: true }, (socket) => {
-    let authenticated = false;
+    let authenticated = authConfig.authDisabled ? true : false;
     const subscribedMissions = new Set<string>();
 
-    const pendingAuthTimeout = setTimeout(() => {
-      if (!authenticated && socket.readyState === socket.OPEN) {
-        socket.close(4001, "Auth timeout");
-      }
-    }, 10000);
+    const pendingAuthTimeout = authConfig.authDisabled
+      ? undefined
+      : setTimeout(() => {
+          if (!authenticated && socket.readyState === socket.OPEN) {
+            socket.close(4001, "Auth timeout");
+          }
+        }, 10000);
 
     let unsubscribe: (() => void) | null = null;
+
+    // When auth is disabled, immediately send auth_ok and wire up
+    if (authConfig.authDisabled) {
+      setImmediate(() => {
+        if (socket.readyState === socket.OPEN) {
+          socket.send(JSON.stringify({ type: "auth_ok" }));
+          wireUp();
+        }
+      });
+    }
 
     const messageHandler = async (raw: Buffer) => {
       try {

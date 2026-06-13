@@ -62,11 +62,12 @@ const defaultMissionConfig: Omit<MissionConfig, "modelHints"> = {
 
 export async function missionRoutes(
   app: FastifyInstance,
-  { lapis, pool, agentLogger, missionConfig = defaultMissionConfig }: {
+  { lapis, pool, agentLogger, missionConfig = defaultMissionConfig, eventBus }: {
     lapis: LaPisClient;
     pool: MissionRunnerPool;
     agentLogger?: AgentLogger;
     missionConfig?: typeof defaultMissionConfig;
+    eventBus?: { emit: (event: any) => void };
   },
 ) {
   async function hydrateMissionPayload(missionId: string) {
@@ -243,6 +244,14 @@ export async function missionRoutes(
 
     await lapis.updateMissionStatus(id, "planning");
     pool.submit(id);
+
+    // Notify frontend that mission status changed
+    eventBus?.emit({
+      type: "mission_status",
+      missionId: id,
+      status: "planning",
+    });
+
     return { restarted: true, missionId: id, status: "planning" };
   });
 

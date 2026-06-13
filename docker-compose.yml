@@ -66,6 +66,7 @@ services:
       REPO_ROOT: /workspace
       AUREX_ROOT: /aurex
       GIT_MAIN_BRANCH: main
+      AUTH_DISABLED: ${AUTH_DISABLED:-false}
       AUTH0_DOMAIN: ${AUTH0_DOMAIN:-}
       AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
@@ -99,6 +100,7 @@ services:
       context: .
       dockerfile: packages/frontend/Dockerfile
       args:
+        VITE_AUTH_DISABLED: ${VITE_AUTH_DISABLED:-false}
         VITE_AUTH0_DOMAIN: ${VITE_AUTH0_DOMAIN:-}
         VITE_AUTH0_CLIENT_ID: ${VITE_AUTH0_CLIENT_ID:-}
         VITE_AUTH0_AUDIENCE: ${VITE_AUTH0_AUDIENCE:-}

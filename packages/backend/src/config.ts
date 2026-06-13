@@ -22,6 +22,7 @@ export interface AppConfig {
 
   port: number;
 
+  authDisabled: boolean;
   auth0Domain: string;
   auth0Audience: string;
 
@@ -87,8 +88,9 @@ export function loadConfig(): AppConfig {
     gitMainBranch: env("GIT_MAIN_BRANCH", "main"),
 
     port: envInt("PORT", 3000),
-    auth0Domain: env("AUTH0_DOMAIN"),
-    auth0Audience: env("AUTH0_AUDIENCE"),
+    authDisabled: process.env.AUTH_DISABLED === "true",
+    auth0Domain: env("AUTH0_DOMAIN", ""),
+    auth0Audience: env("AUTH0_AUDIENCE", ""),
     maxConcurrentMissions: envInt("MAX_CONCURRENT_MISSIONS", 3),
 
     quotaEnabled: process.env.QUOTA_ENABLED === "true",

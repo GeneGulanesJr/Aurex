@@ -124,11 +124,12 @@ async function main() {
   telemetry.registerFastifyMetrics(app);
   await app.register(websocket);
 
-  registerGlobalAuth(app, config.auth0Domain, config.auth0Audience);
+  registerGlobalAuth(app, config.auth0Domain, config.auth0Audience, config.authDisabled);
 
   registerWebSocketRoutes(app, eventBus, {
     auth0Domain: config.auth0Domain,
     auth0Audience: config.auth0Audience,
+    authDisabled: config.authDisabled,
   });
 
   // Health endpoint
@@ -164,6 +165,7 @@ async function main() {
     lapis,
     pool,
     agentLogger,
+    eventBus,
     missionConfig: {
       workerTimeouts: config.workerTimeouts,
       costCap: config.missionCostCap,

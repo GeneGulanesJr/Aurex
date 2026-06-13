@@ -279,6 +279,18 @@ IMPORTANT: Use the codebase structure below to ensure your declared paths and mo
         constraints: [],
         assumptions: [],
         humanQuestions: [],
+      }).catch(async (err) => {
+        // On restart, the ledger may already exist — update it instead
+        if (err instanceof Error && (err.message.includes("UNIQUE") || err.message.includes("already exists") || err.message.includes("duplicate"))) {
+          await lapis.updateMissionLedger(missionId, {
+            missionTitle: deriveMissionTitle(missionDescription),
+            status: "planning",
+            plannerSummary: summarizePlan(plan),
+            acceptanceCriteria: plan.flatMap((ms) => ms.criteria),
+          }).catch(() => {});
+        } else {
+          throw err;
+        }
       });
 
       // 4. Create milestones, units, contracts, and todo ledger items in LaPis
