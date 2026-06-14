@@ -48,6 +48,19 @@ vi.mock("@earendil-works/pi-coding-agent", () => {
 
 vi.mock("node:child_process", () => ({ exec: vi.fn(), execFile: vi.fn() }));
 vi.mock("node:util", () => ({ promisify: () => vi.fn().mockResolvedValue({ stdout: "", stderr: "" }) }));
+
+// Mock repo-prep so tests don't touch the filesystem. The hardened
+// prepareRepoForMission throws when parentRepoRoot lacks a .git dir and
+// no cloneUrl is given (Docker workspace fix); tests use a fake repoRoot,
+// so we short-circuit to the "already a git repo" branch.
+vi.mock("../src/orchestrator/repo-prep.js", () => ({
+  prepareRepoForMission: vi.fn().mockResolvedValue({
+    repoPath: "/test/repo",
+    repoStatus: "updated",
+  }),
+  repoDirNameFromCloneUrl: vi.fn(),
+  normalizeGitHubCloneUrl: vi.fn(),
+}));
 vi.mock("../src/clients/pinyx-client.js", () => ({
   createPinyxClient: vi.fn().mockReturnValue({
     chat: vi.fn().mockResolvedValue({

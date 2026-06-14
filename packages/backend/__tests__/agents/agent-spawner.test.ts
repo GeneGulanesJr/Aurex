@@ -788,6 +788,153 @@ describe("AgentSpawner", () => {
       expect(costEntries).toHaveLength(0);
       warnSpy.mockRestore();
     });
+
+    it("does NOT warn for numeric cost", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const lapis = createMockLapis();
+      const logger = createAgentLogger();
+      const spawner = createAgentSpawner({
+        lapis,
+        agentDir: "/home/user/.pi/agent",
+        defaultTimeout: 120_000,
+        logger,
+      });
+
+      let eventSubscriber: (event: any) => void = () => {};
+      mockSession.subscribe.mockImplementation((fn: any) => {
+        eventSubscriber = fn;
+        return () => {};
+      });
+      mockSession.prompt.mockImplementation(async () => {
+        eventSubscriber({
+          type: "message_update",
+          assistantMessageEvent: {
+            usage: { cost: 0, promptTokens: 100, completionTokens: 50, totalTokens: 150 },
+          },
+        });
+        eventSubscriber({ type: "agent_end" });
+      });
+
+      const handle = await spawner.spawn(baseSpawnOpts);
+      await handle.completed;
+
+      expect(warnSpy).not.toHaveBeenCalled();
+      // Numeric cost of 0 with tokens present still logs (estimate path).
+      const costEntries = logger.getEntries({ event: "cost_update" });
+      expect(costEntries).toHaveLength(1);
+      warnSpy.mockRestore();
+    });
+
+    it("does NOT warn for { total } cost shape", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const lapis = createMockLapis();
+      const logger = createAgentLogger();
+      const spawner = createAgentSpawner({
+        lapis,
+        agentDir: "/home/user/.pi/agent",
+        defaultTimeout: 120_000,
+        logger,
+      });
+
+      let eventSubscriber: (event: any) => void = () => {};
+      mockSession.subscribe.mockImplementation((fn: any) => {
+        eventSubscriber = fn;
+        return () => {};
+      });
+      mockSession.prompt.mockImplementation(async () => {
+        eventSubscriber({
+          type: "message_update",
+          assistantMessageEvent: {
+            usage: { cost: { total: 0.07 }, promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+          },
+        });
+        eventSubscriber({ type: "agent_end" });
+      });
+
+      const handle = await spawner.spawn(baseSpawnOpts);
+      await handle.completed;
+
+      expect(warnSpy).not.toHaveBeenCalled();
+      const costEntries = logger.getEntries({ event: "cost_update" });
+      expect(costEntries[0].data?.cost).toBe(0.07);
+      warnSpy.mockRestore();
+    });
+
+    it("does NOT warn when cost field is absent", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const lapis = createMockLapis();
+      const logger = createAgentLogger();
+      const spawner = createAgentSpawner({
+        lapis,
+        agentDir: "/home/user/.pi/agent",
+        defaultTimeout: 120_000,
+        logger,
+      });
+
+      let eventSubscriber: (event: any) => void = () => {};
+      mockSession.subscribe.mockImplementation((fn: any) => {
+        eventSubscriber = fn;
+        return () => {};
+      });
+      mockSession.prompt.mockImplementation(async () => {
+        eventSubscriber({
+          type: "message_update",
+          assistantMessageEvent: {
+            // No cost field at all; tokens present so estimate path runs.
+            usage: { promptTokens: 100, completionTokens: 0, totalTokens: 100 },
+          },
+        });
+        eventSubscriber({ type: "agent_end" });
+      });
+
+      const handle = await spawner.spawn(baseSpawnOpts);
+      await handle.completed;
+
+      expect(warnSpy).not.toHaveBeenCalled();
+      // Tokens present → estimate path → cost_update logged.
+      const costEntries = logger.getEntries({ event: "cost_update" });
+      expect(costEntries).toHaveLength(1);
+      warnSpy.mockRestore();
+    });
+
+    it("warns for non-numeric cost object without total", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const lapis = createMockLapis();
+      const logger = createAgentLogger();
+      const spawner = createAgentSpawner({
+        lapis,
+        agentDir: "/home/user/.pi/agent",
+        defaultTimeout: 120_000,
+        logger,
+      });
+
+      let eventSubscriber: (event: any) => void = () => {};
+      mockSession.subscribe.mockImplementation((fn: any) => {
+        eventSubscriber = fn;
+        return () => {};
+      });
+      mockSession.prompt.mockImplementation(async () => {
+        eventSubscriber({
+          type: "message_update",
+          assistantMessageEvent: {
+            usage: { cost: { weird: "shape" } },
+          },
+        });
+        eventSubscriber({ type: "agent_end" });
+      });
+
+      const handle = await spawner.spawn(baseSpawnOpts);
+      await handle.completed;
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[spawner] Unexpected usage.cost shape:",
+        { weird: "shape" },
+      );
+      // No tokens → skip-guard suppresses the cost_update log.
+      const costEntries = logger.getEntries({ event: "cost_update" });
+      expect(costEntries).toHaveLength(0);
+      warnSpy.mockRestore();
+    });
   });
 
   describe("concurrency limit", () => {

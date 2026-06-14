@@ -67,6 +67,20 @@ export function loadConfig(): AppConfig {
     }
   }
 
+  // Auth0 credentials are required when auth is enabled. When
+  // AUTH_DISABLED=true (local dev), they default to empty strings so the
+  // app boots without an Auth0 tenant. Fail fast here rather than at the
+  // first authenticated request (where empty values produce opaque
+  // `new URL()` errors inside verifyJwt).
+  const authDisabled = process.env.AUTH_DISABLED === "true";
+  if (!authDisabled) {
+    for (const key of ["AUTH0_DOMAIN", "AUTH0_AUDIENCE"]) {
+      if (!process.env[key]) {
+        throw new Error(`Missing required env var: ${key}`);
+      }
+    }
+  }
+
   return {
     lapisEndpoint: env("LAPIS_ENDPOINT"),
 
@@ -88,7 +102,7 @@ export function loadConfig(): AppConfig {
     gitMainBranch: env("GIT_MAIN_BRANCH", "main"),
 
     port: envInt("PORT", 3000),
-    authDisabled: process.env.AUTH_DISABLED === "true",
+    authDisabled,
     auth0Domain: env("AUTH0_DOMAIN", ""),
     auth0Audience: env("AUTH0_AUDIENCE", ""),
     maxConcurrentMissions: envInt("MAX_CONCURRENT_MISSIONS", 3),

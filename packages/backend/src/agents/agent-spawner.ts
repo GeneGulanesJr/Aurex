@@ -460,6 +460,20 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
                 ? rawCost.total
                 : 0;
 
+            // Warn on unexpected cost shapes (e.g. provider returns the
+            // string "free" or an unstructured object) so mispriced models
+            // surface in logs. We still treat them as zero-cost below.
+            // Note: `delta === 0` is implied — a non-numeric rawCost with
+            // no numeric `.total` always yields delta 0 above.
+            const isUnexpectedCostShape =
+              rawCost !== undefined &&
+              typeof rawCost !== "number" &&
+              typeof rawCost?.total !== "number";
+            if (isUnexpectedCostShape) {
+              // eslint-disable-next-line no-console
+              console.warn("[spawner] Unexpected usage.cost shape:", rawCost);
+            }
+
             // If cost is 0 (model registered with no pricing), estimate from tokens.
             // MiniMax-M3: ~$0.10/M input, ~$0.30/M output (conservative defaults).
             if (delta === 0 && (promptTokens > 0 || completionTokens > 0)) {
@@ -467,12 +481,22 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
               delta = estimatedCost;
             }
 
+            // Nothing meaningful to record: zero cost delta AND zero
+            // tokens. Skip the cost_update log/onCost so malformed or
+            // empty provider payloads don't pollute cost tracking. The
+            // unexpected-shape warn above already surfaced bad shapes.
+            const hasNoCostOrTokens =
+              delta === 0 && promptTokens === 0 && completionTokens === 0;
+            if (hasNoCostOrTokens) {
+              return;
+            }
+
             // Always track tokens even if cost is 0
             const newCumulativeTokens = cumulativeTokens + promptTokens + completionTokens;
             cumulativeCost += delta;
             cumulativeTokens = newCumulativeTokens;
             missionCumulativeCost += delta;
-            missionCumulativeTokens = newCumulativeTokens;
+            missionCumulativeTokens += promptTokens + completionTokens;
 
             logger?.log({
               sessionId: session.sessionId,

@@ -32,6 +32,7 @@ describe("loadConfig", () => {
     delete process.env.QUOTA_BURN_HOURS;
     delete process.env.AUTH0_DOMAIN;
     delete process.env.AUTH0_AUDIENCE;
+    delete process.env.AUTH_DISABLED;
   });
 
   it("reads LAPIS_ENDPOINT", () => {
@@ -98,6 +99,16 @@ describe("loadConfig", () => {
     process.env.REPO_ROOT = "/tmp/test-repo";
     process.env.AUTH0_DOMAIN = "test.us.auth0.com";
     expect(() => loadConfig()).toThrow("AUTH0_AUDIENCE");
+  });
+
+  it("does not require AUTH0 fields when AUTH_DISABLED=true", () => {
+    process.env.LAPIS_ENDPOINT = "http://localhost:9100";
+    process.env.REPO_ROOT = "/tmp/test-repo";
+    process.env.AUTH_DISABLED = "true";
+    const config = loadConfig();
+    expect(config.authDisabled).toBe(true);
+    expect(config.auth0Domain).toBe("");
+    expect(config.auth0Audience).toBe("");
   });
 
   it("reads MISSION_COST_CAP as float", () => {
