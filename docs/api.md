@@ -346,10 +346,10 @@ Inspect a prepared session.
 
 ### `POST /api/agent-sessions/:sessionId/messages`
 
-Accept follow-up input for sessions that are `running` or `waiting_for_input`.
+Accept follow-up input for any non-terminal session. Messages are buffered on a shared bus and drained by the agent launcher when it attaches (for queued/starting sessions) or on its next drain cycle (for running/waiting sessions), so input reaches the live agent process.
 
 - **Body:** `{ "message": string }`
-- **Response:** `{ "accepted": boolean }`
+- **Response:** `{ "accepted": boolean, "queued": boolean }` — `accepted` and `queued` are `true` for non-terminal sessions; both `false` for terminal sessions.
 
 ### `POST /api/agent-sessions/:sessionId/cancel`
 
