@@ -23,7 +23,11 @@ import { registerUpdateRoutes } from "./routes/update.js";
 import { startTelemetry } from "./telemetry.js";
 import { createSettingsExecutionQueueStore } from "./queue/execution-queue-store.js";
 import { createSettingsPreparedSessionStore } from "./sessions/prepared-session-store.js";
-import { createPreparedSessionService, createPreparedSessionStartHandler } from "./sessions/prepared-session-service.js";
+import {
+  createPreparedSessionService,
+  createPreparedSessionStartHandler,
+  createSessionMessageBus,
+} from "./sessions/prepared-session-service.js";
 import { agentSessionRoutes } from "./routes/agent-sessions.js";
 import { executionQueueRoutes } from "./routes/execution-queue.js";
 import { createExecutionWorker } from "./queue/execution-worker.js";
@@ -39,9 +43,13 @@ async function main() {
   const agentLogger = createAgentLogger();
   const executionQueue = createSettingsExecutionQueueStore(lapis);
   const preparedSessions = createSettingsPreparedSessionStore(lapis);
+  // Single shared message bus so messages posted via the REST API reach the
+  // durable session launcher through LaunchAgentContext.drainMessages().
+  const sessionMessageBus = createSessionMessageBus();
   const preparedSessionService = createPreparedSessionService({
     sessions: preparedSessions,
     queue: executionQueue,
+    messages: sessionMessageBus,
   });
 
   // Startup healthcheck — LaPis is required
@@ -214,6 +222,7 @@ async function main() {
             agent_session_start: createPreparedSessionStartHandler({
               queue: executionQueue,
               sessions: preparedSessions,
+              messages: sessionMessageBus,
             }),
           },
         },

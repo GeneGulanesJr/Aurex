@@ -29,6 +29,17 @@ export interface AgentSessionMessageRequest {
   message: string;
 }
 
+export interface AgentSessionMessageResponse {
+  /** Whether the message was accepted for the session. */
+  accepted: boolean;
+  /**
+   * Whether the message was buffered for delivery to the agent. `true` when the
+   * session is non-terminal; the launcher drains buffered messages once it is
+   * running. `false` for terminal sessions.
+   */
+  queued: boolean;
+}
+
 export interface ReconcileExecutionQueueRequest {
   dryRun?: boolean;
 }
