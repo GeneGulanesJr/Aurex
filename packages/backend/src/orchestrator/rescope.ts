@@ -157,7 +157,12 @@ async function supersedeLatestContract(
   reason: string,
 ): Promise<void> {
   const history = await lapis.getContractHistory(milestoneId);
-  const latest = latestContract(history as ValidationContract[]);
+  // getContractHistory returns unknown[] (the interface is loosely typed because
+  // different LaPis versions may return extra fields). Filter to well-formed
+  // entries before processing — malformed ones are silently skipped so a
+  // partial API response can never crash the rescope.
+  const contracts = history.filter(isValidationContract);
+  const latest = latestContract(contracts);
   if (!latest || latest.supersededBy !== null) return;
 
   const carriedContent = latest.content;
@@ -174,9 +179,26 @@ async function supersedeLatestContract(
   );
 }
 
-function latestContract(history: ValidationContract[]): ValidationContract | undefined {
-  return history.reduce<ValidationContract | undefined>(
-    (acc, c) => (acc === undefined || c.version > acc.version ? c : acc),
-    undefined,
+/**
+ * Type guard: returns true only for objects that carry the fields
+ * supersedeLatestContract reads. Filters out malformed API entries.
+ */
+function isValidationContract(c: unknown): c is ValidationContract {
+  if (typeof c !== "object" || c === null) return false;
+  const obj = c as Record<string, unknown>;
+  return (
+    typeof obj["id"] === "string" &&
+    typeof obj["version"] === "number" &&
+    "supersededBy" in obj
   );
+}
+
+function latestContract(history: ValidationContract[]): ValidationContract | undefined {
+  return history.reduce<ValidationContract | undefined>((acc, c) => {
+    // Guard against malformed entries that slipped through (version must be
+    // a finite number so comparisons behave predictably).
+    const cVer = Number.isFinite(c.version) ? c.version : 0;
+    const accVer = acc !== undefined && Number.isFinite(acc.version) ? acc.version : -1;
+    return acc === undefined || cVer > accVer ? c : acc;
+  }, undefined);
 }
