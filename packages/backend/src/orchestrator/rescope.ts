@@ -1,7 +1,7 @@
 // packages/backend/src/orchestrator/rescope.ts
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { PinyxClient } from "../clients/pinyx-client.js";
-import type { Mission, ValidationVerdict, ResearchFinding } from "@aurex/shared";
+import type { Mission, ValidationVerdict, ResearchFinding, ValidationContract } from "@aurex/shared";
 
 export interface RescopeInput {
   pinyx: PinyxClient;
@@ -127,8 +127,56 @@ export async function rescopeMilestone(input: RescopeInput): Promise<RescopeResu
     return { ok: false, error: "invalid_plan", content: resp.content };
   }
 
+  // Enforce contract immutability on the rescope path, consistent with the
+  // planner (planner.ts): validation contracts are append-only, so a rescope
+  // that re-plans a milestone must retire the previous un-superseded contract
+  // via supersedeContract before the new units are created. Rescope re-plans
+  // *units*, not acceptance criteria, so the carried-over content is reused —
+  // the supersede exists to keep the contract audit trail/version chain intact
+  // (gap #8876). Best-effort: a LaPis hiccup must not abort an otherwise-valid
+  // rescope (the pre-fix behavior created units without superseding at all).
+  await supersedeLatestContract(lapis, milestone.id, milestone.title, input.reason).catch((err) => {
+    console.warn(`[rescope] Failed to supersede prior contract for milestone ${milestone.id}:`, err instanceof Error ? err.message : err);
+  });
+
   for (const unit of plan.units) {
     await lapis.createWorkingUnit(milestone.id, unit);
   }
   return { ok: true, units: plan.units };
+}
+
+/**
+ * Retire the latest un-superseded validation contract for a milestone by
+ * superseding it (carrying over its content). No-op when there is no
+ * un-superseded contract (e.g. empty history or already superseded).
+ */
+async function supersedeLatestContract(
+  lapis: LaPisClient,
+  milestoneId: string,
+  milestoneTitle: string,
+  reason: string,
+): Promise<void> {
+  const history = await lapis.getContractHistory(milestoneId);
+  const latest = latestContract(history as ValidationContract[]);
+  if (!latest || latest.supersededBy !== null) return;
+
+  const carriedContent = latest.content;
+  await lapis.supersedeContract(
+    latest.id,
+    { content: carriedContent },
+    {
+      milestoneId,
+      contractId: latest.id,
+      reason: `Rescope re-planning milestone ${milestoneTitle}: ${reason}`,
+      previousScope: JSON.stringify(carriedContent ?? {}),
+      newScope: JSON.stringify(carriedContent ?? {}),
+    },
+  );
+}
+
+function latestContract(history: ValidationContract[]): ValidationContract | undefined {
+  return history.reduce<ValidationContract | undefined>(
+    (acc, c) => (acc === undefined || c.version > acc.version ? c : acc),
+    undefined,
+  );
 }

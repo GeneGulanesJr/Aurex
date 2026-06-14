@@ -29,6 +29,8 @@ function makeMission(): Mission {
 function makeLapis(): LaPisClient {
   return {
     createWorkingUnit: vi.fn().mockResolvedValue({ id: "u-new", description: "Re-planned" }),
+    getContractHistory: vi.fn().mockResolvedValue([]),
+    supersedeContract: vi.fn().mockResolvedValue({ id: "c-new", version: 2, supersededBy: null }),
   } as unknown as LaPisClient;
 }
 
@@ -244,5 +246,83 @@ describe("rescopeMilestone", () => {
     const systemMessage = (pinyx.chat as any).mock.calls[0][0].messages.find((m: any) => m.role === "system").content;
     expect(systemMessage).toContain("WHY the previous plan failed");
     expect(systemMessage).toContain("Do NOT re-plan units that have already been successfully completed");
+  });
+
+  it("supersedes the latest un-superseded contract before creating new units (append-only invariant)", async () => {
+    const plan = JSON.stringify({
+      units: [{ description: "Fixed unit", declaredPaths: ["src/a.ts"], declaredModules: ["a"] }],
+    });
+    const pinyx = makePinyx(plan);
+    const lapis = makeLapis();
+    const carriedContent = { criteria: ["auth works"], testCommands: ["npm test"], acceptanceBehavior: "auth works" };
+    (lapis.getContractHistory as any).mockResolvedValue([
+      { id: "c-1", milestoneId: "ms-1", version: 1, content: carriedContent, supersedes: null, supersededBy: null, rescopeEventId: null, createdAt: "" },
+    ]);
+
+    await rescopeMilestone({
+      pinyx,
+      lapis,
+      mission: makeMission(),
+      milestone: { id: "ms-1", title: "Implement auth", description: "Add login + signup" },
+      model: "reasoning-strong",
+      reason: "scrutiny failed",
+    });
+
+    // Supersede happens before unit creation.
+    expect(lapis.supersedeContract).toHaveBeenCalledTimes(1);
+    expect(lapis.supersedeContract).toHaveBeenCalledWith(
+      "c-1",
+      { content: carriedContent },
+      expect.objectContaining({
+        milestoneId: "ms-1",
+        contractId: "c-1",
+        reason: expect.stringContaining("Rescope re-planning milestone Implement auth"),
+      }),
+    );
+    expect(lapis.createWorkingUnit).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not supersede when there is no un-superseded contract", async () => {
+    const plan = JSON.stringify({
+      units: [{ description: "Fixed unit", declaredPaths: ["src/a.ts"], declaredModules: ["a"] }],
+    });
+    const pinyx = makePinyx(plan);
+    const lapis = makeLapis();
+    (lapis.getContractHistory as any).mockResolvedValue([
+      { id: "c-1", milestoneId: "ms-1", version: 1, content: {}, supersedes: null, supersededBy: "c-2", rescopeEventId: null, createdAt: "" },
+    ]);
+
+    await rescopeMilestone({
+      pinyx,
+      lapis,
+      mission: makeMission(),
+      milestone: { id: "ms-1", title: "M", description: "D" },
+      model: "reasoning-strong",
+      reason: "x",
+    });
+
+    expect(lapis.supersedeContract).not.toHaveBeenCalled();
+    expect(lapis.createWorkingUnit).toHaveBeenCalledTimes(1);
+  });
+
+  it("still creates units when contract history fetch fails (non-regressing best-effort)", async () => {
+    const plan = JSON.stringify({
+      units: [{ description: "Fixed unit", declaredPaths: ["src/a.ts"], declaredModules: ["a"] }],
+    });
+    const pinyx = makePinyx(plan);
+    const lapis = makeLapis();
+    (lapis.getContractHistory as any).mockRejectedValue(new Error("LaPis down"));
+
+    const result = await rescopeMilestone({
+      pinyx,
+      lapis,
+      mission: makeMission(),
+      milestone: { id: "ms-1", title: "M", description: "D" },
+      model: "reasoning-strong",
+      reason: "x",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(lapis.createWorkingUnit).toHaveBeenCalledTimes(1);
   });
 });
