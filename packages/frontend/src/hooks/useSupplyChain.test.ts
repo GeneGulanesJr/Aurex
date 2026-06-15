@@ -2,10 +2,55 @@ import { describe, it, expect } from "vitest";
 import { supplyChainReducer, initialSupplyChainState } from "./useSupplyChain";
 
 describe("supplyChainReducer — scan state management", () => {
-  it("handles SCAN_STARTED — sets isScanning to true", () => {
+  it("handles SCAN_STARTED — sets isScanning true AND adds a running scan row", () => {
     const state = supplyChainReducer(initialSupplyChainState, { type: "SCAN_STARTED", scanId: "s1", profile: "project" });
     expect(state.isScanning).toBe(true);
     expect(state.error).toBeNull();
+    expect(state.scans).toHaveLength(1);
+    expect(state.scans[0]).toMatchObject({ id: "s1", status: "running", profile: "project" });
+  });
+
+  it("does not duplicate a scan row if SCAN_STARTED fires twice for the same id", () => {
+    let state = supplyChainReducer(initialSupplyChainState, { type: "SCAN_STARTED", scanId: "s1", profile: "project" });
+    state = supplyChainReducer(state, { type: "SCAN_STARTED", scanId: "s1", profile: "project" });
+    expect(state.scans.filter((s) => s.id === "s1")).toHaveLength(1);
+  });
+
+  it("completes a full live scan lifecycle without dropping it", () => {
+    const summary = { totalPackages: 1, totalFindings: 0, criticalCount: 0, highCount: 0, mediumCount: 0, lowCount: 0, ecosystems: ["npm"] };
+    let state = supplyChainReducer(initialSupplyChainState, { type: "SCAN_STARTED", scanId: "s1", profile: "project" });
+    state = supplyChainReducer(state, { type: "SCAN_COMPLETED", scanId: "s1", summary });
+    expect(state.scans.find((s) => s.id === "s1")?.status).toBe("completed");
+    expect(state.scans.find((s) => s.id === "s1")?.summary).toEqual(summary);
+    expect(state.isScanning).toBe(false);
+    expect(state.latestSummary).toEqual(summary);
+  });
+
+  it("keeps isScanning true while at least one scan is still running", () => {
+    let state = supplyChainReducer(initialSupplyChainState, { type: "SCAN_STARTED", scanId: "s1", profile: "project" });
+    state = supplyChainReducer(state, { type: "SCAN_STARTED", scanId: "s2", profile: "deep" });
+    expect(state.scans).toHaveLength(2);
+    const summary = { totalPackages: 1, totalFindings: 0, criticalCount: 0, highCount: 0, mediumCount: 0, lowCount: 0, ecosystems: [] };
+    state = supplyChainReducer(state, { type: "SCAN_COMPLETED", scanId: "s1", summary });
+    expect(state.isScanning).toBe(true);
+    state = supplyChainReducer(state, { type: "SCAN_COMPLETED", scanId: "s2", summary });
+    expect(state.isScanning).toBe(false);
+  });
+
+  it("caps accumulated findings at 200 and clears them when a new scan starts", () => {
+    const makeFinding = (i: number) => ({
+      id: `f${i}`, scanId: "s1", missionId: "m1", findingType: "package_exposure",
+      severity: "low" as const, catalogId: "c", catalogName: "n", ecosystem: "npm",
+      packageName: "p", normalizedName: "p", version: "1", sourceType: "lockfile",
+      sourceFile: "/f", confidence: "high" as const, evidence: "e",
+    });
+    let state = { ...initialSupplyChainState, isScanning: true, scans: [{ id: "s1", status: "running" }] } as any;
+    for (let i = 0; i < 250; i++) {
+      state = supplyChainReducer(state, { type: "SCAN_FINDING", finding: makeFinding(i) });
+    }
+    expect(state.findings).toHaveLength(200);
+    state = supplyChainReducer(state, { type: "SCAN_STARTED", scanId: "s2", profile: "baseline" });
+    expect(state.findings).toHaveLength(0);
   });
 
   it("handles SCAN_COMPLETED — sets isScanning to false and stores summary", () => {

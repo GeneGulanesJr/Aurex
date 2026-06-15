@@ -7,18 +7,32 @@ interface Props {
   repoName: string;
 }
 
+const sectionStyle: React.CSSProperties = {
+  background: "var(--bg-surface)",
+  border: "1px solid var(--border)",
+  borderRadius: "6px",
+  padding: "12px",
+};
+
+const headerLabelStyle: React.CSSProperties = {
+  fontFamily: '"JetBrains Mono", monospace',
+  fontSize: "10px",
+  letterSpacing: "2px",
+  textTransform: "uppercase",
+  color: "var(--text-secondary)",
+};
+
+const mutedTextStyle: React.CSSProperties = {
+  fontSize: "13px",
+  color: "var(--text-muted)",
+};
+
 export function MutationPanel({ repoName }: Props) {
   const [summary, setSummary] = useState<MutationReportSummary | null>(null);
   const [summaryError, setSummaryError] = useState(false);
   const [runStatus, setRunStatus] = useState<MutationRunStatus>({ state: "idle" });
-
-  // Keep the poll handle in a ref so we can clean it up on unmount.
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Load the latest mutation summary for this repo on mount (and when the
-  // repo changes). Previously this was a required prop that no caller ever
-  // supplied, so the panel was effectively unreachable — wire it here so the
-  // component is self-contained.
   useEffect(() => {
     let cancelled = false;
     setSummaryError(false);
@@ -38,8 +52,6 @@ export function MutationPanel({ repoName }: Props) {
     setRunStatus({ state: "starting", runId: "", startedAt: new Date().toISOString() });
     try {
       const { runId } = await runMutationTests(repoName);
-      // Poll for completion. The WebSocket event bus (`mutation_progress` events)
-      // is used for streaming progress; the status endpoint is used for terminal state.
       pollRef.current = setInterval(async () => {
         try {
           const status = await getMutationRunStatus(repoName, runId);
@@ -64,16 +76,16 @@ export function MutationPanel({ repoName }: Props) {
     }
   }, [repoName]);
 
+  const runIsBusy = runStatus.state === "starting" || runStatus.state === "running";
+
   if (summaryError) {
     return (
-      <div data-testid="mutation-panel" className="rounded-md border border-border bg-bg-surface p-3">
-        <div className="flex items-center gap-2">
-          <span className="h-1.5 w-1.5 rounded-full bg-text-muted" />
-          <span className="font-mono text-[10px] uppercase tracking-[2px] text-text-secondary">
-            Mutation Testing
-          </span>
+      <div data-testid="mutation-panel" style={sectionStyle}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span style={{ display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", background: "var(--text-muted)" }} />
+          <span style={headerLabelStyle}>Mutation Testing</span>
         </div>
-        <p className="mt-2 text-[13px] text-text-muted">
+        <p style={{ ...mutedTextStyle, marginTop: "8px" }}>
           Could not load mutation data for this repo.
         </p>
       </div>
@@ -82,15 +94,13 @@ export function MutationPanel({ repoName }: Props) {
 
   if (summary && !summary.strykerConfigured) {
     return (
-      <div data-testid="mutation-panel" className="rounded-md border border-border bg-bg-surface p-3">
-        <div className="flex items-center gap-2">
-          <span className="h-1.5 w-1.5 rounded-full bg-text-muted" />
-          <span className="font-mono text-[10px] uppercase tracking-[2px] text-text-secondary">
-            Mutation Testing
-          </span>
+      <div data-testid="mutation-panel" style={sectionStyle}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span style={{ display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", background: "var(--text-muted)" }} />
+          <span style={headerLabelStyle}>Mutation Testing</span>
         </div>
-        <p className="mt-2 text-[13px] text-text-muted">
-          Stryker is not configured in this repo. Add a <code>stryker.config.*</code> file to enable mutation testing.
+        <p style={{ ...mutedTextStyle, marginTop: "8px" }}>
+          Stryker is not configured in this repo. Add a <code style={{ fontFamily: '"JetBrains Mono", monospace', color: "var(--accent)" }}>stryker.config.*</code> file to enable mutation testing.
         </p>
       </div>
     );
@@ -98,14 +108,12 @@ export function MutationPanel({ repoName }: Props) {
 
   if (!summary) {
     return (
-      <div data-testid="mutation-panel" className="rounded-md border border-border bg-bg-surface p-3">
-        <div className="flex items-center gap-2">
-          <span className="h-1.5 w-1.5 rounded-full bg-text-muted" />
-          <span className="font-mono text-[10px] uppercase tracking-[2px] text-text-secondary">
-            Mutation Testing
-          </span>
+      <div data-testid="mutation-panel" style={sectionStyle}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span style={{ display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", background: "var(--text-muted)" }} />
+          <span style={headerLabelStyle}>Mutation Testing</span>
         </div>
-        <p className="mt-2 text-[13px] text-text-muted">Loading mutation data…</p>
+        <p style={{ ...mutedTextStyle, marginTop: "8px" }}>Loading mutation data…</p>
       </div>
     );
   }
@@ -113,40 +121,45 @@ export function MutationPanel({ repoName }: Props) {
   const band = scoreBand(summary.score);
 
   return (
-    <div data-testid="mutation-panel" className="rounded-md border border-border bg-bg-surface p-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+    <div data-testid="mutation-panel" style={sectionStyle}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <span
-            className="h-1.5 w-1.5 rounded-full"
             style={{
+              display: "inline-block",
+              width: "6px",
+              height: "6px",
+              borderRadius: "50%",
               backgroundColor: bandColorVar(band),
-              boxShadow: band !== "none" ? "0 0 6px currentColor" : "none",
+              boxShadow: band !== "none" ? `0 0 6px ${bandColorVar(band)}` : "none",
             }}
           />
-          <span className="font-mono text-[10px] uppercase tracking-[2px] text-text-secondary">
-            Mutation Score
-          </span>
+          <span style={headerLabelStyle}>Mutation Score</span>
         </div>
         <span
           data-testid="mutation-score"
           data-band={band}
-          className="font-mono text-[15px] font-medium"
-          style={{ color: bandColorVar(band) }}
+          style={{
+            fontFamily: '"JetBrains Mono", monospace',
+            fontSize: "15px",
+            fontWeight: 500,
+            color: bandColorVar(band),
+          }}
         >
           {summary.score !== null ? `${summary.score.toFixed(1)}%` : "—"}
         </span>
       </div>
 
       {summary.counts && (
-        <div className="mt-2 grid grid-cols-3 gap-1 font-mono text-[10px] text-text-muted">
-          <span><span className="text-success">{summary.counts.killed}</span> killed</span>
-          <span><span className="text-error">{summary.counts.survived}</span> survived</span>
-          <span><span className="text-text-muted">{summary.counts.noCoverage}</span> no-cov</span>
+        <div style={{ marginTop: "8px", display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "4px", fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", color: "var(--text-muted)" }}>
+          <span><span style={{ color: "var(--success)" }}>{summary.counts.killed}</span> killed</span>
+          <span><span style={{ color: "var(--error)" }}>{summary.counts.survived}</span> survived</span>
+          <span><span style={{ color: "var(--text-muted)" }}>{summary.counts.noCoverage}</span> no-cov</span>
         </div>
       )}
 
       {summary.generatedAt && (
-        <p className="mt-2 font-mono text-[10px] text-text-muted">
+        <p style={{ marginTop: "8px", fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", color: "var(--text-muted)" }}>
           Last run: {new Date(summary.generatedAt).toLocaleString()}
         </p>
       )}
@@ -154,8 +167,24 @@ export function MutationPanel({ repoName }: Props) {
       <button
         type="button"
         onClick={startRun}
-        disabled={runStatus.state === "starting" || runStatus.state === "running"}
-        className="mt-3 w-full rounded border border-accent-dim bg-transparent px-3 py-1.5 font-mono text-[10px] uppercase tracking-[2px] text-accent hover:bg-accent-glow disabled:cursor-not-allowed disabled:opacity-50"
+        disabled={runIsBusy}
+        style={{
+          marginTop: "12px",
+          width: "100%",
+          borderRadius: "4px",
+          border: "1px solid var(--accent-dim)",
+          background: "transparent",
+          padding: "6px 12px",
+          fontFamily: '"JetBrains Mono", monospace',
+          fontSize: "10px",
+          letterSpacing: "1px",
+          textTransform: "uppercase",
+          color: "var(--accent)",
+          cursor: runIsBusy ? "not-allowed" : "pointer",
+          opacity: runIsBusy ? 0.5 : 1,
+        }}
+        onMouseEnter={(e) => { if (!runIsBusy) e.currentTarget.style.background = "var(--accent-glow)"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
       >
         {runStatus.state === "idle" && "Run Mutation Tests"}
         {runStatus.state === "starting" && "Starting…"}
@@ -165,7 +194,7 @@ export function MutationPanel({ repoName }: Props) {
       </button>
 
       {runStatus.state === "failed" && "error" in runStatus && (
-        <p className="mt-2 text-[12px] text-error">{runStatus.error}</p>
+        <p style={{ marginTop: "8px", fontSize: "12px", color: "var(--error)" }}>{runStatus.error}</p>
       )}
     </div>
   );

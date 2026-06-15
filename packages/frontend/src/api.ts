@@ -94,6 +94,10 @@ export async function submitCheckpoint(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ checkpointId, decision, ...opts }),
   });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? `Failed to submit checkpoint: ${res.status}`);
+  }
   return res.json() as Promise<CheckpointResponse>;
 }
 

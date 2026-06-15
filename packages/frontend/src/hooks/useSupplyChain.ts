@@ -11,7 +11,7 @@ export interface SupplyChainState {
 }
 
 type Action =
-  | { type: "SCAN_STARTED"; scanId: string; profile: string }
+  | { type: "SCAN_STARTED"; scanId: string; profile: "baseline" | "project" | "deep" }
   | { type: "SCAN_COMPLETED"; scanId: string; summary: BumblebeeScanSummary }
   | { type: "SCAN_FINDING"; finding: BumblebeeFinding }
   | { type: "SET_SCANS"; scans: BumblebeeScanResult[] }
@@ -28,8 +28,24 @@ export const initialSupplyChainState: SupplyChainState = {
 
 export function supplyChainReducer(state: SupplyChainState, action: Action): SupplyChainState {
   switch (action.type) {
-    case "SCAN_STARTED":
-      return { ...state, isScanning: true, error: null };
+    case "SCAN_STARTED": {
+      const scanId = action.scanId;
+      // Add the scan row if it doesn't already exist (idempotent on scanId).
+      const exists = state.scans.some((s) => s.id === scanId);
+      const scans = exists
+        ? state.scans.map((s) => (s.id === scanId ? { ...s, status: "running" as const, profile: action.profile } : s))
+        : [
+            ...state.scans,
+            { id: scanId, missionId: "", profile: action.profile, status: "running" as const, startedAt: new Date().toISOString() },
+          ];
+      return {
+        ...state,
+        scans,
+        isScanning: true,
+        error: null,
+        findings: [], // clear stale findings so re-scans don't accumulate
+      };
+    }
     case "SCAN_COMPLETED": {
       const updatedScans = state.scans.map((s) =>
         s.id === action.scanId
@@ -44,7 +60,7 @@ export function supplyChainReducer(state: SupplyChainState, action: Action): Sup
       };
     }
     case "SCAN_FINDING":
-      return { ...state, findings: [...state.findings, action.finding] };
+      return { ...state, findings: [...state.findings.slice(-199), action.finding] };
     case "SET_SCANS": {
       const scans = action.scans;
       // Rehydrate findings from the latest completed scan's persisted findings
@@ -102,7 +118,7 @@ export function useSupplyChain(missionId: string | null) {
 
     switch (event.type) {
       case "scan_started":
-        dispatch({ type: "SCAN_STARTED", scanId: event.scanId, profile: event.profile });
+        dispatch({ type: "SCAN_STARTED", scanId: event.scanId, profile: (event.profile as "baseline" | "project" | "deep") });
         break;
       case "scan_completed":
         dispatch({ type: "SCAN_COMPLETED", scanId: event.scanId, summary: event.summary });

@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { useWebSocket } from "./hooks/useWebSocket";
+import { useWebSocket, type WsControlMessage } from "./hooks/useWebSocket";
 import { useMissions } from "./hooks/useMissions";
 import { useMission } from "./hooks/useMission";
 import { useTheme } from "./hooks/useTheme";
@@ -20,7 +20,7 @@ import { StatusBoard } from "./passive/StatusBoard";
 import { EscalationOverlay } from "./active/EscalationOverlay";
 import { IntegrationsPanel } from "./active/IntegrationsPanel";
 import { LoginScreen } from "./frame/LoginScreen";
-import { getSessionState, clearSessionState } from "./lib/sessionState";
+import { getSessionState, clearSessionState, setSessionState } from "./lib/sessionState";
 import { SettingsPanel } from "./active/SettingsPanel";
 import { QuotaPanel } from "./active/QuotaPanel";
 import { TopBar } from "./frame/TopBar";
@@ -112,6 +112,7 @@ export function App() {
   const [latestNotifEvent, setLatestNotifEvent] = useState<WsClientEvent | null>(null);
 
   const updateWsHandlerRef = useRef<((event: WsClientEvent) => void) | null>(null);
+  const restFallbackRef = useRef<((checkpointId: string, decision: CheckpointDecision, opts?: { guidance?: string; reason?: string; rescopeGuidance?: string }) => Promise<void>) | null>(null);
 
   const combinedHandler = useCallback((event: WsClientEvent) => {
     missionsWsHandler(event);
@@ -135,6 +136,16 @@ export function App() {
     missionId: missionsState.selectedMissionId,
     getToken,
     enabled: isAuthenticated,
+    onControl: useCallback((msg: WsControlMessage) => {
+      if (msg.type === "checkpoint_resolved") {
+        dispatch({
+          type: "CHECKPOINT_ACKED",
+          checkpointId: msg.checkpointId,
+          accepted: msg.accepted,
+          error: msg.error,
+        });
+      }
+    }, [dispatch]),
   });
 
   // Browser notifications + tab badge
@@ -159,38 +170,88 @@ export function App() {
     return () => clearInterval(id);
   }, [connected]);
 
+  const CHECKPOINT_ACK_TIMEOUT_MS = 8_000;
+
   const handleDecision = useCallback(async (decision: CheckpointDecision, opts?: { guidance?: string; reason?: string; rescopeGuidance?: string }) => {
     if (!state.mission) return;
     const escalation = state.escalation;
     if (escalation?.type !== "escalation" || !escalation.checkpointId) return;
-    // Prefer the WebSocket `checkpoint_decision` message when connected — the
-    // server resolves it through the same dedup tracker as the REST route and
-    // replies with a `checkpoint_resolved` ack. Fall back to REST when the
-    // socket is down so a decision never silently drops.
+    // Idempotency guard: don't double-submit while one is already in flight.
+    if (state.pendingCheckpoint) return;
+
+    const checkpointId = escalation.checkpointId;
+    const missionId = state.mission.id;
+
+    // Mark submitting — keeps the overlay visible with a "Submitting…" state.
+    dispatch({ type: "CHECKPOINT_SUBMITTING", decision });
+
     if (connected) {
+      // Send over WS. The onControl handler (wired below) will reconcile the
+      // state on `checkpoint_resolved`. We also arm a timeout: if no ack
+      // arrives within the window, fall back to REST so a dropped decision
+      // never silently stalls the mission.
       send({
         event: "checkpoint_decision",
-        missionId: state.mission.id,
-        checkpointId: escalation.checkpointId,
+        missionId,
+        checkpointId,
         decision,
         guidance: opts?.guidance,
         reason: opts?.reason,
         rescopeGuidance: opts?.rescopeGuidance,
       });
+      setTimeout(() => {
+        // If still pending after the timeout, the ack didn't arrive — try REST.
+        restFallbackRef.current?.(checkpointId, decision, opts);
+      }, CHECKPOINT_ACK_TIMEOUT_MS);
     } else {
-      await submitCheckpoint(state.mission.id, escalation.checkpointId, decision, opts);
+      // Socket down: go straight to REST (which now throws properly — T1).
+      try {
+        await submitCheckpoint(missionId, checkpointId, decision, opts);
+        dispatch({ type: "CHECKPOINT_ACKED", checkpointId, accepted: true });
+      } catch (err) {
+        dispatch({
+          type: "CHECKPOINT_ACKED",
+          checkpointId,
+          accepted: false,
+          error: err instanceof Error ? err.message : "Failed to submit checkpoint",
+        });
+      }
     }
-    dispatch({ type: "CLEAR_ESCALATION" });
-  }, [state.mission, state.escalation, dispatch, connected, send]);
+  }, [state.mission, state.escalation, state.pendingCheckpoint, dispatch, connected, send]);
+
+  // Keep the rest-fallback ref populated with a closure that reads the latest
+  // mission ID. The ref pattern lets the setTimeout arm in handleDecision
+  // access the freshest state without re-creating the timeout on every render.
+  useEffect(() => {
+    restFallbackRef.current = async (checkpointId, decision, opts) => {
+      if (!state.mission) return;
+      // The reducer's ack matching is idempotent on checkpointId — if the WS
+      // ack landed in the meantime, this dispatch is a no-op.
+      try {
+        await submitCheckpoint(state.mission.id, checkpointId, decision, opts);
+        dispatch({ type: "CHECKPOINT_ACKED", checkpointId, accepted: true });
+      } catch (err) {
+        dispatch({
+          type: "CHECKPOINT_ACKED",
+          checkpointId,
+          accepted: false,
+          error: err instanceof Error ? err.message : "Failed to submit checkpoint",
+        });
+      }
+    };
+  }, [state.mission, dispatch]);
 
   const handleCreateMission = useCallback(async (description: string, cloneUrl?: string) => {
     const { missionId } = await createMission(description, cloneUrl);
     addOptimisticMission(missionId, description);
     setPreparedRepo(null); // Clear overview when mission starts
+    clearSessionState("prepared_repo"); // mission started — don't restore overview
   }, [addOptimisticMission]);
 
   const handleRepoPrepared = useCallback(async (info: { repoName: string; fullName: string; summary: CodeSummaryResponse | null }) => {
     const { repoName, fullName, summary } = info;
+    // Persist so a page refresh can rehydrate the overview without re-cloning.
+    setSessionState("prepared_repo", { repoName, fullName });
     const version = Date.now();
     setPreparedRepo({ repoName, fullName, summary, hotspots: null, suggestions: [], readiness: null, packageScan: null, packageFindings: [], loading: true, _version: version } as any);
     try {
@@ -273,11 +334,7 @@ export function App() {
         handleDecision("reject");
       }
     },
-    onDismiss: () => {
-      if (state.escalation?.type === "escalation") {
-        dispatch({ type: "CLEAR_ESCALATION" });
-      }
-    },
+    // No onDismiss: Esc must not silently clear a pending checkpoint.
     onNewMission: () => {
       selectMission(null);
     },
@@ -436,7 +493,9 @@ export function App() {
         <EscalationOverlay
           event={state.escalation}
           onDecision={handleDecision}
-          onDismiss={() => dispatch({ type: "CLEAR_ESCALATION" })}
+          submitting={!!state.pendingCheckpoint}
+          submitError={state.pendingCheckpointError}
+          onDismissSubmitError={() => dispatch({ type: "CLEAR_PENDING_CHECKPOINT_ERROR" })}
         />
       )}
       {helpOpen && <HelpOverlay onClose={() => setHelpOpen(false)} />}
