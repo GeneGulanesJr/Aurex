@@ -38,13 +38,18 @@ export function createExecutionWorker(
       });
       const handler = deps.handlers?.[claim.job.type];
       if (!handler) {
-        // Requeue with a backoff to avoid hot-looping on unhandled job types
-        const backoff = new Date(Date.now() + options.pollMs * 10);
-        await deps.queue.requeue(
+        // No handler is registered for this job type. Fail terminally with an
+        // honest "UNKNOWN" code rather than silently requeuing — a requeue
+        // would burn the retry budget in a tight poll loop and strand the job
+        // in "requeued" status. `markRunning` first so the fail() transition
+        // (allowed from "running") is legal, then fail() moves it to "failed".
+        await deps.queue.markRunning(claim.job.id, claim.claimToken);
+        wasMarkedRunning = true;
+        await deps.queue.fail(
           claim.job.id,
+          claim.claimToken,
           "UNKNOWN",
           `No handler registered for ${claim.job.type}`,
-          backoff,
         );
         return;
       }

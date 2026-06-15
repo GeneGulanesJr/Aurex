@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import type { WsClientEvent } from "@aurex/shared";
+import type { CheckpointDecision, WsClientEvent } from "@aurex/shared";
 import { verifyJwt } from "../routes/auth.js";
 
 export type EventHandler = (event: WsClientEvent) => void;
@@ -75,11 +75,40 @@ export interface WsAuthConfig {
   authDisabled?: boolean;
 }
 
+/**
+ * Resolver invoked when a client sends a `checkpoint_decision` message over
+ * the socket. Mirrors the REST `POST /api/missions/:id/checkpoints` flow
+ * (including dedup) so both transports behave identically.
+ */
+export type WsCheckpointResolver = (input: {
+  missionId: string;
+  checkpointId: string;
+  decision: CheckpointDecision;
+  guidance?: string;
+  reason?: string;
+  rescopeGuidance?: string;
+}) => Promise<{ ok: true; duplicate: boolean } | { ok: false; status: number; error: string }>;
+
+export interface RegisterWebSocketRoutesOptions extends WsAuthConfig {
+  /**
+   * When provided, the socket handles `checkpoint_decision` messages and sends
+   * a `checkpoint_resolved` ack back to the client. When omitted, such messages
+   * are ignored (the REST path remains the source of truth).
+   */
+  resolveCheckpoint?: WsCheckpointResolver;
+}
+
 export function registerWebSocketRoutes(
   app: FastifyInstance,
   eventBus: EventBus,
-  authConfig: WsAuthConfig,
+  options: RegisterWebSocketRoutesOptions,
 ): void {
+  const authConfig: WsAuthConfig = {
+    auth0Domain: options.auth0Domain,
+    auth0Audience: options.auth0Audience,
+    authDisabled: options.authDisabled,
+  };
+  const { resolveCheckpoint } = options;
   app.get("/ws", { websocket: true }, (socket) => {
     let authenticated = authConfig.authDisabled ? true : false;
     const subscribedMissions = new Set<string>();
@@ -156,6 +185,61 @@ export function registerWebSocketRoutes(
           subscribedMissions.add(msg.missionId);
           if (socket.readyState === socket.OPEN) {
             socket.send(JSON.stringify({ type: "subscribed", missionId: msg.missionId }));
+          }
+          return;
+        }
+
+        if (msg.event === "checkpoint_decision" && resolveCheckpoint) {
+          const checkpointId = typeof msg.checkpointId === "string" ? msg.checkpointId : null;
+          const missionId = typeof msg.missionId === "string" ? msg.missionId : null;
+          const decision = msg.decision === "approve" || msg.decision === "reject" ? msg.decision : null;
+          if (!checkpointId || !missionId || !decision) {
+            if (socket.readyState === socket.OPEN) {
+              socket.send(JSON.stringify({
+                type: "checkpoint_resolved",
+                checkpointId: checkpointId ?? null,
+                accepted: false,
+                error: "checkpointId, missionId, and decision are required",
+              }));
+            }
+            return;
+          }
+          try {
+            const result = await resolveCheckpoint({
+              missionId,
+              checkpointId,
+              decision,
+              guidance: typeof msg.guidance === "string" ? msg.guidance : undefined,
+              reason: typeof msg.reason === "string" ? msg.reason : undefined,
+              rescopeGuidance: typeof msg.rescopeGuidance === "string" ? msg.rescopeGuidance : undefined,
+            });
+            if (socket.readyState === socket.OPEN) {
+              if (result.ok) {
+                socket.send(JSON.stringify({
+                  type: "checkpoint_resolved",
+                  checkpointId,
+                  accepted: true,
+                  duplicate: result.duplicate,
+                }));
+              } else {
+                socket.send(JSON.stringify({
+                  type: "checkpoint_resolved",
+                  checkpointId,
+                  accepted: false,
+                  error: result.error,
+                  status: result.status,
+                }));
+              }
+            }
+          } catch (err) {
+            if (socket.readyState === socket.OPEN) {
+              socket.send(JSON.stringify({
+                type: "checkpoint_resolved",
+                checkpointId,
+                accepted: false,
+                error: err instanceof Error ? err.message : "failed to resolve checkpoint",
+              }));
+            }
           }
           return;
         }

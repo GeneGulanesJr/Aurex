@@ -25,12 +25,16 @@ import { createSettingsExecutionQueueStore } from "./queue/execution-queue-store
 import { createSettingsPreparedSessionStore } from "./sessions/prepared-session-store.js";
 import {
   createPreparedSessionService,
-  createPreparedSessionStartHandler,
   createSessionMessageBus,
 } from "./sessions/prepared-session-service.js";
 import { agentSessionRoutes } from "./routes/agent-sessions.js";
 import { executionQueueRoutes } from "./routes/execution-queue.js";
 import { createExecutionWorker } from "./queue/execution-worker.js";
+import { createMissionQueueHandlers } from "./orchestrator/mission-queue-handlers.js";
+import {
+  createCheckpointDedupTracker,
+  resolveCheckpointDecision,
+} from "./routes/checkpoints.js";
 
 async function main() {
   const config = loadConfig();
@@ -41,6 +45,9 @@ async function main() {
   const lapis = createLaPisClient({ lapisEndpoint: config.lapisEndpoint });
   const eventBus = createEventBus();
   const agentLogger = createAgentLogger();
+  // Single shared dedup tracker so a checkpoint decision submitted over the
+  // WebSocket is not re-processed via the REST route (or vice versa).
+  const checkpointDedup = createCheckpointDedupTracker();
   const executionQueue = createSettingsExecutionQueueStore(lapis);
   const preparedSessions = createSettingsPreparedSessionStore(lapis);
   // Single shared message bus so messages posted via the REST API reach the
@@ -138,6 +145,8 @@ async function main() {
     auth0Domain: config.auth0Domain,
     auth0Audience: config.auth0Audience,
     authDisabled: config.authDisabled,
+    resolveCheckpoint: (input) =>
+      resolveCheckpointDecision(lapis, checkpointDedup, input),
   });
 
   // Health endpoint
@@ -182,7 +191,7 @@ async function main() {
       validatorToolCallCap: config.validatorToolCallCap,
     },
   });
-  await app.register(checkpointRoutes, { lapis });
+  await app.register(checkpointRoutes, { lapis, dedup: checkpointDedup });
 
   // PiNyx config (fully UI-configured, stored in LaPis settings)
   registerPinyxRoutes(app, { lapis });
@@ -218,13 +227,12 @@ async function main() {
         {
           queue: executionQueue,
           eventBus,
-          handlers: {
-            agent_session_start: createPreparedSessionStartHandler({
-              queue: executionQueue,
-              sessions: preparedSessions,
-              messages: sessionMessageBus,
-            }),
-          },
+          handlers: createMissionQueueHandlers({
+            pool,
+            sessions: preparedSessions,
+            queue: executionQueue,
+            messages: sessionMessageBus,
+          }),
         },
         { workerId: config.queueWorkerId, pollMs: config.queueWorkerPollMs },
       )
