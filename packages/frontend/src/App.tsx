@@ -20,7 +20,7 @@ import { StatusBoard } from "./passive/StatusBoard";
 import { EscalationOverlay } from "./active/EscalationOverlay";
 import { IntegrationsPanel } from "./active/IntegrationsPanel";
 import { LoginScreen } from "./frame/LoginScreen";
-import { getSessionState, clearSessionState } from "./lib/sessionState";
+import { getSessionState, clearSessionState, setSessionState } from "./lib/sessionState";
 import { SettingsPanel } from "./active/SettingsPanel";
 import { QuotaPanel } from "./active/QuotaPanel";
 import { TopBar } from "./frame/TopBar";
@@ -245,10 +245,13 @@ export function App() {
     const { missionId } = await createMission(description, cloneUrl);
     addOptimisticMission(missionId, description);
     setPreparedRepo(null); // Clear overview when mission starts
+    clearSessionState("prepared_repo"); // mission started — don't restore overview
   }, [addOptimisticMission]);
 
   const handleRepoPrepared = useCallback(async (info: { repoName: string; fullName: string; summary: CodeSummaryResponse | null }) => {
     const { repoName, fullName, summary } = info;
+    // Persist so a page refresh can rehydrate the overview without re-cloning.
+    setSessionState("prepared_repo", { repoName, fullName });
     const version = Date.now();
     setPreparedRepo({ repoName, fullName, summary, hotspots: null, suggestions: [], readiness: null, packageScan: null, packageFindings: [], loading: true, _version: version } as any);
     try {

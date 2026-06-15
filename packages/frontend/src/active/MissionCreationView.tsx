@@ -4,7 +4,8 @@ import { RepoPicker } from "./RepoPicker";
 import { RepoPrepareModal } from "./RepoPrepareModal";
 import { RepoOverviewPanel } from "../passive/RepoOverviewPanel";
 import type { UseGitHubReturn } from "../hooks/useGitHub";
-import { prepareGitHubRepo, exploreRepo } from "../api";
+import { prepareGitHubRepo, exploreRepo, getRepoSummary } from "../api";
+import { getSessionState } from "../lib/sessionState";
 import type { GitHubRepoResponse, CodeSummaryResponse, CodeHotspotsResponse, RepoSuggestion, RepoReadinessProfile } from "../api";
 import type { BumblebeeFinding, BumblebeeScanResult } from "@aurex/shared";
 import { animate, stagger } from "animejs";
@@ -61,6 +62,32 @@ export function MissionCreationView({
   useEffect(() => {
     form.open();
   }, []);
+
+  // Rehydrate the repo overview after a refresh. If the parent already passed
+  // a preparedRepo (e.g. it was never lost), do nothing. Otherwise, if we
+  // persisted a repo identity last session, refetch its (already-indexed)
+  // summary and notify the parent via onRepoPrepared — which re-triggers the
+  // full overview load (hotspots, suggestions, readiness, package scan).
+  useEffect(() => {
+    if (preparedRepo) return; // parent still has it — nothing to restore
+    if (!onRepoPrepared) return;
+    const persisted = getSessionState<{ repoName: string; fullName: string }>("prepared_repo");
+    if (!persisted) return;
+    let cancelled = false;
+    (async () => {
+      let summary: CodeSummaryResponse | null = null;
+      try {
+        summary = await getRepoSummary(persisted.repoName);
+      } catch {
+        summary = null; // repo may have been evicted; parent will show a loading-then-empty state
+      }
+      if (!cancelled) {
+        onRepoPrepared({ repoName: persisted.repoName, fullName: persisted.fullName, summary });
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // mount only — we want this to run once on first render
 
   useEffect(() => {
     const el = containerRef.current;
