@@ -1,19 +1,24 @@
 import { useRef, useEffect } from "react";
 import { CheckpointPanel } from "./CheckpointPanel";
 import { DecisionActions } from "./DecisionActions";
-import { enterActive, exitActive } from "../animations/state-transitions";
+import { enterActive } from "../animations/state-transitions";
 import type { WsClientEvent, CheckpointDecision } from "@aurex/shared";
 
 interface EscalationOverlayProps {
   event: WsClientEvent;
   onDecision: (decision: CheckpointDecision, opts?: { guidance?: string; reason?: string; rescopeGuidance?: string }) => void;
-  onDismiss: () => void;
   submitting?: boolean;
   submitError?: string | null;
   onDismissSubmitError?: () => void;
 }
 
-export function EscalationOverlay({ event, onDecision, onDismiss, submitting, submitError, onDismissSubmitError }: EscalationOverlayProps) {
+/**
+ * Modal escalation overlay. Deliberately has NO dismiss button: the checkpoint
+ * is pending server-side and the orchestrator is blocked until a real decision
+ * arrives. "Dismissing" it in the UI would silently stall the mission. The user
+ * must choose Approve / Reject / Rescope / Abort (handled by DecisionActions).
+ */
+export function EscalationOverlay({ event, onDecision, submitting, submitError, onDismissSubmitError }: EscalationOverlayProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -23,15 +28,6 @@ export function EscalationOverlay({ event, onDecision, onDismiss, submitting, su
   }, []);
 
   if (event.type !== "escalation") return null;
-
-  const handleDismiss = () => {
-    const el = overlayRef.current;
-    if (el) {
-      exitActive(el).then(onDismiss);
-    } else {
-      onDismiss();
-    }
-  };
 
   return (
     <div ref={overlayRef} style={{ position: "fixed", inset: 0, background: "color-mix(in srgb, var(--bg-inset) 85%, transparent)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
@@ -49,12 +45,6 @@ export function EscalationOverlay({ event, onDecision, onDismiss, submitting, su
           </div>
         )}
         <DecisionActions onDecision={onDecision} trigger={event.trigger} />
-        <button
-          onClick={handleDismiss}
-          style={{ marginTop: "16px", color: "var(--text-muted)", fontSize: "13px", background: "none", border: "none", cursor: "pointer" }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-primary)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
-        >Dismiss</button>
       </div>
     </div>
   );

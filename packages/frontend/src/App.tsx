@@ -331,11 +331,7 @@ export function App() {
         handleDecision("reject");
       }
     },
-    onDismiss: () => {
-      if (state.escalation?.type === "escalation") {
-        dispatch({ type: "CLEAR_ESCALATION" });
-      }
-    },
+    // No onDismiss: Esc must not silently clear a pending checkpoint.
     onNewMission: () => {
       selectMission(null);
     },
@@ -494,7 +490,6 @@ export function App() {
         <EscalationOverlay
           event={state.escalation}
           onDecision={handleDecision}
-          onDismiss={() => dispatch({ type: "CLEAR_ESCALATION" })}
           submitting={!!state.pendingCheckpoint}
           submitError={state.pendingCheckpointError}
           onDismissSubmitError={() => dispatch({ type: "CLEAR_PENDING_CHECKPOINT_ERROR" })}
