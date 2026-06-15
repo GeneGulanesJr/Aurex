@@ -189,6 +189,60 @@ describe("WorktreeManager", () => {
       const calls = mockExecAsync.mock.calls.map((c) => `${c[0]} ${(c[1] as string[]).join(" ")}`);
       expect(calls.some((c) => c.includes("-C /repo/root/.git-worktrees/validator-ms-4 merge --abort"))).toBe(true);
     });
+
+    it("treats 'Already up to date.' merge as cleanly merged, not a conflict", async () => {
+      // Regression: when a worker's task branch is already an ancestor of
+      // the base branch (its commits are already in main), `git merge
+      // --no-ff --no-commit` prints "Already up to date." and leaves NO
+      // merge in progress. The old code then tried to `commit` and failed
+      // with "nothing to commit", which was misclassified as a conflict.
+      // This caused validator_merge_conflicts escalations on legitimate
+      // already-merged worker branches.
+      mockExecAsync.mockImplementation(async (_cmd: string, args: string[]) => {
+        // The merge call returns the up-to-date message; rev-parse MERGE_HEAD
+        // throws (no merge in progress). Everything else returns empty.
+        if (args.includes("merge") && !args.includes("--abort")) {
+          return { stdout: "Already up to date.\n", stderr: "" };
+        }
+        if (args.includes("MERGE_HEAD")) {
+          throw new Error("fatal: Needed a single revision");
+        }
+        return { stdout: "", stderr: "" };
+      });
+
+      const manager = createWorktreeManager("/repo/root");
+      const result = await manager.createValidatorWorktree("ms-5", "main", [
+        "task/worker-a/auth-001",
+      ]);
+
+      expect(result.mergedUnitIds).toEqual(["task/worker-a/auth-001"]);
+      expect(result.conflictedBranches).toEqual([]);
+
+      // Crucially, no commit should be attempted (nothing to commit) and
+      // no merge --abort should run (no conflict to abort).
+      const calls = mockExecAsync.mock.calls.map((c) => `${c[0]} ${(c[1] as string[]).join(" ")}`);
+      expect(calls.some((c) => /commit --no-verify/.test(c))).toBe(false);
+      expect(calls.some((c) => c.includes("merge --abort"))).toBe(false);
+    });
+
+    it("still treats a real conflict as conflicted even if stdout contains 'up to date'", async () => {
+      // Defense: a genuine conflict must still be classified as conflicted.
+      // The merge throws (conflict markers), so we hit the catch branch.
+      mockExecAsync.mockImplementation(async (_cmd: string, args: string[]) => {
+        if (args.includes("merge") && !args.includes("--abort")) {
+          throw new Error("Auto-merging src/x.ts\nCONFLICT (content): Merge conflict in src/x.ts");
+        }
+        return { stdout: "", stderr: "" };
+      });
+
+      const manager = createWorktreeManager("/repo/root");
+      const result = await manager.createValidatorWorktree("ms-6", "main", [
+        "task/worker-b/db-002",
+      ]);
+
+      expect(result.mergedUnitIds).toEqual([]);
+      expect(result.conflictedBranches).toEqual(["task/worker-b/db-002"]);
+    });
   });
 
   describe("sanitizeGitArg", () => {

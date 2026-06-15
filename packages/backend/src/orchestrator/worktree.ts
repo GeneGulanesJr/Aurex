@@ -170,12 +170,31 @@ export function createWorktreeManager(repoRoot: string): WorktreeManager {
         // Stryker disable next-line StringLiteral: git command args
         // --no-commit so we can detect conflicts and abort cleanly.
         try {
-          await git(worktreePath, "merge", "--no-ff", "--no-commit", taskBranch);
-          // Stryker disable next-line StringLiteral: git commit args
-          // --no-verify bypasses the branch-guard pre-commit hook (which
-          // restricts to task/integration/release/*; validation/* is not
-          // in that list but is a legitimate internal branch).
-          await git(worktreePath, "commit", "--no-verify", "-m", `merge ${taskBranch} into ${validationBranch}`);
+          const mergeOut = await git(worktreePath, "merge", "--no-ff", "--no-commit", taskBranch);
+          // "Already up to date." means the task branch is already an
+          // ancestor of the validation branch (its commits are present in
+          // the base). This is NOT a conflict — git leaves no merge in
+          // progress, so attempting to commit would fail with "nothing to
+          // commit". Treat the branch as cleanly merged (a no-op merge).
+          // Stryker disable next-line StringLiteral: git status hint
+          if (/already up to date/i.test(mergeOut)) {
+            mergedUnitIds.push(taskBranch);
+            continue;
+          }
+          // Stryker disable next-line StringLiteral: git rev-parse args
+          // Only commit if a merge is actually in progress; a successful
+          // --no-commit merge creates MERGE_HEAD, an up-to-date one does not.
+          let mergeInProgress = "";
+          try {
+            mergeInProgress = await git(worktreePath, "rev-parse", "-q", "--verify", "MERGE_HEAD");
+          } catch { /* no merge in progress */ }
+          if (mergeInProgress) {
+            // Stryker disable next-line StringLiteral: git commit args
+            // --no-verify bypasses the branch-guard pre-commit hook (which
+            // restricts to task/integration/release/*; validation/* is not
+            // in that list but is a legitimate internal branch).
+            await git(worktreePath, "commit", "--no-verify", "-m", `merge ${taskBranch} into ${validationBranch}`);
+          }
           mergedUnitIds.push(taskBranch);
         } catch {
           // Stryker disable next-line StringLiteral: git command args
