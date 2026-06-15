@@ -12,6 +12,8 @@ export interface WorktreeManager {
   getRepoRoot(): string;
   createWorktree(agentId: string, taskId: string, agentBranch: string): Promise<{ worktreePath: string; taskBranch: string }>;
   createBranch(branchName: string, baseBranch: string): Promise<void>;
+  /** Delete an existing branch (if present) and recreate it from baseBranch. */
+  recreateBranch(branchName: string, baseBranch: string): Promise<void>;
   mergeToTarget(sourceBranch: string, targetBranch: string): Promise<void>;
   mergeToTargetWithStrategy(sourceBranch: string, targetBranch: string, strategy: string): Promise<void>;
   abortMerge(): Promise<void>;
@@ -105,6 +107,11 @@ export function createWorktreeManager(repoRoot: string): WorktreeManager {
 
     async createBranch(branchName, baseBranch) {
       // Stryker disable next-line StringLiteral: git command args
+      await git(repoRoot, "branch", branchName, baseBranch);
+    },
+
+    async recreateBranch(branchName, baseBranch) {
+      try { await git(repoRoot, "branch", "-D", branchName); } catch { /* not present */ }
       await git(repoRoot, "branch", branchName, baseBranch);
     },
 

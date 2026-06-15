@@ -33,6 +33,7 @@ type Action =
   | { type: "WS_MISSION_COMPLETED"; missionId: string; finalState: string }
   | { type: "WS_MISSION_STATUS"; missionId: string; status: string }
   | { type: "MISSION_RESTARTED"; missionId: string }
+  | { type: "MISSION_ABORTED"; missionId: string }
   | { type: "REMOVE"; missionId: string };
 
 export const initialMissionsState: MissionsState = {
@@ -44,7 +45,7 @@ export function missionsReducer(state: MissionsState, action: Action): MissionsS
   switch (action.type) {
     case "SET_MISSIONS": {
       const missions = action.missions;
-      const selectedMissionId = state.selectedMissionId ?? missions.find((m) => m.state !== "queued" && m.state !== "completed" && m.state !== "failed")?.missionId ?? missions[0]?.missionId ?? null;
+      const selectedMissionId = state.selectedMissionId ?? missions.find((m) => m.state !== "queued" && m.state !== "completed" && m.state !== "failed" && m.state !== "aborted")?.missionId ?? missions[0]?.missionId ?? null;
       return { ...state, missions, selectedMissionId };
     }
     case "SELECT":
@@ -80,10 +81,15 @@ export function missionsReducer(state: MissionsState, action: Action): MissionsS
       };
     }
     case "WS_MISSION_COMPLETED": {
+      const terminalState = action.finalState === "completed"
+        ? "completed"
+        : action.finalState === "aborted"
+          ? "aborted"
+          : "failed";
       return {
         ...state,
         missions: state.missions.map((m) =>
-          m.missionId === action.missionId ? { ...m, state: action.finalState, queuePosition: undefined } : m,
+          m.missionId === action.missionId ? { ...m, state: terminalState, queuePosition: undefined } : m,
         ),
       };
     }
@@ -92,6 +98,14 @@ export function missionsReducer(state: MissionsState, action: Action): MissionsS
         ...state,
         missions: state.missions.map((m) =>
           m.missionId === action.missionId ? { ...m, state: action.status } : m,
+        ),
+      };
+    }
+    case "MISSION_ABORTED": {
+      return {
+        ...state,
+        missions: state.missions.map((m) =>
+          m.missionId === action.missionId ? { ...m, state: "aborted", queuePosition: undefined } : m,
         ),
       };
     }
@@ -107,7 +121,7 @@ export function missionsReducer(state: MissionsState, action: Action): MissionsS
     case "REMOVE": {
       const missions = state.missions.filter((m) => m.missionId !== action.missionId);
       const selectedMissionId = state.selectedMissionId === action.missionId
-        ? (missions.find((m) => m.state !== "queued" && m.state !== "completed" && m.state !== "failed")?.missionId ?? missions[0]?.missionId ?? null)
+        ? (missions.find((m) => m.state !== "queued" && m.state !== "completed" && m.state !== "failed" && m.state !== "aborted")?.missionId ?? missions[0]?.missionId ?? null)
         : state.selectedMissionId;
       return { ...state, missions, selectedMissionId };
     }
@@ -194,5 +208,9 @@ export function useMissions() {
     dispatch({ type: "MISSION_RESTARTED", missionId });
   }, []);
 
-  return { state, selectMission, removeMission, addOptimisticMission, markMissionRestarted, handleWsEvent };
+  const markMissionAborted = useCallback((missionId: string) => {
+    dispatch({ type: "MISSION_ABORTED", missionId });
+  }, []);
+
+  return { state, selectMission, removeMission, addOptimisticMission, markMissionRestarted, markMissionAborted, handleWsEvent };
 }

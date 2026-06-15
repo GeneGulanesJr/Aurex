@@ -70,6 +70,10 @@ export async function getMission(id: string): Promise<CurrentMissionPayload> {
 
 export async function abortMission(missionId: string) {
   const res = await apiFetch(`/api/missions/${missionId}/abort`, { method: "POST" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? `Failed to abort mission: ${res.status}`);
+  }
   return res.json() as Promise<{ aborted: boolean }>;
 }
 

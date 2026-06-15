@@ -3,6 +3,7 @@ import { MissionPipeline } from "./MissionPipeline";
 import { MissionComplete } from "./MissionComplete";
 import { MissionCreationView } from "../active/MissionCreationView";
 import { dimPassive, restorePassive } from "../animations/state-transitions";
+import { isMissionTerminal } from "./missionUiModel";
 import type { Mission, Milestone, WorkingUnit, CostSummary, WsClientEvent, BumblebeeFinding, BumblebeeScanResult } from "@aurex/shared";
 import type { MissionError, AgentLogEntry } from "../hooks/useMission";
 import type { CodeSummaryResponse, CodeHotspotsResponse, RepoSuggestion, RepoReadinessProfile } from "../api";
@@ -22,6 +23,8 @@ interface StatusBoardProps {
   autoCollapseContext?: boolean;
   onExampleClick?: (text: string, cloneUrl?: string) => Promise<void>;
   onRetryMission?: () => void;
+  onAbortMission?: () => void;
+  abortingMission?: boolean;
   onDismissErrors?: () => void;
   scanFindings?: BumblebeeFinding[];
   isScanning?: boolean;
@@ -44,7 +47,7 @@ interface StatusBoardProps {
   systemReady?: boolean;
 }
 
-export function StatusBoard({ mission, milestones, workers, cost, events, logs, errors, agentLogs, blurred, eventStreamCount, autoCollapseContext, onExampleClick, onRetryMission, onDismissErrors, scanFindings = [], isScanning = false, scans = [], onTriggerScan, preparedRepo, onStartFromSuggestion, onRepoPrepared, github, systemReady }: StatusBoardProps) {
+export function StatusBoard({ mission, milestones, workers, cost, events, logs, errors, agentLogs, blurred, eventStreamCount, autoCollapseContext, onExampleClick, onRetryMission, onAbortMission, abortingMission = false, onDismissErrors, scanFindings = [], isScanning = false, scans = [], onTriggerScan, preparedRepo, onStartFromSuggestion, onRepoPrepared, github, systemReady }: StatusBoardProps) {
   const boardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -73,7 +76,7 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
     );
   }
 
-  const isTerminal = mission.status === "completed" || mission.status === "failed";
+  const isTerminal = isMissionTerminal(mission.status);
 
   return (
     <div ref={boardRef} style={{ height: "100%", overflowY: "auto" }}>
@@ -109,6 +112,8 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
           eventStreamCount={eventStreamCount}
           autoCollapseContext={autoCollapseContext}
           onRetry={onRetryMission}
+          onAbort={onAbortMission}
+          aborting={abortingMission}
           scanFindings={scanFindings}
           isScanning={isScanning}
           scans={scans}

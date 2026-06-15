@@ -1,88 +1,36 @@
 import { useCallback } from "react";
 import type { MissionListItem } from "../hooks/useMissions";
-import { abortMission, restartMission } from "../api";
+import { getMissionStatusUi, isMissionStoppable } from "../passive/missionUiModel";
 
 interface MissionSidebarProps {
   missions: MissionListItem[];
   selectedMissionId: string | null;
   escalationMissionId?: string | null;
   onSelect: (missionId: string | null) => void;
-  onRemove: (missionId: string) => void;
+  onAbort: (missionId: string) => void;
   onRestart: (missionId: string) => void;
+  abortingMissionId?: string | null;
   systemReady?: boolean;
   totalCost?: number;
   collapsed?: boolean;
 }
 
-function statusBadge(state: string): { label: string; style: React.CSSProperties } {
-  switch (state) {
-    case "queued":
-      return { label: "Queued", style: { background: "var(--warning)", color: "var(--bg-deep)", fontSize: "10px", padding: "1px 6px", borderRadius: "3px" } };
-    case "planning":
-    case "executing":
-      return { label: "Running", style: { background: "var(--info)", color: "var(--bg-deep)", fontSize: "10px", padding: "1px 6px", borderRadius: "3px" } };
-    case "waiting_checkpoint":
-      return { label: "Checkpoint", style: { background: "var(--badge-info-bg)", color: "var(--info)", fontSize: "10px", padding: "1px 6px", borderRadius: "3px" } };
-    case "completed":
-      return { label: "Done", style: { background: "var(--badge-success-bg)", color: "var(--success)", fontSize: "10px", padding: "1px 6px", borderRadius: "3px" } };
-    case "failed":
-      return { label: "Failed", style: { background: "var(--badge-error-bg)", color: "var(--error)", fontSize: "10px", padding: "1px 6px", borderRadius: "3px" } };
-    default:
-      return { label: state, style: { background: "var(--bg-elevated)", color: "var(--text-muted)", fontSize: "10px", padding: "1px 6px", borderRadius: "3px" } };
-  }
-}
-
-function statusIcon(state: string): string {
-  switch (state) {
-    case "queued": return "◷";
-    case "planning":
-    case "executing": return "▶";
-    case "waiting_checkpoint": return "⏸";
-    case "completed": return "✓";
-    case "failed": return "✕";
-    default: return "•";
-  }
-}
-
-function statusIconColor(state: string): string {
-  switch (state) {
-    case "queued": return "var(--warning)";
-    case "planning":
-    case "executing": return "var(--info)";
-    case "waiting_checkpoint": return "var(--info)";
-    case "completed": return "var(--success)";
-    case "failed": return "var(--error)";
-    default: return "var(--text-muted)";
-  }
-}
-
-export function MissionSidebar({ missions, selectedMissionId, escalationMissionId, onSelect, onRemove, onRestart, systemReady, totalCost, collapsed = false }: MissionSidebarProps) {
+export function MissionSidebar({ missions, selectedMissionId, escalationMissionId, onSelect, onAbort, onRestart, abortingMissionId, systemReady, totalCost, collapsed = false }: MissionSidebarProps) {
   const handleNewMission = useCallback(() => {
     onSelect(null);
-    // Defer the focus event until after React's render cycle completes.
-    // When a mission is selected, MissionCreationView is not in the DOM yet —
-    // dispatching synchronously means the listener doesn't exist and the event
-    // is lost. requestAnimationFrame yields past React's commit phase so the
-    // creation view mounts and registers its listener before the event fires.
     requestAnimationFrame(() => {
       window.dispatchEvent(new CustomEvent("aurex:focus-new-mission"));
     });
   }, [onSelect]);
 
-  const handleAbort = useCallback(async (e: React.MouseEvent, missionId: string) => {
+  const handleAbort = useCallback((e: React.MouseEvent, missionId: string) => {
     e.stopPropagation();
-    try {
-      await abortMission(missionId);
-      onRemove(missionId);
-    } catch {}
-  }, [onRemove]);
+    onAbort(missionId);
+  }, [onAbort]);
 
-  const handleRestart = useCallback(async (e: React.MouseEvent, missionId: string) => {
+  const handleRestart = useCallback((e: React.MouseEvent, missionId: string) => {
     e.stopPropagation();
-    try {
-      await restartMission(missionId);
-      onRestart(missionId);
-    } catch {}
+    onRestart(missionId);
   }, [onRestart]);
 
   if (collapsed) {
@@ -111,6 +59,7 @@ export function MissionSidebar({ missions, selectedMissionId, escalationMissionI
         </div>
         {missions.map((mission) => {
           const isSelected = mission.missionId === selectedMissionId;
+          const statusUi = getMissionStatusUi(mission.state);
           return (
             <div
               key={mission.missionId}
@@ -125,13 +74,13 @@ export function MissionSidebar({ missions, selectedMissionId, escalationMissionI
                 cursor: "pointer",
                 borderRadius: "4px",
                 background: isSelected ? "var(--bg-elevated)" : "transparent",
-                color: statusIconColor(mission.state),
+                color: statusUi.iconColor,
                 fontSize: "14px",
               }}
               onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = "var(--bg-elevated)"; }}
               onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = "transparent"; }}
             >
-              {statusIcon(mission.state)}
+              {statusUi.icon}
             </div>
           );
         })}
@@ -168,85 +117,75 @@ export function MissionSidebar({ missions, selectedMissionId, escalationMissionI
           </button>
         )}
       </div>
-      <div style={{ flex: 1, overflowY: "auto" }}>
+      <div style={{ flex: 1, overflowY: "auto", padding: "8px" }}>
         {missions.length === 0 && (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "8px", padding: "32px 16px" }}>
-            <div style={{ width: "32px", height: "32px", border: "1px dashed var(--border)", borderRadius: "4px", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--border-bright)", fontSize: "16px" }}>◎</div>
-            <span style={{ fontSize: "11px", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace' }}>NO ACTIVE MISSIONS</span>
-            {!systemReady ? (
-              <span style={{ fontSize: "10px", color: "var(--warning)" }}>Configure integrations first</span>
-            ) : (
-              <span style={{ fontSize: "10px", color: "var(--border-bright)" }}>Create a mission to begin</span>
-            )}
+          <div style={{ padding: "16px", color: "var(--text-muted)", fontSize: "12px", textAlign: "center" }}>
+            No missions yet
           </div>
         )}
         {missions.map((mission) => {
-          const badge = statusBadge(mission.state);
+          const statusUi = getMissionStatusUi(mission.state);
           const isSelected = mission.missionId === selectedMissionId;
           return (
             <div
               key={mission.missionId}
               onClick={() => onSelect(mission.missionId)}
               style={{
-                padding: "12px 16px",
+                padding: "10px 12px",
+                marginBottom: "4px",
+                borderRadius: "6px",
                 cursor: "pointer",
-                borderBottom: "1px solid var(--border)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
                 background: isSelected ? "var(--bg-elevated)" : "transparent",
+                border: isSelected ? "1px solid var(--border)" : "1px solid transparent",
               }}
-              onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = "var(--bg-elevated)"; }}
+              onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = "var(--bg-hover)"; }}
               onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = "transparent"; }}
             >
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  {escalationMissionId === mission.missionId && (
-                    <span style={{ display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", background: "var(--warning)", boxShadow: "0 0 6px var(--warning)", flexShrink: 0 }} />
-                  )}
-                  <span style={badge.style}>{badge.label}</span>
-                  {mission.queuePosition != null && (
-                    <span style={{ fontSize: "11px", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace' }}>#{mission.queuePosition}</span>
-                  )}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0, flex: 1 }}>
+                  <span style={{ color: statusUi.iconColor, fontSize: "12px" }}>{statusUi.icon}</span>
+                  <span style={{ fontSize: "12px", color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {mission.description ?? mission.missionId.slice(0, 8)}
+                  </span>
                 </div>
-                <div style={{ fontSize: "14px", color: "var(--text-primary)", marginTop: "4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {mission.description ?? mission.missionId}
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
+                  {mission.queuePosition != null && (
+                    <span style={{ fontSize: "10px", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace' }}>#{mission.queuePosition}</span>
+                  )}
+                  <span style={statusUi.badgeStyle}>{statusUi.sidebarLabel}</span>
                 </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "4px", marginLeft: "8px" }}>
-                {mission.state === "failed" && (
+              <div style={{ display: "flex", gap: "4px", marginTop: "8px", justifyContent: "flex-end" }}>
+                {(mission.state === "failed" || mission.state === "aborted") && (
                   <button
                     onClick={(e) => handleRestart(e, mission.missionId)}
-                    style={{ color: "var(--accent)", background: "none", border: "1px solid var(--accent-dim)", borderRadius: "3px", cursor: "pointer", fontSize: "10px", opacity: 1, padding: "3px 6px", fontFamily: '"JetBrains Mono", monospace', textTransform: "uppercase", letterSpacing: "1px" }}
-                    title="Restart mission"
+                    style={{ fontSize: "10px", padding: "2px 8px", borderRadius: "3px", border: "1px solid var(--border)", background: "transparent", color: "var(--text-secondary)", cursor: "pointer" }}
                   >
                     Restart
                   </button>
                 )}
-                {(mission.state === "queued" || mission.state === "planning" || mission.state === "executing" || mission.state === "waiting_checkpoint") && (
+                {isMissionStoppable(mission.state) && (
                   <button
                     onClick={(e) => handleAbort(e, mission.missionId)}
-                    style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", fontSize: "12px", opacity: 0, transition: "opacity 0.15s", padding: "4px" }}
-                    onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; e.currentTarget.style.color = "var(--error)"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.opacity = "0"; e.currentTarget.style.color = "var(--text-muted)"; }}
-                    title="Abort mission"
+                    disabled={abortingMissionId === mission.missionId}
+                    style={{ fontSize: "10px", padding: "2px 8px", borderRadius: "3px", border: "1px solid var(--error)", background: "transparent", color: "var(--error)", cursor: abortingMissionId === mission.missionId ? "wait" : "pointer", opacity: abortingMissionId === mission.missionId ? 0.6 : 1 }}
                   >
-                    ✕
+                    {abortingMissionId === mission.missionId ? "Stopping…" : "Stop"}
                   </button>
                 )}
               </div>
+              {escalationMissionId === mission.missionId && (
+                <div style={{ marginTop: "6px", fontSize: "10px", color: "var(--warning)" }}>Awaiting checkpoint decision</div>
+              )}
             </div>
           );
         })}
       </div>
-      <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
-        <div style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "2px", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', marginBottom: "4px" }}>
-          Total Spent
+      {typeof totalCost === "number" && (
+        <div style={{ padding: "10px 16px", borderTop: "1px solid var(--border)", fontSize: "11px", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace' }}>
+          Session cost: ${totalCost.toFixed(2)}
         </div>
-        <div style={{ fontSize: "14px", fontWeight: 500, color: "var(--accent)", fontFamily: '"JetBrains Mono", monospace' }}>
-          ${(totalCost ?? 0).toFixed(2)}
-        </div>
-      </div>
+      )}
     </aside>
   );
 }

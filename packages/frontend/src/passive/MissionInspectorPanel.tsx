@@ -4,7 +4,7 @@ import { CodeContextPanel } from "./CodeContextPanel";
 import { MissionActivityFeed } from "./MissionActivityFeed";
 import { MissionDebugLog } from "./MissionDebugLog";
 import { SupplyChainPanel } from "./SupplyChainPanel";
-import { shouldShowSupplyChainTab, summarizeSupplyChainRisk } from "./missionUiModel";
+import { shouldShowSupplyChainTab, summarizeSupplyChainRisk, isMissionActive } from "./missionUiModel";
 
 interface MissionInspectorPanelProps {
   mission: { id: string; description: string; status: string };
@@ -33,7 +33,7 @@ export function MissionInspectorPanel(props: MissionInspectorPanelProps) {
   });
   const risk = summarizeSupplyChainRisk(props.scanFindings);
   const activityCount = Math.min(props.eventStreamCount, props.events.length + props.logs.length);
-  const isMissionActive = ["planning", "running", "executing"].includes(props.missionStatus);
+  const isMissionActiveStatus = isMissionActive(props.missionStatus);
 
   return (
     <aside className="mission-inspector-panel mission-inspector-panel--open">
@@ -44,7 +44,7 @@ export function MissionInspectorPanel(props: MissionInspectorPanelProps) {
         <MissionActivityFeed
           logs={props.logs}
           events={props.events}
-          active={isMissionActive}
+          active={isMissionActiveStatus}
           limit={props.eventStreamCount}
         />
       </InspectorSection>

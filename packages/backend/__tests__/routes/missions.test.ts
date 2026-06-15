@@ -277,6 +277,48 @@ describe("POST /api/missions", () => {
   });
 });
 
+describe("POST /api/missions/:id/abort", () => {
+  it("aborts an active mission and marks it aborted in LaPis", async () => {
+    const app = Fastify();
+    const emitted: unknown[] = [];
+    const mockLapis = {
+      getMission: vi.fn().mockResolvedValue({ id: "m-run", description: "Stop me", status: "running", configJson: {}, createdAt: "now" }),
+      updateMissionStatus: vi.fn().mockResolvedValue(undefined),
+    } as unknown as LaPisClient;
+    const pool = createMockPool([{ missionId: "m-run", state: "executing" }]);
+
+    app.register(missionRoutes, {
+      lapis: mockLapis,
+      pool,
+      eventBus: { emit: (event) => emitted.push(event) },
+    });
+
+    const response = await app.inject({ method: "POST", url: "/api/missions/m-run/abort" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ aborted: true });
+    expect(pool.abort).toHaveBeenCalledWith("m-run");
+    expect(mockLapis.updateMissionStatus).toHaveBeenCalledWith("m-run", "aborted");
+    expect(emitted).toContainEqual({ type: "mission_status", missionId: "m-run", status: "aborted" });
+  });
+
+  it("returns 409 when mission is already terminal", async () => {
+    const app = Fastify();
+    const mockLapis = {
+      getMission: vi.fn().mockResolvedValue({ id: "m-done", description: "Done", status: "completed", configJson: {}, createdAt: "now" }),
+      updateMissionStatus: vi.fn(),
+    } as unknown as LaPisClient;
+    const pool = createMockPool();
+
+    app.register(missionRoutes, { lapis: mockLapis, pool });
+
+    const response = await app.inject({ method: "POST", url: "/api/missions/m-done/abort" });
+
+    expect(response.statusCode).toBe(409);
+    expect(pool.abort).not.toHaveBeenCalled();
+  });
+});
+
 describe("POST /api/missions/:id/restart", () => {
   it("resets a failed mission to planning and submits it to the runner pool", async () => {
     const app = Fastify();
@@ -354,6 +396,38 @@ describe("GET /api/missions/current", () => {
     const body = response.json();
     expect(body.milestones).toHaveLength(1);
     expect(body.activeWorkers.map((u: any) => u.id)).toEqual(["u1"]);
+  });
+});
+
+describe("GET /api/missions/active", () => {
+  it("includes aborted missions in sidebar history hydrate", async () => {
+    const app = Fastify();
+    const mockLapis = {
+      listMissions: vi.fn().mockImplementation((query: { status?: string }) => {
+        if (query.status === "completed") {
+          return Promise.resolve([{ id: "m-done", description: "Done", status: "completed" }]);
+        }
+        if (query.status === "failed") {
+          return Promise.resolve([{ id: "m-fail", description: "Fail", status: "failed" }]);
+        }
+        if (query.status === "aborted") {
+          return Promise.resolve([{ id: "m-stop", description: "Stopped", status: "aborted" }]);
+        }
+        return Promise.resolve([]);
+      }),
+    } as unknown as LaPisClient;
+    const pool = createMockPool();
+
+    app.register(missionRoutes, { lapis: mockLapis, pool });
+
+    const response = await app.inject({ method: "GET", url: "/api/missions/active?includeHistory=10" });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.missions.map((m: { missionId: string; state: string }) => m.state)).toEqual(
+      expect.arrayContaining(["completed", "failed", "aborted"]),
+    );
+    expect(mockLapis.listMissions).toHaveBeenCalledWith({ status: "aborted" });
   });
 });
 

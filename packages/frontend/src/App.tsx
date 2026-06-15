@@ -14,6 +14,7 @@ import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useSupplyChain } from "./hooks/useSupplyChain";
 import { useQuota } from "./hooks/useQuota";
 import { useUpdateStatus } from "./hooks/useUpdateStatus";
+import { countActiveMissions, countTerminalMissions } from "./passive/missionUiModel";
 import { MissionSidebar } from "./active/MissionSidebar";
 import { StatusBoard } from "./passive/StatusBoard";
 import { EscalationOverlay } from "./active/EscalationOverlay";
@@ -25,7 +26,7 @@ import { QuotaPanel } from "./active/QuotaPanel";
 import { TopBar } from "./frame/TopBar";
 import { TelemetryBar } from "./frame/TelemetryBar";
 import { setTokenGetter, setAuthErrorHandler } from "./api";
-import { submitCheckpoint, createMission, restartMission, getRepoHotspots, getRepoSuggestions, getRepoReadiness, listRepoScans } from "./api";
+import { submitCheckpoint, createMission, restartMission, abortMission, getRepoHotspots, getRepoSuggestions, getRepoReadiness, listRepoScans } from "./api";
 import type { WsClientEvent, CheckpointDecision } from "@aurex/shared";
 import type { CodeSummaryResponse, CodeHotspotsResponse, RepoSuggestion, RepoReadinessProfile } from "./api";
 import type { BumblebeeScanResult, BumblebeeFinding } from "@aurex/shared";
@@ -69,8 +70,8 @@ export function App() {
     loading: boolean;
   } | null>(null);
   const { settings, setSettings, resetSettings } = useSettings();
-  const { state: missionsState, selectMission, removeMission, addOptimisticMission, markMissionRestarted, handleWsEvent: missionsWsHandler } = useMissions();
-  const { state, dispatch, handleWsEvent: missionWsHandler } = useMission(missionsState.selectedMissionId);
+  const { state: missionsState, selectMission, addOptimisticMission, markMissionRestarted, markMissionAborted, handleWsEvent: missionsWsHandler } = useMissions();
+  const { state, dispatch, handleWsEvent: missionWsHandler, reloadMission } = useMission(missionsState.selectedMissionId);
   const { state: supplyChainState, triggerScan: triggerSupplyChainScan, handleWsEvent: supplyChainWsHandler } = useSupplyChain(missionsState.selectedMissionId);
   const quotaWsHandlerRef = useRef<((event: WsClientEvent) => void) | null>(null);
   const quota = useQuota({
@@ -107,6 +108,7 @@ export function App() {
     }
   }, [bp.isMobile]);
 
+  const [abortingMissionId, setAbortingMissionId] = useState<string | null>(null);
   const [latestNotifEvent, setLatestNotifEvent] = useState<WsClientEvent | null>(null);
 
   const updateWsHandlerRef = useRef<((event: WsClientEvent) => void) | null>(null);
@@ -138,9 +140,7 @@ export function App() {
   // Browser notifications + tab badge
   useNotifications(latestNotifEvent, missionsState.selectedMissionId, settings.notificationsEnabled);
   const pendingEscalations = state.escalation?.type === "escalation" ? 1 : 0;
-  const terminalMissions = missionsState.missions.filter(
-    (m) => m.state === "completed" || m.state === "failed",
-  ).length;
+  const terminalMissions = countTerminalMissions(missionsState.missions.map((m) => m.state));
   useTabBadge(pendingEscalations, terminalMissions);
 
   const [uptime, setUptime] = useState("00:00:00");
@@ -221,17 +221,41 @@ export function App() {
     }
   }, []);
 
+  const handleRestartMission = useCallback(async (missionId: string) => {
+    try {
+      const { missionId: restartedId } = await restartMission(missionId);
+      markMissionRestarted(restartedId);
+      selectMission(restartedId);
+      dispatch({ type: "CLEAR_ERRORS" });
+      dispatch({ type: "CLEAR_ESCALATION" });
+      reloadMission();
+    } catch {
+      // Leave mission state unchanged when restart fails.
+    }
+  }, [markMissionRestarted, selectMission, dispatch, reloadMission]);
+
   const handleRetryMission = useCallback(async () => {
     if (!state.mission) return;
+    await handleRestartMission(state.mission.id);
+  }, [state.mission, handleRestartMission]);
+
+  const handleAbortMission = useCallback(async (missionId?: string) => {
+    const targetId = missionId ?? state.mission?.id;
+    if (!targetId) return;
+    setAbortingMissionId(targetId);
     try {
-      const missionId = state.mission.id;
-      dispatch({ type: "RESET" });
-      const { missionId: restartedId } = await restartMission(missionId);
-      dispatch({ type: "CLEAR_ERRORS" });
-      markMissionRestarted(missionId);
-      selectMission(restartedId);
-    } catch {}
-  }, [state.mission, dispatch, selectMission, markMissionRestarted]);
+      await abortMission(targetId);
+      markMissionAborted(targetId);
+      if (state.mission?.id === targetId) {
+        dispatch({ type: "MISSION_STATUS", status: "aborted" });
+        dispatch({ type: "CLEAR_ESCALATION" });
+      }
+    } catch {
+      // Leave mission state unchanged when abort fails (e.g. already finished).
+    } finally {
+      setAbortingMissionId((current) => (current === targetId ? null : current));
+    }
+  }, [state.mission?.id, dispatch, markMissionAborted]);
 
   // Keyboard shortcuts
   const { helpOpen, setHelpOpen } = useKeyboardShortcuts({
@@ -292,9 +316,7 @@ export function App() {
     );
   }
 
-  const activeMissionCount = missionsState.missions.filter(m =>
-    ["queued", "planning", "executing", "waiting_checkpoint"].includes(m.state)
-  ).length;
+  const activeMissionCount = countActiveMissions(missionsState.missions.map((m) => m.state));
 
   const gridColumns = bp.isMobile
     ? "1fr"
@@ -329,8 +351,9 @@ export function App() {
             selectedMissionId={missionsState.selectedMissionId}
             escalationMissionId={state.escalation?.type === "escalation" ? missionsState.selectedMissionId : null}
             onSelect={selectMission}
-            onRemove={removeMission}
-            onRestart={markMissionRestarted}
+            onAbort={handleAbortMission}
+            onRestart={handleRestartMission}
+            abortingMissionId={abortingMissionId}
             systemReady={systemReady}
             totalCost={state.cost?.totalCost}
             collapsed={sidebarCollapsed}
@@ -351,6 +374,8 @@ export function App() {
             autoCollapseContext={settings.autoCollapseContext}
             onExampleClick={handleCreateMission}
             onRetryMission={handleRetryMission}
+            onAbortMission={() => { void handleAbortMission(); }}
+            abortingMission={abortingMissionId === state.mission?.id}
             onDismissErrors={() => dispatch({ type: "CLEAR_ERRORS" })}
             scanFindings={supplyChainState.findings}
             isScanning={supplyChainState.isScanning}
@@ -388,8 +413,9 @@ export function App() {
               selectedMissionId={missionsState.selectedMissionId}
               escalationMissionId={state.escalation?.type === "escalation" ? missionsState.selectedMissionId : null}
               onSelect={(id) => { selectMission(id); if (id !== null) setMobileOverlayOpen(false); }}
-              onRemove={removeMission}
-              onRestart={markMissionRestarted}
+              onAbort={handleAbortMission}
+              onRestart={handleRestartMission}
+              abortingMissionId={abortingMissionId}
               systemReady={systemReady}
               totalCost={state.cost?.totalCost}
               collapsed={false}

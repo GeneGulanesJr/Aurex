@@ -195,13 +195,15 @@ export async function missionRoutes(
     const activeIds = new Set(active.map((m) => m.missionId));
     let history: Array<PoolMissionStatus & { description?: string }> = [];
     try {
-      const [completed, failed] = await Promise.all([
+      const [completed, failed, aborted] = await Promise.all([
         lapis.listMissions({ status: "completed" }),
         lapis.listMissions({ status: "failed" }),
+        lapis.listMissions({ status: "aborted" }),
       ]);
       const merged = [
         ...completed.map((m) => ({ missionId: m.id, state: m.status as PoolMissionStatus["state"], description: m.description })),
         ...failed.map((m) => ({ missionId: m.id, state: m.status as PoolMissionStatus["state"], description: m.description })),
+        ...aborted.map((m) => ({ missionId: m.id, state: m.status as PoolMissionStatus["state"], description: m.description })),
       ];
       history = merged
         .filter((m) => !activeIds.has(m.missionId))
@@ -216,11 +218,31 @@ export async function missionRoutes(
 
   app.post("/api/missions/:id/abort", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const status = pool.getStatus(id);
-    if (!status) {
-      return reply.status(404).send({ error: "Mission not found in pool" });
+    const poolStatus = pool.getStatus(id);
+
+    let mission: { status: string } | null = null;
+    try {
+      mission = await lapis.getMission(id);
+    } catch {
+      if (!poolStatus) {
+        return reply.status(404).send({ error: "Mission not found" });
+      }
     }
-    pool.abort(id);
+
+    if (mission && ["completed", "failed", "aborted"].includes(mission.status) && !poolStatus) {
+      return reply.status(409).send({ error: `Mission already ${mission.status}` });
+    }
+
+    if (poolStatus) {
+      pool.abort(id);
+    }
+
+    await lapis.updateMissionStatus(id, "aborted").catch(() => {});
+    eventBus?.emit({ type: "mission_status", missionId: id, status: "aborted" });
+    if (!poolStatus) {
+      eventBus?.emit({ type: "mission_completed", missionId: id, finalState: "aborted" });
+    }
+
     return { aborted: true };
   });
 

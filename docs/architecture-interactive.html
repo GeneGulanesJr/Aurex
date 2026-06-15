@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aurex — Interactive Architecture</title>
+<script>
+  (function () {
+    const saved = localStorage.getItem('aurex-arch-theme');
+    const dark = saved ? saved === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.classList.toggle('dark', dark);
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    document.documentElement.dataset.motion = reduce ? 'reduce' : 'full';
+  })();
+</script>
+<style>
+  :root {
+    --bg: #FAF9F5; --surface: #FFFFFF; --surface2: #F0EEE6;
+    --ink: #141413; --body: #3D3D3A; --muted: #87867F;
+    --line: #D1CFC5; --line-soft: #E6E3DA;
+    --clay: #D97757; --clay-soft: rgba(217,119,87,0.10);
+    --olive: #788C5D; --olive-soft: rgba(120,140,93,0.12);
+    --gold: #C9A45C; --blue: #5B7E96;
+    --violet: #8E6BB8; --violet-soft: rgba(142,107,184,0.12);
+    --zone: rgba(20,20,19,0.025); --zone-line: #D1CFC5;
+    --serif: ui-serif, Georgia, "Times New Roman", serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --lift: 0 4px 14px rgba(20,20,19,0.10), 0 1px 3px rgba(20,20,19,0.06);
+  }
+  html.dark {
+    --bg: #141413; --surface: #1F1F1D; --surface2: #2A2A28;
+    --ink: #FAF9F5; --body: #D1CFC5; --muted: #87867F;
+    --line: #3D3D3A; --line-soft: #2A2A28;
+    --clay: #E48A6E; --clay-soft: rgba(228,138,110,0.14);
+    --olive: #9DB07C; --olive-soft: rgba(157,176,124,0.16);
+    --gold: #D4B36F; --blue: #7FA3BC;
+    --violet: #B49BD3; --violet-soft: rgba(180,155,211,0.16);
+    --zone: rgba(250,249,245,0.03); --zone-line: #3D3D3A;
+    --lift: 0 4px 14px rgba(0,0,0,0.45), 0 1px 3px rgba(0,0,0,0.30);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--body); font-family: var(--sans);
+    -webkit-font-smoothing: antialiased; display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  /* ── top bar ─────────────────────────────── */
+  .bar {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 16px 24px; border-bottom: 1px solid var(--line-soft); flex: none;
+  }
+  .bar h1 { font-family: var(--serif); font-weight: 500; font-size: 21px; color: var(--ink); letter-spacing: -0.01em; }
+  .bar .sub { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+  .spacer { flex: 1; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.04em;
+    padding: 6px 13px; border: 1px solid var(--line); border-radius: 999px;
+    background: transparent; color: var(--muted); cursor: pointer;
+    transition: color .15s, border-color .15s, background .15s, transform .12s;
+  }
+  .chip:hover { color: var(--ink); border-color: var(--muted); transform: translateY(-1px); }
+  .chip.on { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+  #themeToggle {
+    font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    padding: 6px 11px; border: 1px solid var(--line); border-radius: 6px;
+    background: transparent; color: var(--muted); cursor: pointer;
+    transition: color .15s, border-color .15s;
+  }
+  #themeToggle:hover { color: var(--ink); border-color: var(--muted); }
+
+  /* ── stage ───────────────────────────────── */
+  .stage { flex: 1; position: relative; min-height: 0; }
+  .stage svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+  .zone rect { fill: var(--zone); stroke: var(--zone-line); stroke-width: 1; stroke-dasharray: 5 5; rx: 18; }
+  .zone .ztitle { font-family: var(--mono); font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; fill: var(--muted); }
+  .zone .zsub { font-family: var(--mono); font-size: 11.5px; fill: var(--muted); opacity: 0.75; }
+
+  .node { cursor: pointer; }
+  .node rect {
+    fill: var(--surface); stroke: var(--line); stroke-width: 1.5; rx: 12;
+    transition: stroke .18s, filter .18s, transform .18s;
+    transform-box: fill-box; transform-origin: center;
+  }
+  .node:hover rect { stroke: var(--muted); filter: drop-shadow(0 3px 10px rgba(20,20,19,0.10)); }
+  .node.sel rect { stroke: var(--clay) !important; stroke-width: 2.2; filter: var(--lift); }
+  .node .t  { font-family: var(--sans); font-size: 16px; font-weight: 600; fill: var(--ink); pointer-events: none; }
+  .node .m  { font-family: var(--mono); font-size: 11.5px; fill: var(--muted); pointer-events: none; }
+  .node .k  { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; fill: var(--clay); pointer-events: none; }
+  .node.gate rect { fill: var(--clay-soft); stroke: var(--clay); }
+  .node.store rect { fill: var(--surface2); }
+  .node.do rect { fill: var(--olive-soft); stroke: var(--olive); }
+  .node.ext rect { stroke-dasharray: 6 3; }
+  .node.violet rect { fill: var(--violet-soft); stroke: var(--violet); }
+  .node.violet .k { fill: var(--violet); }
+
+  .edge {
+    stroke: var(--muted); stroke-width: 1.8; fill: none;
+    marker-end: url(#a-mut);
+    transition: opacity .25s, stroke .25s, stroke-width .25s;
+  }
+  .edge.dash { stroke-dasharray: 5 4; }
+  .edge.ws { stroke-width: 2.4; }
+  .edge.gold { stroke: var(--gold); marker-end: url(#a-gold); }
+  .elbl {
+    font-family: var(--mono); font-size: 11.5px; fill: var(--muted);
+    transition: opacity .25s;
+    /* ensure label text is always readable even when crossing other elements */
+    paint-order: stroke fill;
+    stroke: var(--bg);
+    stroke-width: 3.5;
+    stroke-linejoin: round;
+  }
+  html.dark .elbl { stroke: var(--bg); }
+  .elbl.primary { fill: var(--clay); }
+
+  /* ambient animation on primary data-flow edges (always on) */
+  html[data-motion="full"] .edge.primary {
+    stroke: var(--clay); stroke-width: 2.4;
+    stroke-dasharray: 9 6; opacity: 0.6;
+    animation: march 2.2s linear infinite;
+  }
+  @keyframes march { to { stroke-dashoffset: -30; } }
+
+  .packet { fill: var(--clay); opacity: 0.9; filter: drop-shadow(0 0 5px var(--clay)); }
+  html[data-motion="reduce"] .packet { display: none; }
+  html[data-motion="reduce"] .edge.primary { animation: none; }
+
+  /* gentle pulse on the event bus */
+  html[data-motion="full"] .node.heart rect { animation: ring 2.8s ease-in-out infinite; }
+  @keyframes ring { 0%, 100% { stroke-opacity: 1; } 50% { stroke-opacity: 0.45; } }
+  html[data-motion="full"] .node.heart .t { animation: heartbeat 2.8s ease-in-out infinite; }
+  @keyframes heartbeat { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+
+  /* numbered step badges — always visible, in clay color */
+  .badge { font-family: var(--mono); font-size: 12px; font-weight: 700; }
+  .badge circle { fill: var(--clay); }
+  .badge text { fill: var(--bg); }
+  .stage.flowing .badge { display: none; }
+
+  /* flow chip dimming + lit highlight */
+  .stage.flowing .edge { opacity: 0.10; }
+  .stage.flowing .elbl { opacity: 0.10; }
+  .stage.flowing .node { opacity: 0.28; }
+  .stage.flowing .zone { opacity: 0.40; }
+  .stage.flowing .edge.lit {
+    opacity: 1; stroke: var(--clay); marker-end: url(#a-clay);
+    stroke-width: 2.8; stroke-dasharray: 9 5;
+    animation: march 0.9s linear infinite;
+  }
+  .stage.flowing .elbl.lit { opacity: 1; fill: var(--clay); stroke: var(--bg); }
+  .stage.flowing .node.lit { opacity: 1; }
+  .stage.flowing .node.lit rect { stroke: var(--clay); stroke-width: 2.2; }
+
+  /* floating cards */
+  .card {
+    position: absolute; max-width: 360px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+    padding: 16px 18px; box-shadow: var(--lift);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  #detail { right: 20px; bottom: 20px; width: 340px; }
+  #detail h3 { font-family: var(--serif); font-weight: 500; font-size: 18px; color: var(--ink); margin-bottom: 2px; }
+  #detail .meta { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 8px; letter-spacing: 0.04em; }
+  #detail p { font-size: 13px; line-height: 1.55; }
+  #detail p code, #flowcap code { font-family: var(--mono); font-size: 11.5px; color: var(--clay); }
+  #flowcap { left: 20px; bottom: 20px; max-width: 460px; display: none; }
+  #flowcap.show { display: block; }
+  #flowcap .fname { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--clay); margin-bottom: 6px; }
+  #flowcap ol { margin-left: 18px; }
+  #flowcap li { font-size: 13px; line-height: 1.55; margin-bottom: 3px; }
+  .src { position: absolute; top: 12px; right: 20px; font-family: var(--mono); font-size: 10.5px; color: var(--muted); opacity: 0.7; }
+
+  .legend {
+    position: absolute; left: 20px; top: 12px;
+    display: flex; gap: 14px; align-items: center;
+    font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+    letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  .legend .pill { display: inline-flex; gap: 6px; align-items: center; }
+  .legend .swatch {
+    display: inline-block; width: 22px; height: 2px;
+    background: var(--clay); opacity: 0.6;
+    background-image: linear-gradient(90deg, var(--clay) 60%, transparent 60%);
+    background-size: 8px 2px; background-repeat: repeat-x;
+  }
+  .legend .dot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--clay); box-shadow: 0 0 6px var(--clay);
+  }
+  .stage.flowing .legend { opacity: 0.4; }
+
+  @media (max-width: 1200px) {
+    body { overflow: auto; }
+    .stage { min-height: 80vh; }
+    #detail, #flowcap { position: static; width: auto; margin: 10px 20px; max-width: none; }
+    .legend { position: static; margin: 8px 20px; flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <div>
+    <h1>Aurex — interactive architecture</h1>
+    <div class="sub">dashboard · orchestrator · workers · validators · LaPis · PiNyx</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="chips" id="chips">
+    <button class="chip on" data-flow="all">Everything</button>
+    <button class="chip" data-flow="create">Create mission</button>
+    <button class="chip" data-flow="build">Build (worker)</button>
+    <button class="chip" data-flow="validate">Validate</button>
+    <button class="chip" data-flow="escalate">Escalate</button>
+    <button class="chip" data-flow="merge">Merge</button>
+  </div>
+  <button id="themeToggle">Theme</button>
+</div>
+
+<div class="stage" id="stage">
+<svg viewBox="0 0 2200 1300" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Aurex mission-control platform architecture diagram">
+  <defs>
+    <marker id="a-mut" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" style="fill: var(--muted)"/>
+    </marker>
+    <marker id="a-clay" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" style="fill: var(--clay)"/>
+    </marker>
+    <marker id="a-gold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" style="fill: var(--gold)"/>
+    </marker>
+  </defs>
+
+  <!-- ═══════════ TOP CORRIDOR (y=0..140, for arrows going up to State) ═══════════ -->
+  <text class="zone zsub" x="80" y="40" style="font-size: 10px; letter-spacing: 0.18em;">↑  TOP CORRIDOR — up &amp; over to Shared state  ↑</text>
+
+  <!-- ═══════════ ZONES ═══════════ -->
+  <g class="zone" id="z-client">
+    <rect x="60" y="160" width="320" height="240"/>
+    <text class="ztitle" x="84" y="196">Client</text>
+    <text class="zsub" x="84" y="218">the only thing a human touches</text>
+  </g>
+  <g class="zone" id="z-orch">
+    <rect x="440" y="160" width="600" height="1000"/>
+    <text class="ztitle" x="466" y="196">Orchestrator (Fastify backend)</text>
+    <text class="zsub" x="466" y="218">Node.js + TS · the only writer of mission state</text>
+  </g>
+  <g class="zone" id="z-agents">
+    <rect x="1100" y="160" width="440" height="660"/>
+    <text class="ztitle" x="1126" y="196">Agent fleet (per-mission, isolated)</text>
+    <text class="zsub" x="1126" y="218">one Pi SDK session per worker · own git worktree</text>
+  </g>
+  <g class="zone" id="z-validate">
+    <rect x="1100" y="860" width="440" height="300"/>
+    <text class="ztitle" x="1126" y="896">Validator + researcher</text>
+    <text class="zsub" x="1126" y="918">read-mostly · separate git refs</text>
+  </g>
+  <g class="zone" id="z-state">
+    <rect x="1820" y="160" width="320" height="540"/>
+    <text class="ztitle" x="1846" y="196">Shared state + gateway</text>
+    <text class="zsub" x="1846" y="218">single source of truth · sole LLM path</text>
+  </g>
+  <g class="zone" id="z-ext">
+    <rect x="1820" y="740" width="320" height="420"/>
+    <text class="ztitle" x="1846" y="776">Externals</text>
+    <text class="zsub" x="1846" y="798">providers · git · observability</text>
+  </g>
+
+  <!-- ═══════════ EDGES — drawn first so nodes paint over them ═══════════ -->
+
+  <!-- ── Client → Orchestrator (direct, short) ── -->
+  <path class="edge ws primary"   id="e-ws"         d="M380,260 C 410,260 420,260 440,260"/>
+  <path class="edge primary"      id="e-create"     d="M380,300 C 410,300 420,420 440,420"/>
+  <path class="edge"              id="e-checkpoint" d="M380,340 C 410,340 420,560 440,560"/>
+
+  <text class="elbl" data-e="e-ws"         x="392" y="250">WebSocket · mission events</text>
+  <text class="elbl primary" data-e="e-create" x="392" y="372">POST /api/missions</text>
+  <text class="elbl" data-e="e-checkpoint" x="392" y="510">POST /api/.../checkpoints</text>
+
+  <!-- ── Orchestrator → Agents (spawn edges, through dedicated gap x=1040..1100) ── -->
+  <path class="edge gold primary" id="e-spawnW" d="M1040,420 C 1070,420 1075,300 1100,300"/>
+  <path class="edge gold"         id="e-spawnV" d="M1040,940 C 1070,940 1075,940 1100,940"/>
+  <path class="edge gold"         id="e-spawnR" d="M1040,1080 C 1070,1080 1075,1080 1100,1080"/>
+
+  <text class="elbl" data-e="e-spawnW" x="1046" y="360">spawn worker</text>
+  <text class="elbl" data-e="e-spawnV" x="1046" y="930">spawn validator</text>
+  <text class="elbl" data-e="e-spawnR" x="1046" y="1070">spawn researcher</text>
+
+  <!-- ── Agents → State: short right-arrow through the 1540..1820 gap (right corridor) ── -->
+  <path class="edge dash primary" id="e-wLapis"  d="M1540,260 C 1620,260 1700,260 1820,260"/>
+  <path class="edge dash"         id="e-wPinyx"  d="M1540,360 C 1620,360 1700,400 1820,400"/>
+  <path class="edge dash"         id="e-vLapis"  d="M1540,940 C 1620,940 1700,940 1820,500"/>
+  <path class="edge dash"         id="e-rLapis"  d="M1540,1060 C 1620,1060 1700,1060 1820,560"/>
+
+  <text class="elbl" data-e="e-wLapis" x="1610" y="248">write milestone state</text>
+  <text class="elbl" data-e="e-wPinyx" x="1610" y="388">model calls · via gateway</text>
+  <text class="elbl" data-e="e-vLapis" x="1610" y="928">write verdict (dashed = async)</text>
+  <text class="elbl" data-e="e-rLapis" x="1610" y="1048">planner context (read)</text>
+
+  <!-- ── Orchestrator → State: route UP through top corridor (y=0..160) then RIGHT ── -->
+  <!-- Start at the RIGHT EDGE of the source node, exit the zone, then go up to the top corridor -->
+  <!-- Event bus right edge: x=1010, y=758 (mid-height of node at y=720..796) → LaPis left edge x=1840, y=210 -->
+  <path class="edge primary" id="e-oLapis"  d="M1010,758 L 1080,758 L 1080,80 L 1820,80 L 1820,210"/>
+  <!-- Quota gate right edge: x=730, y=860 → PiNyx left edge x=1840, y=350 -->
+  <path class="edge"         id="e-oPinyx"  d="M730,860 L 1040,860 L 1040,100 L 1820,100 L 1820,350"/>
+  <!-- OTel exporter right edge: x=1010, y=860 → quota-wrapper left edge x=1840, y=490 -->
+  <path class="edge"         id="e-oOtel"   d="M1010,860 L 1070,860 L 1070,120 L 1820,120 L 1820,490"/>
+  <!-- Mutation runner right edge: x=1010, y=1069 → GitHub left edge x=1840, y=1010 -->
+  <path class="edge"         id="e-oGithub" d="M1010,1069 L 1080,1069 L 1080,140 L 1820,140 L 1820,1010"/>
+
+  <text class="elbl primary" data-e="e-oLapis"  x="1110" y="73">mission state writes</text>
+  <text class="elbl"         data-e="e-oPinyx"  x="1110" y="93">router agent calls</text>
+  <text class="elbl"         data-e="e-oOtel"   x="1110" y="113">OTLP metrics</text>
+  <text class="elbl"         data-e="e-oGithub" x="1110" y="133">PR open · merge</text>
+
+  <!-- ═══════════ TRAVELING PACKETS ═══════════ -->
+  <circle class="packet" r="5">
+    <animateMotion dur="3.4s" repeatCount="indefinite"><mpath href="#e-create"/></animateMotion>
+  </circle>
+  <circle class="packet" r="4">
+    <animateMotion dur="2.8s" repeatCount="indefinite" begin="0.6s"><mpath href="#e-spawnW"/></animateMotion>
+  </circle>
+  <circle class="packet" r="4">
+    <animateMotion dur="3.0s" repeatCount="indefinite" begin="1.4s"><mpath href="#e-wLapis"/></animateMotion>
+  </circle>
+  <circle class="packet" r="4">
+    <animateMotion dur="4.4s" repeatCount="indefinite" begin="2.0s"><mpath href="#e-oLapis"/></animateMotion>
+  </circle>
+  <circle class="packet" r="4">
+    <animateMotion dur="3.8s" repeatCount="indefinite" begin="2.6s"><mpath href="#e-wPinyx"/></animateMotion>
+  </circle>
+
+  <!-- ═══════════ NUMBERED STEP BADGES (default mode) ═══════════ -->
+  <g class="badge" id="b1"><circle cx="406" cy="300" r="11"/><text x="406" y="304" text-anchor="middle">1</text></g>
+  <g class="badge" id="b2"><circle cx="1075" cy="360" r="11"/><text x="1075" y="364" text-anchor="middle">2</text></g>
+  <g class="badge" id="b3"><circle cx="1800" cy="260" r="11"/><text x="1800" y="264" text-anchor="middle">3</text></g>
+
+  <!-- ═══════════ CLIENT NODES ═══════════ -->
+  <g class="node" data-k="dashboard">
+    <rect x="84" y="260" width="296" height="108"/>
+    <text class="t" x="106" y="296">Dashboard</text>
+    <text class="m" x="106" y="322">React 19 + Vite + Tailwind + anime.js</text>
+    <text class="m" x="106" y="344">mission pipeline · integrations ·</text>
+    <text class="m" x="106" y="360">escalation overlay</text>
+  </g>
+
+  <!-- ═══════════ ORCHESTRATOR NODES ═══════════ -->
+  <!-- Row 1: API entry + Enforcement -->
+  <g class="node" data-k="api">
+    <rect x="470" y="240" width="240" height="68"/>
+    <text class="t" x="492" y="272">REST + WebSocket</text>
+    <text class="m" x="492" y="296">/api/missions · /api/checkpoints · /ws</text>
+  </g>
+  <g class="node gate" data-k="enforce">
+    <rect x="470" y="380" width="540" height="92"/>
+    <text class="t" x="492" y="416">Enforcement module</text>
+    <text class="k" x="492" y="438">the one boundary layer</text>
+    <text class="m" x="492" y="458">branch protection · handoff · contract · quota</text>
+  </g>
+  <!-- Row 2: Planner / Negotiator -->
+  <g class="node" data-k="planner">
+    <rect x="470" y="500" width="260" height="78"/>
+    <text class="t" x="492" y="534">Planner</text>
+    <text class="m" x="492" y="560">mission → milestones</text>
+  </g>
+  <g class="node" data-k="negotiator">
+    <rect x="750" y="500" width="260" height="78"/>
+    <text class="t" x="772" y="534">Negotiator</text>
+    <text class="m" x="772" y="560">pass · retry · escalate</text>
+  </g>
+  <!-- Row 3: Spawner (wide) -->
+  <g class="node" data-k="spawner">
+    <rect x="470" y="600" width="540" height="92"/>
+    <text class="t" x="492" y="636">Generalized spawner</text>
+    <text class="m" x="492" y="660">Pi SDK session · skills load · tools ·</text>
+    <text class="m" x="492" y="678">worktree per worker</text>
+  </g>
+  <!-- Row 4: Event bus (heart) -->
+  <g class="node heart" data-k="ws-bus">
+    <rect x="470" y="720" width="540" height="76"/>
+    <text class="t" x="492" y="752">Event bus</text>
+    <text class="k" x="492" y="770">always-on · the heart</text>
+    <text class="m" x="492" y="788">mission_update · milestone_change · checkpoint_needed · quota_update</text>
+  </g>
+  <!-- Row 5: Quota / OTel -->
+  <g class="node violet" data-k="quota">
+    <rect x="470" y="820" width="260" height="80"/>
+    <text class="t" x="492" y="854">Quota gate</text>
+    <text class="k" x="492" y="874">pinyx-quota-wrapper</text>
+  </g>
+  <g class="node" data-k="otel">
+    <rect x="750" y="820" width="260" height="80"/>
+    <text class="t" x="772" y="854">OTel exporter</text>
+    <text class="m" x="772" y="880">OTLP → collector</text>
+  </g>
+  <!-- Row 6: Cost / Supply-chain -->
+  <g class="node" data-k="cost">
+    <rect x="470" y="930" width="260" height="72"/>
+    <text class="t" x="492" y="962">Cost ledger</text>
+    <text class="m" x="492" y="988">tokens × $/M · per mission</text>
+  </g>
+  <g class="node" data-k="supply">
+    <rect x="750" y="930" width="260" height="72"/>
+    <text class="t" x="772" y="962">Supply-chain scan</text>
+    <text class="m" x="772" y="988">Bumblebee · JS fallback</text>
+  </g>
+  <!-- Row 7: Mutation runner -->
+  <g class="node" data-k="mutation">
+    <rect x="470" y="1030" width="540" height="78"/>
+    <text class="t" x="492" y="1062">Mutation runner (Stryker)</text>
+    <text class="m" x="492" y="1088">diff-scoped · `pnpm test:mutation:diff`</text>
+  </g>
+
+  <!-- ═══════════ AGENT FLEET NODES ═══════════ -->
+  <g class="node do" data-k="worker">
+    <rect x="1130" y="260" width="380" height="180"/>
+    <text class="t" x="1152" y="298">Worker</text>
+    <text class="k" x="1152" y="322">writes code</text>
+    <text class="m" x="1152" y="348">Pi SDK session · own git worktree</text>
+    <text class="m" x="1152" y="368">tools: read · edit · run tests · commit</text>
+    <text class="m" x="1152" y="388">skill file: ~700 line budget</text>
+  </g>
+  <g class="node do" data-k="wt">
+    <rect x="1130" y="470" width="180" height="108"/>
+    <text class="t" x="1152" y="504">worktree</text>
+    <text class="m" x="1152" y="528">git worktree</text>
+    <text class="m" x="1152" y="546">branch: msn-N/</text>
+    <text class="m" x="1152" y="562">mlst-K</text>
+  </g>
+  <g class="node do" data-k="tools">
+    <rect x="1330" y="470" width="180" height="108"/>
+    <text class="t" x="1352" y="504">Tools</text>
+    <text class="m" x="1352" y="528">shell · editor</text>
+    <text class="m" x="1352" y="546">vitest · ripgrep</text>
+    <text class="m" x="1352" y="562">commit/PR helpers</text>
+  </g>
+  <g class="node do" data-k="skill">
+    <rect x="1130" y="600" width="380" height="80"/>
+    <text class="t" x="1152" y="634">Worker skill (markdown)</text>
+    <text class="m" x="1152" y="660">logic in prompts · boundaries in runtime</text>
+  </g>
+  <g class="node do" data-k="retry">
+    <rect x="1130" y="700" width="380" height="80"/>
+    <text class="t" x="1152" y="734">Retry policy</text>
+    <text class="m" x="1152" y="760">up to 2 retries · then re-scope or escalate</text>
+  </g>
+
+  <!-- ═══════════ VALIDATOR + RESEARCHER NODES ═══════════ -->
+  <g class="node do" data-k="validator">
+    <rect x="1130" y="900" width="180" height="140"/>
+    <text class="t" x="1152" y="934">Validator</text>
+    <text class="k" x="1152" y="956">reviews worker</text>
+    <text class="m" x="1152" y="982">acceptance criteria</text>
+    <text class="m" x="1152" y="1000">separate git ref</text>
+    <text class="m" x="1152" y="1018">returns verdict</text>
+  </g>
+  <g class="node do" data-k="researcher">
+    <rect x="1330" y="900" width="180" height="140"/>
+    <text class="t" x="1352" y="934">Researcher</text>
+    <text class="k" x="1352" y="956">read-only</text>
+    <text class="m" x="1352" y="982">codebase context</text>
+    <text class="m" x="1352" y="1000">for planner</text>
+    <text class="m" x="1352" y="1018">no writes</text>
+  </g>
+  <g class="node" data-k="contract">
+    <rect x="1130" y="1060" width="380" height="60"/>
+    <text class="m" x="1152" y="1095" style="font-size: 13px;">Acceptance contract · immutable after milestone start</text>
+  </g>
+
+  <!-- ═══════════ STATE ZONE NODES ═══════════ -->
+  <g class="node store" data-k="lapis">
+    <rect x="1840" y="160" width="280" height="100"/>
+    <text class="t" x="1862" y="194">LaPis</text>
+    <text class="k" x="1862" y="214">IS the database</text>
+    <text class="m" x="1862" y="236">SQLite-backed HTTP API</text>
+  </g>
+  <g class="node store" data-k="pinyx">
+    <rect x="1840" y="300" width="280" height="100"/>
+    <text class="t" x="1862" y="334">PiNyx</text>
+    <text class="k" x="1862" y="354">sole LLM gateway</text>
+    <text class="m" x="1862" y="376">provider · key · model · quota</text>
+  </g>
+  <g class="node ext" data-k="quota-wrap">
+    <rect x="1840" y="440" width="280" height="100"/>
+    <text class="t" x="1862" y="474">quota-wrapper</text>
+    <text class="m" x="1862" y="498">rate-limit per coding plan</text>
+    <text class="m" x="1862" y="516">emits quota_update over WS</text>
+  </g>
+
+  <!-- ═══════════ EXTERNALS ZONE NODES ═══════════ -->
+  <g class="node ext" data-k="providers">
+    <rect x="1840" y="840" width="280" height="100"/>
+    <text class="t" x="1862" y="874">Provider APIs</text>
+    <text class="m" x="1862" y="898">Anthropic · OpenAI · Mistral · local</text>
+    <text class="m" x="1862" y="916">behind PiNyx · never directly</text>
+  </g>
+  <g class="node ext" data-k="github">
+    <rect x="1840" y="960" width="280" height="100"/>
+    <text class="t" x="1862" y="994">GitHub</text>
+    <text class="m" x="1862" y="1018">PR open · branch · merge</text>
+    <text class="m" x="1862" y="1036">worker PRs · audit trail</text>
+  </g>
+  <g class="node ext" data-k="otel-coll">
+    <rect x="1840" y="1080" width="280" height="60"/>
+    <text class="t" x="1862" y="1108">OTel collector</text>
+    <text class="m" x="1862" y="1126">:9464 Prometheus scrape</text>
+  </g>
+</svg>
+
+  <div class="legend">
+    <span class="pill"><span class="swatch"></span> live data path</span>
+    <span class="pill"><span class="dot"></span> request in flight</span>
+    <span class="pill" style="color: var(--gold);">━━━</span>
+    <span style="color: var(--gold);">spawn</span>
+  </div>
+
+  <div class="src">Aurex/README.md + docs/api.md + design #8295</div>
+
+  <div class="card" id="flowcap">
+    <div class="fname" id="f-name"></div>
+    <ol id="f-steps"></ol>
+  </div>
+
+  <div class="card" id="detail">
+    <h3 id="d-title">Click any node</h3>
+    <div class="meta" id="d-meta">node detail</div>
+    <p id="d-body">Boxes are clickable. The chips up top light up specific request paths — Create mission, Build, Validate, Escalate, Merge. By default you can see the always-on data flow with packets traveling through the system. Cross-zone arrows are routed through the top corridor (above) so they never collide with node labels.</p>
+  </div>
+</div>
+
+<script>
+const DETAIL = {
+  dashboard:  { t:"Dashboard",            m:"client · React 19 + Vite", b:"The only thing a human touches. Three themes: Solar Flare, Frost Command, Signal Red. Real-time mission pipeline (rail + inspector with Activity/Code/Supply-Chain tabs), integrations panel, escalation overlay when the orchestrator needs a decision." },
+  api:        { t:"REST + WebSocket",      m:"orchestrator · the one ingress", b:"<code>/api/missions</code> for CRUD, <code>/ws</code> for live events: status changes, milestone transitions, cost updates, checkpoint escalations. WebSocket supports auth and replay." },
+  enforce:    { t:"Enforcement module",    m:"orchestrator · the one boundary", b:"All runtime constraints live here — branch protection, handoff validation, contract immutability, quota gate. Skills describe <i>how</i> an agent works; this module is <i>what the agent cannot bypass</i>." },
+  planner:    { t:"Planner",               m:"orchestrator · Pi SDK session", b:"Breaks the mission into milestones. Lives in the orchestrator process — not a worker — so a single source of truth holds the plan. Calls PiNyx through the quota gate." },
+  negotiator: { t:"Negotiator",            m:"orchestrator · decision maker", b:"Reads the validator's verdict, the cost ledger, and the retry counter. Returns <code>pass</code>, <code>retry</code>, <code>escalate</code>, or <code>rescope</code>. The only code that decides what happens next." },
+  spawner:    { t:"Generalized spawner",   m:"orchestrator · per-agent factory", b:"Builds a Pi SDK session for any agent type. Loads the right skill file, resolves tools, creates a git worktree, returns a handle. Workers, validators, and researchers all flow through the same factory — only the skill and tools differ." },
+  "ws-bus":   { t:"Event bus",             m:"orchestrator · live surface", b:"All mission events flow through here: <code>mission_update</code>, <code>milestone_change</code>, <code>checkpoint_needed</code>, <code>quota_update</code>. Broadcasts to subscribed WebSocket clients. The dashboard's real-time feel rides on this — notice it pulses." },
+  quota:      { t:"Quota gate",            m:"orchestrator · pinyx-quota-wrapper", b:"Rate-limit per coding plan before any model call goes out. Emits <code>quota_update</code> to the event bus when limits change. A worker that hits the cap is paused cleanly, not killed." },
+  otel:       { t:"OTel exporter",         m:"orchestrator · observability", b:"Exports OTLP metrics to the bundled collector at <code>:9464</code>. Tracks token spend, mission duration, validator pass rate, and per-agent tool-call histograms. No traces, no logs — metrics only by design." },
+  cost:       { t:"Cost ledger",           m:"orchestrator · spend tracking", b:"Every model call from every agent lands here as a row. Per-mission totals feed the negotiator (so it can refuse to overspend) and the dashboard (running cost chip). <code>MISSION_COST_CAP</code> defaults to <code>$50</code>." },
+  supply:     { t:"Supply-chain scan",     m:"orchestrator · deps audit", b:"Bumblebee (with a native-JS fallback) audits the worker PR's dependencies. Results surface in the dashboard's Supply-Chain tab. Failures can be flagged to the validator." },
+  mutation:   { t:"Mutation runner",       m:"orchestrator · Stryker", b:"Runs Stryker on the worker's diff. <code>pnpm test:mutation:diff</code> scopes to changed files only so a full repo scan isn't required for every milestone. Surfaces tests-that-don't-actually-test-anything." },
+  worker:     { t:"Worker",                m:"agent · writes code", b:"The only agent type that mutates the repo. Owns its git worktree, opens a PR. The skill file is the contract — what to commit, when to commit, how to test, when to ask. ~700 line skill budget keeps prompts focused." },
+  wt:         { t:"Worktree",              m:"agent · git isolation", b:"Every worker gets its own <code>git worktree</code> on a unique branch (typically <code>msn-N/mlst-K</code>). Merging into <code>main</code> goes through the enforcement module's branch protection — workers never touch <code>main</code> directly." },
+  tools:      { t:"Worker tools",          m:"agent · capability surface", b:"Shell, editor, vitest, ripgrep, commit/PR helpers. The spawner resolves these from the skill's declared tool list. Tool failures bubble up to the negotiator as <code>retry</code> candidates, never silently." },
+  skill:      { t:"Worker skill",          m:"agent · markdown contract", b:"A markdown file the spawner loads into the Pi SDK session. Logic in prompts, boundaries in runtime. The enforcement module is the floor; the skill is the ceiling — what good work looks like." },
+  retry:      { t:"Retry policy",          m:"agent · bounded attempts", b:"Up to 2 retries on the same worker for the same milestone. After that, the negotiator rescopes (re-plans that milestone) or escalates to the human. No infinite loops." },
+  validator:  { t:"Validator",             m:"agent · reviews worker", b:"Separate Pi SDK session, separate git ref. Reads the worker's branch, runs the acceptance contract, returns a verdict. Cannot mutate code — read-only by design." },
+  researcher: { t:"Researcher",            m:"agent · read-only scout", b:"Called by the planner when it needs codebase context. Maps the repo, summarizes existing patterns, feeds the planner. No writes, no PRs." },
+  contract:   { t:"Acceptance contract",   m:"immutable after milestone start", b:"Written at milestone planning time, frozen before the worker starts. The validator runs against this exact text. Drift triggers an escalation, not a silent rewrite." },
+  lapis:      { t:"LaPis",                 m:"state · IS the database", b:"SQLite-backed HTTP API. <b>LaPis IS the DB</b> — the orchestrator doesn't keep its own state. Missions, milestones, checkpoints, cost, and the symbol index all live here. Bundled as <code>Dockerfile.lapis</code>, runs on <code>:9100</code>." },
+  pinyx:      { t:"PiNyx",                 m:"gateway · sole LLM path", b:"Every model call goes through here. Owns providers, keys, and the <code>pinyx-quota-wrapper</code>. Agents do not see API keys — they call PiNyx with a session token. Bundled as <code>Dockerfile.pinyx</code>, runs on <code>:7331</code>." },
+  "quota-wrap":{ t:"quota-wrapper",         m:"gateway · rate-limit", b:"Wraps the PiNyx model call path. Tracks spend per coding plan, refuses calls that would exceed the cap, and emits <code>quota_update</code> events upstream so the dashboard reflects limits in real time." },
+  providers:  { t:"Provider APIs",         m:"external · LLM providers", b:"Anthropic, OpenAI, Mistral, local ROCm — all reached via PiNyx. The orchestrator never imports a provider SDK. If a new provider is needed, add it to PiNyx and it's available to every agent." },
+  github:     { t:"GitHub",                m:"external · source of truth for PRs", b:"Workers open PRs. The orchestrator merges approved ones. The dashboard's Code tab pulls PR data from here. OAuth is configured in the Integrations panel." },
+  "otel-coll":{ t:"OTel collector",        m:"external · metrics bridge", b:"Receives OTLP metrics from the orchestrator, exposes a Prometheus-compatible scrape endpoint on <code>:9464/metrics</code>. Point your external Prometheus/Grafana at it for Aurex app metrics." },
+};
+
+const FLOWS = {
+  create: {
+    name: "Create — human kicks off a mission",
+    edges: ["e-create","e-oLapis","e-wLapis"],
+    nodes: ["dashboard","api","enforce","planner","lapis"],
+    steps: [
+      "<code>POST /api/missions</code> with a goal and target repo",
+      "Enforcement module gates: branch protected, cost-cap OK, contract seeded",
+      "Planner session (via PiNyx) decomposes the goal into milestones",
+      "Milestones + acceptance contracts written to <b>LaPis</b>"
+    ]
+  },
+  build: {
+    name: "Build — worker writes code",
+    edges: ["e-spawnW","e-wLapis","e-wPinyx","e-oPinyx","e-oGithub"],
+    nodes: ["dashboard","api","spawner","worker","wt","tools","skill","lapis","pinyx","github"],
+    steps: [
+      "Negotiator selects next milestone, calls the spawner",
+      "Spawner creates a Pi SDK session, loads the worker skill, builds a git worktree",
+      "Worker uses tools (edit, shell, vitest) inside its worktree — never touches <code>main</code>",
+      "Every model call goes worker → orchestrator → <b>PiNyx</b> (with quota gate)",
+      "Worker commits and pushes a branch; orchestrator opens a PR on <b>GitHub</b>"
+    ]
+  },
+  validate: {
+    name: "Validate — separate agent reviews",
+    edges: ["e-spawnV","e-vLapis","e-wPinyx"],
+    nodes: ["dashboard","api","spawner","validator","contract","lapis","pinyx"],
+    steps: [
+      "Spawner creates a validator session on the worker's branch (read-only ref)",
+      "Validator runs the acceptance contract, executes the test suite, checks diff scope",
+      "Returns <code>pass</code> / <code>fail</code> + reasoning → <b>LaPis</b>",
+      "Stryker mutation runner scores test quality in parallel"
+    ]
+  },
+  escalate: {
+    name: "Escalate — orchestrator needs the human",
+    edges: ["e-checkpoint","e-ws"],
+    nodes: ["dashboard","api","enforce","negotiator","ws-bus"],
+    steps: [
+      "Negotiator hits an escalation trigger: scope change, cost cap, retry exhaustion, validator conflict",
+      "A <code>checkpoint_needed</code> event hits the event bus and fans out over <b>WebSocket</b>",
+      "Dashboard shows the escalation overlay with context, attempt history, and approve/reject/rescope",
+      "Human's <code>POST /api/.../checkpoints</code> resolves it; the negotiator resumes"
+    ]
+  },
+  merge: {
+    name: "Merge — work becomes the user's code",
+    edges: ["e-oGithub","e-oLapis","e-wLapis"],
+    nodes: ["dashboard","api","enforce","lapis","github","cost"],
+    steps: [
+      "On approval, orchestrator calls GitHub to merge the PR (enforcement checks branch protection)",
+      "Worktree is removed; milestone state in <b>LaPis</b> flips to <code>merged</code>",
+      "Cost ledger closes the row; supply-chain scan results are persisted for audit",
+      "Event bus emits <code>mission_update</code>; dashboard celebrates"
+    ]
+  }
+};
+
+const stage = document.getElementById('stage');
+const nodes = document.querySelectorAll('.node');
+const edges = document.querySelectorAll('.edge');
+const elbls = document.querySelectorAll('.elbl');
+const chips = document.querySelectorAll('.chip');
+const fcap = document.getElementById('flowcap');
+
+function setFlow(key) {
+  chips.forEach(c => c.classList.toggle('on', c.dataset.flow === key));
+  edges.forEach(e => e.classList.remove('lit'));
+  elbls.forEach(l => l.classList.remove('lit'));
+  nodes.forEach(n => n.classList.remove('lit'));
+  if (key === 'all') { stage.classList.remove('flowing'); fcap.classList.remove('show'); return; }
+  const f = FLOWS[key];
+  if (!f) return;
+  stage.classList.add('flowing');
+  f.edges.forEach(id => document.getElementById(id)?.classList.add('lit'));
+  elbls.forEach(l => { if (f.edges.includes(l.dataset.e)) l.classList.add('lit'); });
+  f.nodes.forEach(k => document.querySelector(`.node[data-k="${k}"]`)?.classList.add('lit'));
+  document.getElementById('f-name').textContent = f.name;
+  document.getElementById('f-steps').innerHTML = f.steps.map(s => `<li>${s}</li>`).join('');
+  fcap.classList.add('show');
+}
+chips.forEach(c => c.addEventListener('click', () => setFlow(c.dataset.flow)));
+
+nodes.forEach(n => n.addEventListener('click', () => {
+  nodes.forEach(x => x.classList.remove('sel'));
+  n.classList.add('sel');
+  const d = DETAIL[n.dataset.k];
+  if (!d) return;
+  document.getElementById('d-title').textContent = d.t;
+  document.getElementById('d-meta').textContent = d.m;
+  document.getElementById('d-body').innerHTML = d.b;
+}));
+
+document.getElementById('themeToggle').addEventListener('click', () => {
+  const dark = !document.documentElement.classList.contains('dark');
+  document.documentElement.classList.toggle('dark', dark);
+  localStorage.setItem('aurex-arch-theme', dark ? 'dark' : 'light');
+});
+</script>
+</body>
+</html>

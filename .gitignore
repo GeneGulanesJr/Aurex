@@ -8,3 +8,5 @@ packages/*/dist/
 .stryker-tmp/
 reports/
 certs/
+AGENTS.md
+.cursor

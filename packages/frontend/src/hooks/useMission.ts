@@ -1,4 +1,4 @@
-import { useReducer, useCallback, useEffect } from "react";
+import { useReducer, useCallback, useEffect, useState } from "react";
 import type { Mission, Milestone, WorkingUnit, CostSummary, WsClientEvent, MilestoneStatus, AgentType, AgentStatus, AgentOutputEventType } from "@aurex/shared";
 import { getMission, getAgentLogs } from "../api";
 
@@ -67,6 +67,13 @@ export function missionReducer(state: MissionState, action: Action): MissionStat
       return { ...state, milestones };
     }
     case "AGENT_STATUS": {
+      const terminalWorkerStatuses = new Set(["completed", "failed", "timed_out", "superseded"]);
+      if (terminalWorkerStatuses.has(action.status)) {
+        return {
+          ...state,
+          activeWorkers: state.activeWorkers.filter((w) => w.id !== action.agentId),
+        };
+      }
       const existing = state.activeWorkers.find((w) => w.id === action.agentId);
       if (existing) {
         const activeWorkers = state.activeWorkers.map((w) =>
@@ -82,8 +89,13 @@ export function missionReducer(state: MissionState, action: Action): MissionStat
     }
     case "MISSION_COMPLETED": {
       if (!state.mission) return state;
-      const status = action.finalState === "completed" ? "completed" as const : "failed" as const;
-      return { ...state, mission: { ...state.mission, status } };
+      if (state.mission.status === "aborted") return state;
+      const status = action.finalState === "completed"
+        ? "completed" as const
+        : action.finalState === "aborted"
+          ? "aborted" as const
+          : "failed" as const;
+      return { ...state, mission: { ...state.mission, status }, escalation: null };
     }
     case "MISSION_LOG": {
       const log = { phase: action.phase, message: action.message, timestamp: Date.now(), data: action.data };
@@ -121,6 +133,11 @@ export function missionReducer(state: MissionState, action: Action): MissionStat
 
 export function useMission(missionId: string | null) {
   const [state, dispatch] = useReducer(missionReducer, initialMissionState);
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  const reloadMission = useCallback(() => {
+    setReloadNonce((value) => value + 1);
+  }, []);
 
   useEffect(() => {
     if (!missionId) {
@@ -143,7 +160,7 @@ export function useMission(missionId: string | null) {
       .catch(() => {});
 
     return () => { cancelled = true; };
-  }, [missionId]);
+  }, [missionId, reloadNonce]);
 
   // Rehydrate agent logs on mount so the event timeline isn't empty
   // after a page refresh. Converts backend log entries into the same
@@ -215,5 +232,5 @@ export function useMission(missionId: string | null) {
     }
   }, [missionId]);
 
-  return { state, dispatch, handleWsEvent };
+  return { state, dispatch, handleWsEvent, reloadMission };
 }
