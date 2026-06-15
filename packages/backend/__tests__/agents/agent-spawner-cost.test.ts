@@ -28,7 +28,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => {
   };
 });
 
-vi.mock("node:child_process", () => ({ exec: vi.fn() }));
+vi.mock("node:child_process", () => ({ exec: vi.fn(), execFile: vi.fn() }));
 vi.mock("node:util", () => ({ promisify: () => vi.fn().mockResolvedValue({ stdout: "", stderr: "" }) }));
 
 import { createAgentSpawner } from "../../src/agents/agent-spawner";

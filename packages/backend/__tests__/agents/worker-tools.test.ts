@@ -1,6 +1,21 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createWorkerTools } from "../../src/agents/worker-tools";
 import type { LaPisClient } from "../../src/clients/lapis-client";
+
+const { mockExecFile } = vi.hoisted(() => ({
+  mockExecFile: vi.fn(),
+}));
+
+vi.mock("node:child_process", () => ({
+  execFile: mockExecFile,
+}));
+
+vi.mock("node:util", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:util")>();
+  return { ...actual, promisify: () => mockExecFile };
+});
+
+import { createWorkerTools } from "../../src/agents/worker-tools";
 
 function createMockLapis() {
   return {
@@ -141,5 +156,154 @@ describe("worker tools", () => {
     await (memTool as any).execute("tc-1", { query: "test", limit: 5 });
 
     expect(lapis.searchMemory).toHaveBeenCalledWith("test", { limit: 5 });
+  });
+
+  describe("write_handoff commit verification (worktreePath)", () => {
+    const validParams = {
+      featureName: "F",
+      description: "D",
+      implemented: "I",
+      remaining: "R",
+      rationale: "Detailed rationale that is long enough",
+      assumptions: "A",
+      unresolvedUncertainties: "U",
+      errorsEncountered: "E",
+      commandsRun: "[]",
+      gitCommitHash: "abc123",
+    };
+
+    beforeEach(() => {
+      mockExecFile.mockReset();
+      // Default: both git checks succeed (commit exists and is ancestor of HEAD).
+      mockExecFile.mockResolvedValue({ stdout: "", stderr: "" });
+    });
+
+    it("accepts when commit hash is valid and reachable from HEAD", async () => {
+      const lapis = createMockLapis();
+      const tools = createWorkerTools(lapis, "unit-1", { worktreePath: "/repo/wt" });
+      const handoffTool = tools.find((t) => t.name === "write_handoff")!;
+
+      const result = await (handoffTool as any).execute("tc-1", validParams);
+      const content = result.content as Array<{ type: string; text: string }>;
+      expect(content[0].text).toContain("accepted");
+      expect(lapis.writeHandoff).toHaveBeenCalledTimes(1);
+
+      // Both verification git calls ran against the worktree.
+      const calls = mockExecFile.mock.calls.map((c: any) => c[1]?.join(" "));
+      expect(calls.some((s: string) => s.includes("cat-file -e"))).toBe(true);
+      expect(calls.some((s: string) => s.includes("merge-base --is-ancestor"))).toBe(true);
+    });
+
+    it("rejects a fabricated hash that is not a real commit object", async () => {
+      // Simulate 'git cat-file -e <hash>^{commit}' failing (object does not exist).
+      mockExecFile.mockImplementation(async (_cmd: string, args: string[]) => {
+        if (args.includes("cat-file")) {
+          throw new Error("fatal: Not a valid object name");
+        }
+        return { stdout: "", stderr: "" };
+      });
+
+      const lapis = createMockLapis();
+      const onHandoffAccepted = vi.fn();
+      const tools = createWorkerTools(lapis, "unit-1", { worktreePath: "/repo/wt", onHandoffAccepted });
+      const handoffTool = tools.find((t) => t.name === "write_handoff")!;
+
+      const result = await (handoffTool as any).execute("tc-1", { ...validParams, gitCommitHash: "deadbeef" });
+      const content = result.content as Array<{ type: string; text: string }>;
+      expect(content[0].text).toContain("commit verification failed");
+      // Crucially: LaPis was never called and the session was not completed.
+      expect(lapis.writeHandoff).not.toHaveBeenCalled();
+      expect(onHandoffAccepted).not.toHaveBeenCalled();
+    });
+
+    it("rejects a hash that exists but is not reachable from branch HEAD", async () => {
+      // Simulate the real bug: hash is a valid object (cat-file succeeds) but
+      // merge-base --is-ancestor exits 1 (not on this branch — e.g. borrowed
+      // from an integration branch). exit code 1 is the real "not ancestor"
+      // signal; other errors are treated as "cannot verify".
+      mockExecFile.mockImplementation(async (_cmd: string, args: string[]) => {
+        if (args.includes("cat-file")) return { stdout: "", stderr: "" };
+        if (args.includes("merge-base")) {
+          const err = new Error("exit 1");
+          (err as { code?: number }).code = 1;
+          throw err;
+        }
+        return { stdout: "", stderr: "" };
+      });
+
+      const lapis = createMockLapis();
+      const tools = createWorkerTools(lapis, "unit-1", { worktreePath: "/repo/wt" });
+      const handoffTool = tools.find((t) => t.name === "write_handoff")!;
+
+      const result = await (handoffTool as any).execute("tc-1", { ...validParams, gitCommitHash: "8f8e9d7" });
+      const content = result.content as Array<{ type: string; text: string }>;
+      expect(content[0].text).toContain("NOT reachable from your branch HEAD");
+      expect(lapis.writeHandoff).not.toHaveBeenCalled();
+    });
+
+    it("rejects an empty gitCommitHash", async () => {
+      const lapis = createMockLapis();
+      const tools = createWorkerTools(lapis, "unit-1", { worktreePath: "/repo/wt" });
+      const handoffTool = tools.find((t) => t.name === "write_handoff")!;
+
+      const result = await (handoffTool as any).execute("tc-1", { ...validParams, gitCommitHash: "" });
+      const content = result.content as Array<{ type: string; text: string }>;
+      expect(content[0].text).toContain("commit verification failed");
+      expect(lapis.writeHandoff).not.toHaveBeenCalled();
+      // No git calls needed for the empty-hash short-circuit.
+      expect(mockExecFile).not.toHaveBeenCalled();
+    });
+
+    it("skips verification when worktreePath is not provided (backward compatible)", async () => {
+      const lapis = createMockLapis();
+      const tools = createWorkerTools(lapis, "unit-1"); // no worktreePath
+      const handoffTool = tools.find((t) => t.name === "write_handoff")!;
+
+      const result = await (handoffTool as any).execute("tc-1", { ...validParams, gitCommitHash: "abc123" });
+      const content = result.content as Array<{ type: string; text: string }>;
+      expect(content[0].text).toContain("accepted");
+      expect(mockExecFile).not.toHaveBeenCalled();
+    });
+
+    it("skips verification (allows) when path is not a git repo", async () => {
+      // rev-parse --is-inside-work-tree fails => cannot verify, must not block.
+      // This keeps the check safe in non-repo cwd (tests, misconfigured paths)
+      // and when git is unavailable. We only block on POSITIVE evidence.
+      mockExecFile.mockImplementation(async (_cmd: string, args: string[]) => {
+        if (args.includes("rev-parse")) throw new Error("fatal: not a git repository");
+        return { stdout: "", stderr: "" };
+      });
+
+      const lapis = createMockLapis();
+      const tools = createWorkerTools(lapis, "unit-1", { worktreePath: "/not/a/repo" });
+      const handoffTool = tools.find((t) => t.name === "write_handoff")!;
+
+      const result = await (handoffTool as any).execute("tc-1", { ...validParams, gitCommitHash: "fakehash" });
+      const content = result.content as Array<{ type: string; text: string }>;
+      expect(content[0].text).toContain("accepted");
+      expect(lapis.writeHandoff).toHaveBeenCalledTimes(1);
+    });
+
+    it("skips verification (allows) on git error code 128 from merge-base", async () => {
+      // merge-base exits 128 on a genuine git error (not the exit-1
+      // "not ancestor" signal). Treat as "cannot determine" — don't block.
+      mockExecFile.mockImplementation(async (_cmd: string, args: string[]) => {
+        if (args.includes("cat-file")) return { stdout: "", stderr: "" };
+        if (args.includes("merge-base")) {
+          const err = new Error("fatal: bad revision");
+          (err as { code?: number }).code = 128;
+          throw err;
+        }
+        return { stdout: "", stderr: "" };
+      });
+
+      const lapis = createMockLapis();
+      const tools = createWorkerTools(lapis, "unit-1", { worktreePath: "/repo/wt" });
+      const handoffTool = tools.find((t) => t.name === "write_handoff")!;
+
+      const result = await (handoffTool as any).execute("tc-1", { ...validParams, gitCommitHash: "abc123" });
+      const content = result.content as Array<{ type: string; text: string }>;
+      expect(content[0].text).toContain("accepted");
+    });
   });
 });

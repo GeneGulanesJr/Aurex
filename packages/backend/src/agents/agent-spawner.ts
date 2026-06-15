@@ -769,7 +769,10 @@ function createCustomTools(
     if (!opts.unitId) {
       throw new Error("worker spawn requires unitId");
     }
-    return createWorkerTools(lapis, opts.unitId, { onHandoffAccepted: onWorkerHandoffAccepted });
+    return createWorkerTools(lapis, opts.unitId, {
+      onHandoffAccepted: onWorkerHandoffAccepted,
+      worktreePath: opts.cwd,
+    });
   }
 
   if (opts.agentType === "validator_scrutiny" || opts.agentType === "validator_user_testing") {
