@@ -26,10 +26,54 @@ export function buildPostAuthMessages(lastSeq: string | null, missionId?: string
   return messages;
 }
 
+/** Control messages the backend sends as top-level { type: ... } (not { event: ... }). */
+export type WsControlMessage =
+  | { type: "auth_ok" }
+  | { type: "hello"; seq: number }
+  | { type: "subscribed"; missionId: string }
+  | { type: "replay_done"; count: number }
+  | {
+      type: "checkpoint_resolved";
+      checkpointId: string;
+      accepted: boolean;
+      duplicate?: boolean;
+      error?: string;
+      status?: number;
+    };
+
+const CONTROL_TYPES = new Set<string>([
+  "auth_ok",
+  "hello",
+  "subscribed",
+  "replay_done",
+  "checkpoint_resolved",
+]);
+
+export type ClassifiedMessage =
+  | { kind: "event"; event: WsClientEvent; seq?: number }
+  | { kind: "control"; control: WsControlMessage; seq?: number }
+  | { kind: "unknown"; raw: unknown; seq?: number };
+
+/** Pure classifier for a single WS message string. Exported for unit testing. */
+export function classifyMessage(data: string): ClassifiedMessage | null {
+  const parsed = parseWsMessage(data);
+  if (!parsed) return null;
+  const seq = parsed.seq;
+  if (parsed.event) {
+    return { kind: "event", event: parsed.event, seq };
+  }
+  if (parsed.type && CONTROL_TYPES.has(parsed.type)) {
+    return { kind: "control", control: parsed as unknown as WsControlMessage, seq };
+  }
+  return { kind: "unknown", raw: parsed, seq };
+}
+
 export interface UseWebSocketOptions {
   missionId?: string | null;
   getToken?: () => Promise<string>;
   enabled?: boolean;
+  /** Receives non-event control messages (auth_ok, checkpoint_resolved, etc.). */
+  onControl?: (msg: WsControlMessage) => void;
 }
 
 export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: UseWebSocketOptions) {
@@ -37,6 +81,8 @@ export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: Use
   const [connected, setConnected] = useState(false);
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
+  const onControlRef = useRef(opts?.onControl);
+  onControlRef.current = opts?.onControl;
   const reconnectDelayRef = useRef(RECONNECT_BASE_DELAY);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
@@ -107,27 +153,32 @@ export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: Use
       }
 
       ws.onmessage = (msg) => {
-        const parsed = parseWsMessage(msg.data);
-        if (!parsed) return;
+        const classified = classifyMessage(msg.data);
+        if (!classified) return;
 
-        // Track sequence for replay
-        if (typeof parsed.seq === "number") {
-          localStorage.setItem(LAST_SEQ_KEY, String(parsed.seq));
+        // Track sequence for replay (applies to both events and control messages).
+        if (typeof classified.seq === "number") {
+          localStorage.setItem(LAST_SEQ_KEY, String(classified.seq));
         }
 
-        // Handle auth response
-        if (parsed.type === "auth_ok") {
-          sendPostAuthMessages(ws);
-          setConnected(true);
+        if (classified.kind === "control") {
+          const c = classified.control;
+          if (c.type === "auth_ok") {
+            sendPostAuthMessages(ws);
+            setConnected(true);
+          }
+          // Always forward control messages (including auth_ok, in case the
+          // consumer wants to react) — but auth_ok still drives connection
+          // state above so consumers don't need to handle it.
+          onControlRef.current?.(c);
           return;
         }
 
-        // Only dispatch actual events
-        if (parsed.event) {
-          const eventType = (parsed.event as any).type;
+        if (classified.kind === "event") {
+          const eventType = (classified.event as any).type;
           if (eventType === "agent_output") {
             // Batch rapid agent_output events
-            batchQueue.push(parsed.event);
+            batchQueue.push(classified.event);
             if (!batchTimer) {
               batchTimer = setTimeout(flushBatch, 0);
             }
@@ -137,9 +188,10 @@ export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: Use
               clearTimeout(batchTimer);
               flushBatch();
             }
-            onEventRef.current(parsed.event);
+            onEventRef.current(classified.event);
           }
         }
+        // unknown messages are ignored (forward compatibility).
       };
 
       ws.onerror = () => {
