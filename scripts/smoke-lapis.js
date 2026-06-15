@@ -3,7 +3,7 @@
  * Integration smoke test — Aurex LaPisClient ↔ LaPis HTTP Server
  * 
  * Prerequisites: lapis serve --port 9100 must be running
- * Run: node scripts/smoke-lapis.js
+ * Run: pnpm smoke:lapis
  */
 
 const LAPIS = 'http://127.0.0.1:9100';

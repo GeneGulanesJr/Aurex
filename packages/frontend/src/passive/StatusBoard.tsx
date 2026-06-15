@@ -19,6 +19,7 @@ interface StatusBoardProps {
   agentLogs: Record<string, AgentLogEntry[]>;
   blurred: boolean;
   eventStreamCount?: number;
+  autoCollapseContext?: boolean;
   onExampleClick?: (text: string, cloneUrl?: string) => Promise<void>;
   onRetryMission?: () => void;
   onDismissErrors?: () => void;
@@ -43,7 +44,7 @@ interface StatusBoardProps {
   systemReady?: boolean;
 }
 
-export function StatusBoard({ mission, milestones, workers, cost, events, logs, errors, agentLogs, blurred, eventStreamCount, onExampleClick, onRetryMission, onDismissErrors, scanFindings = [], isScanning = false, scans = [], onTriggerScan, preparedRepo, onStartFromSuggestion, onRepoPrepared, github, systemReady }: StatusBoardProps) {
+export function StatusBoard({ mission, milestones, workers, cost, events, logs, errors, agentLogs, blurred, eventStreamCount, autoCollapseContext, onExampleClick, onRetryMission, onDismissErrors, scanFindings = [], isScanning = false, scans = [], onTriggerScan, preparedRepo, onStartFromSuggestion, onRepoPrepared, github, systemReady }: StatusBoardProps) {
   const boardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -106,6 +107,7 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
           errors={errors}
           agentLogs={agentLogs}
           eventStreamCount={eventStreamCount}
+          autoCollapseContext={autoCollapseContext}
           onRetry={onRetryMission}
           scanFindings={scanFindings}
           isScanning={isScanning}

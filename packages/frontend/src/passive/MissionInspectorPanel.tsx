@@ -16,6 +16,7 @@ interface MissionInspectorPanelProps {
   errors: MissionError[];
   agentLogs: Record<string, AgentLogEntry[]>;
   eventStreamCount: number;
+  autoCollapseContext?: boolean;
   scanFindings: BumblebeeFinding[];
   isScanning: boolean;
   scans: BumblebeeScanResult[];
@@ -68,7 +69,7 @@ export function MissionInspectorPanel(props: MissionInspectorPanelProps) {
           logs={props.logs}
           milestones={props.milestones}
           variant="inspector"
-          autoCollapse={false}
+          autoCollapse={props.autoCollapseContext ?? false}
           showCollapsedSummary={false}
         />
       </InspectorSection>

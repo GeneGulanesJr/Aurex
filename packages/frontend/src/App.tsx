@@ -82,7 +82,9 @@ export function App() {
   const eventsRef = useRef<WsClientEvent[]>([]);
 
   const bp = useBreakpoint();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    settings.defaultSidebarCollapsed,
+  );
   const [mobileOverlayOpen, setMobileOverlayOpen] = useState(false);
 
   useEffect(() => {
@@ -127,7 +129,7 @@ export function App() {
     }, []),
   });
 
-  const { connected } = useWebSocket(combinedHandler, {
+  const { connected, send } = useWebSocket(combinedHandler, {
     missionId: missionsState.selectedMissionId,
     getToken,
     enabled: isAuthenticated,
@@ -161,9 +163,25 @@ export function App() {
     if (!state.mission) return;
     const escalation = state.escalation;
     if (escalation?.type !== "escalation" || !escalation.checkpointId) return;
-    await submitCheckpoint(state.mission.id, escalation.checkpointId, decision, opts);
+    // Prefer the WebSocket `checkpoint_decision` message when connected — the
+    // server resolves it through the same dedup tracker as the REST route and
+    // replies with a `checkpoint_resolved` ack. Fall back to REST when the
+    // socket is down so a decision never silently drops.
+    if (connected) {
+      send({
+        event: "checkpoint_decision",
+        missionId: state.mission.id,
+        checkpointId: escalation.checkpointId,
+        decision,
+        guidance: opts?.guidance,
+        reason: opts?.reason,
+        rescopeGuidance: opts?.rescopeGuidance,
+      });
+    } else {
+      await submitCheckpoint(state.mission.id, escalation.checkpointId, decision, opts);
+    }
     dispatch({ type: "CLEAR_ESCALATION" });
-  }, [state.mission, state.escalation, dispatch]);
+  }, [state.mission, state.escalation, dispatch, connected, send]);
 
   const handleCreateMission = useCallback(async (description: string, cloneUrl?: string) => {
     const { missionId } = await createMission(description, cloneUrl);
@@ -330,6 +348,7 @@ export function App() {
             agentLogs={state.agentLogs}
             blurred={!!state.escalation}
             eventStreamCount={settings.eventStreamCount}
+            autoCollapseContext={settings.autoCollapseContext}
             onExampleClick={handleCreateMission}
             onRetryMission={handleRetryMission}
             onDismissErrors={() => dispatch({ type: "CLEAR_ERRORS" })}

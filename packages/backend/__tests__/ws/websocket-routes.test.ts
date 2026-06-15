@@ -16,11 +16,14 @@ const TEST_AUTH_CONFIG = {
   auth0Audience: "https://api.test.io",
 };
 
-async function createApp() {
+async function createApp(resolveCheckpoint?: Parameters<typeof registerWebSocketRoutes>[2]["resolveCheckpoint"]) {
   const app = Fastify();
   const eventBus = createEventBus();
   await app.register(websocket);
-  registerWebSocketRoutes(app, eventBus, TEST_AUTH_CONFIG);
+  registerWebSocketRoutes(app, eventBus, {
+    ...TEST_AUTH_CONFIG,
+    resolveCheckpoint,
+  });
   await app.ready();
   return { app, eventBus };
 }
@@ -136,6 +139,114 @@ describe("websocket routes", () => {
 
     // Wait briefly for the close to occur
     await new Promise((resolve) => setTimeout(resolve, 200));
+
+    ws.close();
+    await app.close();
+  });
+});
+
+describe("websocket routes — checkpoint_decision", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("resolves a checkpoint_decision and sends a checkpoint_resolved ack", async () => {
+    mockedJwtVerify.mockResolvedValueOnce({
+      payload: { sub: "auth0|test", email: "test@example.com" },
+      protectedHeader: {},
+    } as any);
+
+    const resolveCheckpoint = vi.fn().mockResolvedValue({ ok: true, duplicate: false });
+    const { app } = await createApp(resolveCheckpoint);
+    const ws = await app.injectWS("/ws");
+
+    ws.send(JSON.stringify({ type: "auth", token: "valid.jwt.token" }));
+    await waitForMessages(ws, 2); // auth_ok + hello
+
+    ws.send(JSON.stringify({
+      event: "checkpoint_decision",
+      missionId: "m-1",
+      checkpointId: "cp-1",
+      decision: "approve",
+      guidance: "proceed",
+      rescopeGuidance: "use new structure",
+    }));
+
+    const acks = await waitForMessages(ws, 1);
+    const ack = acks.find((m) => m.type === "checkpoint_resolved");
+    expect(ack).toBeDefined();
+    expect(ack.accepted).toBe(true);
+    expect(ack.checkpointId).toBe("cp-1");
+    expect(resolveCheckpoint).toHaveBeenCalledWith(expect.objectContaining({
+      missionId: "m-1",
+      checkpointId: "cp-1",
+      decision: "approve",
+      guidance: "proceed",
+      rescopeGuidance: "use new structure",
+    }));
+
+    ws.close();
+    await app.close();
+  });
+
+  it("forwards resolver errors back as a non-accepted ack", async () => {
+    mockedJwtVerify.mockResolvedValueOnce({
+      payload: { sub: "auth0|test", email: "test@example.com" },
+      protectedHeader: {},
+    } as any);
+
+    const resolveCheckpoint = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      error: "checkpoint does not belong to this mission",
+    });
+    const { app } = await createApp(resolveCheckpoint);
+    const ws = await app.injectWS("/ws");
+
+    ws.send(JSON.stringify({ type: "auth", token: "valid.jwt.token" }));
+    await waitForMessages(ws, 2);
+
+    ws.send(JSON.stringify({
+      event: "checkpoint_decision",
+      missionId: "m-1",
+      checkpointId: "cp-x",
+      decision: "reject",
+    }));
+
+    const acks = await waitForMessages(ws, 1);
+    const ack = acks.find((m) => m.type === "checkpoint_resolved");
+    expect(ack).toBeDefined();
+    expect(ack.accepted).toBe(false);
+    expect(ack.error).toContain("does not belong");
+
+    ws.close();
+    await app.close();
+  });
+
+  it("rejects a checkpoint_decision missing required fields", async () => {
+    mockedJwtVerify.mockResolvedValueOnce({
+      payload: { sub: "auth0|test", email: "test@example.com" },
+      protectedHeader: {},
+    } as any);
+
+    const resolveCheckpoint = vi.fn();
+    const { app } = await createApp(resolveCheckpoint);
+    const ws = await app.injectWS("/ws");
+
+    ws.send(JSON.stringify({ type: "auth", token: "valid.jwt.token" }));
+    await waitForMessages(ws, 2);
+
+    ws.send(JSON.stringify({
+      event: "checkpoint_decision",
+      missionId: "m-1",
+      // missing checkpointId + decision
+    }));
+
+    const acks = await waitForMessages(ws, 1);
+    const ack = acks.find((m) => m.type === "checkpoint_resolved");
+    expect(ack).toBeDefined();
+    expect(ack.accepted).toBe(false);
+    expect(resolveCheckpoint).not.toHaveBeenCalled();
 
     ws.close();
     await app.close();

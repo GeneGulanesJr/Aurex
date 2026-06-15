@@ -6,7 +6,7 @@
  *   - PiNyx running on port 7331 (cd PiNyx/pinyx && cargo run)
  *   - lapis serve running on port 9100
  * 
- * Run: node scripts/smoke-pinyx.js
+ * Run: pnpm smoke:pinyx
  */
 
 const PINYX = process.env.PINYX_URL || 'http://127.0.0.1:7331';
