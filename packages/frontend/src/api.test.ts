@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getCurrentMission, createMission, getGitHubConnectUrl, saveGitHubConfig, getGitHubConfig, getPinyxConfig, savePinyxConfig, getPinyxModels, getPinyxStatus, exploreRepo, getRepoSummary, getRepoHotspots, getRepoSuggestions, getMutationSummary, runMutationTests, getMutationRunStatus } from "./api";
+import { getCurrentMission, createMission, getGitHubConnectUrl, saveGitHubConfig, getGitHubConfig, getPinyxConfig, savePinyxConfig, getPinyxModels, getPinyxStatus, exploreRepo, getRepoSummary, getRepoHotspots, getRepoSuggestions, getMutationSummary, runMutationTests, getMutationRunStatus, submitCheckpoint } from "./api";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
@@ -201,5 +201,28 @@ describe("repo explore API", () => {
   it("runMutationTests throws on non-OK response", async () => {
     mockFetch.mockResolvedValue({ ok: false, status: 400, json: async () => ({ error: "Stryker is not configured" }) });
     await expect(runMutationTests("my-repo")).rejects.toThrow("Failed to start mutation run: 400");
+  });
+});
+
+describe("submitCheckpoint", () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it("resolves on a successful response", async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ accepted: true }) });
+    await expect(submitCheckpoint("m1", "cp1", "approve")).resolves.toEqual({ accepted: true });
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/missions/m1/checkpoints",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ checkpointId: "cp1", decision: "approve" }) }),
+    );
+  });
+
+  it("throws with the server-provided error message when res not ok", async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 404, json: async () => ({ error: "checkpoint not found" }) });
+    await expect(submitCheckpoint("m1", "cp1", "approve")).rejects.toThrow("checkpoint not found");
+  });
+
+  it("falls back to a status-code message when body has no error field", async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
+    await expect(submitCheckpoint("m1", "cp1", "approve")).rejects.toThrow(/500/);
   });
 });
