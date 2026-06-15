@@ -8,7 +8,7 @@ WORKDIR /app
 #   LAPIS_PULL=$(date +%F) docker compose build lapis
 ARG LAPIS_PULL=2026-06-15
 ARG LAPIS_REF=main
-RUN git clone --depth 1 --branch "${LAPIS_REF}" https://github.com/GeneGulanesJr/LaPis.git .
+RUN echo "lapis-pull=${LAPIS_PULL}" && git clone --depth 1 --branch "${LAPIS_REF}" https://github.com/GeneGulanesJr/LaPis.git .
 
 RUN npm install
 

@@ -397,6 +397,18 @@ describe("GET /api/missions/current", () => {
     expect(body.milestones).toHaveLength(1);
     expect(body.activeWorkers.map((u: any) => u.id)).toEqual(["u1"]);
   });
+
+  it("returns 404 when the only pool entry is an aborted mission", async () => {
+    const app = Fastify();
+    const mockLapis = {} as unknown as LaPisClient;
+    const pool = createMockPool([{ missionId: "m-stop", state: "aborted" }]);
+
+    app.register(missionRoutes, { lapis: mockLapis, pool });
+
+    const response = await app.inject({ method: "GET", url: "/api/missions/current" });
+
+    expect(response.statusCode).toBe(404);
+  });
 });
 
 describe("GET /api/missions/active", () => {

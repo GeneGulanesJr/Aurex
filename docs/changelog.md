@@ -9,6 +9,8 @@
 - **Frontend:** Centralized mission status UI in `missionUiModel.ts` (`getMissionStatusUi`, `isMissionActive`, `countActiveMissions`, `countTerminalMissions`). `MissionSidebar` is presentational; abort/restart API calls live in `App.tsx`. Aborted missions hydrate in sidebar history.
 - **Tests:** Added milestone-loop contract harness, unit/retry/merge helper tests, `updateWorkingUnit` client test, and frontend status mapping coverage.
 - **Review fixes:** Stale-unit refresh preserves runtime fields; worker/validation stale resets are independent; integration rejects `-X ours` merges that would drop worker changes; validator retry counter increments only on retry decisions; mission restart re-hydrates from API.
+- **Orchestrator:** Overlapping worker batches chain from the prior worker's task branch; multi-worker validator dry-merge conflicts trigger one full-batch sequential retry before checkpointing; worker prompt/skill stress mandatory `write_handoff`.
+- **PR #108 review fixes:** Docker `LAPIS_PULL`/`PINYX_PULL` now bust clone cache; `recreateBranch` checks out base before delete; runner/pool use `aborted` terminal state; LaPis unit-fetch and retry-counter failures escalate instead of silently continuing; `/api/missions/current` excludes aborted pool entries; `PoolMissionStatus` includes `aborted`.
 
 ## 2026-06-15 (earlier)
 

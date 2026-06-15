@@ -12,7 +12,7 @@ export interface CheckpointLoopDeps {
   lapis: LaPisClient;
   pinyx: PinyxClient;
   eventBus: EventBus;
-  setStatus: (state: "idle" | "planning" | "executing" | "waiting_checkpoint" | "completed" | "failed", missionId?: string | null) => void;
+  setStatus: (state: "idle" | "planning" | "executing" | "waiting_checkpoint" | "completed" | "failed" | "aborted", missionId?: string | null) => void;
 }
 
 export interface CheckpointLoopParams {

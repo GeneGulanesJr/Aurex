@@ -284,6 +284,71 @@ describe("milestone loop — retry/rescope handling", () => {
     expect(pinyx.chat).not.toHaveBeenCalled();
   });
 
+  it("escalates when incrementRetry cannot persist to LaPis", async () => {
+    const units = [makeUnit("u-1", ["src/auth/"], ["auth"])];
+    const verdicts = [failVerdict(["u-1"])];
+    const lapis = createMockLapis(units, verdicts);
+    (lapis.getRetryCounter as any).mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 });
+    (lapis.incrementRetry as any).mockRejectedValue(new Error("LaPis unavailable"));
+
+    const callbacks = {
+      onEscalation: vi.fn(),
+      onAgentStatus: vi.fn(),
+      onMilestoneProgress: vi.fn(),
+      onCostUpdate: vi.fn(),
+      onError: vi.fn(),
+    };
+
+    const loop = createMilestoneLoop(lapis, createMockPinyx(), callbacks, {
+      agentDir: "/test/.pi/agent", repoRoot: "/test/repo", gitMainBranch: "main",
+    });
+
+    const result = await loop.run(makeMission(), [makeMilestone()]);
+
+    expect(result.status).toBe("checkpoint_needed");
+    if (result.status === "checkpoint_needed") {
+      expect(result.trigger).toBe("unclassifiable_error");
+      expect(result.summary).toContain("Failed to persist validator retry counter");
+    }
+    expect(callbacks.onError).toHaveBeenCalledWith(
+      "m-1",
+      "lapis_retry_counter_failed",
+      expect.stringContaining("Failed to persist validator retry counter"),
+      expect.objectContaining({ milestoneId: "ms-1", recoverable: true }),
+    );
+  });
+
+  it("escalates when getWorkingUnitsForMilestone fails", async () => {
+    const lapis = createMockLapis([makeUnit("u-1", ["src/auth/"], ["auth"])], [failVerdict(["u-1"])]);
+    (lapis.getWorkingUnitsForMilestone as any).mockRejectedValue(new Error("LaPis timeout"));
+
+    const callbacks = {
+      onEscalation: vi.fn(),
+      onAgentStatus: vi.fn(),
+      onMilestoneProgress: vi.fn(),
+      onCostUpdate: vi.fn(),
+      onError: vi.fn(),
+    };
+
+    const loop = createMilestoneLoop(lapis, createMockPinyx(), callbacks, {
+      agentDir: "/test/.pi/agent", repoRoot: "/test/repo", gitMainBranch: "main",
+    });
+
+    const result = await loop.run(makeMission(), [makeMilestone()]);
+
+    expect(result.status).toBe("checkpoint_needed");
+    if (result.status === "checkpoint_needed") {
+      expect(result.trigger).toBe("unclassifiable_error");
+      expect(result.summary).toContain("Failed to load working units");
+    }
+    expect(callbacks.onError).toHaveBeenCalledWith(
+      "m-1",
+      "lapis_units_fetch_failed",
+      expect.stringContaining("Failed to load working units"),
+      expect.objectContaining({ milestoneId: "ms-1", recoverable: true }),
+    );
+  });
+
   it("escalates when all retries and rescopes exhausted", async () => {
     const units = [makeUnit("u-1", ["src/auth/"], ["auth"])];
     const verdicts = [failVerdict(["u-1"])];

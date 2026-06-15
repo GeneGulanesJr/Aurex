@@ -145,11 +145,27 @@ export function createMilestoneLoop(
         let researchFindings: ResearchFinding[] = await lapis.getFindings(mission.id).catch(() => [] as ResearchFinding[]);
         let retryBudget = createRetryBudget();
         let preResearchAttempted = false;
+        const sequentialWorkerUnitIds = new Set<string>();
         while (loopActive) {
           loopActive = false;
 
           // Fetch current units (may change after rescope)
-          const fetchedUnits = await lapis.getWorkingUnitsForMilestone(milestone.id).catch(() => [] as WorkingUnit[]);
+          let fetchedUnits: WorkingUnit[];
+          try {
+            fetchedUnits = await lapis.getWorkingUnitsForMilestone(milestone.id);
+          } catch (err) {
+            const summary = `Failed to load working units from LaPis for milestone ${milestone.id}: ${err instanceof Error ? err.message : String(err)}`;
+            callbacks.onError(mission.id, "lapis_units_fetch_failed", summary, {
+              milestoneId: milestone.id,
+              recoverable: true,
+            });
+            callbacks.onEscalation(
+              mission.id,
+              { kind: "unclassifiable_error", milestoneId: milestone.id },
+              { summary },
+            );
+            return { status: "checkpoint_needed", trigger: "unclassifiable_error", milestoneId: milestone.id, summary };
+          }
           const runtimeUnits = runtimeUnitsByMilestone.get(milestone.id);
           const unitsWithRuntime = fetchedUnits.map((unit) => {
             const runtime = runtimeUnits?.get(unit.id);
@@ -252,9 +268,16 @@ export function createMilestoneLoop(
             id: u.id, description: u.description, declaredPaths: u.declaredPaths, declaredModules: u.declaredModules, taskBranch: u.taskBranch, worktreePath: u.worktreePath,
           })));
 
-          // Group pending units into non-overlapping batches using glob-aware overlap detection
+          // Group pending units into non-overlapping batches using glob-aware overlap detection.
+          // Units flagged after a merge conflict are forced into single-unit batches so retries
+          // run sequentially instead of racing on overlapping files again.
           const batches: WorkingUnit[][] = [];
-          const remaining = [...pendingUnits];
+          const sequentialPending = pendingUnits.filter((unit) => sequentialWorkerUnitIds.has(unit.id));
+          const batchablePending = pendingUnits.filter((unit) => !sequentialWorkerUnitIds.has(unit.id));
+          for (const unit of sequentialPending) {
+            batches.push([unit]);
+          }
+          const remaining = [...batchablePending];
           while (remaining.length > 0) {
             const batch: WorkingUnit[] = [remaining.shift()!];
             let batchPaths = [...batch[0].declaredPaths];
@@ -275,7 +298,11 @@ export function createMilestoneLoop(
             batches.push(batch);
           }
 
-          // Process each batch, limiting concurrent workers to MAX_ACTIVE_AGENTS
+          // Process each batch, limiting concurrent workers to MAX_ACTIVE_AGENTS.
+          // Later batches branch from the last completed worker so overlapping units
+          // stack changes instead of conflicting at validator dry-merge.
+          let workerChainBaseBranch = loopConfig.gitMainBranch;
+          const unitOrder = new Map(units.map((unit, index) => [unit.id, index]));
           for (const batch of batches) {
             // Spawn in chunks to stay within concurrency limits
             for (let i = 0; i < batch.length; i += MAX_ACTIVE_AGENTS) {
@@ -283,7 +310,7 @@ export function createMilestoneLoop(
               const handles = await Promise.all(chunk.map(async (unit) => {
               const agentId = `worker-${unit.id}`;
               const { worktreePath, taskBranch } = await worktreeManager.createWorktree(
-                agentId, unit.id, loopConfig.gitMainBranch,
+                agentId, unit.id, workerChainBaseBranch,
               );
               await worktreeManager.installBranchGuard(worktreePath, taskBranch);
               const contextContent = buildWorkerContext({
@@ -337,6 +364,7 @@ export function createMilestoneLoop(
                   "Research findings from the research agent are in your context under 'Research Findings'. Use them directly. Do NOT re-read files already documented there.",
                   "",
                   "Follow your skill instructions carefully.",
+                  "You MUST call write_handoff with an accepted result before the session ends — even for documentation-only work. Include at least one commandsRun entry (e.g. git commit) and a real gitCommitHash.",
                   "When useful work is committed, verification is blocked, or time is running short, call write_handoff immediately with partial/blocking details.",
                 ].join("\n"),
                 timeout: workerTimeout,
@@ -350,10 +378,12 @@ export function createMilestoneLoop(
                 return { unit, agentId, worktreePath, taskBranch, handle };
               }));
 
+              const chunkCompletions: Array<{ order: number; taskBranch: string }> = [];
               await Promise.all(handles.map(async ({ unit, agentId, worktreePath, taskBranch, handle }) => {
                 const result = await handle.completed;
                 activeHandles.delete(handle);
                 if (result.status === "completed") {
+                  chunkCompletions.push({ order: unitOrder.get(unit.id) ?? 0, taskBranch });
                   const completedUnit = { ...unit, taskBranch, worktreePath, sessionId: result.sessionId, status: "completed" as const };
               await persistRuntimeUnit(milestone.id, completedUnit);
                   await lapis.updateWorkingUnitStatus(unit.id, "completed");
@@ -434,6 +464,11 @@ export function createMilestoneLoop(
                 });
                 handle.dispose();
               }));
+
+              const latestChunkCompletion = chunkCompletions.sort((a, b) => b.order - a.order)[0];
+              if (latestChunkCompletion) {
+                workerChainBaseBranch = latestChunkCompletion.taskBranch;
+              }
             }
 
             callbacks.onMilestoneProgress(milestone.id, "in_progress", completedCount, units.length);
@@ -664,6 +699,50 @@ export function createMilestoneLoop(
             const conflictedUnitIds = validatorUnits
               .filter((unit) => conflictedSet.has(unit.taskBranch))
               .map((unit) => unit.id);
+            const batchUnitIds = validatorUnits.map((unit) => unit.id);
+            const unitsToRetry = [...validatorUnits];
+
+            if (batchUnitIds.length > 1 && canRetryWorkers(retryBudget)) {
+              markWorkerRetry(retryBudget);
+              validatorUnits.length = 0;
+              integrationUnits.length = 0;
+              for (const unit of unitsToRetry) {
+                sequentialWorkerUnitIds.add(unit.id);
+                if (unit.worktreePath) {
+                  try {
+                    await worktreeManager.pruneWorktree(unit.worktreePath);
+                  } catch (err) {
+                    console.warn(
+                      `[retry] Failed to prune worktree ${unit.worktreePath} for unit ${unit.id}:`,
+                      err instanceof Error ? err.message : err,
+                    );
+                  }
+                }
+              }
+              const runtimeForMilestone = runtimeUnitsByMilestone.get(milestone.id);
+              for (const uid of batchUnitIds) {
+                runtimeForMilestone?.delete(uid);
+                await lapis.updateWorkingUnitStatus(uid, "planned");
+              }
+              completedCount = Math.max(0, completedCount - batchUnitIds.length);
+              await reconcileMissionLedger(lapis, {
+                missionId: mission.id,
+                milestoneId: milestone.id,
+                reason: "per-unit retry: workers with merge conflicts will re-run sequentially",
+                actorId: "orchestrator",
+              });
+              loopConfig.eventBus?.emit({
+                type: "mission_log",
+                missionId: mission.id,
+                phase: "validation",
+                message: `Validator dry-merge conflict on ${conflictedUnitIds.length} unit(s); re-running ${batchUnitIds.length} worker(s) sequentially`,
+                data: { conflictedUnitIds, conflictedBranches: validatorWorktree.conflictedBranches, batchUnitIds },
+              });
+              callbacks.onMilestoneProgress(milestone.id, "retrying", completedCount, units.length);
+              loopActive = true;
+              continue;
+            }
+
             const summary = `Worker branches could not be merged for validation: ${validatorWorktree.conflictedBranches.join(", ")}`;
             callbacks.onError(
               mission.id,
@@ -804,9 +883,18 @@ export function createMilestoneLoop(
           }
 
           if (decision.decision === "retry") {
-            await lapis.incrementRetry(milestone.id).catch((err) => {
-              console.warn(`[milestone-loop] Failed to increment retry counter:`, err instanceof Error ? err.message : err);
-            });
+            try {
+              await lapis.incrementRetry(milestone.id);
+            } catch (err) {
+              const summary = `Failed to persist validator retry counter: ${err instanceof Error ? err.message : String(err)}`;
+              callbacks.onError(mission.id, "lapis_retry_counter_failed", summary, {
+                milestoneId: milestone.id,
+                recoverable: true,
+              });
+              const trigger: CheckpointTrigger = "unclassifiable_error";
+              callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary });
+              return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
+            }
             // Reset failed units to "planned" and re-run worker+validator
             const failedIds = decision.failedUnitIds ?? [];
             if (failedIds.length === 0) {

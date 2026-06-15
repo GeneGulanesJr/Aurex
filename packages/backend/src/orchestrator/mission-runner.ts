@@ -16,7 +16,7 @@ import { resetWindow } from "../enforcement/quota-gate.js";
 import path from "path";
 
 export interface RunnerStatus {
-  state: "idle" | "planning" | "executing" | "waiting_checkpoint" | "completed" | "failed";
+  state: "idle" | "planning" | "executing" | "waiting_checkpoint" | "completed" | "failed" | "aborted";
   missionId: string | null;
 }
 
@@ -264,7 +264,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
 
         if (resolved.decision === "reject") {
           await lapis.updateMissionStatus(missionId, "aborted");
-          setStatus("failed", missionId);
+          setStatus("aborted", missionId);
           eventBus.emit({ type: "mission_status", missionId, status: "aborted" });
           return;
         }
@@ -302,7 +302,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         }
       } else if (error instanceof Error && error.message === "Mission aborted") {
         await lapis.updateMissionStatus(missionId, "aborted").catch(() => {});
-        setStatus("failed", missionId);
+        setStatus("aborted", missionId);
         eventBus.emit({ type: "mission_status", missionId, status: "aborted" });
       } else {
         console.error(`[runner] Mission ${missionId} failed:`, error instanceof Error ? error.message : error);
@@ -320,7 +320,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
 
   return {
     start(missionId) {
-      if (!["idle", "completed", "failed"].includes(status.state)) {
+      if (!["idle", "completed", "failed", "aborted"].includes(status.state)) {
         return;
       }
 
@@ -342,7 +342,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
     },
 
     waitForCompletion() {
-      if (status.state === "completed" || status.state === "failed") {
+      if (status.state === "completed" || status.state === "failed" || status.state === "aborted") {
         return Promise.resolve();
       }
       return new Promise<void>((resolve) => {
