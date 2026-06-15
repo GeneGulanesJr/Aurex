@@ -248,7 +248,7 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
       verdict: raw.verdict ?? "fail",
       classification: raw.classification,
       findings: raw.findings ?? "",
-      failedUnitIds: Array.isArray(raw.failedUnitIds) ? raw.failedUnitIds : Array.isArray(raw.failed_unit_ids) ? raw.failed_unit_ids : [],
+      failedUnitIds: normalizeStringArray(raw.failedUnitIds ?? raw.failed_unit_ids),
       timestamp: raw.timestamp ?? "",
     };
   }
@@ -267,7 +267,28 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
   }
 
   function normalizeStringArray(value: unknown): string[] {
-    return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+    if (Array.isArray(value)) {
+      return value.filter((item): item is string => typeof item === "string");
+    }
+    // SQLite stores arrays as JSON-encoded strings (e.g. '["a","b"]').
+    // LaPis's HTTP layer returns the column value verbatim, so a stored
+    // array arrives as a string like '["wu-1","wu-2"]'. Parse it back;
+    // otherwise array fields (failedUnitIds, declaredPaths, commandsRun, ...)
+    // silently collapse to [] and downstream logic loses the data.
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+        try {
+          const parsed: unknown = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) {
+            return parsed.filter((item): item is string => typeof item === "string");
+          }
+        } catch {
+          // Not valid JSON — fall through to empty.
+        }
+      }
+    }
+    return [];
   }
 
   function normalizeWorkingUnit(raw: RawWorkingUnit): WorkingUnit {
