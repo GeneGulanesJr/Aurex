@@ -80,6 +80,34 @@ describe("LaPisClient (HTTP)", () => {
     expect(body.unitId).toBe("unit-1");
   });
 
+  it("getRetryCounter calls GET /milestones/:id/retry", async () => {
+    mockFetch.mockReturnValue(mockResponse({ milestoneId: "ms-1", retries: 2, rescopes: 1 }));
+    const counter = await client.getRetryCounter("ms-1");
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:9100/milestones/ms-1/retry",
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(counter).toEqual({ milestoneId: "ms-1", retries: 2, rescopes: 1 });
+  });
+
+  it("updateWorkingUnit PATCHes runtime fields with snake_case body", async () => {
+    mockFetch.mockReturnValue(mockResponse({ ok: true }));
+    await client.updateWorkingUnit("u-1", {
+      taskBranch: "task/u-1",
+      worktreePath: "/tmp/wt",
+      sessionId: "sess-1",
+    });
+    const call = mockFetch.mock.calls[0];
+    expect((call[1] as RequestInit).method).toBe("PATCH");
+    expect(call[0]).toContain("/units/u-1");
+    const body = JSON.parse((call[1] as RequestInit).body as string);
+    expect(body).toEqual({
+      task_branch: "task/u-1",
+      worktree_path: "/tmp/wt",
+      session_id: "sess-1",
+    });
+  });
+
   it("normalizes snake_case working unit payloads from LaPis", async () => {
     mockFetch.mockReturnValue(mockResponse([{
       id: "u-1",
@@ -194,6 +222,15 @@ describe("LaPisClient (HTTP)", () => {
     await client.getHandoffsForMilestone("ms-1");
     expect(mockFetch).toHaveBeenCalledWith(
       "http://localhost:9100/milestones/ms-1/handoffs",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("getHandoffForUnit fetches a handoff record for a working unit", async () => {
+    mockFetch.mockReturnValue(mockResponse([]));
+    await client.getHandoffForUnit("u-1");
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:9100/units/u-1/handoff",
       expect.objectContaining({ method: "GET" }),
     );
   });

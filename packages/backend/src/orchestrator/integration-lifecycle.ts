@@ -1,5 +1,6 @@
 import type { WorkingUnit } from "@aurex/shared";
 import type { WorktreeManager } from "./worktree.js";
+import { mergeBranchesWithOursFallback } from "./branch-merge-service.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -39,38 +40,24 @@ export function createIntegrationLifecycle(worktreeManager: WorktreeManager) {
         .map((unit) => unit.taskBranch)
         .filter((branch): branch is string => branch.trim().length > 0);
 
-      await worktreeManager.createBranch(integrationBranch, input.baseBranch);
+      await worktreeManager.recreateBranch(integrationBranch, input.baseBranch);
 
-      const mergedBranches: string[] = [];
-      const conflictedBranches: string[] = [];
+      const { mergedBranches, conflictedBranches, oursFallbackBranches } = await mergeBranchesWithOursFallback(
+        worktreeManager,
+        inputBranches,
+        integrationBranch,
+      );
 
-      for (const branch of inputBranches) {
-        try {
-          await worktreeManager.mergeToTarget(branch, integrationBranch);
-          mergedBranches.push(branch);
-        } catch {
-          // Abort the failed merge before trying an alternative strategy,
-          // otherwise git refuses to start a new merge while one is in progress.
-          try {
-            await worktreeManager.abortMerge();
-          } catch { /* nothing to abort */ }
-          try {
-            await worktreeManager.mergeToTargetWithStrategy(branch, integrationBranch, "ours");
-            mergedBranches.push(branch);
-          } catch {
-            try {
-              await worktreeManager.abortMerge();
-            } catch { /* nothing to abort */ }
-            conflictedBranches.push(branch);
-          }
-        }
+      if (conflictedBranches.length > 0) {
+        throw new Error(`Worker branches have merge conflicts: ${conflictedBranches.join(", ")}`);
+      }
+      if (oursFallbackBranches.length > 0) {
+        throw new Error(
+          `Worker branches required conflict resolution that would drop changes: ${oursFallbackBranches.join(", ")}`,
+        );
       }
 
-      if (conflictedBranches.length > 0 && conflictedBranches.length === inputBranches.length) {
-        throw new Error(`All worker branches have merge conflicts: ${conflictedBranches.join(", ")}`);
-      }
-
-      await worktreeManager.createBranch(releaseBranch, integrationBranch);
+      await worktreeManager.recreateBranch(releaseBranch, integrationBranch);
 
       let testFailure: string | undefined;
       if (input.testCommands && input.testCommands.length > 0) {

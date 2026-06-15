@@ -5,6 +5,12 @@ import {
   buildMissionSnapshot,
   shouldShowSupplyChainTab,
   summarizeSupplyChainRisk,
+  getMissionStatusUi,
+  isMissionActive,
+  isMissionTerminal,
+  isMissionStoppable,
+  countActiveMissions,
+  countTerminalMissions,
 } from "./missionUiModel";
 
 describe("missionUiModel", () => {
@@ -74,5 +80,26 @@ describe("missionUiModel", () => {
       { id: "1", severity: "medium" } as any,
       { id: "2", severity: "critical" } as any,
     ])).toEqual({ label: "CRITICAL", color: "var(--error)", findingCount: 2 });
+  });
+
+  it("maps pool and LaPis mission statuses to one UI vocabulary", () => {
+    expect(getMissionStatusUi("executing").headerLabel).toBe("EXECUTING");
+    expect(getMissionStatusUi("running").headerLabel).toBe("EXECUTING");
+    expect(getMissionStatusUi("waiting_checkpoint").sidebarLabel).toBe("Checkpoint");
+    expect(getMissionStatusUi("paused").sidebarLabel).toBe("Checkpoint");
+    expect(getMissionStatusUi("aborted").sidebarLabel).toBe("Stopped");
+  });
+
+  it("classifies active, terminal, and stoppable mission states", () => {
+    expect(isMissionActive("executing")).toBe(true);
+    expect(isMissionActive("running")).toBe(true);
+    expect(isMissionActive("paused")).toBe(true);
+    expect(isMissionActive("completed")).toBe(false);
+    expect(isMissionTerminal("aborted")).toBe(true);
+    expect(isMissionTerminal("failed")).toBe(true);
+    expect(isMissionStoppable("waiting_checkpoint")).toBe(true);
+    expect(isMissionStoppable("completed")).toBe(false);
+    expect(countActiveMissions(["queued", "running", "completed", "aborted"])).toBe(2);
+    expect(countTerminalMissions(["completed", "failed", "aborted", "running"])).toBe(3);
   });
 });

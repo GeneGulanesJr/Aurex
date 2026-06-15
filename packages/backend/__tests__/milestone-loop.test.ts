@@ -65,6 +65,7 @@ describe("milestone loop", () => {
     const mockLapis = {
       updateMissionStatus: vi.fn(),
       updateMilestoneStatus: vi.fn(),
+    getRetryCounter: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
       incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-2", retries: 0, rescopes: 0 }),
       getVerdicts: vi.fn().mockResolvedValue([
         { verdict: "pass", validatorType: "validator_scrutiny", sessionId: "mock-session" },
@@ -114,7 +115,8 @@ describe("milestone loop", () => {
     const mockLapis = {
       updateMissionStatus: vi.fn(),
       updateMilestoneStatus: vi.fn(),
-      incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 2, rescopes: 5 }),
+    getRetryCounter: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 2, rescopes: 5 }),
+      incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
       getVerdicts: vi.fn().mockResolvedValue([
         { verdict: "fail", validatorType: "validator_scrutiny", classification: "blocking", sessionId: "mock-session" },
       ]),
@@ -173,6 +175,7 @@ describe("milestone loop", () => {
     const mockLapis = {
       updateMissionStatus: vi.fn(),
       updateMilestoneStatus: vi.fn(),
+    getRetryCounter: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
       incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
       getVerdicts: vi.fn().mockResolvedValue([]),
       getSessionsForMilestone: vi.fn().mockResolvedValue([]),

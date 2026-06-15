@@ -92,6 +92,15 @@ describe("WorktreeManager", () => {
     expect(calls.some((c) => c.includes("branch release/milestone-1 develop"))).toBe(true);
   });
 
+  it("recreates a branch by deleting any stale copy first", async () => {
+    const manager = createWorktreeManager("/repo/root");
+    await manager.recreateBranch("integration/mission-1/1-ms-1", "main");
+
+    const calls = mockExecAsync.mock.calls.map((c) => `${c[0]} ${(c[1] as string[]).join(" ")}`);
+    expect(calls.some((c) => c.includes("branch -D integration/mission-1/1-ms-1"))).toBe(true);
+    expect(calls.some((c) => c.includes("branch integration/mission-1/1-ms-1 main"))).toBe(true);
+  });
+
   it("prunes a worktree", async () => {
     const manager = createWorktreeManager("/repo/root");
     await manager.pruneWorktree("/repo/root/.git-worktrees/worker-a-auth-001");

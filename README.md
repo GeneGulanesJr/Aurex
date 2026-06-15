@@ -104,7 +104,14 @@ One command runs the full stack:
 docker compose build && docker compose up
 ```
 
-> **Why two steps?** `docker compose build` rebuilds all images — including the bundled LaPis (shared state DB) and PiNyx (LLM gateway) services — pulling in the latest updates before starting the stack. Run `build` each time you pull new code or update provider keys.
+To **force fresh LaPis and PiNyx** clones from GitHub (they are baked into the image at build time and often stay cached):
+
+```bash
+LAPIS_PULL=$(date +%F) PINYX_PULL=$(date +%F) docker compose build --no-cache lapis pinyx
+docker compose up -d
+```
+
+> **Why two steps?** `docker compose build` rebuilds Aurex images from your local checkout. LaPis and PiNyx are cloned during the `lapis` / `pinyx` image build; without new `LAPIS_PULL` / `PINYX_PULL` args (or `--no-cache`), Docker may reuse cached clone layers. Run the commands above when you need the latest LaPis/PiNyx from `main`. For everyday Aurex code changes, `docker compose build && docker compose up` is enough.
 
 | Service | URL |
 |---|---|

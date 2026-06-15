@@ -4,24 +4,41 @@ import type { PinyxClient } from "../clients/pinyx-client.js";
 import { QuotaExhaustedError } from "../clients/pinyx-quota-wrapper.js";
 import { createNegotiator } from "./negotiator.js";
 import { createWorktreeManager, type CreateValidatorWorktreeResult } from "./worktree.js";
-import { createAgentSpawner, TOOL_CALL_CAP_EXCEEDED, type SpawnResult, type SpawnHandle } from "../agents/agent-spawner.js";
+import { createAgentSpawner, type SpawnResult, type SpawnHandle } from "../agents/agent-spawner.js";
 import type { AgentLogger } from "../agents/agent-logger.js";
 import type { EventBus } from "../ws/events.js";
 import { buildValidatorContext, buildWorkerContext, buildResearchContext, type ValidatorUnitContext } from "../agents/context-builder.js";
-import { createIntegrationLifecycle } from "./integration-lifecycle.js";
-import { validateHandoff } from "../enforcement/handoff-validator.js";
 import { checkPreSpawnOverlap } from "./overlap.js";
 import { rescopeMilestone } from "./rescope.js";
+import { validateHandoff } from "../enforcement/handoff-validator.js";
 import {
   applyValidatorVerdictsToTodos,
-  markMergedTodos,
   markWorkerTodoProgress,
   reconcileMissionLedger,
 } from "./ledger-reconciler.js";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
+import {
+  enrichWorkingUnitsForExecution,
+  mergeRuntimeUnitFields,
+  selectWorkerMaxTimeout,
+  selectWorkerTimeout,
+} from "./milestone-unit-context.js";
+import {
+  canResetStaleUnits,
+  canRetryHandoffs,
+  canRetryWorkers,
+  createRetryBudget,
+  markHandoffRetry,
+  markStaleUnitReset,
+  markWorkerRetry,
+} from "./milestone-retry-budget.js";
+import { resolveValidatorHandoffs, validateWorkerHandoffs } from "./milestone-handoff-gate.js";
+import { collectValidatorDiffSummary } from "./milestone-validation-phase.js";
+import {
+  ensureValidatorVerdicts,
+  selectValidatorTypes,
+  type ValidatorRunResult,
+} from "./milestone-validator-verdicts.js";
+import { finalizeMilestoneRelease, runIntegrationPhase } from "./milestone-integration-phase.js";
 
 // Auto-rescope is disabled by default (0). When enabled, the milestone loop
 // will automatically re-plan via Pinyx after exhausting validator retries.
@@ -63,7 +80,6 @@ export function createMilestoneLoop(
   loopConfig: MilestoneLoopConfig,
 ) {
   const worktreeManager = createWorktreeManager(loopConfig.repoRoot);
-  const integrationLifecycle = createIntegrationLifecycle(worktreeManager);
   let cumulativeCost = 0;
   const runtimeUnitsByMilestone = new Map<string, Map<string, WorkingUnit>>();
   const spawner = createAgentSpawner({
@@ -127,33 +143,19 @@ export function createMilestoneLoop(
         // Rescopes re-plan the milestone via PiNyx and start fresh.
         let loopActive = true;
         let researchFindings: ResearchFinding[] = await lapis.getFindings(mission.id).catch(() => [] as ResearchFinding[]);
-        let hasRetriedFailedUnits = false;
+        let retryBudget = createRetryBudget();
         let preResearchAttempted = false;
-        let hasResetIncompleteUnits = false;
         while (loopActive) {
           loopActive = false;
 
           // Fetch current units (may change after rescope)
-          const fetchedUnits = await lapis.getWorkingUnitsForMilestone(milestone.id).catch(() => [] as import("@aurex/shared").WorkingUnit[]);
-          const normalizedFetchedUnits = fetchedUnits.map(normalizeWorkingUnitForLoop);
+          const fetchedUnits = await lapis.getWorkingUnitsForMilestone(milestone.id).catch(() => [] as WorkingUnit[]);
           const runtimeUnits = runtimeUnitsByMilestone.get(milestone.id);
-          const unitsWithRuntime = runtimeUnits
-            ? normalizedFetchedUnits.map((unit) => {
-                const runtime = runtimeUnits.get(unit.id);
-                return runtime
-                  ? {
-                      ...unit,
-                      taskBranch: unit.taskBranch || runtime.taskBranch,
-                      worktreePath: unit.worktreePath || runtime.worktreePath,
-                      sessionId: unit.sessionId || runtime.sessionId,
-                  }
-                  : unit;
-              })
-            : normalizedFetchedUnits;
-          const units = unitsWithRuntime
-            .map((unit) => applyWorkingUnitScopeFallback(unit, mission, milestone, loopConfig.repoRoot))
-            .map((unit) => applyWorkingUnitDescriptionFallback(unit, mission, milestone))
-            .filter((unit) => unit.status !== "superseded");
+          const unitsWithRuntime = fetchedUnits.map((unit) => {
+            const runtime = runtimeUnits?.get(unit.id);
+            return mergeRuntimeUnitFields(unit, runtime);
+          });
+          const units = enrichWorkingUnitsForExecution(unitsWithRuntime, mission, milestone, loopConfig.repoRoot);
           const contracts = await lapis.getContractHistory(milestone.id).catch(() => [] as any[]);
           const contract = contracts[0] as any;
 
@@ -219,8 +221,8 @@ export function createMilestoneLoop(
           // (it only picks up "planned") and validation incorrectly fails.
           const transientStatuses: WorkerStatus[] = ["spawned", "working", "committing"];
           const staleUnits = units.filter((u: WorkingUnit) => transientStatuses.includes(u.status));
-          if (staleUnits.length > 0 && !hasResetIncompleteUnits) {
-            hasResetIncompleteUnits = true;
+          if (staleUnits.length > 0 && canResetStaleUnits(retryBudget, "worker")) {
+            markStaleUnitReset(retryBudget, "worker");
             loopConfig.eventBus?.emit({
               type: "mission_log",
               missionId: mission.id,
@@ -233,8 +235,13 @@ export function createMilestoneLoop(
             }
             // Re-fetch units to get the updated statuses
             const refreshed = await lapis.getWorkingUnitsForMilestone(milestone.id).catch(() => units);
+            const runtimeUnitsAfterReset = runtimeUnitsByMilestone.get(milestone.id);
+            const mergedRefreshed = refreshed.map((unit) => {
+              const runtime = runtimeUnitsAfterReset?.get(unit.id);
+              return mergeRuntimeUnitFields(unit, runtime);
+            });
             units.length = 0;
-            units.push(...refreshed.map((unit: WorkingUnit) => applyWorkingUnitScopeFallback(unit, mission, milestone, loopConfig.repoRoot)));
+            units.push(...enrichWorkingUnitsForExecution(mergedRefreshed, mission, milestone, loopConfig.repoRoot));
           }
 
           const pendingUnits = units.filter((u: WorkingUnit) => u.status === "planned");
@@ -347,7 +354,8 @@ export function createMilestoneLoop(
                 const result = await handle.completed;
                 activeHandles.delete(handle);
                 if (result.status === "completed") {
-                  rememberRuntimeUnit(milestone.id, { ...unit, taskBranch, worktreePath, sessionId: result.sessionId, status: "completed" });
+                  const completedUnit = { ...unit, taskBranch, worktreePath, sessionId: result.sessionId, status: "completed" as const };
+              await persistRuntimeUnit(milestone.id, completedUnit);
                   await lapis.updateWorkingUnitStatus(unit.id, "completed");
                   await markWorkerTodoProgress(lapis, {
                     missionId: mission.id,
@@ -367,7 +375,8 @@ export function createMilestoneLoop(
                     taskBranch, worktreePath,
                   });
                 } else if (result.status === "timed_out") {
-                  rememberRuntimeUnit(milestone.id, { ...unit, taskBranch, worktreePath, sessionId: result.sessionId, status: "timed_out" });
+                  const timedOutUnit = { ...unit, taskBranch, worktreePath, sessionId: result.sessionId, status: "timed_out" as const };
+              await persistRuntimeUnit(milestone.id, timedOutUnit);
                   await lapis.updateWorkingUnitStatus(unit.id, "timed_out");
                   await markWorkerTodoProgress(lapis, {
                     missionId: mission.id,
@@ -385,7 +394,8 @@ export function createMilestoneLoop(
                   timeoutFailureUnitIds.push(unit.id);
                 } else {
                   const missingHandoff = result.error?.includes("write_handoff") || result.error?.includes("worker_handoff_missing");
-                  rememberRuntimeUnit(milestone.id, { ...unit, taskBranch, worktreePath, sessionId: result.sessionId, status: "failed" });
+                  const failedUnit = { ...unit, taskBranch, worktreePath, sessionId: result.sessionId, status: "failed" as const };
+              await persistRuntimeUnit(milestone.id, failedUnit);
                   await lapis.updateWorkingUnitStatus(unit.id, "failed");
                   await markWorkerTodoProgress(lapis, {
                     missionId: mission.id,
@@ -434,8 +444,8 @@ export function createMilestoneLoop(
             // escalating the entire milestone. This avoids discarding
             // successful workers' work when only 1-2 units failed.
             const failedUnitIdsForRetry = failedUnitIds;
-            if (failedUnitIdsForRetry.length > 0 && !hasRetriedFailedUnits) {
-              hasRetriedFailedUnits = true;
+            if (failedUnitIdsForRetry.length > 0 && canRetryWorkers(retryBudget)) {
+              markWorkerRetry(retryBudget);
               for (const uid of failedUnitIdsForRetry) {
                 await lapis.updateWorkingUnitStatus(uid, "planned");
               }
@@ -479,8 +489,8 @@ export function createMilestoneLoop(
           if (incompleteUnits.length > 0) {
             const transientStatuses: WorkerStatus[] = ["spawned", "working", "committing"];
             const allTransient = incompleteUnits.every((unit) => transientStatuses.includes(unit.status));
-            if (allTransient && !hasResetIncompleteUnits) {
-              hasResetIncompleteUnits = true;
+            if (allTransient && canResetStaleUnits(retryBudget, "validation")) {
+              markStaleUnitReset(retryBudget, "validation");
               for (const unit of incompleteUnits) {
                 await lapis.updateWorkingUnitStatus(unit.id, "planned");
               }
@@ -516,43 +526,41 @@ export function createMilestoneLoop(
           }
 
           // --- VALIDATOR PHASE ---
-          const handoffs = await lapis.getHandoffsForMilestone(milestone.id).catch(() => [] as any[]);
-          const handoffsByUnitId = new Map(handoffs.map((handoff: any) => [handoff.unitId, handoff]));
-          for (const unit of validatorUnits) {
-            unit.handoff = handoffsByUnitId.get(unit.id);
-          }
+          const handoffLoad = await resolveValidatorHandoffs(lapis, milestone.id, validatorUnits);
+          const handoffGate = validateWorkerHandoffs(validatorUnits, handoffLoad);
+          const invalidHandoffUnitIds = handoffGate.invalidUnitIds;
 
-          // Validate handoffs — fail units with missing or invalid handoffs.
-          // A completed worker session is not enough evidence that useful work
-          // happened; the handoff is the structured completion signal that
-          // validators and integration depend on.
-          const invalidHandoffUnitIds: string[] = [];
-          for (const unit of validatorUnits) {
+          for (const unit of validatorUnits.filter((candidate) => invalidHandoffUnitIds.includes(candidate.id))) {
             let errors: string[];
-            try {
-              errors = unit.handoff
-                ? validateHandoff(unit.handoff as any).errors
-                : ["worker completed without submitting write_handoff"];
-            } catch (err) {
-              errors = [`handoff validation threw: ${err instanceof Error ? err.message : String(err)}`];
+            if (handoffLoad.fetchFailed) {
+              errors = [`handoff fetch failed: ${handoffLoad.fetchError ?? "unknown error"}`];
+            } else if (unit.handoff) {
+              errors = validateHandoff(unit.handoff).errors;
+            } else {
+              errors = ["worker completed without submitting write_handoff"];
             }
-
-            if (errors.length > 0) {
-              console.warn(`[enforcement] Invalid handoff for unit ${unit.id}:`, errors);
-              await lapis.updateWorkingUnitStatus(unit.id, "failed").catch(() => {});
-              await markWorkerTodoProgress(lapis, {
-                missionId: mission.id,
-                unit: unit as WorkingUnit,
-                workerId: "handoff-validator",
-                status: "blocked",
-                reason: `invalid worker handoff: ${errors.join("; ")}`,
-                branch: unit.taskBranch,
-                notes: errors,
-              });
-              callbacks.onError(mission.id, "worker_handoff_invalid", `Worker "${unit.description}" did not submit a valid handoff`, { workerId: `worker-${unit.id}`, milestoneId: milestone.id, recoverable: true, details: { errors } });
-              invalidHandoffUnitIds.push(unit.id);
-            }
+            await lapis.updateWorkingUnitStatus(unit.id, "failed").catch(() => {});
+            await markWorkerTodoProgress(lapis, {
+              missionId: mission.id,
+              unit: unit as WorkingUnit,
+              workerId: "handoff-validator",
+              status: "blocked",
+              reason: `invalid worker handoff: ${errors.join("; ") || "validation failed"}`,
+              branch: unit.taskBranch,
+              notes: errors,
+            });
+            const errorMessage = handoffLoad.fetchFailed
+              ? `Worker "${unit.description}" handoff could not be loaded from LaPis`
+              : `Worker "${unit.description}" did not submit a valid handoff`;
+            const errorCode = handoffLoad.fetchFailed ? "worker_handoff_fetch_failed" : "worker_handoff_invalid";
+            callbacks.onError(mission.id, errorCode, errorMessage, {
+              workerId: `worker-${unit.id}`,
+              milestoneId: milestone.id,
+              recoverable: true,
+              details: { errors },
+            });
           }
+
           if (invalidHandoffUnitIds.length > 0) {
             failedCount += invalidHandoffUnitIds.length;
             const unitsToRetry = validatorUnits.filter(u => invalidHandoffUnitIds.includes(u.id));
@@ -564,8 +572,8 @@ export function createMilestoneLoop(
               if (invalidSet.has((integrationUnits[i] as WorkingUnit).id)) integrationUnits.splice(i, 1);
             }
 
-            if (!hasRetriedFailedUnits) {
-              hasRetriedFailedUnits = true;
+            if (canRetryHandoffs(retryBudget)) {
+              markHandoffRetry(retryBudget);
               for (const unit of unitsToRetry) {
                 if (unit.worktreePath) {
                   try {
@@ -619,39 +627,8 @@ export function createMilestoneLoop(
             actorId: "orchestrator",
           });
 
-          const validatorTypes: Array<"validator_scrutiny" | "validator_user_testing"> = ["validator_scrutiny"];
-          if (acceptanceBehavior.trim().length > 0 && acceptanceBehavior.trim().toLowerCase() !== "none") {
-            validatorTypes.push("validator_user_testing");
-          }
-
-          // Collect git diff for all validator units against base branch.
-          // Placed before the loop since the diff is the same for all validator types.
-          let diffSummary = "";
-          try {
-            const diffParts: string[] = [];
-            for (const vu of validatorUnits) {
-              if (vu.taskBranch && vu.worktreePath) {
-                try {
-                  const { stdout } = await execFileAsync(
-                    "git",
-                    // Use HEAD instead of taskBranch — in worktrees HEAD is
-                    // always the checked-out task branch, and this avoids
-                    // branch-name edge cases.
-                    ["-C", vu.worktreePath, "diff", `${loopConfig.gitMainBranch}...HEAD`, "--"],
-                    { maxBuffer: 1024 * 1024 },
-                  );
-                  if (stdout.trim()) {
-                    diffParts.push(`--- Unit: ${vu.id} (${vu.taskBranch}) ---\n${stdout}`);
-                  }
-                } catch {
-                  // Branch may not exist or no diff available — skip
-                }
-              }
-            }
-            diffSummary = diffParts.join("\n\n");
-          } catch {
-            // Diff collection is best-effort
-          }
+          const validatorTypes = selectValidatorTypes(acceptanceBehavior);
+          const diffSummary = await collectValidatorDiffSummary(validatorUnits, loopConfig.gitMainBranch).catch(() => "");
 
           // Build a merged worktree once for all validator types so they
           // share the same on-disk post-worker state. The validator's
@@ -672,42 +649,48 @@ export function createMilestoneLoop(
               err instanceof Error ? err.message : err,
             );
           }
+
+          if (validatorWorktree && validatorWorktree.conflictedBranches.length > 0) {
+            try {
+              await worktreeManager.pruneWorktree(validatorWorktree.worktreePath);
+            } catch (err) {
+              console.warn(
+                `[validator] Failed to prune conflicted merged worktree ${validatorWorktree.worktreePath}:`,
+                err instanceof Error ? err.message : err,
+              );
+            }
+
+            const conflictedSet = new Set(validatorWorktree.conflictedBranches);
+            const conflictedUnitIds = validatorUnits
+              .filter((unit) => conflictedSet.has(unit.taskBranch))
+              .map((unit) => unit.id);
+            const summary = `Worker branches could not be merged for validation: ${validatorWorktree.conflictedBranches.join(", ")}`;
+            callbacks.onError(
+              mission.id,
+              "validator_merge_conflicts",
+              summary,
+              {
+                milestoneId: milestone.id,
+                recoverable: true,
+                details: { conflictedUnitIds, phase: "validator_merge" },
+              },
+            );
+            callbacks.onEscalation(
+              mission.id,
+              { kind: "validation_failed", milestoneId: milestone.id },
+              { summary, conflictedUnitIds, phase: "validator_merge" },
+            );
+            return {
+              status: "checkpoint_needed",
+              trigger: "validation_failed",
+              milestoneId: milestone.id,
+              summary,
+            };
+          }
+
           const validatorCwd = validatorWorktree?.worktreePath ?? loopConfig.repoRoot;
 
-          const validatorRuntimeFailures: string[] = [];
-          const validatorRuntimeFailureTypes = new Set<"validator_scrutiny" | "validator_user_testing">();
-          const validatorResults: Array<{
-            validatorType: "validator_scrutiny" | "validator_user_testing";
-            sessionId: string;
-            result: SpawnResult;
-          }> = [];
-          const recordValidatorRuntimeFailure = (
-            validatorType: "validator_scrutiny" | "validator_user_testing",
-            message: string,
-          ) => {
-            if (validatorRuntimeFailureTypes.has(validatorType)) return;
-            validatorRuntimeFailureTypes.add(validatorType);
-            validatorRuntimeFailures.push(message);
-          };
-          const writeSyntheticValidatorVerdict = async (
-            sessionId: string,
-            validatorType: "validator_scrutiny" | "validator_user_testing",
-            findings: string,
-          ) => {
-            try {
-              await lapis.writeVerdict(sessionId, {
-                milestoneId: milestone.id,
-                contractId,
-                validatorType,
-                verdict: "fail",
-                findings,
-                failedUnitIds: [],
-                timestamp: new Date().toISOString(),
-              });
-            } catch (err) {
-              console.warn(`[milestone-loop] Failed to write synthetic validator verdict:`, err instanceof Error ? err.message : err);
-            }
-          };
+          const validatorResults: ValidatorRunResult[] = [];
 
           // Run all validator types concurrently — they share a read-only
           // merged worktree and don't modify state.
@@ -748,20 +731,6 @@ export function createMilestoneLoop(
             activeHandles.delete(handle);
             validatorResults.push({ validatorType, sessionId: handle.sessionId, result });
             callbacks.onAgentStatus(agentId, validatorType, result.status === "completed" ? "completed" : result.status, milestone.id);
-
-            // Handle validators that didn't write a verdict:
-            // 1. Cap-exceeded: session was aborted by tool-call cap
-            // 2. Timed out/failed/completed but no verdict: handled after
-            // getVerdicts so a sibling validator's verdict cannot mask the
-            // missing validator type.
-            const isCapHit = result.status === "failed" && result.error?.includes(TOOL_CALL_CAP_EXCEEDED);
-            if (isCapHit) {
-              // Cap hit — model never had a chance to write verdict
-              const findings = `Validator auto-failed: exceeded tool-call cap without producing a verdict. The model exhausted its configured tool-call budget.`;
-              recordValidatorRuntimeFailure(validatorType, `${validatorType} exceeded the configured validator tool-call cap.`);
-              await writeSyntheticValidatorVerdict(handle.sessionId, validatorType, findings);
-            }
-
             handle.dispose();
           }));
 
@@ -779,62 +748,12 @@ export function createMilestoneLoop(
           }
 
           // --- NEGOTIATION PHASE ---
-          let verdicts = await lapis.getVerdicts(milestone.id).catch(() => [] as import("@aurex/shared").ValidationVerdict[]);
-
-          // If any validator type finished without a verdict, write a
-          // synthetic fail verdict for auditability and surface it as a
-          // validator runtime/compliance checkpoint. This must be per type:
-          // otherwise a user-testing verdict can mask a missing scrutiny
-          // verdict and the negotiator reports "Missing scrutiny validator
-          // verdict" as if it were an ordinary validation failure.
-          let wroteSyntheticMissingVerdict = false;
-          const currentValidatorSessionIds = new Set(
-            validatorResults.map((result) => result.sessionId).filter((sessionId) => sessionId.length > 0),
+          const { verdicts: currentRunVerdicts, runtimeFailures: validatorRuntimeFailures } = await ensureValidatorVerdicts(
+            lapis,
+            milestone.id,
+            contractId,
+            validatorResults,
           );
-          let currentRunVerdicts = verdicts.filter(
-            (verdict) => verdict.sessionId && currentValidatorSessionIds.has(verdict.sessionId),
-          );
-          const verdictTypes = new Set(currentRunVerdicts.map((v) => v.validatorType ?? "validator_scrutiny"));
-          for (const validatorResult of validatorResults) {
-            if (verdictTypes.has(validatorResult.validatorType)) continue;
-
-            let findings: string;
-            if (validatorResult.result.status === "timed_out") {
-              findings = `Validator auto-failed: timed out before calling write_verdict. The model may have continued gathering context, but it did not submit a formal verdict before the validator timeout.`;
-              recordValidatorRuntimeFailure(
-                validatorResult.validatorType,
-                `${validatorResult.validatorType} timed out before submitting write_verdict.`,
-              );
-            } else if (validatorResult.result.status === "failed" && validatorResult.result.error?.includes(TOOL_CALL_CAP_EXCEEDED)) {
-              findings = `Validator auto-failed: exceeded tool-call cap without producing a verdict. The model exhausted its configured tool-call budget.`;
-              recordValidatorRuntimeFailure(
-                validatorResult.validatorType,
-                `${validatorResult.validatorType} exceeded the configured validator tool-call cap.`,
-              );
-            } else if (validatorResult.result.status === "failed") {
-              findings = `Validator auto-failed: session failed before calling write_verdict. Error: ${validatorResult.result.error ?? "unknown error"}.`;
-              recordValidatorRuntimeFailure(
-                validatorResult.validatorType,
-                `${validatorResult.validatorType} failed before submitting write_verdict.`,
-              );
-            } else {
-              findings = `Validator completed session without calling write_verdict. The model finished its review but did not submit a formal verdict. This is a model compliance issue — the validator skill instructs using write_verdict exactly once.`;
-              recordValidatorRuntimeFailure(
-                validatorResult.validatorType,
-                `${validatorResult.validatorType} completed without submitting write_verdict.`,
-              );
-            }
-
-            await writeSyntheticValidatorVerdict(validatorResult.sessionId, validatorResult.validatorType, findings);
-            wroteSyntheticMissingVerdict = true;
-          }
-
-          if (wroteSyntheticMissingVerdict) {
-            verdicts = await lapis.getVerdicts(milestone.id).catch(() => [] as import("@aurex/shared").ValidationVerdict[]);
-            currentRunVerdicts = verdicts.filter(
-              (verdict) => verdict.sessionId && currentValidatorSessionIds.has(verdict.sessionId),
-            );
-          }
 
           if (validatorRuntimeFailures.length > 0) {
             const trigger: CheckpointTrigger = "unclassifiable_error";
@@ -860,18 +779,14 @@ export function createMilestoneLoop(
             actorId: "orchestrator",
           });
 
-          // Fetch the current retry/rescope counters BEFORE incrementing.
-          // The increment happens only AFTER the negotiator decides to retry
-          // or rescope, so the counts represent the number of COMPLETED cycles,
-          // not the number of cycles-about-to-happen. This avoids an off-by-one
-          // where the first validator failure is seen as retry 1 instead of 0.
-          const preRetryCounter = await lapis.incrementRetry(milestone.id);
-          // Decrement retries to get the pre-increment value (incrementRetry
-          // is a POST endpoint that atomically increments and returns the new
-          // value). We want the negotiator to see how many retries have ALREADY
-          // happened, not the one it's about to consider.
-          const retryCount = preRetryCounter.retries > 0 ? preRetryCounter.retries - 1 : 0;
-          const rescopeCount = preRetryCounter.rescopes;
+          // Fetch retry/rescope counters without incrementing on pass cycles.
+          const retryCounter = await lapis.getRetryCounter(milestone.id).catch(() => ({
+            milestoneId: milestone.id,
+            retries: 0,
+            rescopes: 0,
+          }));
+          const retryCount = retryCounter.retries;
+          const rescopeCount = retryCounter.rescopes;
           const effectiveMaxRescopes = Math.min(config.maxRescopes, config.maxAutoRescopes ?? AUTO_RESCOPE_BATCH_LIMIT);
           const decision = await negotiator.negotiate(
             milestone.id, retryCount, rescopeCount,
@@ -889,6 +804,9 @@ export function createMilestoneLoop(
           }
 
           if (decision.decision === "retry") {
+            await lapis.incrementRetry(milestone.id).catch((err) => {
+              console.warn(`[milestone-loop] Failed to increment retry counter:`, err instanceof Error ? err.message : err);
+            });
             // Reset failed units to "planned" and re-run worker+validator
             const failedIds = decision.failedUnitIds ?? [];
             if (failedIds.length === 0) {
@@ -975,92 +893,43 @@ export function createMilestoneLoop(
             continue;
           }
 
-          // decision === "pass"
-          let integration: Awaited<ReturnType<typeof integrationLifecycle.integrate>>;
-          try {
-            integration = await integrationLifecycle.integrate({
-              missionId: mission.id, milestoneId: milestone.id,
-              milestoneOrderIndex: milestone.orderIndex,
-              baseBranch: loopConfig.gitMainBranch, units: integrationUnits,
-              testCommands,
-            });
-            const mergedIntegrationUnits = integrationUnits.filter(
-              (u) => integration.mergedBranches.includes(u.taskBranch),
+          const integrationResult = await runIntegrationPhase(lapis, worktreeManager, callbacks, {
+            missionId: mission.id,
+            milestoneId: milestone.id,
+            milestoneOrderIndex: milestone.orderIndex,
+            baseBranch: loopConfig.gitMainBranch,
+            integrationUnits,
+            testCommands,
+            repoRoot: loopConfig.repoRoot,
+            onPostMilestoneScan: loopConfig.onPostMilestoneScan,
+          });
+          if (!integrationResult.ok) {
+            callbacks.onEscalation(
+              mission.id,
+              { kind: integrationResult.trigger, milestoneId: milestone.id },
+              { summary: integrationResult.summary, phase: integrationResult.phase },
             );
-            await markMergedTodos(lapis, {
-              missionId: mission.id,
-              units: mergedIntegrationUnits,
-              sourceBranches: integration.mergedBranches,
-              targetBranch: integration.integrationBranch,
-              reason: "integration branch merge completed after validation pass",
-            });
-            await reconcileMissionLedger(lapis, {
-              missionId: mission.id,
+            return {
+              status: "checkpoint_needed",
+              trigger: integrationResult.trigger,
               milestoneId: milestone.id,
-              reason: "integration merge completed",
-              actorId: "orchestrator",
-            });
-          } catch (error) {
-            const trigger: CheckpointTrigger = "unclassifiable_error";
-            const summary = `Integration failed after validation pass: ${error instanceof Error ? error.message : String(error)}`;
-            callbacks.onError(mission.id, "integration_failed", summary, { milestoneId: milestone.id, recoverable: false, details: { phase: "integration" } });
-            callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary, phase: "integration" });
-            return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
+              summary: integrationResult.summary,
+            };
           }
 
-          // Handle conflicted branches: map them to failed unit IDs so
-          // the checkpoint provides actionable information.
-          if (integration.conflictedBranches.length > 0) {
-            const conflictedSet = new Set(integration.conflictedBranches);
-            const conflictedUnitIds = integrationUnits
-              .filter((u) => conflictedSet.has(u.taskBranch))
-              .map((u) => u.id);
-            if (conflictedUnitIds.length > 0) {
-              callbacks.onError(mission.id, "integration_conflicts",
-                `Merge conflicts on branches: ${integration.conflictedBranches.join(", ")}`,
-                { milestoneId: milestone.id, recoverable: true, details: { conflictedUnitIds, phase: "integration" } });
-            }
-          }
-
-          // Post-integration test gate: if contract tests fail on the
-          // integration branch, report the failure instead of creating release.
-          if (integration.testFailure) {
-            const trigger: CheckpointTrigger = "unclassifiable_error";
-            const summary = `Integration branch tests failed:\n${integration.testFailure.slice(0, 500)}`;
-            callbacks.onError(mission.id, "integration_tests_failed", summary, { milestoneId: milestone.id, recoverable: false, details: { phase: "integration_tests" } });
-            callbacks.onEscalation(mission.id, { kind: trigger, milestoneId: milestone.id }, { summary, phase: "integration_tests" });
-            return { status: "checkpoint_needed", trigger, milestoneId: milestone.id, summary };
-          }
-
-          // Post-milestone supply-chain scan
-          if (loopConfig.onPostMilestoneScan) {
-            try {
-              await loopConfig.onPostMilestoneScan(mission.id, loopConfig.repoRoot);
-            } catch (err) {
-              console.warn(`[bumblebee] Post-milestone scan failed for mission ${mission.id}:`, err instanceof Error ? err.message : err);
-            }
-          }
-
-          // Human must approve the release before merging to main
-          callbacks.onEscalation(
-            mission.id,
-            { kind: "milestone_complete", milestoneId: milestone.id, releaseBranch: integration.releaseBranch },
-            integration,
-          );
-
-          // Post-milestone compression — summarize completed milestone state
-          const compressionTrigger: CompressionTrigger = "post_milestone";
-          if (loopConfig.onCompression) {
-            await loopConfig.onCompression(mission.id, compressionTrigger);
-          } else {
-            await lapis.runCompression(mission.id, compressionTrigger);
-          }
+          const finalized = await finalizeMilestoneRelease(lapis, callbacks, {
+            missionId: mission.id,
+            milestoneId: milestone.id,
+            milestoneTitle: milestone.title,
+            integration: integrationResult.integration,
+            onCompression: loopConfig.onCompression,
+          });
 
           return {
             status: "checkpoint_needed",
-            trigger: "milestone_complete",
+            trigger: finalized.trigger,
             milestoneId: milestone.id,
-            summary: `Milestone "${milestone.title}" passed validation. Release branch: ${integration.releaseBranch}`,
+            summary: finalized.summary,
           };
         }
       }
@@ -1079,180 +948,17 @@ export function createMilestoneLoop(
     units.set(unit.id, unit);
     runtimeUnitsByMilestone.set(milestoneId, units);
   }
-}
 
-
-function selectWorkerTimeout(
-  unit: WorkingUnit,
-  workerTimeouts: Mission["configJson"]["workerTimeouts"],
-): number {
-  const timeouts = workerTimeouts ?? { simple: 300_000, build: 600_000, testHeavy: 600_000 };
-  const text = [unit.description, ...unit.declaredModules, ...unit.declaredPaths]
-    .join(" ")
-    .toLowerCase();
-
-  if (/\b(test|vitest|jest|playwright|cypress|pytest|cargo test|go test|e2e|integration)\b/.test(text)) {
-    return timeouts.testHeavy;
-  }
-
-  if (/\b(build|compile|bundle|install|migration|codegen|generate|docker)\b/.test(text)) {
-    return timeouts.build;
-  }
-
-  if (/\b(analy[sz]e|inventory|measure|audit|research|map|hotspot|complexity)\b/.test(text)) {
-    return timeouts.testHeavy;
-  }
-
-  return timeouts.simple;
-}
-
-
-function selectWorkerMaxTimeout(timeout: number): number {
-  return Math.max(timeout * 4, timeout + 10 * 60_000);
-}
-
-function normalizeWorkingUnitForLoop(unit: WorkingUnit): WorkingUnit {
-  const raw = unit as WorkingUnit & {
-    milestone_id?: string;
-    declared_paths?: unknown;
-    declared_modules?: unknown;
-    task_branch?: string;
-    worktree_path?: string;
-    session_id?: string;
-  };
-  const declaredPaths = Array.isArray(raw.declaredPaths)
-    ? raw.declaredPaths
-    : Array.isArray(raw.declared_paths)
-      ? raw.declared_paths
-      : [];
-  const declaredModules = Array.isArray(raw.declaredModules)
-    ? raw.declaredModules
-    : Array.isArray(raw.declared_modules)
-      ? raw.declared_modules
-      : [];
-  return {
-    ...unit,
-    milestoneId: raw.milestoneId ?? raw.milestone_id ?? "",
-    description: raw.description ?? "",
-    declaredPaths: declaredPaths.filter((item): item is string => typeof item === "string"),
-    declaredModules: declaredModules.filter((item): item is string => typeof item === "string"),
-    status: raw.status ?? "planned",
-    taskBranch: raw.taskBranch ?? raw.task_branch ?? "",
-    worktreePath: raw.worktreePath ?? raw.worktree_path ?? "",
-    sessionId: raw.sessionId ?? raw.session_id ?? "",
-  };
-}
-
-function applyWorkingUnitScopeFallback(
-  unit: WorkingUnit,
-  mission: Mission,
-  milestone: Milestone,
-  repoRoot: string,
-): WorkingUnit {
-  // Only fill in MISSING scope fields. Never rewrite declared scope that the
-  // planner explicitly provided — silently mutating identity is a footgun.
-  if (unit.declaredPaths.length > 0 && unit.declaredModules.length > 0) {
-    return unit;
-  }
-
-  const inferredPaths = unit.declaredPaths.length > 0
-    ? unit.declaredPaths
-    : inferDeclaredPathsFromText([
-        mission.description,
-        milestone.title,
-        milestone.description,
-        unit.description,
-      ], repoRoot);
-  const inferredModules = unit.declaredModules.length > 0
-    ? unit.declaredModules
-    : inferModulesFromPaths(inferredPaths);
-
-  if (inferredPaths.length === unit.declaredPaths.length && inferredModules.length === unit.declaredModules.length) {
-    return unit;
-  }
-
-  if (inferredPaths.length === 0 && inferredModules.length === 0) {
-    // Nothing useful to fill in. Leave the unit alone — downstream code
-    // already tolerates empty scope arrays.
-    return unit;
-  }
-
-  return {
-    ...unit,
-    declaredPaths: inferredPaths,
-    declaredModules: inferredModules,
-  };
-}
-
-function applyWorkingUnitDescriptionFallback(
-  unit: WorkingUnit,
-  mission: Mission,
-  milestone: Milestone,
-): WorkingUnit {
-  if (unit.description.trim().length > 0) {
-    return unit;
-  }
-
-  const description = [
-    milestone.description,
-    milestone.title,
-    mission.description,
-  ].find((text) => text.trim().length > 0)?.trim() ?? "Complete assigned working unit";
-
-  return {
-    ...unit,
-    description,
-  };
-}
-
-function inferDeclaredPathsFromText(textParts: string[], repoRoot: string): string[] {
-  const text = textParts.filter(Boolean).join(" ");
-  const paths = new Set<string>();
-  const normalizedRoot = repoRoot.replace(/\/+$/, "");
-
-  if (normalizedRoot.length > 0) {
-    const absolutePathPattern = new RegExp(`${escapeRegex(normalizedRoot)}/([^\\s\`"'<>\\)\\]\\}]+)`, "g");
-    for (const match of text.matchAll(absolutePathPattern)) {
-      addPath(paths, match[1]);
+  async function persistRuntimeUnit(milestoneId: string, unit: WorkingUnit) {
+    if (typeof lapis.updateWorkingUnit === "function") {
+      await lapis.updateWorkingUnit(unit.id, {
+        taskBranch: unit.taskBranch,
+        worktreePath: unit.worktreePath,
+        sessionId: unit.sessionId,
+      }).catch((err) => {
+        console.warn(`[milestone-loop] Failed to persist runtime fields for unit ${unit.id}:`, err instanceof Error ? err.message : err);
+      });
     }
+    rememberRuntimeUnit(milestoneId, unit);
   }
-
-  if (paths.size === 0) {
-    const relativePathPattern = /(?:^|[\s`"'(])([A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+\.(?:rs|ts|tsx|js|jsx|mjs|cjs|py|go|java|kt|swift|rb|php|cs|cpp|c|h|hpp|md|toml|json|ya?ml|css|scss|html|sql))/g;
-    for (const match of text.matchAll(relativePathPattern)) {
-      addPath(paths, match[1]);
-    }
-  }
-
-  return [...paths];
-}
-
-function inferModulesFromPaths(paths: string[]): string[] {
-  const modules = new Set<string>();
-  for (const filePath of paths) {
-    const parts = filePath.split("/").filter(Boolean);
-    const srcIndex = parts.lastIndexOf("src");
-    if (srcIndex >= 0 && parts[srcIndex + 1]) {
-      modules.add(parts[srcIndex + 1] === "mod.rs" && parts[srcIndex - 1] ? parts[srcIndex - 1] : parts[srcIndex + 1].replace(/\.[^.]+$/, ""));
-      continue;
-    }
-    if (parts.length > 1) {
-      modules.add(parts[parts.length - 2]);
-    }
-  }
-  return [...modules];
-}
-
-function addPath(paths: Set<string>, candidate: string | undefined): void {
-  const cleaned = candidate
-    ?.trim()
-    .replace(/[.,;:!?]+$/, "")
-    .replace(/^\/+/, "");
-  if (cleaned && cleaned.includes("/") && !cleaned.includes("..")) {
-    paths.add(cleaned);
-  }
-}
-
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

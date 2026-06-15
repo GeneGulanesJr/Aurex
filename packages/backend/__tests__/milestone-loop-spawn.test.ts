@@ -54,6 +54,7 @@ function createMockLapis(units: WorkingUnit[] = [], handoffs = units.map((unit) 
     updateMissionStatus: vi.fn().mockResolvedValue(undefined),
     updateMilestoneStatus: vi.fn().mockResolvedValue(undefined),
     updateWorkingUnitStatus: vi.fn().mockResolvedValue(undefined),
+    getRetryCounter: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
     incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
     getVerdicts: vi.fn().mockResolvedValue([
       { verdict: "pass", validatorType: "validator_scrutiny" },
@@ -67,6 +68,9 @@ function createMockLapis(units: WorkingUnit[] = [], handoffs = units.map((unit) 
       content: { criteria: ["works"], testCommands: ["npm test"], acceptanceBehavior: "works" },
     }]),
     getHandoffsForMilestone: vi.fn().mockResolvedValue(handoffs),
+    getHandoffForUnit: vi.fn().mockImplementation(async (unitId: string) => (
+      handoffs.find((handoff) => handoff.unitId === unitId) ?? null
+    )),
     registerAgentSession: vi.fn().mockResolvedValue(undefined),
     logCost: vi.fn().mockResolvedValue(undefined),
     writeHandoff: vi.fn().mockResolvedValue({ accepted: true, errors: [] }),
@@ -699,6 +703,114 @@ describe("milestone loop with spawner", () => {
     const allCalls = mockExecAsync.mock.calls.map((c: any) => JSON.stringify(c));
     const pruneCall = allCalls.find((c: string) => c.includes("worktree") && c.includes("remove"));
     expect(pruneCall).toBeDefined();
+  });
+
+  it("reports handoff fetch failures distinctly from missing worker handoffs", async () => {
+    let eventSubscriber: (event: any) => void = () => {};
+    (mockSession.subscribe as any).mockImplementation((fn: any) => {
+      eventSubscriber = fn;
+      return () => {};
+    });
+    (mockSession.prompt as any).mockImplementation(async () => {
+      eventSubscriber({ type: "agent_end" });
+    });
+
+    const unit: WorkingUnit = {
+      id: "unit-1",
+      milestoneId: "ms-1",
+      description: "Create login endpoint",
+      declaredPaths: ["src/auth/login.ts"],
+      declaredModules: ["auth"],
+      status: "planned" as any,
+      taskBranch: "",
+      worktreePath: "",
+      sessionId: "",
+    };
+
+    const lapis = createMockLapis([unit], []);
+    (lapis.getHandoffsForMilestone as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("LaPis unavailable"));
+    const pinyx = createMockPinyx();
+    const callbacks = {
+      onEscalation: vi.fn(),
+      onAgentStatus: vi.fn(),
+      onMilestoneProgress: vi.fn(),
+      onCostUpdate: vi.fn(),
+      onError: vi.fn(),
+    };
+
+    const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
+      agentDir: "/home/user/.pi/agent",
+      repoRoot: "/repo",
+      gitMainBranch: "main",
+    });
+
+    await loop.run(makeMission(), [makeMilestone()]);
+
+    expect(callbacks.onError).toHaveBeenCalledWith(
+      "m-1",
+      "worker_handoff_fetch_failed",
+      expect.stringContaining("could not be loaded"),
+      expect.objectContaining({
+        details: { errors: [expect.stringContaining("handoff fetch failed")] },
+      }),
+    );
+  });
+
+  it("falls back to per-unit handoff lookup when milestone query misses a stored handoff", async () => {
+    let eventSubscriber: (event: any) => void = () => {};
+    (mockSession.subscribe as any).mockImplementation((fn: any) => {
+      eventSubscriber = fn;
+      return () => {};
+    });
+    (mockSession.prompt as any).mockImplementation(async () => {
+      eventSubscriber({ type: "agent_end" });
+    });
+
+    const unit: WorkingUnit = {
+      id: "unit-1",
+      milestoneId: "ms-1",
+      description: "Create login endpoint",
+      declaredPaths: ["src/auth/login.ts"],
+      declaredModules: ["auth"],
+      status: "planned" as any,
+      taskBranch: "",
+      worktreePath: "",
+      sessionId: "",
+    };
+
+    const lapis = createMockLapis([unit], []);
+    (lapis.getHandoffsForMilestone as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (lapis.getHandoffForUnit as ReturnType<typeof vi.fn>).mockResolvedValue(makeHandoff("unit-1"));
+    const pinyx = createMockPinyx();
+    const callbacks = {
+      onEscalation: vi.fn(),
+      onAgentStatus: vi.fn(),
+      onMilestoneProgress: vi.fn(),
+      onCostUpdate: vi.fn(),
+      onError: vi.fn(),
+    };
+
+    const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
+      agentDir: "/home/user/.pi/agent",
+      repoRoot: "/repo",
+      gitMainBranch: "main",
+    });
+
+    await loop.run(makeMission(), [makeMilestone()]);
+
+    expect(lapis.getHandoffForUnit).toHaveBeenCalledWith("unit-1");
+    expect(callbacks.onError).not.toHaveBeenCalledWith(
+      "m-1",
+      "worker_handoff_invalid",
+      expect.any(String),
+      expect.anything(),
+    );
+    expect(callbacks.onError).not.toHaveBeenCalledWith(
+      "m-1",
+      "worker_handoff_fetch_failed",
+      expect.any(String),
+      expect.anything(),
+    );
   });
 
 });

@@ -85,10 +85,15 @@ export interface LaPisClient {
   createWorkingUnit(milestoneId: string, unit: WorkingUnitSpec): Promise<WorkingUnit>;
   getWorkingUnitsForMilestone(milestoneId: string): Promise<WorkingUnit[]>;
   updateWorkingUnitStatus(id: string, status: WorkerStatus): Promise<void>;
+  updateWorkingUnit(
+    id: string,
+    patch: Partial<Pick<WorkingUnit, "taskBranch" | "worktreePath" | "sessionId">>,
+  ): Promise<void>;
 
   // Handoffs
   writeHandoff(unitId: string, handoff: Handoff): Promise<HandoffResult>;
   getHandoffsForMilestone(milestoneId: string): Promise<HandoffRecord[]>;
+  getHandoffForUnit(unitId: string): Promise<HandoffRecord | null>;
 
   // Validation contracts (append-only)
   createContract(milestoneId: string, contract: { content: { criteria: string[]; testCommands: string[]; acceptanceBehavior: string } }): Promise<{ id: string; milestoneId: string; version: number; content: unknown; supersedes: string | null; supersededBy: string | null; rescopeEventId: string | null; createdAt: string }>;
@@ -149,6 +154,7 @@ export interface LaPisClient {
   getMissionCost(missionId: string): Promise<CostSummary>;
 
   // Retry / rescope
+  getRetryCounter(milestoneId: string): Promise<RetryCounter>;
   incrementRetry(milestoneId: string): Promise<RetryCounter>;
   logRescope(milestoneId: string, event: Omit<RescopeEvent, "id" | "timestamp">): Promise<void>;
 
@@ -359,6 +365,13 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
     updateWorkingUnitStatus(id, status) {
       return patch(`/units/${id}/status`, { status });
     },
+    updateWorkingUnit(id, fields) {
+      return patch(`/units/${id}`, {
+        ...(fields.taskBranch !== undefined ? { task_branch: fields.taskBranch } : {}),
+        ...(fields.worktreePath !== undefined ? { worktree_path: fields.worktreePath } : {}),
+        ...(fields.sessionId !== undefined ? { session_id: fields.sessionId } : {}),
+      });
+    },
 
     // Handoffs
     writeHandoff(unitId, handoff) {
@@ -367,6 +380,11 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
     async getHandoffsForMilestone(milestoneId) {
       const handoffs = await get<RawHandoffRecord[]>(`/milestones/${milestoneId}/handoffs`);
       return handoffs.map(normalizeHandoffRecord);
+    },
+    async getHandoffForUnit(unitId) {
+      const handoffs = await get<RawHandoffRecord[]>(`/units/${unitId}/handoff`);
+      const records = handoffs.map(normalizeHandoffRecord);
+      return records[0] ?? null;
     },
 
     // Validation contracts
@@ -527,6 +545,9 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
     },
 
     // Retry / rescope
+    getRetryCounter(milestoneId) {
+      return get<RetryCounter>(`/milestones/${milestoneId}/retry`);
+    },
     incrementRetry(milestoneId) {
       return post(`/milestones/${milestoneId}/retry`, {});
     },

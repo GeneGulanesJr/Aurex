@@ -39,7 +39,7 @@ describe("missionReducer", () => {
     expect(state.activeWorkers.find((w) => w.id === "worker-u2")?.status).toBe("working");
   });
 
-  it("upserts active worker status from websocket events (existing agent)", () => {
+  it("removes terminal workers from activeWorkers on agent_status", () => {
     const state = missionReducer(seedState as any, {
       type: "AGENT_STATUS",
       agentId: "worker-u1",
@@ -47,8 +47,8 @@ describe("missionReducer", () => {
       status: "completed" as AgentStatus,
       milestoneId: "ms1",
     });
-    expect(state.activeWorkers.find((w) => w.id === "worker-u1")?.status).toBe("completed");
-    expect(state.activeWorkers).toHaveLength(1);
+    expect(state.activeWorkers.find((w) => w.id === "worker-u1")).toBeUndefined();
+    expect(state.activeWorkers).toHaveLength(0);
   });
 
   it("updates mission status on mission_completed", () => {

@@ -4,7 +4,11 @@ RUN apt-get update && apt-get install -y git python3 make g++ && rm -rf /var/lib
 
 WORKDIR /app
 
-RUN git clone --depth 1 https://github.com/GeneGulanesJr/LaPis.git .
+# Re-clone when LAPIS_PULL changes. Bump the default after LaPis releases, or run:
+#   LAPIS_PULL=$(date +%F) docker compose build lapis
+ARG LAPIS_PULL=2026-06-15
+ARG LAPIS_REF=main
+RUN git clone --depth 1 --branch "${LAPIS_REF}" https://github.com/GeneGulanesJr/LaPis.git .
 
 RUN npm install
 

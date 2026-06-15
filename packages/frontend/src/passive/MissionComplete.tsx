@@ -19,6 +19,7 @@ export function MissionComplete({ mission, milestones, workers, cost, events, er
   const cardRef = useRef<HTMLDivElement>(null);
 
   const isSuccess = mission.status === "completed";
+  const isAborted = mission.status === "aborted";
   const completedMilestones = milestones.filter((m) => m.status === "completed");
   const failedMilestones = milestones.filter((m) => m.status === "failed");
   const completedWorkers = workers.filter((w) => w.status === "completed");
@@ -64,9 +65,9 @@ export function MissionComplete({ mission, milestones, workers, cost, events, er
     });
   }, []);
 
-  const statusColor = isSuccess ? "var(--success)" : "var(--error)";
-  const statusLabel = isSuccess ? "Mission Complete" : "Mission Failed";
-  const statusIcon = isSuccess ? "✓" : "✕";
+  const statusColor = isSuccess ? "var(--success)" : isAborted ? "var(--text-muted)" : "var(--error)";
+  const statusLabel = isSuccess ? "Mission Complete" : isAborted ? "Mission Stopped" : "Mission Failed";
+  const statusIcon = isSuccess ? "✓" : isAborted ? "■" : "✕";
 
   return (
     <div ref={containerRef} style={{ padding: "32px 24px", maxWidth: "640px", margin: "0 auto" }}>
@@ -79,13 +80,13 @@ export function MissionComplete({ mission, milestones, workers, cost, events, er
           width: "48px",
           height: "48px",
           borderRadius: "50%",
-          background: isSuccess ? "rgba(74, 222, 128, 0.1)" : "rgba(239, 68, 68, 0.1)",
+          background: isSuccess ? "rgba(74, 222, 128, 0.1)" : isAborted ? "rgba(148, 163, 184, 0.1)" : "rgba(239, 68, 68, 0.1)",
           border: `2px solid ${statusColor}`,
           color: statusColor,
           fontSize: "24px",
           fontWeight: 700,
           marginBottom: "16px",
-          boxShadow: `0 0 24px ${isSuccess ? "rgba(74, 222, 128, 0.15)" : "rgba(239, 68, 68, 0.15)"}`,
+          boxShadow: `0 0 24px ${isSuccess ? "rgba(74, 222, 128, 0.15)" : isAborted ? "rgba(148, 163, 184, 0.15)" : "rgba(239, 68, 68, 0.15)"}`,
         }}>
           {statusIcon}
         </div>

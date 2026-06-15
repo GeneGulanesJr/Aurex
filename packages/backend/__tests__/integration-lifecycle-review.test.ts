@@ -8,6 +8,7 @@ function makeWorktree(overrides: Partial<WorktreeManager> = {}): WorktreeManager
     getRepoRoot: vi.fn().mockReturnValue("/fake/repo"),
     createWorktree: vi.fn().mockResolvedValue({ worktreePath: "/fake/worktree", taskBranch: "task/test/unit" }),
     createBranch: vi.fn().mockResolvedValue(undefined),
+    recreateBranch: vi.fn().mockResolvedValue(undefined),
     mergeToTarget: vi.fn().mockResolvedValue(undefined),
     mergeToTargetWithStrategy: vi.fn().mockResolvedValue(undefined),
     abortMerge: vi.fn().mockResolvedValue(undefined),
@@ -38,7 +39,7 @@ function makeUnit(id: string, taskBranch: string): WorkingUnit {
 }
 
 describe("integration lifecycle — review fixes", () => {
-  it("calls abortMerge on conflict before tracking conflicted branch", async () => {
+  it("calls abortMerge on conflict before throwing", async () => {
     const worktree = makeWorktree({
       mergeToTarget: vi.fn()
         .mockResolvedValueOnce(undefined)
@@ -47,7 +48,7 @@ describe("integration lifecycle — review fixes", () => {
     });
 
     const lifecycle = createIntegrationLifecycle(worktree);
-    const result = await lifecycle.integrate({
+    await expect(lifecycle.integrate({
       missionId: "mission-1",
       milestoneId: "ms-1",
       milestoneOrderIndex: 0,
@@ -56,14 +57,14 @@ describe("integration lifecycle — review fixes", () => {
         makeUnit("unit-1", "task/worker-unit-1/unit-1"),
         makeUnit("unit-2", "task/worker-unit-2/unit-2"),
       ],
-    });
+    })).rejects.toThrow("Worker branches have merge conflicts: task/worker-unit-2/unit-2");
 
-    expect(result.mergedBranches).toEqual(["task/worker-unit-1/unit-1"]);
-    expect(result.conflictedBranches).toEqual(["task/worker-unit-2/unit-2"]);
     expect(worktree.abortMerge).toHaveBeenCalledTimes(2);
+    expect(worktree.recreateBranch).toHaveBeenCalledTimes(1);
+    expect(worktree.recreateBranch).toHaveBeenCalledWith("integration/mission-1/1-ms-1", "main");
   });
 
-  it("partial conflicts: merges some branches, conflicts others, creates release", async () => {
+  it("partial conflicts throw and do not create release branch", async () => {
     const worktree = makeWorktree();
     let callCount = 0;
     (worktree.mergeToTarget as ReturnType<typeof vi.fn>).mockImplementation(() => {
@@ -74,7 +75,7 @@ describe("integration lifecycle — review fixes", () => {
     (worktree.mergeToTargetWithStrategy as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("still conflicting"));
 
     const lifecycle = createIntegrationLifecycle(worktree);
-    const result = await lifecycle.integrate({
+    await expect(lifecycle.integrate({
       missionId: "mission-1",
       milestoneId: "ms-1",
       milestoneOrderIndex: 0,
@@ -83,29 +84,26 @@ describe("integration lifecycle — review fixes", () => {
         makeUnit("unit-1", "task/worker-unit-1/unit-1"),
         makeUnit("unit-2", "task/worker-unit-2/unit-2"),
       ],
-    });
+    })).rejects.toThrow("Worker branches have merge conflicts: task/worker-unit-2/unit-2");
 
-    expect(result.mergedBranches).toEqual(["task/worker-unit-1/unit-1"]);
-    expect(result.conflictedBranches).toEqual(["task/worker-unit-2/unit-2"]);
-    expect(result.releaseBranch).toBe("release/mission-1/1-ms-1");
+    expect(worktree.recreateBranch).toHaveBeenCalledTimes(1);
+    expect(worktree.recreateBranch).not.toHaveBeenCalledWith("release/mission-1/1-ms-1", expect.anything());
   });
 
-  it("auto-resolves conflicts using ours strategy", async () => {
+  it("rejects ours fallback merges that would drop worker changes", async () => {
     const worktree = makeWorktree();
     (worktree.mergeToTarget as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("conflict"));
     (worktree.mergeToTargetWithStrategy as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
 
     const lifecycle = createIntegrationLifecycle(worktree);
-    const result = await lifecycle.integrate({
+    await expect(lifecycle.integrate({
       missionId: "mission-1",
       milestoneId: "ms-1",
       milestoneOrderIndex: 0,
       baseBranch: "main",
       units: [makeUnit("unit-1", "task/worker-unit-1/unit-1")],
-    });
+    })).rejects.toThrow(/drop changes/);
 
-    expect(result.mergedBranches).toEqual(["task/worker-unit-1/unit-1"]);
-    expect(result.conflictedBranches).toEqual([]);
     expect(worktree.mergeToTargetWithStrategy).toHaveBeenCalledWith(
       "task/worker-unit-1/unit-1",
       "integration/mission-1/1-ms-1",
@@ -126,7 +124,7 @@ describe("integration lifecycle — review fixes", () => {
       milestoneOrderIndex: 0,
       baseBranch: "main",
       units: [makeUnit("unit-1", "task/worker-unit-1/unit-1")],
-    })).rejects.toThrow("All worker branches have merge conflicts");
+    })).rejects.toThrow("Worker branches have merge conflicts: task/worker-unit-1/unit-1");
   });
 
   it("rejects unsafe test commands with shell metacharacters", async () => {

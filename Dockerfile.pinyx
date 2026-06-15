@@ -3,7 +3,11 @@ FROM rust:1-slim AS builder
 RUN apt-get update && apt-get install -y git pkg-config libssl-dev ca-certificates && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
-RUN git clone --depth 1 https://github.com/GeneGulanesJr/PiNyx.git .
+# Re-clone when PINYX_PULL changes. Bump the default after PiNyx releases, or run:
+#   PINYX_PULL=$(date +%F) docker compose build pinyx
+ARG PINYX_PULL=2026-06-15
+ARG PINYX_REF=main
+RUN git clone --depth 1 --branch "${PINYX_REF}" https://github.com/GeneGulanesJr/PiNyx.git .
 WORKDIR /src/pinyx
 RUN cargo build --release
 

@@ -95,6 +95,7 @@ describe("milestone loop validator E2E", () => {
           terminatedAt: null,
         }))
       )),
+    getRetryCounter: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
       incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-e2e", retries: 0, rescopes: 0 }),
       registerAgentSession: vi.fn().mockResolvedValue(undefined),
       searchMemory: vi.fn().mockResolvedValue([]),
@@ -210,7 +211,7 @@ describe("milestone loop validator E2E", () => {
     expect(stdout).toContain("worker-updated");
   });
 
-  it("returns milestone_complete when ours strategy auto-resolves integration conflict after validator pass", async () => {
+  it("returns validation_failed when main and worker diverge before validator dry-merge", async () => {
     const mission = makeMission();
     const milestone = makeMilestone();
     const unit = makeUnit();
@@ -254,6 +255,7 @@ describe("milestone loop validator E2E", () => {
           terminatedAt: null,
         }))
       )),
+    getRetryCounter: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
       incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-e2e", retries: 0, rescopes: 0 }),
       registerAgentSession: vi.fn().mockResolvedValue(undefined),
       searchMemory: vi.fn().mockResolvedValue([]),
@@ -343,19 +345,21 @@ describe("milestone loop validator E2E", () => {
 
     expect(result.status).toBe("checkpoint_needed");
     if (result.status === "checkpoint_needed") {
-      expect(result.trigger).toBe("milestone_complete");
-      expect(result.summary).toContain("release/mission-e2e/1-ms-e2e");
+      expect(result.trigger).toBe("validation_failed");
+      expect(result.summary).toContain("could not be merged for validation");
     }
     expect(handoffs).toHaveLength(1);
-    expect(verdicts).toHaveLength(1);
-    expect(lapis.updateMilestoneStatus).not.toHaveBeenCalledWith("ms-e2e", "completed");
+    expect(verdicts).toHaveLength(0);
+    expect(callbacks.onError).toHaveBeenCalledWith(
+      "mission-e2e",
+      "validator_merge_conflicts",
+      expect.stringContaining("could not be merged for validation"),
+      expect.objectContaining({ milestoneId: "ms-e2e", recoverable: true }),
+    );
     expect(callbacks.onEscalation).toHaveBeenCalledWith(
       "mission-e2e",
-      { kind: "milestone_complete", milestoneId: "ms-e2e", releaseBranch: "release/mission-e2e/1-ms-e2e" },
-      expect.objectContaining({
-        integrationBranch: "integration/mission-e2e/1-ms-e2e",
-        releaseBranch: "release/mission-e2e/1-ms-e2e",
-      }),
+      { kind: "validation_failed", milestoneId: "ms-e2e" },
+      expect.objectContaining({ phase: "validator_merge" }),
     );
   });
 
@@ -393,6 +397,7 @@ describe("milestone loop validator E2E", () => {
       }),
       getVerdicts: vi.fn().mockImplementation(async () => verdicts),
       getSessionsForMilestone: vi.fn().mockResolvedValue([]),
+    getRetryCounter: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
       incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-e2e", retries: 0, rescopes: 0 }),
       registerAgentSession: vi.fn().mockResolvedValue(undefined),
       searchMemory: vi.fn().mockResolvedValue([]),
@@ -412,6 +417,10 @@ describe("milestone loop validator E2E", () => {
             const handoffTool = opts.customTools.find((t) => t.name === "write_handoff");
             const verdictTool = opts.customTools.find((t) => t.name === "write_verdict");
             if (handoffTool) {
+              await writeFile(path.join(opts.cwd, "docs", "validator-e2e.md"), "worker-updated\n");
+              await git(opts.cwd, "add", "docs/validator-e2e.md");
+              await git(opts.cwd, "commit", "-m", "docs: validator worktree fixture");
+              const { stdout } = await git(opts.cwd, "rev-parse", "HEAD");
               await handoffTool.execute("handoff", {
                 featureName: "Validator worktree fixture",
                 description: "Completed worker work for validator worktree test",
@@ -421,8 +430,8 @@ describe("milestone loop validator E2E", () => {
                 assumptions: "The validator test only needs a valid handoff to proceed to validator spawning.",
                 unresolvedUncertainties: "none",
                 errorsEncountered: "none",
-                commandsRun: JSON.stringify([{ command: "test fixture", exitCode: 0 }]),
-                gitCommitHash: "abc123",
+                commandsRun: JSON.stringify([{ command: "git commit", exitCode: 0 }]),
+                gitCommitHash: stdout.trim(),
               });
             }
             if (verdictTool) {
@@ -452,9 +461,161 @@ describe("milestone loop validator E2E", () => {
 
     await loop.run(mission, [milestone]);
 
-    const validatorCwd = spawnCwds[spawnCwds.length - 1];
-    expect(validatorCwd).toContain(".git-worktrees/validator-");
-    expect(validatorCwd).not.toBe(repoRoot);
+    const validatorCwds = spawnCwds.filter((cwd) => cwd.includes(".git-worktrees/validator-"));
+    expect(validatorCwds.length).toBeGreaterThan(0);
+    expect(validatorCwds[0]).not.toBe(repoRoot);
+  });
+
+  it("returns validation_failed when validator dry-merge cannot merge all worker branches", async () => {
+    const mission = makeMission();
+    const milestone = makeMilestone();
+    const units: WorkingUnit[] = [
+      {
+        id: "unit-1",
+        milestoneId: "ms-e2e",
+        description: "Update docs fixture from worker one",
+        declaredPaths: ["docs/validator-e2e.md"],
+        declaredModules: ["docs"],
+        status: "planned",
+        taskBranch: "",
+        worktreePath: "",
+        sessionId: "",
+      },
+      {
+        id: "unit-2",
+        milestoneId: "ms-e2e",
+        description: "Update docs fixture from worker two",
+        declaredPaths: ["docs/validator-e2e.md"],
+        declaredModules: ["docs"],
+        status: "planned",
+        taskBranch: "",
+        worktreePath: "",
+        sessionId: "",
+      },
+    ];
+    const handoffs: unknown[] = [];
+
+    const lapis = {
+      updateMissionStatus: vi.fn().mockResolvedValue(undefined),
+      updateMilestoneStatus: vi.fn().mockResolvedValue(undefined),
+      updateWorkingUnitStatus: vi.fn().mockResolvedValue(undefined),
+      getWorkingUnitsForMilestone: vi.fn().mockResolvedValue(units),
+      getContractHistory: vi.fn().mockResolvedValue([
+        {
+          id: "contract-e2e",
+          content: {
+            criteria: ["docs updated"],
+            testCommands: [],
+            acceptanceBehavior: "",
+          },
+        },
+      ]),
+      writeHandoff: vi.fn().mockImplementation(async (_unitId: string, handoff: unknown) => {
+        handoffs.push(handoff);
+        return { accepted: true, errors: [] };
+      }),
+      getHandoffsForMilestone: vi.fn().mockImplementation(async () => (
+        handoffs.map((handoff, index) => makeHandoffRecord(handoff, index))
+      )),
+      getVerdicts: vi.fn().mockResolvedValue([]),
+      getSessionsForMilestone: vi.fn().mockResolvedValue([]),
+    getRetryCounter: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
+      incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-e2e", retries: 0, rescopes: 0 }),
+      registerAgentSession: vi.fn().mockResolvedValue(undefined),
+      searchMemory: vi.fn().mockResolvedValue([]),
+      getFindings: vi.fn().mockResolvedValue([]),
+      runCompression: vi.fn().mockResolvedValue(undefined),
+    } as unknown as LaPisClient;
+
+    mockCreateAgentSession.mockImplementation(async (opts: { cwd: string; customTools: Array<{ name: string; execute: Function }> }) => {
+      const sessionId = `session-${mockCreateAgentSession.mock.calls.length}`;
+      let subscriber: (event: unknown) => void = () => {};
+      return {
+        session: {
+          sessionId,
+          subscribe(fn: (event: unknown) => void) {
+            subscriber = fn;
+            return () => {};
+          },
+          async prompt() {
+            const handoffTool = opts.customTools.find((tool) => tool.name === "write_handoff");
+            const verdictTool = opts.customTools.find((tool) => tool.name === "write_verdict");
+
+            if (handoffTool) {
+              const marker = opts.cwd.includes("unit-2") ? "worker-two-conflict\n" : "worker-one-conflict\n";
+              await writeFile(path.join(opts.cwd, "docs", "validator-e2e.md"), marker);
+              await git(opts.cwd, "add", "docs/validator-e2e.md");
+              await git(opts.cwd, "commit", "-m", `docs: ${marker.trim()}`);
+              const { stdout } = await git(opts.cwd, "rev-parse", "HEAD");
+              await handoffTool.execute("handoff-call", {
+                featureName: "Conflicting worker fixture",
+                description: "Updated docs/validator-e2e.md",
+                implemented: `Wrote ${marker.trim()} to docs/validator-e2e.md`,
+                remaining: "none",
+                rationale: "Creates a real conflicting worker branch for validator dry-merge.",
+                assumptions: "Git merge conflict behavior is available in the temporary repository.",
+                unresolvedUncertainties: "none",
+                errorsEncountered: "none",
+                commandsRun: JSON.stringify([{ command: "git commit", exitCode: 0 }]),
+                gitCommitHash: stdout.trim(),
+              });
+            }
+
+            if (verdictTool) {
+              throw new Error("validators should not run when validator dry-merge conflicts");
+            }
+
+            subscriber({ type: "agent_end" });
+          },
+          abort: vi.fn(),
+          dispose: vi.fn(),
+        },
+      };
+    });
+
+    const callbacks = {
+      onEscalation: vi.fn(),
+      onAgentStatus: vi.fn(),
+      onMilestoneProgress: vi.fn(),
+      onCostUpdate: vi.fn(),
+      onError: vi.fn(),
+    };
+
+    const loop = createMilestoneLoop(lapis, {} as PinyxClient, callbacks, {
+      agentDir: "/test/.pi/agent",
+      repoRoot,
+      gitMainBranch: "main",
+    });
+
+    const result = await loop.run(mission, [milestone]);
+
+    expect(result.status).toBe("checkpoint_needed");
+    if (result.status === "checkpoint_needed") {
+      expect(result.trigger).toBe("validation_failed");
+      expect(result.summary).toContain("could not be merged for validation");
+    }
+    expect(callbacks.onError).toHaveBeenCalledWith(
+      "mission-e2e",
+      "validator_merge_conflicts",
+      expect.stringContaining("could not be merged for validation"),
+      expect.objectContaining({
+        milestoneId: "ms-e2e",
+        recoverable: true,
+        details: expect.objectContaining({
+          conflictedUnitIds: expect.arrayContaining(["unit-2"]),
+          phase: "validator_merge",
+        }),
+      }),
+    );
+    expect(callbacks.onEscalation).toHaveBeenCalledWith(
+      "mission-e2e",
+      { kind: "validation_failed", milestoneId: "ms-e2e" },
+      expect.objectContaining({ phase: "validator_merge" }),
+    );
+    expect(mockCreateAgentSession.mock.calls.every((call) => {
+      const tools = call[0]?.customTools ?? [];
+      return !tools.some((tool: { name?: string }) => tool.name === "write_verdict");
+    })).toBe(true);
   });
 });
 

@@ -20,6 +20,8 @@ interface MissionPipelineProps {
   eventStreamCount?: number;
   autoCollapseContext?: boolean;
   onRetry?: () => void;
+  onAbort?: () => void;
+  aborting?: boolean;
   scanFindings?: BumblebeeFinding[];
   isScanning?: boolean;
   scans?: BumblebeeScanResult[];
@@ -57,7 +59,7 @@ const logEventColor: Record<string, string> = {
   aborted: "var(--text-muted)",
 };
 
-export function MissionPipeline({ mission, milestones, workers, cost, events, logs, errors, agentLogs, eventStreamCount = 8, autoCollapseContext = false, onRetry, scanFindings = [], isScanning = false, scans = [], onTriggerScan }: MissionPipelineProps) {
+export function MissionPipeline({ mission, milestones, workers, cost, events, logs, errors, agentLogs, eventStreamCount = 8, autoCollapseContext = false, onRetry, onAbort, aborting = false, scanFindings = [], isScanning = false, scans = [], onTriggerScan }: MissionPipelineProps) {
   const pipelineRef = useRef<HTMLDivElement>(null);
   const prevMilestoneCountRef = useRef(0);
 
@@ -115,6 +117,8 @@ export function MissionPipeline({ mission, milestones, workers, cost, events, lo
           milestones={milestones}
           workers={workers}
           cost={cost}
+          onAbort={onAbort}
+          aborting={aborting}
         />
 
           {/* Milestone pipeline */}

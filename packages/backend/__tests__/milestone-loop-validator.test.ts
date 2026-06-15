@@ -84,6 +84,7 @@ function createMockLapis(units: WorkingUnit[] = [], verdicts: ValidationVerdict[
     getSessionsForMilestone: vi.fn().mockResolvedValue([
       { sessionId: "s1", agentType: "validator_scrutiny", missionId: "m-1", milestoneId: "ms-1", terminatedAt: null },
     ]),
+    getRetryCounter: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
     incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
     writeVerdict: vi.fn().mockResolvedValue({}),
     getHandoffsForMilestone: vi.fn().mockResolvedValue(handoffs),
@@ -156,7 +157,7 @@ describe("milestone loop — validator phase", () => {
     ];
     const lapis = createMockLapis([completedUnit], failVerdicts);
     // Simulate exhausted retries and rescopes
-    (lapis.incrementRetry as any).mockResolvedValue({ milestoneId: "ms-1", retries: 2, rescopes: 5 });
+    (lapis.getRetryCounter as any).mockResolvedValue({ milestoneId: "ms-1", retries: 2, rescopes: 5 });
     const pinyx = createMockPinyx();
     const callbacks = {
       onEscalation: vi.fn(),

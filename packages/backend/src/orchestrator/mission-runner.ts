@@ -300,6 +300,10 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
           void runMission(missionId);
           return;
         }
+      } else if (error instanceof Error && error.message === "Mission aborted") {
+        await lapis.updateMissionStatus(missionId, "aborted").catch(() => {});
+        setStatus("failed", missionId);
+        eventBus.emit({ type: "mission_status", missionId, status: "aborted" });
       } else {
         console.error(`[runner] Mission ${missionId} failed:`, error instanceof Error ? error.message : error);
         const msg = error instanceof Error ? error.message : String(error);

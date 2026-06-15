@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { BumblebeeFinding, WsClientEvent } from "@aurex/shared";
 
 export interface MissionSnapshotInput {
@@ -93,19 +94,148 @@ export function summarizeSupplyChainRisk(findings: Array<Pick<BumblebeeFinding, 
   return { label: "LOW", color: "var(--text-muted)", findingCount: findings.length };
 }
 
+const STOPPABLE_MISSION_STATES = new Set([
+  "queued",
+  "planning",
+  "executing",
+  "waiting_checkpoint",
+  "running",
+  "paused",
+]);
+
+const TERMINAL_MISSION_STATES = new Set(["completed", "failed", "aborted"]);
+
+const ACTIVE_MISSION_STATES = new Set([
+  "queued",
+  "planning",
+  "executing",
+  "waiting_checkpoint",
+  "running",
+  "paused",
+]);
+
+const badgeBase: CSSProperties = {
+  fontSize: "10px",
+  padding: "1px 6px",
+  borderRadius: "3px",
+};
+
+export interface MissionStatusUi {
+  sidebarLabel: string;
+  headerLabel: string;
+  badgeStyle: CSSProperties;
+  icon: string;
+  iconColor: string;
+}
+
+const MISSION_STATUS_UI: Record<string, MissionStatusUi> = {
+  queued: {
+    sidebarLabel: "Queued",
+    headerLabel: "QUEUED",
+    badgeStyle: { ...badgeBase, background: "var(--warning)", color: "var(--bg-deep)" },
+    icon: "◷",
+    iconColor: "var(--warning)",
+  },
+  planning: {
+    sidebarLabel: "Running",
+    headerLabel: "PLANNING",
+    badgeStyle: { ...badgeBase, background: "var(--info)", color: "var(--bg-deep)" },
+    icon: "▶",
+    iconColor: "var(--info)",
+  },
+  executing: {
+    sidebarLabel: "Running",
+    headerLabel: "EXECUTING",
+    badgeStyle: { ...badgeBase, background: "var(--info)", color: "var(--bg-deep)" },
+    icon: "▶",
+    iconColor: "var(--info)",
+  },
+  running: {
+    sidebarLabel: "Running",
+    headerLabel: "EXECUTING",
+    badgeStyle: { ...badgeBase, background: "var(--info)", color: "var(--bg-deep)" },
+    icon: "▶",
+    iconColor: "var(--info)",
+  },
+  waiting_checkpoint: {
+    sidebarLabel: "Checkpoint",
+    headerLabel: "PAUSED",
+    badgeStyle: { ...badgeBase, background: "var(--badge-info-bg)", color: "var(--info)" },
+    icon: "⏸",
+    iconColor: "var(--info)",
+  },
+  paused: {
+    sidebarLabel: "Checkpoint",
+    headerLabel: "PAUSED",
+    badgeStyle: { ...badgeBase, background: "var(--badge-info-bg)", color: "var(--info)" },
+    icon: "⏸",
+    iconColor: "var(--info)",
+  },
+  completed: {
+    sidebarLabel: "Done",
+    headerLabel: "COMPLETE",
+    badgeStyle: { ...badgeBase, background: "var(--badge-success-bg)", color: "var(--success)" },
+    icon: "✓",
+    iconColor: "var(--success)",
+  },
+  failed: {
+    sidebarLabel: "Failed",
+    headerLabel: "FAILED",
+    badgeStyle: { ...badgeBase, background: "var(--badge-error-bg)", color: "var(--error)" },
+    icon: "✕",
+    iconColor: "var(--error)",
+  },
+  aborted: {
+    sidebarLabel: "Stopped",
+    headerLabel: "ABORTED",
+    badgeStyle: { ...badgeBase, background: "var(--bg-elevated)", color: "var(--text-muted)" },
+    icon: "■",
+    iconColor: "var(--text-muted)",
+  },
+};
+
+export function getMissionStatusUi(status: string): MissionStatusUi {
+  return MISSION_STATUS_UI[status] ?? {
+    sidebarLabel: status,
+    headerLabel: status.toUpperCase(),
+    badgeStyle: { ...badgeBase, background: "var(--bg-elevated)", color: "var(--text-muted)" },
+    icon: "•",
+    iconColor: "var(--text-muted)",
+  };
+}
+
+export function isMissionStoppable(status: string): boolean {
+  return STOPPABLE_MISSION_STATES.has(status);
+}
+
+export function isMissionTerminal(status: string): boolean {
+  return TERMINAL_MISSION_STATES.has(status);
+}
+
+export function isMissionActive(status: string): boolean {
+  return ACTIVE_MISSION_STATES.has(status);
+}
+
+export function countActiveMissions(states: string[]): number {
+  return states.filter((state) => isMissionActive(state)).length;
+}
+
+export function countTerminalMissions(states: string[]): number {
+  return states.filter((state) => isMissionTerminal(state)).length;
+}
+
 function missionStatusLabel(status: string): string {
-  if (status === "running") return "EXECUTING";
-  if (status === "planning") return "PLANNING";
-  if (status === "completed") return "COMPLETE";
-  if (status === "failed") return "FAILED";
-  return status.toUpperCase();
+  return getMissionStatusUi(status).headerLabel;
 }
 
 function missionStatusColor(status: string): string {
-  if (status === "running" || status === "planning") return "var(--accent)";
+  const ui = getMissionStatusUi(status);
   if (status === "completed") return "var(--success)";
   if (status === "failed") return "var(--error)";
-  return "var(--text-muted)";
+  if (status === "aborted") return "var(--text-muted)";
+  if (status === "paused" || status === "waiting_checkpoint") return "var(--warning)";
+  if (status === "queued") return "var(--warning)";
+  return ui.iconColor;
 }
 
 function formatCompactNumber(value: number): string {
