@@ -4,7 +4,7 @@ import type { EventBus } from "../ws/events.js";
 
 export interface PoolMissionStatus {
   missionId: string;
-  state: "queued" | "planning" | "executing" | "waiting_checkpoint" | "completed" | "failed";
+  state: "queued" | "planning" | "executing" | "waiting_checkpoint" | "completed" | "failed" | "aborted";
   queuePosition?: number;
 }
 

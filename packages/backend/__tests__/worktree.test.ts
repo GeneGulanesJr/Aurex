@@ -97,7 +97,10 @@ describe("WorktreeManager", () => {
     await manager.recreateBranch("integration/mission-1/1-ms-1", "main");
 
     const calls = mockExecAsync.mock.calls.map((c) => `${c[0]} ${(c[1] as string[]).join(" ")}`);
-    expect(calls.some((c) => c.includes("branch -D integration/mission-1/1-ms-1"))).toBe(true);
+    const checkoutIdx = calls.findIndex((c) => c.includes("checkout main"));
+    const deleteIdx = calls.findIndex((c) => c.includes("branch -D integration/mission-1/1-ms-1"));
+    expect(checkoutIdx).toBeGreaterThan(-1);
+    expect(deleteIdx).toBeGreaterThan(checkoutIdx);
     expect(calls.some((c) => c.includes("branch integration/mission-1/1-ms-1 main"))).toBe(true);
   });
 

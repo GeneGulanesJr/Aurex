@@ -167,7 +167,7 @@ export async function missionRoutes(
 
   app.get("/api/missions/current", async (_request, reply) => {
     const active = pool.getActiveMissions();
-    const running = active.find((m) => m.state !== "queued" && m.state !== "completed" && m.state !== "failed");
+    const running = active.find((m) => m.state !== "queued" && m.state !== "completed" && m.state !== "failed" && m.state !== "aborted");
     const missionId = running?.missionId ?? active[0]?.missionId;
     if (!missionId) {
       return reply.status(404).send({ error: "No active mission" });
@@ -203,7 +203,7 @@ export async function missionRoutes(
       const merged = [
         ...completed.map((m) => ({ missionId: m.id, state: m.status as PoolMissionStatus["state"], description: m.description })),
         ...failed.map((m) => ({ missionId: m.id, state: m.status as PoolMissionStatus["state"], description: m.description })),
-        ...aborted.map((m) => ({ missionId: m.id, state: m.status as PoolMissionStatus["state"], description: m.description })),
+        ...aborted.map((m) => ({ missionId: m.id, state: "aborted" as const, description: m.description })),
       ];
       history = merged
         .filter((m) => !activeIds.has(m.missionId))
@@ -249,7 +249,7 @@ export async function missionRoutes(
   app.post("/api/missions/:id/restart", async (request, reply) => {
     const { id } = request.params as { id: string };
     const activeStatus = pool.getStatus(id);
-    if (activeStatus && !["completed", "failed"].includes(activeStatus.state)) {
+    if (activeStatus && !["completed", "failed", "aborted"].includes(activeStatus.state)) {
       return reply.status(409).send({ error: "Mission is already active" });
     }
 

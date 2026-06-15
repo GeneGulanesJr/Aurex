@@ -466,7 +466,7 @@ describe("milestone loop validator E2E", () => {
     expect(validatorCwds[0]).not.toBe(repoRoot);
   });
 
-  it("returns validation_failed when validator dry-merge cannot merge all worker branches", async () => {
+  it("chains overlapping workers and merges their branches for validation", async () => {
     const mission = makeMission();
     const milestone = makeMilestone();
     const units: WorkingUnit[] = [
@@ -494,6 +494,7 @@ describe("milestone loop validator E2E", () => {
       },
     ];
     const handoffs: unknown[] = [];
+    const verdicts: ValidationVerdict[] = [];
 
     const lapis = {
       updateMissionStatus: vi.fn().mockResolvedValue(undefined),
@@ -517,8 +518,21 @@ describe("milestone loop validator E2E", () => {
       getHandoffsForMilestone: vi.fn().mockImplementation(async () => (
         handoffs.map((handoff, index) => makeHandoffRecord(handoff, index))
       )),
-      getVerdicts: vi.fn().mockResolvedValue([]),
-      getSessionsForMilestone: vi.fn().mockResolvedValue([]),
+      writeVerdict: vi.fn().mockImplementation(async (sessionId: string, verdict: Omit<ValidationVerdict, "id" | "sessionId">) => {
+        const written = { id: `verdict-${verdicts.length + 1}`, sessionId, ...verdict };
+        verdicts.push(written);
+        return written;
+      }),
+      getVerdicts: vi.fn().mockImplementation(async () => verdicts),
+      getSessionsForMilestone: vi.fn().mockImplementation(async () => (
+        verdicts.map((v: any) => ({
+          sessionId: v.sessionId,
+          agentType: v.validatorType ?? "validator_scrutiny",
+          missionId: "m-e2e",
+          milestoneId: "ms-e2e",
+          terminatedAt: null,
+        }))
+      )),
     getRetryCounter: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
       incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-e2e", retries: 0, rescopes: 0 }),
       registerAgentSession: vi.fn().mockResolvedValue(undefined),
@@ -562,7 +576,11 @@ describe("milestone loop validator E2E", () => {
             }
 
             if (verdictTool) {
-              throw new Error("validators should not run when validator dry-merge conflicts");
+              await verdictTool.execute("verdict-call", {
+                verdict: "pass",
+                findings: "Overlapping worker branches merged cleanly after chaining.",
+                failedUnitIds: [],
+              });
             }
 
             subscriber({ type: "agent_end" });
@@ -589,33 +607,17 @@ describe("milestone loop validator E2E", () => {
 
     const result = await loop.run(mission, [milestone]);
 
-    expect(result.status).toBe("checkpoint_needed");
-    if (result.status === "checkpoint_needed") {
-      expect(result.trigger).toBe("validation_failed");
-      expect(result.summary).toContain("could not be merged for validation");
-    }
-    expect(callbacks.onError).toHaveBeenCalledWith(
+    expect(mockCreateAgentSession.mock.calls.some((call) => {
+      const tools = call[0]?.customTools ?? [];
+      return tools.some((tool: { name?: string }) => tool.name === "write_verdict");
+    })).toBe(true);
+    expect(verdicts.length).toBeGreaterThan(0);
+    expect(callbacks.onError).not.toHaveBeenCalledWith(
       "mission-e2e",
       "validator_merge_conflicts",
-      expect.stringContaining("could not be merged for validation"),
-      expect.objectContaining({
-        milestoneId: "ms-e2e",
-        recoverable: true,
-        details: expect.objectContaining({
-          conflictedUnitIds: expect.arrayContaining(["unit-2"]),
-          phase: "validator_merge",
-        }),
-      }),
+      expect.anything(),
+      expect.anything(),
     );
-    expect(callbacks.onEscalation).toHaveBeenCalledWith(
-      "mission-e2e",
-      { kind: "validation_failed", milestoneId: "ms-e2e" },
-      expect.objectContaining({ phase: "validator_merge" }),
-    );
-    expect(mockCreateAgentSession.mock.calls.every((call) => {
-      const tools = call[0]?.customTools ?? [];
-      return !tools.some((tool: { name?: string }) => tool.name === "write_verdict");
-    })).toBe(true);
   });
 });
 

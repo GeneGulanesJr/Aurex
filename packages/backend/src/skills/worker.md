@@ -181,7 +181,7 @@ Do not escalate for routine implementation choices, local naming, obvious test p
 
 ## Timeout Behavior
 
-Call `write_handoff` as soon as useful committed work or a clear blocked/partial state exists. Do not keep exploring optional context after producing the evidence the Orchestrator needs.
+Call `write_handoff` as soon as useful committed work or a clear blocked/partial state exists. **The session does not complete until LaPis accepts your handoff** — calling `write_handoff` is mandatory, including for documentation-only units. Include at least one `commandsRun` entry (for example `git commit`) and the final `gitCommitHash`. Do not keep exploring optional context after producing the evidence the Orchestrator needs.
 
 If time is running out:
 

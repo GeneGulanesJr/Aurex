@@ -111,6 +111,8 @@ export function createWorktreeManager(repoRoot: string): WorktreeManager {
     },
 
     async recreateBranch(branchName, baseBranch) {
+      try { await git(repoRoot, "merge", "--abort"); } catch { /* nothing to abort */ }
+      await git(repoRoot, "checkout", baseBranch);
       try { await git(repoRoot, "branch", "-D", branchName); } catch { /* not present */ }
       await git(repoRoot, "branch", branchName, baseBranch);
     },
