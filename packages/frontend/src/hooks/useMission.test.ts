@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { missionReducer, initialMissionState } from "./useMission";
-import type { MilestoneStatus, AgentType, AgentStatus } from "@aurex/shared";
+import type { MilestoneStatus, AgentType, AgentStatus, CheckpointDecision } from "@aurex/shared";
 
 const seedState = {
   ...initialMissionState,
@@ -118,5 +118,92 @@ describe("missionReducer", () => {
     });
     expect(state.milestones).toHaveLength(1);
     expect(state.milestones[0]?.id).toBe("ms3");
+  });
+});
+
+const escalationEvent = {
+  type: "escalation",
+  missionId: "m1",
+  checkpointId: "cp1",
+  trigger: { kind: "milestone_complete" },
+} as any;
+
+const escalatedState = {
+  ...seedState,
+  escalation: escalationEvent,
+} as any;
+
+describe("missionReducer — checkpoint submission lifecycle", () => {
+  it("CHECKPOINT_SUBMITTING records pending decision and marks submitting, keeps escalation visible", () => {
+    const s = missionReducer(escalatedState as any, {
+      type: "CHECKPOINT_SUBMITTING",
+      decision: "approve" as CheckpointDecision,
+    });
+    expect(s.escalation).not.toBeNull();
+    expect(s.pendingCheckpoint?.decision).toBe("approve");
+    expect(s.pendingCheckpoint?.status).toBe("submitting");
+    expect(s.pendingCheckpoint?.checkpointId).toBe("cp1");
+  });
+
+  it("CHECKPOINT_ACKED clears escalation and pending on accepted ack", () => {
+    const submitting = missionReducer(escalatedState as any, {
+      type: "CHECKPOINT_SUBMITTING",
+      decision: "approve" as CheckpointDecision,
+    });
+    const s = missionReducer(submitting as any, {
+      type: "CHECKPOINT_ACKED",
+      checkpointId: "cp1",
+      accepted: true,
+    });
+    expect(s.escalation).toBeNull();
+    expect(s.pendingCheckpoint).toBeNull();
+    expect(s.pendingCheckpointError).toBeNull();
+  });
+
+  it("CHECKPOINT_ACKED restores escalation with error on rejected ack", () => {
+    const submitting = missionReducer(escalatedState as any, {
+      type: "CHECKPOINT_SUBMITTING",
+      decision: "approve" as CheckpointDecision,
+    });
+    const s = missionReducer(submitting as any, {
+      type: "CHECKPOINT_ACKED",
+      checkpointId: "cp1",
+      accepted: false,
+      error: "checkpoint not found",
+    });
+    expect(s.escalation).not.toBeNull();
+    expect(s.pendingCheckpoint).toBeNull();
+    expect(s.pendingCheckpointError).toBe("checkpoint not found");
+  });
+
+  it("CHECKPOINT_ACKED for a different checkpointId is ignored", () => {
+    const submitting = missionReducer(escalatedState as any, {
+      type: "CHECKPOINT_SUBMITTING",
+      decision: "approve" as CheckpointDecision,
+    });
+    const s = missionReducer(submitting as any, {
+      type: "CHECKPOINT_ACKED",
+      checkpointId: "other-cp",
+      accepted: true,
+    });
+    expect(s.pendingCheckpoint?.status).toBe("submitting");
+  });
+
+  it("CLEAR_PENDING_CHECKPOINT_ERROR clears only the error", () => {
+    const submitting = missionReducer(escalatedState as any, {
+      type: "CHECKPOINT_SUBMITTING",
+      decision: "approve" as CheckpointDecision,
+    });
+    const rejected = missionReducer(submitting as any, {
+      type: "CHECKPOINT_ACKED",
+      checkpointId: "cp1",
+      accepted: false,
+      error: "x",
+    });
+    const cleared = missionReducer(rejected as any, {
+      type: "CLEAR_PENDING_CHECKPOINT_ERROR",
+    });
+    expect(cleared.pendingCheckpointError).toBeNull();
+    expect(cleared.escalation).not.toBeNull();
   });
 });

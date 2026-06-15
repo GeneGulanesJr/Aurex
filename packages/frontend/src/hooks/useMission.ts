@@ -1,5 +1,5 @@
 import { useReducer, useCallback, useEffect, useState } from "react";
-import type { Mission, Milestone, WorkingUnit, CostSummary, WsClientEvent, MilestoneStatus, AgentType, AgentStatus, AgentOutputEventType } from "@aurex/shared";
+import type { Mission, Milestone, WorkingUnit, CostSummary, WsClientEvent, MilestoneStatus, AgentType, AgentStatus, AgentOutputEventType, CheckpointDecision } from "@aurex/shared";
 import { getMission, getAgentLogs } from "../api";
 
 export interface MissionError {
@@ -19,6 +19,13 @@ export interface AgentLogEntry {
   data?: Record<string, unknown>;
 }
 
+export interface PendingCheckpoint {
+  checkpointId: string;
+  decision: CheckpointDecision;
+  status: "submitting";
+  submittedAt: number;
+}
+
 export interface MissionState {
   mission: Mission | null;
   milestones: Milestone[];
@@ -28,6 +35,10 @@ export interface MissionState {
   logs: Array<{ phase: string; message: string; timestamp: number; data?: Record<string, unknown> }>;
   errors: MissionError[];
   agentLogs: Record<string, AgentLogEntry[]>;
+  /** Set while a checkpoint decision is in flight; cleared on ack/timeout/error. */
+  pendingCheckpoint: PendingCheckpoint | null;
+  /** Human-readable error from the last failed checkpoint submission. */
+  pendingCheckpointError: string | null;
 }
 
 type Action =
@@ -44,10 +55,15 @@ type Action =
   | { type: "MISSION_ERROR"; code: string; message: string; workerId?: string; milestoneId?: string; recoverable: boolean; details?: Record<string, unknown> }
   | { type: "AGENT_OUTPUT"; agentId: string; eventType: AgentOutputEventType; message: string; timestamp: string; data?: Record<string, unknown> }
   | { type: "CLEAR_ERRORS" }
-  | { type: "RESET" };
+  | { type: "RESET" }
+  | { type: "CHECKPOINT_SUBMITTING"; decision: CheckpointDecision }
+  | { type: "CHECKPOINT_ACKED"; checkpointId: string; accepted: boolean; error?: string }
+  | { type: "CLEAR_PENDING_CHECKPOINT_ERROR" };
 
 export const initialMissionState: MissionState = {
   mission: null, milestones: [], activeWorkers: [], cost: null, escalation: null, logs: [], errors: [], agentLogs: {},
+  pendingCheckpoint: null,
+  pendingCheckpointError: null,
 };
 
 export function missionReducer(state: MissionState, action: Action): MissionState {
@@ -126,6 +142,38 @@ export function missionReducer(state: MissionState, action: Action): MissionStat
       return { ...state, milestones: action.milestones };
     case "RESET":
       return initialMissionState;
+    case "CHECKPOINT_SUBMITTING": {
+      if (!state.escalation) return state;
+      const checkpointId = (state.escalation as any).checkpointId;
+      if (!checkpointId) return state;
+      return {
+        ...state,
+        pendingCheckpointError: null,
+        pendingCheckpoint: {
+          checkpointId,
+          decision: action.decision,
+          status: "submitting",
+          submittedAt: Date.now(),
+        },
+      };
+    }
+    case "CHECKPOINT_ACKED": {
+      // Ignore acks that don't match the in-flight checkpoint.
+      if (!state.pendingCheckpoint || state.pendingCheckpoint.checkpointId !== action.checkpointId) {
+        return state;
+      }
+      if (action.accepted) {
+        return { ...state, escalation: null, pendingCheckpoint: null, pendingCheckpointError: null };
+      }
+      // Rejected: keep the escalation so the user can retry, surface the error.
+      return {
+        ...state,
+        pendingCheckpoint: null,
+        pendingCheckpointError: action.error ?? "Checkpoint submission was rejected",
+      };
+    }
+    case "CLEAR_PENDING_CHECKPOINT_ERROR":
+      return { ...state, pendingCheckpointError: null };
     default:
       return state;
   }
