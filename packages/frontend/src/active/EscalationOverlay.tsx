@@ -9,7 +9,8 @@ interface EscalationOverlayProps {
   onDecision: (decision: CheckpointDecision, opts?: { guidance?: string; reason?: string; rescopeGuidance?: string }) => void;
   submitting?: boolean;
   submitError?: string | null;
-  onDismissSubmitError?: () => void;
+  /** Required whenever submitError is non-null — paired with the error banner's dismiss button. */
+  onDismissSubmitError: () => void;
 }
 
 /**
