@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { EscalationTrigger, CheckpointDecision } from "@aurex/shared";
 
 interface DecisionActionsProps {
@@ -19,6 +19,14 @@ const btnBase: React.CSSProperties = {
 export function DecisionActions({ onDecision, trigger }: DecisionActionsProps) {
   const [guidance, setGuidance] = useState("");
   const [showGuidance, setShowGuidance] = useState(false);
+
+  // Reset guidance when the escalation changes so typed-but-not-submitted text
+  // from a previous checkpoint can't bleed into a new, unrelated decision.
+  // Use a stable key per checkpoint (milestoneId + kind) when available.
+  useEffect(() => {
+    setGuidance("");
+    setShowGuidance(false);
+  }, [trigger]);
 
   return (
     <div style={{ display: "flex", gap: "12px", alignItems: "flex-start", flexWrap: "wrap" }}>

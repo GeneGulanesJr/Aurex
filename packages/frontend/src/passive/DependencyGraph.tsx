@@ -59,13 +59,17 @@ export function DependencyGraph({ data, error }: { data: CodeGraphResponse | nul
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg || !layout || !data) return;
-    animate(svg.querySelectorAll(".graph-node"), {
+    // Capture the returned animation so we can pause/cancel it on cleanup,
+    // and guard onComplete so the edge animation never runs against a
+    // detached <svg> if the component unmounts mid-animation.
+    const nodeAnim = animate(svg.querySelectorAll(".graph-node"), {
       opacity: [0, 1],
       scale: [0.6, 1],
       delay: stagger(80),
       duration: 500,
       ease: "outExpo",
       onComplete: () => {
+        if (!svg.isConnected) return;
         const edges = svg.querySelectorAll<SVGPathElement>(".graph-edge");
         edges.forEach((edge) => {
           const len = edge.getTotalLength();
@@ -80,6 +84,9 @@ export function DependencyGraph({ data, error }: { data: CodeGraphResponse | nul
         });
       },
     });
+    return () => {
+      try { nodeAnim.pause(); } catch { /* animejs may throw on completed anims */ }
+    };
   }, [data, layout]);
 
   if (error) return <Unavailable label="graph" />;

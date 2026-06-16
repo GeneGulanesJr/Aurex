@@ -60,5 +60,14 @@ export function CheckpointPanel({ trigger }: CheckpointPanelProps) {
           </p>
         </div>
       );
+    default:
+      return (
+        <div style={{ marginBottom: "24px" }}>
+          <h2 style={{ fontSize: "20px", fontWeight: 700, color: "var(--warning)", marginBottom: "8px" }}>Checkpoint Pending</h2>
+          <p style={{ fontSize: "14px", color: "var(--text-secondary)" }}>
+            The orchestrator is awaiting a decision. Approve to continue or abort the mission.
+          </p>
+        </div>
+      );
   }
 }

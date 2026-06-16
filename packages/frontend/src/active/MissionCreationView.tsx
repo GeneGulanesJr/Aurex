@@ -29,6 +29,7 @@ interface MissionCreationViewProps {
     packageScan: BumblebeeScanResult | null;
     packageFindings: BumblebeeFinding[];
     loading: boolean;
+    error?: string | null;
   } | null;
   onRepoPrepared?: (info: PreparedRepoInfo) => void;
   systemReady?: boolean;
@@ -58,6 +59,9 @@ export function MissionCreationView({
   const [preparedRepoCache, setPreparedRepoCache] = useState<Map<number, { repoName: string; summary: CodeSummaryResponse | null }>>(new Map());
   const containerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Aborted flag for the in-flight prepare flow so a force-close during
+  // cloning/indexing doesn't leave orphaned state updates landing later.
+  const prepareAbortedRef = useRef(false);
 
   // On mount, ensure the form is marked open so the suggestedDescription
   // effect works. If a draft description was persisted, the lazy reducer
@@ -141,27 +145,33 @@ export function MissionCreationView({
   async function handleConfirmRepo() {
     if (!pendingRepo) return;
     setPrepareError(null);
+    prepareAbortedRef.current = false;
 
     setPreparePhase("cloning");
     let prepared;
     try {
       prepared = await prepareGitHubRepo(pendingRepo.clone_url);
-    } catch {
-      setPrepareError("Could not clone repository. Check GitHub permissions and try again.");
+    } catch (err) {
+      if (prepareAbortedRef.current) return;
+      setPrepareError(err instanceof Error ? err.message : "Could not clone repository. Check GitHub permissions and try again.");
       setPreparePhase("error");
       return;
     }
+    // User force-closed the modal while cloning/indexing — drop late updates.
+    if (prepareAbortedRef.current) return;
 
     setPreparedRepoName(prepared.repoName);
 
     setPreparePhase("indexing");
     try {
       const explored = await exploreRepo(prepared.repoName);
+      if (prepareAbortedRef.current) return;
       if (explored.status === "completed" && explored.summary) {
         setExploreSummary(explored.summary);
       }
       setPreparePhase("complete");
     } catch {
+      if (prepareAbortedRef.current) return;
       setPreparePhase("complete");
     }
   }
@@ -403,6 +413,7 @@ export function MissionCreationView({
                   packageScan={preparedRepo.packageScan}
                   packageFindings={preparedRepo.packageFindings}
                   loading={preparedRepo.loading}
+                  error={preparedRepo.error}
                   onStartMission={handleSuggestionClick}
                 />
                 </aside>
@@ -420,11 +431,13 @@ export function MissionCreationView({
           summary={exploreSummary}
           error={prepareError}
           onCancel={() => {
-            if (preparePhase !== "cloning" && preparePhase !== "indexing") {
-              setPendingRepo(null);
-              setPrepareError(null);
-              setPreparePhase("confirm");
-            }
+            // Always allow closing, even mid-clone/index — the user must not be
+            // trapped by a hung server-side prepare. Mark the flow aborted so
+            // any late promise resolutions are ignored.
+            prepareAbortedRef.current = true;
+            setPendingRepo(null);
+            setPrepareError(null);
+            setPreparePhase("confirm");
           }}
           onConfirm={() => {
             if (preparePhase === "confirm") {
@@ -433,6 +446,7 @@ export function MissionCreationView({
               handleUseRepo();
             }
           }}
+          onRetry={() => { void handleConfirmRepo(); }}
         />
       )}
     </div>

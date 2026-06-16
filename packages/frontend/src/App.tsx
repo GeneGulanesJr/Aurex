@@ -29,7 +29,7 @@ import { setTokenGetter, setAuthErrorHandler } from "./api";
 import { submitCheckpoint, createMission, restartMission, abortMission, getRepoHotspots, getRepoSuggestions, getRepoReadiness, listRepoScans } from "./api";
 import type { WsClientEvent, CheckpointDecision } from "@aurex/shared";
 import type { CodeSummaryResponse, CodeHotspotsResponse, RepoSuggestion, RepoReadinessProfile } from "./api";
-import type { BumblebeeScanResult, BumblebeeFinding } from "@aurex/shared";
+import type { BumblebeeScanResult, BumblebeeFinding, ListScansResponse } from "@aurex/shared";
 
 export function App() {
   const { theme, setTheme } = useTheme();
@@ -68,6 +68,8 @@ export function App() {
     packageScan: BumblebeeScanResult | null;
     packageFindings: BumblebeeFinding[];
     loading: boolean;
+    error: string | null;
+    _version?: number;
   } | null>(null);
   const { settings, setSettings, resetSettings } = useSettings();
   const { state: missionsState, selectMission, addOptimisticMission, markMissionRestarted, markMissionAborted, handleWsEvent: missionsWsHandler } = useMissions();
@@ -80,7 +82,11 @@ export function App() {
     }, []),
   });
   const quotaStatus = quota.status;
-  const eventsRef = useRef<WsClientEvent[]>([]);
+  // Event stream is kept in state (not a ref) so the activity feed, completion
+  // view, and debug log re-render on every WS event — not only when another
+  // handler happens to dispatch state. A ref would silently go stale for event
+  // types that no reducer consumes.
+  const [events, setEvents] = useState<WsClientEvent[]>([]);
 
   const bp = useBreakpoint();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
@@ -118,7 +124,7 @@ export function App() {
     missionsWsHandler(event);
     missionWsHandler(event);
     supplyChainWsHandler(event);
-    eventsRef.current = [...eventsRef.current.slice(-49), event];
+    setEvents((prev) => [...prev.slice(-49), event]);
     if (event.type === "escalation" || event.type === "mission_completed") {
       setLatestNotifEvent(event);
     }
@@ -256,15 +262,21 @@ export function App() {
     // Persist so a page refresh can rehydrate the overview without re-cloning.
     setSessionState("prepared_repo", { repoName, fullName });
     const version = Date.now();
-    setPreparedRepo({ repoName, fullName, summary, hotspots: null, suggestions: [], readiness: null, packageScan: null, packageFindings: [], loading: true, _version: version } as any);
+    setPreparedRepo({ repoName, fullName, summary, hotspots: null, suggestions: [], readiness: null, packageScan: null, packageFindings: [], loading: true, error: null, _version: version } as any);
+    // Track which analysis sections fail so we can surface a real error to the
+    // user instead of silently showing empty cards for every section.
+    const failures: string[] = [];
+    const track = <T,>(p: Promise<T>, label: string, fallback: T): Promise<T> =>
+      p.catch(() => { failures.push(label); return fallback; });
     try {
       const [hotspots, readiness, scanList] = await Promise.all([
-        getRepoHotspots(repoName).catch(() => null),
-        getRepoReadiness(repoName).catch(() => null),
-        listRepoScans(repoName).catch(() => ({ scans: [] })),
+        track(getRepoHotspots(repoName), "hotspots", null),
+        track(getRepoReadiness(repoName), "readiness", null),
+        track(listRepoScans(repoName), "scans", { scans: [] } as ListScansResponse),
       ]);
       const latestScan = scanList.scans.at(-1);
-      const suggestionsRes = await getRepoSuggestions(repoName).catch(() => ({ suggestions: [], analysisVersion: "2.0" }));
+      const suggestionsRes = await track(getRepoSuggestions(repoName), "suggestions", { suggestions: [], analysisVersion: "2.0" });
+      const error = failures.length > 0 ? `Some analysis sections could not be loaded (${failures.join(", ")}).` : null;
       setPreparedRepo((prev) => {
         // Don't overwrite if cleared (e.g., mission created while loading)
         if (!prev || (prev as any)._version !== version) return prev;
@@ -278,10 +290,11 @@ export function App() {
           packageScan: latestScan ?? null,
           packageFindings: latestScan?.findings ?? [],
           loading: false,
+          error,
         };
       });
     } catch {
-      setPreparedRepo((prev) => prev ? { ...prev, loading: false } : null);
+      setPreparedRepo((prev) => prev ? { ...prev, loading: false, error: "Repository analysis failed unexpectedly." } : null);
     }
   }, []);
 
@@ -426,7 +439,7 @@ export function App() {
             milestones={state.milestones}
             workers={state.activeWorkers}
             cost={state.cost}
-            events={eventsRef.current}
+            events={events}
             logs={state.logs}
             errors={state.errors}
             agentLogs={state.agentLogs}

@@ -42,6 +42,7 @@ interface StatusBoardProps {
     packageScan: BumblebeeScanResult | null;
     packageFindings: BumblebeeFinding[];
     loading: boolean;
+    error?: string | null;
   } | null;
   onStartFromSuggestion?: (prefill: string) => void;
   onRepoPrepared?: (info: { repoName: string; fullName: string; summary: CodeSummaryResponse | null }) => void;
@@ -68,6 +69,17 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
 
   const nonRecoverableErrors = errors.filter((e) => !e.recoverable);
   const [errorBannerExpanded, setErrorBannerExpanded] = useState(() => nonRecoverableErrors.length > 0);
+  const lastErrorCountRef = useRef(nonRecoverableErrors.length);
+
+  // Auto-expand the error banner whenever a *new* non-recoverable error arrives.
+  // The useState initializer only runs once on mount, so without this a banner
+  // that appears later in a live session would stay collapsed.
+  useEffect(() => {
+    if (nonRecoverableErrors.length > lastErrorCountRef.current) {
+      setErrorBannerExpanded(true);
+    }
+    lastErrorCountRef.current = nonRecoverableErrors.length;
+  }, [nonRecoverableErrors.length]);
 
   if (loading && !mission) {
     return (
@@ -111,9 +123,9 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
     }
     return (
       <MissionCreationView
-        onSubmit={async (description, cloneUrl) => { await onExampleClick!(description, cloneUrl); }}
+        onSubmit={async (description, cloneUrl) => { if (onExampleClick) await onExampleClick(description, cloneUrl); }}
         github={github}
-        preparedRepo={preparedRepo ? { repoName: preparedRepo.repoName, fullName: preparedRepo.fullName, summary: preparedRepo.summary, hotspots: preparedRepo.hotspots, suggestions: preparedRepo.suggestions, readiness: preparedRepo.readiness, packageScan: preparedRepo.packageScan, packageFindings: preparedRepo.packageFindings, loading: preparedRepo.loading } : null}
+        preparedRepo={preparedRepo ? { repoName: preparedRepo.repoName, fullName: preparedRepo.fullName, summary: preparedRepo.summary, hotspots: preparedRepo.hotspots, suggestions: preparedRepo.suggestions, readiness: preparedRepo.readiness, packageScan: preparedRepo.packageScan, packageFindings: preparedRepo.packageFindings, loading: preparedRepo.loading, error: preparedRepo.error } : null}
         onRepoPrepared={onRepoPrepared}
         systemReady={systemReady}
         onStartFromSuggestion={onStartFromSuggestion}

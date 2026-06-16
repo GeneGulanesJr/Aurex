@@ -47,6 +47,10 @@ export function CodeContextPanel({
   const [summaryError, setSummaryError] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  // Tracks the last (missionId, indexingDone) combo we fetched for, so we never
+  // issue duplicate requests for the same state. Previously two effects both
+  // fired on a refresh of an indexed mission (6 requests instead of 3).
+  const fetchedForRef = useRef<{ missionId: string; indexingDone: boolean } | null>(null);
 
   const logBasedIndexingDone = useMemo(() => logs.some((l) => l.phase === "indexing" && l.data?.indexingDone === true), [logs]);
 
@@ -61,12 +65,18 @@ export function CodeContextPanel({
   //    was already indexed in a prior session and the data persists in LaPis).
   const indexingDone = logBasedIndexingDone || summary !== null;
 
-  // On mount or when missionId changes, try fetching code context immediately.
-  // On a live session this will 404 until indexing completes (then the
-  // logBasedIndexingDone-triggered refetch below kicks in). On page refresh it
-  // succeeds immediately because the indexed data persists in LaPis.
+  // Single effect drives all code-context fetching. It runs:
+  //  - on missionId change (covers the page-refresh case where the repo is
+  //    already indexed and the fetch succeeds immediately), and
+  //  - when logBasedIndexingDone flips true during a live session (covers the
+  //    case where the mount-time fetch 404'd because indexing hadn't finished).
+  // The fetchedForRef guard ensures we never request the same (missionId,
+  // indexingDone) combo twice, fixing a double-fetch on refresh of an indexed
+  // mission that previously issued 6 requests instead of 3.
   useEffect(() => {
     if (!missionId) return;
+    if (fetchedForRef.current?.missionId === missionId && fetchedForRef.current.indexingDone === logBasedIndexingDone) return;
+    fetchedForRef.current = { missionId, indexingDone: logBasedIndexingDone };
     let cancelled = false;
     setSummaryError(false);
     setGraphError(false);
@@ -75,23 +85,6 @@ export function CodeContextPanel({
     getCodeGraph(missionId).then((data) => { if (!cancelled) setGraph(data); }).catch(() => { if (!cancelled) setGraphError(true); });
     getCodeHotspots(missionId).then((data) => { if (!cancelled) setHotspots(data); }).catch(() => { if (!cancelled) setHotspotsError(true); });
     return () => { cancelled = true; };
-  }, [missionId]);
-
-  // When indexing completes during a live session (detected via a WS log),
-  // the mount-time fetches already failed with 404. Re-run them now that the
-  // data should be available.
-  useEffect(() => {
-    if (!missionId || !logBasedIndexingDone) return;
-    if (summary !== null && graph !== null && hotspots !== null) return;
-    let cancelled = false;
-    setSummaryError(false);
-    setGraphError(false);
-    setHotspotsError(false);
-    getCodeSummary(missionId).then((data) => { if (!cancelled) setSummary(data); }).catch(() => { if (!cancelled) setSummaryError(true); });
-    getCodeGraph(missionId).then((data) => { if (!cancelled) setGraph(data); }).catch(() => { if (!cancelled) setGraphError(true); });
-    getCodeHotspots(missionId).then((data) => { if (!cancelled) setHotspots(data); }).catch(() => { if (!cancelled) setHotspotsError(true); });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [missionId, logBasedIndexingDone]);
 
   useEffect(() => {

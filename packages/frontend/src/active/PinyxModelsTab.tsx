@@ -14,6 +14,13 @@ const AGENT_CARDS = [
   { key: "research", name: "Research", description: "Gathers context and investigates solutions", types: ["research"] },
 ];
 
+// Backend sentinel for "no model selected". Centralized so the contract with
+// the model discovery service is documented in one place and a real model id
+// could never accidentally collide with the unset marker.
+const UNSET_MODEL_SENTINEL = "kilo/kilo-auto/free";
+const isUnsetModel = (value: string | null | undefined): boolean =>
+  !value || value === UNSET_MODEL_SENTINEL;
+
 export function PinyxModelsTab({ config, onConfigUpdate }: PinyxModelsTabProps) {
   const hasKeys = config.providers.some((p) => p.hasApiKey);
 
@@ -21,7 +28,7 @@ export function PinyxModelsTab({ config, onConfigUpdate }: PinyxModelsTabProps) 
   const [defaultModel, setDefaultModel] = useState(() => {
     // Use first model hint value if available, otherwise empty
     const first = config.modelHints.orchestrator;
-    return first && first !== "kilo/kilo-auto/free" ? first : "";
+    return isUnsetModel(first) ? "" : first;
   });
   const [models, setModels] = useState<Array<{ id?: string; name?: string }>>([]);
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
@@ -59,7 +66,7 @@ export function PinyxModelsTab({ config, onConfigUpdate }: PinyxModelsTabProps) 
         if (!options.length) return;
 
         const current = config.modelHints.orchestrator;
-        const shouldAutoSelect = !current || current === "kilo/kilo-auto/free" || !options.includes(current);
+        const shouldAutoSelect = isUnsetModel(current) || !options.includes(current);
         if (!shouldAutoSelect) return;
 
         const nextDefault = options[0];
@@ -79,7 +86,7 @@ export function PinyxModelsTab({ config, onConfigUpdate }: PinyxModelsTabProps) 
   useEffect(() => {
     setModelHints(config.modelHints);
     const first = config.modelHints.orchestrator;
-    setDefaultModel(first && first !== "kilo/kilo-auto/free" ? first : "");
+    setDefaultModel(isUnsetModel(first) ? "" : first);
   }, [config.modelHints]);
 
   function handleDefaultChange(newDefault: string) {
@@ -127,7 +134,7 @@ export function PinyxModelsTab({ config, onConfigUpdate }: PinyxModelsTabProps) 
     const card = AGENT_CARDS.find((c) => c.key === cardKey);
     if (!card) return defaultModel;
     const value = modelHints[card.types[0] as keyof typeof modelHints];
-    if (!value || value === "kilo/kilo-auto/free") return defaultModel;
+    if (isUnsetModel(value)) return defaultModel;
     return value;
   }
 

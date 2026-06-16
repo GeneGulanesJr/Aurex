@@ -8,6 +8,7 @@ interface RepoPrepareModalProps {
   error: string | null;
   onCancel: () => void;
   onConfirm: () => void;
+  onRetry?: () => void;
 }
 
 const phases = [
@@ -21,7 +22,7 @@ function phaseIndex(phase: RepoPrepareModalProps["phase"]): number {
   return phases.findIndex((p) => p.key === phase);
 }
 
-export function RepoPrepareModal({ repo, phase, summary, error, onCancel, onConfirm }: RepoPrepareModalProps) {
+export function RepoPrepareModal({ repo, phase, summary, error, onCancel, onConfirm, onRetry }: RepoPrepareModalProps) {
   const currentIdx = phaseIndex(phase);
   const isWorking = phase === "cloning" || phase === "indexing";
 
@@ -37,7 +38,7 @@ export function RepoPrepareModal({ repo, phase, summary, error, onCancel, onConf
         justifyContent: "center",
         padding: "16px",
       }}
-      onClick={isWorking ? undefined : onCancel}
+      onClick={onCancel}
     >
       <section
         onClick={(e) => e.stopPropagation()}
@@ -146,12 +147,22 @@ export function RepoPrepareModal({ repo, phase, summary, error, onCancel, onConf
 
         {/* Actions */}
         <div className="pinyx-btn-group" style={{ justifyContent: "flex-end", marginTop: "12px" }}>
-          <button className="pinyx-btn-outline" onClick={onCancel} disabled={isWorking}>
-            {phase === "complete" ? "Cancel" : "Cancel"}
+          <button className="pinyx-btn-outline" onClick={onCancel}>
+            {isWorking ? "Cancel Anyway" : "Cancel"}
           </button>
-          {(phase === "confirm" || phase === "complete") && (
+          {phase === "confirm" && (
             <button className="pinyx-btn-primary" onClick={onConfirm} disabled={isWorking}>
-              {phase === "confirm" ? "Prepare & Scan" : "Use Repo"}
+              Prepare & Scan
+            </button>
+          )}
+          {phase === "complete" && (
+            <button className="pinyx-btn-primary" onClick={onConfirm} disabled={isWorking}>
+              Use Repo
+            </button>
+          )}
+          {phase === "error" && onRetry && (
+            <button className="pinyx-btn-primary" onClick={onRetry}>
+              Retry
             </button>
           )}
         </div>

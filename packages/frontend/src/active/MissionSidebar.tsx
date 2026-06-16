@@ -36,27 +36,29 @@ export function MissionSidebar({ missions, selectedMissionId, escalationMissionI
   if (collapsed) {
     return (
       <aside className="sidebar-transition" style={{ width: "48px", borderRight: "1px solid var(--border)", background: "var(--bg-surface)", display: "flex", flexDirection: "column", alignItems: "center", paddingTop: "12px", gap: "4px" }}>
-        <div
-          onClick={handleNewMission}
-          title="New mission"
-          style={{
-            width: "32px",
-            height: "32px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-            borderRadius: "4px",
-            color: "var(--accent)",
-            fontSize: "16px",
-            fontWeight: 600,
-            marginBottom: "4px",
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-elevated)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
-        >
-          +
-        </div>
+        {systemReady && (
+          <div
+            onClick={handleNewMission}
+            title="New mission"
+            style={{
+              width: "32px",
+              height: "32px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              borderRadius: "4px",
+              color: "var(--accent)",
+              fontSize: "16px",
+              fontWeight: 600,
+              marginBottom: "4px",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-elevated)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+          >
+            +
+          </div>
+        )}
         {missions.map((mission) => {
           const isSelected = mission.missionId === selectedMissionId;
           const statusUi = getMissionStatusUi(mission.state);

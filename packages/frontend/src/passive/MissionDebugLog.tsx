@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useCallback } from "react";
+import { useMemo, useState, useRef, useCallback, useEffect } from "react";
 import type { Milestone, WsClientEvent } from "@aurex/shared";
 import type { AgentLogEntry, MissionError } from "../hooks/useMission";
 
@@ -30,6 +30,14 @@ export function MissionDebugLog({ mission, milestones, logs, events, errors, age
       copyTimerRef.current = setTimeout(() => setCopyState("idle"), 1800);
     }
   }, [transcript]);
+
+  // Clear the copy-status timer on unmount so it can't fire setState on a
+  // detached component (e.g. when switching missions mid-flash).
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
 
   return (
     <section style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
