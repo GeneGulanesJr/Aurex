@@ -57,7 +57,7 @@ Use focused context before editing.
 
 1. Read the assigned todo and its `lapisContextQuery`.
 2. **Review the Research Findings section in your context FIRST.** The research agent has already explored the codebase, read relevant files, and documented what it found. Do NOT re-read files whose content is already summarized in research findings. Trust and use them.
-3. **Verify or reject findings you act on.** When your implementation work confirms a research finding is accurate, call `verify_finding` with its id. When your work shows a finding is wrong or irrelevant, call `reject_finding`. This keeps the findings lifecycle honest — verified findings are trusted by future workers, rejected ones stop wasting their time. Do this as you encounter each finding, not at the end.
+3. **Verify or reject findings you act on.** When your implementation work confirms a research finding is accurate, call `verify_finding` with its id. When your work shows a finding is wrong or irrelevant, call `reject_finding` with its id **and a specific `reason`** (e.g. "auth now uses OAuth2, not JWT"). The reason is shown to future workers so they understand why the finding was dismissed and do not re-investigate it. This keeps the findings lifecycle honest — verified findings are trusted by future workers, rejected ones stop wasting their time. Do this as you encounter each finding, not at the end.
 4. Review injected LaPis context.
 5. Use `search_memory` only for targeted gaps not covered by research findings.
 6. Read local files ONLY for files you need to edit or for details not covered in research findings. Do NOT re-read files for discovery — the researcher already did that.

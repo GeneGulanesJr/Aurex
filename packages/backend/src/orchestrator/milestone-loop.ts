@@ -485,6 +485,13 @@ export function createMilestoneLoop(
             callbacks.onMilestoneProgress(milestone.id, "in_progress", completedCount, units.length);
           }
 
+          // Workers may have verified/rejected research findings via their
+          // verify_finding/reject_finding tools. Refresh the cached snapshot
+          // now so the upcoming validator phase (and any retry iteration's
+          // workers) see the latest statuses and rejection rationales instead
+          // of a stale view captured before the worker phase ran.
+          researchFindings = await lapis.getFindings(mission.id).catch(() => researchFindings);
+
           if (failedCount > 0) {
             // Per-unit retry: re-spawn only the failed units once before
             // escalating the entire milestone. This avoids discarding

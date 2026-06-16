@@ -78,6 +78,7 @@ describe("worker finding tools", () => {
         "verified",
         "ws-1",
         { taskId: "unit-1", workerSessionId: "ws-1" },
+        { reason: undefined, expectedCurrentStatus: "unverified" },
       );
     });
 
@@ -132,22 +133,40 @@ describe("worker finding tools", () => {
   });
 
   describe("reject_finding", () => {
-    it("transitions an unverified finding to rejected", async () => {
+    it("transitions an unverified finding to rejected, persisting the reason", async () => {
       const { lapis, transitionFinding } = createMockLapis([makeFinding()]);
       const tools = createWorkerTools(lapis, "unit-1", {
         missionId: "m-1",
         getSessionId: () => "ws-1",
       });
 
-      const result = await runTool(tools, "reject_finding", { findingId: "finding-1" });
+      const result = await runTool(tools, "reject_finding", {
+        findingId: "finding-1",
+        reason: "auth now uses OAuth2, not JWT",
+      });
 
       expect(result.content[0].text).toContain("rejected");
+      expect(result.content[0].text).toContain("auth now uses OAuth2, not JWT");
       expect(transitionFinding).toHaveBeenCalledWith(
         "finding-1",
         "rejected",
         "ws-1",
         { taskId: "unit-1", workerSessionId: "ws-1" },
+        { reason: "auth now uses OAuth2, not JWT", expectedCurrentStatus: "unverified" },
       );
+    });
+
+    it("requires a non-empty reason and does not transition when missing", async () => {
+      const { lapis, transitionFinding } = createMockLapis([makeFinding()]);
+      const tools = createWorkerTools(lapis, "unit-1", {
+        missionId: "m-1",
+        getSessionId: () => "ws-1",
+      });
+
+      const result = await runTool(tools, "reject_finding", { findingId: "finding-1", reason: "   " });
+
+      expect(result.content[0].text).toContain("requires a non-empty 'reason'");
+      expect(transitionFinding).not.toHaveBeenCalled();
     });
 
     it("rejects an already-rejected finding without calling transition", async () => {
@@ -157,9 +176,29 @@ describe("worker finding tools", () => {
         getSessionId: () => "ws-1",
       });
 
-      const result = await runTool(tools, "reject_finding", { findingId: "finding-1" });
+      const result = await runTool(tools, "reject_finding", { findingId: "finding-1", reason: "duplicate" });
 
       expect(result.content[0].text).toContain("Cannot transition");
+      expect(transitionFinding).not.toHaveBeenCalled();
+    });
+
+    it("aborts when the finding's status changes between the gate check and the transition", async () => {
+      const { lapis, transitionFinding, getFindings } = createMockLapis([makeFinding()]);
+      // Gate check (1st getFindings) sees "unverified"; the freshness re-fetch
+      // (2nd getFindings) sees it already "verified" — a concurrent worker
+      // raced us. The transition must be aborted, not blindly applied.
+      getFindings
+        .mockResolvedValueOnce([makeFinding({ status: "unverified" })])
+        .mockResolvedValueOnce([makeFinding({ status: "verified" })]);
+
+      const tools = createWorkerTools(lapis, "unit-1", {
+        missionId: "m-1",
+        getSessionId: () => "ws-1",
+      });
+
+      const result = await runTool(tools, "verify_finding", { findingId: "finding-1" });
+
+      expect(result.content[0].text).toContain("concurrent modification");
       expect(transitionFinding).not.toHaveBeenCalled();
     });
   });

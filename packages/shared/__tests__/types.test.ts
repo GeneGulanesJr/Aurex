@@ -117,6 +117,25 @@ describe("Core Types", () => {
     expect(finding.verifiedTaskId).toBeNull();
   });
 
+  it("ResearchFinding can carry a rejection reason when rejected", () => {
+    const finding: ResearchFinding = {
+      id: "f-2",
+      missionId: "m-1",
+      authorId: "research-1",
+      domain: ["auth"],
+      title: "Auth uses JWT",
+      content: "Auth validates JWTs",
+      relevance: "high",
+      status: "rejected",
+      verifiedTaskId: null,
+      rejectionReason: "auth now uses OAuth2, not JWT",
+      ttl: null,
+      expiresAt: null,
+      createdAt: new Date().toISOString(),
+    };
+    expect(finding.rejectionReason).toBe("auth now uses OAuth2, not JWT");
+  });
+
   it("AgentSessionRecord has optional milestoneId and unitId", () => {
     const record: AgentSessionRecord = {
       sessionId: "sess-1",

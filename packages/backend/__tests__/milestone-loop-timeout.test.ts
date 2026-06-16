@@ -199,4 +199,27 @@ describe("milestone loop agent timeouts", () => {
       expect(vs.timeout).toBe(600_000);
     }
   });
+
+  it("re-fetches research findings after the worker phase so worker-driven verify/reject transitions are visible", async () => {
+    const lapis = createMockLapis([unit]);
+    const loop = createMilestoneLoop(lapis, createMockPinyx(), baseCallbacks(), {
+      agentDir: "/home/user/.pi/agent",
+      repoRoot: "/repo",
+      aurexRoot: "/aurex",
+      gitMainBranch: "main",
+    });
+
+    await loop.run(makeMission(), [makeMilestone()]);
+
+    // Without the post-worker refresh, getFindings is only called for the
+    // initial load (1) and once after pre-research (2). The refresh added
+    // after the worker phase guarantees a 3rd fetch so the validator phase
+    // (and any retry iteration) sees the latest finding statuses.
+    const getFindings = lapis.getFindings as ReturnType<typeof vi.fn>;
+    expect(getFindings.mock.calls.length).toBeGreaterThanOrEqual(3);
+    // Every fetch must be scoped to this mission.
+    for (const args of getFindings.mock.calls) {
+      expect(args[0]).toBe("m-1");
+    }
+  });
 });
