@@ -118,7 +118,7 @@ describe("AgentSpawner", () => {
     expect(mockCreateAgentSession).toHaveBeenCalled();
     const callOpts = mockCreateAgentSession.mock.calls[0][0];
     expect(callOpts.cwd).toBe("/repo/.git-worktrees/worker-unit-1");
-    expect(callOpts.tools).toEqual(["read", "write", "edit", "bash", "write_handoff", "search_memory"]);
+    expect(callOpts.tools).toEqual(["read", "write", "edit", "bash", "write_handoff", "search_memory", "verify_finding", "reject_finding"]);
     expect(result.sessionId).toBe("test-session-123");
   });
 

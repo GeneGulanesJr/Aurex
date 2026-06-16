@@ -4,7 +4,8 @@ import { promisify } from "node:util";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import type { LaPisClient } from "../clients/lapis-client.js";
-import type { Handoff } from "@aurex/shared";
+import type { Handoff, ResearchFinding, StandingContext } from "@aurex/shared";
+import { enforceResearchTransition } from "../enforcement/enforcement-gate.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -18,6 +19,10 @@ export interface WorkerToolsOptions {
    * models that hallucinate a hash instead of running `git commit`).
    */
   worktreePath?: string;
+  /** Mission id — used to look up research findings for verification. */
+  missionId?: string;
+  /** Returns the current worker session id (the actor for finding transitions). */
+  getSessionId?: () => string;
 }
 
 /**
@@ -191,5 +196,92 @@ You MUST actually run 'git add' and 'git commit' on your task branch, then pass 
     },
   });
 
-  return [writeHandoff, searchMemory];
+  const verifyFinding = defineTool({
+    name: "verify_finding",
+    label: "Verify Finding",
+    description:
+      "Mark a research finding as verified. Call this when your implementation work confirms the finding is accurate and relevant to your task. The finding moves from 'unverified' to 'verified' and will be trusted by future workers.",
+    parameters: Type.Object({
+      findingId: Type.String({ description: "The id of the research finding to verify (from the findings in your context)" }),
+    }),
+    execute: async (_toolCallId: string, params: Record<string, unknown>) => {
+      const result = await transitionFindingForWorker(lapis, unitId, opts, params.findingId as string, "verified");
+      return {
+        content: [{ type: "text" as const, text: result.message }],
+        details: {},
+      };
+    },
+  });
+
+  const rejectFinding = defineTool({
+    name: "reject_finding",
+    label: "Reject Finding",
+    description:
+      "Mark a research finding as rejected. Call this when your implementation work shows the finding is inaccurate, outdated, or irrelevant. The finding moves from 'unverified' to 'rejected' so future workers are not misled by it.",
+    parameters: Type.Object({
+      findingId: Type.String({ description: "The id of the research finding to reject (from the findings in your context)" }),
+    }),
+    execute: async (_toolCallId: string, params: Record<string, unknown>) => {
+      const result = await transitionFindingForWorker(lapis, unitId, opts, params.findingId as string, "rejected");
+      return {
+        content: [{ type: "text" as const, text: result.message }],
+        details: {},
+      };
+    },
+  });
+
+  return [writeHandoff, searchMemory, verifyFinding, rejectFinding];
+}
+
+/**
+ * Looks up a research finding by id (via getFindings for the mission), runs
+ * the enforcement gate, and performs the lifecycle transition. Returns a
+ * user-facing message describing the outcome.
+ *
+ * The gate prevents invalid transitions (e.g. verifying an already-verified
+ * finding) and ensures verification carries a standing context (taskId +
+ * workerSessionId) so the audit trail records which worker confirmed it.
+ */
+async function transitionFindingForWorker(
+  lapis: LaPisClient,
+  unitId: string,
+  opts: WorkerToolsOptions | undefined,
+  findingId: string,
+  targetStatus: "verified" | "rejected",
+): Promise<{ message: string }> {
+  const missionId = opts?.missionId;
+  const actorId = opts?.getSessionId?.() ?? unitId;
+
+  if (!missionId) {
+    return { message: `Cannot transition finding ${findingId}: mission context is not available.` };
+  }
+
+  let findings: ResearchFinding[];
+  try {
+    findings = await lapis.getFindings(missionId);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return { message: `Failed to load findings for mission ${missionId}: ${detail}` };
+  }
+
+  const finding = findings.find((f) => f.id === findingId);
+  if (!finding) {
+    return { message: `Finding ${findingId} was not found among this mission's findings.` };
+  }
+
+  const standingContext: StandingContext = { taskId: unitId, workerSessionId: actorId };
+  const gate = enforceResearchTransition(finding.status, targetStatus, actorId, standingContext);
+  if (!gate.ok) {
+    return { message: `Cannot transition finding ${findingId} from '${finding.status}' to '${targetStatus}': ${gate.reason}` };
+  }
+
+  try {
+    await lapis.transitionFinding(findingId, targetStatus, actorId, standingContext);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return { message: `Finding ${findingId} could not be transitioned to '${targetStatus}': ${detail}` };
+  }
+
+  const verb = targetStatus === "verified" ? "verified" : "rejected";
+  return { message: `Finding ${findingId} ${verb}.` };
 }
