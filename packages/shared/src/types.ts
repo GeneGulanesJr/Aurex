@@ -147,6 +147,48 @@ export interface ResearchFinding {
   createdAt: string;
 }
 
+/**
+ * Affected-code scaffold injected into worker context so the coding agent
+ * starts with a ranked MAP of the code it will touch (graph nodes, key import
+ * edges, complexity-ranked hotspots), then fetches full file bodies on demand
+ * via its read/grep tools. This is a navigation map, NOT full source content.
+ *
+ * Mirrors the research-findings injection pattern. See Aurex issue #114.
+ */
+export interface AffectedCodeNode {
+  id: string;
+  module: string;
+  symbols: number;
+  importance: number;
+}
+
+export interface AffectedCodeEdge {
+  from: string;
+  to: string;
+  kind: string;
+}
+
+export interface AffectedCodeHotspot {
+  path: string;
+  module: string;
+  complexity: number;
+  symbols: number;
+}
+
+export interface AffectedCodeScaffold {
+  unitId: string;
+  /** Graph nodes filtered to declared modules, top-k by importance. */
+  nodes: AffectedCodeNode[];
+  /** Import edges into/out of declared modules, capped. */
+  edges: AffectedCodeEdge[];
+  /** Hotspot-ranked files within declared paths, top-k by complexity. */
+  hotspots: AffectedCodeHotspot[];
+  /** Token budget actually consumed by the rendered scaffold. */
+  tokenBudget: number;
+  /** True if any section was trimmed by caps or budget. */
+  truncated: boolean;
+}
+
 export interface PreparedAgentSessionConfig {
   model: string;
   provider: string | null;

@@ -67,6 +67,41 @@ describe("planner", () => {
     }));
   });
 
+  it("still parses valid JSON when graph/hotspots affected-code input is provided", async () => {
+    const mockLapis = {
+      searchMemory: vi.fn().mockResolvedValue([]),
+      createMilestone: vi.fn().mockResolvedValue({ id: "ms-1", title: "Auth module" }),
+      createWorkingUnit: vi.fn().mockResolvedValue({ id: "unit-1", description: "Login endpoint" }),
+      createContract: vi.fn().mockResolvedValue({ id: "c-1" }),
+      getContractHistory: vi.fn().mockResolvedValue([]),
+      createMissionLedger: vi.fn().mockResolvedValue({ missionId: "m-1", todos: [] }),
+      createTodo: vi.fn().mockResolvedValue({ id: "td-1" }),
+    } as unknown as LaPisClient;
+
+    const mockPinyx = createMockPinyx(JSON.stringify({
+      milestones: [
+        {
+          title: "Auth module",
+          description: "Implement JWT auth",
+          units: [{ description: "Login endpoint", declaredPaths: ["src/auth/login.ts"], declaredModules: ["auth"] }],
+          criteria: ["Tokens valid"],
+          testCommands: ["npm test"],
+        },
+      ],
+    }));
+
+    const planner = createPlanner(mockLapis, mockPinyx as never, {
+      codeGraph: {
+        nodes: [{ id: "src/auth/login.ts", module: "auth", symbols: 4, importance: 9 }],
+        edges: [],
+      },
+      codeHotspots: { files: [{ path: "src/auth/login.ts", module: "auth", complexity: 7, symbols: 4 }] },
+    });
+    const result = await planner.plan("Build auth", "m-1");
+    expect(result.milestones).toHaveLength(1);
+    expect(result.milestones[0].title).toBe("Auth module");
+  });
+
   it("uses the configured orchestrator model for PiNyx planning", async () => {
     const mockLapis = {
       searchMemory: vi.fn().mockResolvedValue([]),

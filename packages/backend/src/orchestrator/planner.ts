@@ -86,15 +86,29 @@ export interface CodeSummary {
   cycles: { count: number; paths: string[][] };
 }
 
+/** Subset of LaPis `getCodeGraph` consumed by the planner. */
+export interface CodeGraphSummary {
+  nodes: Array<{ id: string; module: string; symbols: number; importance: number }>;
+  edges: Array<{ from: string; to: string; kind: string }>;
+  cycles?: string[][];
+}
+
+/** Subset of LaPis `getCodeHotspots` consumed by the planner. */
+export interface CodeHotspotsSummary {
+  files: Array<{ path: string; module: string; complexity: number; symbols: number }>;
+}
+
 export function createPlanner(
   lapis: LaPisClient,
   pinyx: PinyxClient,
-  opts?: { model?: string; eventBus?: EventBus; missionId?: string; codeSummary?: CodeSummary; maxMilestones?: number; maxUnitsPerMilestone?: number },
+  opts?: { model?: string; eventBus?: EventBus; missionId?: string; codeSummary?: CodeSummary; codeGraph?: CodeGraphSummary; codeHotspots?: CodeHotspotsSummary; maxMilestones?: number; maxUnitsPerMilestone?: number },
 ) {
   const model = opts?.model ?? "kilo/kilo-auto/free";
   const eventBus = opts?.eventBus;
   const missionId = opts?.missionId;
   const codeSummary = opts?.codeSummary;
+  const codeGraph = opts?.codeGraph;
+  const codeHotspots = opts?.codeHotspots;
 
   function emitLog(phase: string, message: string) {
     if (eventBus && missionId) {
@@ -121,6 +135,7 @@ export function createPlanner(
       let response;
       try {
         const codebaseSection = buildCodebaseContextSection(codeSummary);
+        const affectedCodeSection = buildAffectedCodePlannerSection(codeGraph, codeHotspots);
         const systemPrompt = `You are a mission planner. Decompose the mission into ordered milestones. Each milestone has working units with declared paths and modules, validation criteria, and test commands.
 
 OUTPUT FORMAT: You MUST respond with ONLY a raw JSON object. No markdown, no code fences, no explanation, no thinking aloud. Start your response with { and end with }.
@@ -132,6 +147,9 @@ IMPORTANT: Use the codebase structure below to ensure your declared paths and mo
         const userParts = [`Mission: ${missionDescription}`];
         if (codebaseSection) {
           userParts.push(`\n## Codebase Structure\n${codebaseSection}`);
+        }
+        if (affectedCodeSection) {
+          userParts.push(`\n## Known Code Graph & Hotspots\n${affectedCodeSection}`);
         }
         userParts.push(`\nRelevant context: ${memories.slice(0, 5).map((m) => m.content).join("\n")}`);
 
@@ -468,6 +486,43 @@ function buildCodebaseContextSection(summary: CodeSummary | undefined): string {
   if (summary.cycles.count > 0) {
     const cyclePaths = summary.cycles.paths.slice(0, 3).map((p) => p.join(" → ")).join("; ");
     parts.push(`Dependency cycles (${summary.cycles.count}): ${cyclePaths}`);
+  }
+  return parts.join("\n\n");
+}
+
+/**
+ * Compact, repo-wide affected-code grounding for the planner (issue #114).
+ * Shows the highest-importance graph nodes (so declared modules/symbols are
+ * real) and the top complexity hotspots (so declared paths point at real
+ * files). Kept small — the planner only needs to know what exists, not every
+ * edge. Returns "" when neither input is available.
+ */
+function buildAffectedCodePlannerSection(
+  graph: CodeGraphSummary | undefined,
+  hotspots: CodeHotspotsSummary | undefined,
+): string {
+  const hasGraph = graph && (graph.nodes?.length ?? 0) > 0;
+  const hasHotspots = hotspots && (hotspots.files?.length ?? 0) > 0;
+  if (!hasGraph && !hasHotspots) return "";
+  const parts: string[] = [];
+  parts.push(
+    "Use this to GROUND your declared paths and modules in the actual codebase. Prefer modules and files that appear below; do not invent paths.",
+  );
+  if (hasGraph) {
+    const topNodes = [...graph.nodes]
+      .sort((a, b) => b.importance - a.importance)
+      .slice(0, 30)
+      .map((n) => `  - ${n.id} (module: ${n.module || "?"}, symbols: ${n.symbols}, importance: ${n.importance})`)
+      .join("\n");
+    parts.push(`Top graph nodes (by importance):\n${topNodes}`);
+  }
+  if (hasHotspots) {
+    const topHotspots = [...hotspots.files]
+      .sort((a, b) => b.complexity - a.complexity)
+      .slice(0, 20)
+      .map((h) => `  - ${h.path} (complexity: ${h.complexity}, symbols: ${h.symbols})`)
+      .join("\n");
+    parts.push(`Top complexity hotspots:\n${topHotspots}`);
   }
   return parts.join("\n\n");
 }

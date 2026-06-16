@@ -1,4 +1,5 @@
-import type { CheckpointTrigger, CompressionTrigger, Mission, Milestone, WorkingUnit, WorkerStatus, EscalationTrigger, EscalationContext, AgentType, AgentStatus, MilestoneStatus, ResearchFinding } from "@aurex/shared";
+import type { CheckpointTrigger, CompressionTrigger, Mission, Milestone, WorkingUnit, WorkerStatus, EscalationTrigger, EscalationContext, AgentType, AgentStatus, MilestoneStatus, ResearchFinding, AffectedCodeScaffold } from "@aurex/shared";
+import path from "node:path";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { PinyxClient } from "../clients/pinyx-client.js";
 import { QuotaExhaustedError } from "../clients/pinyx-quota-wrapper.js";
@@ -8,6 +9,8 @@ import { createAgentSpawner, type SpawnResult, type SpawnHandle } from "../agent
 import type { AgentLogger } from "../agents/agent-logger.js";
 import type { EventBus } from "../ws/events.js";
 import { buildValidatorContext, buildWorkerContext, buildResearchContext, type ValidatorUnitContext } from "../agents/context-builder.js";
+import { buildAffectedCodeScaffold, DEFAULT_AFFECTED_CODE_TOKEN_BUDGET, type CodeGraphInput, type HotspotsInput } from "./affected-code.js";
+import { loadConfig } from "../config.js";
 import { checkPreSpawnOverlap } from "./overlap.js";
 import { rescopeMilestone } from "./rescope.js";
 import { validateHandoff } from "../enforcement/handoff-validator.js";
@@ -157,6 +160,13 @@ export function createMilestoneLoop(
         let retryBudget = createRetryBudget();
         let preResearchAttempted = false;
         const sequentialWorkerUnitIds = new Set<string>();
+
+        // Affected-code scaffold cache (issue #114). Fetch the repo's full
+        // graph + hotspots ONCE per run, then build a compact per-unit
+        // scaffold inside the worker spawn loop. Cached by repoName so a
+        // multi-milestone mission does not re-fetch. Failures are
+        // non-fatal — the scaffold is an optimization, not a requirement.
+        const affectedCodeCache = await loadAffectedCodeCache(loopConfig.repoRoot, lapis, mission.id, loopConfig.eventBus);
         while (loopActive) {
           loopActive = false;
 
@@ -324,6 +334,10 @@ export function createMilestoneLoop(
                 agentId, unit.id, workerChainBaseBranch,
               );
               await worktreeManager.installBranchGuard(worktreePath, taskBranch);
+              const affectedCode = buildScaffoldForUnit(unit, affectedCodeCache);
+              if (affectedCode) {
+                loopConfig.eventBus?.emit({ type: "mission_log", missionId: mission.id, phase: "context", message: `Injected affected-code scaffold for unit ${unit.id}: ${affectedCode.nodes.length} nodes, ${affectedCode.edges.length} edges, ${affectedCode.hotspots.length} hotspots${affectedCode.truncated ? " (trimmed to budget)" : ""}`, data: { unitId: unit.id, nodes: affectedCode.nodes.length, edges: affectedCode.edges.length, hotspots: affectedCode.hotspots.length, truncated: affectedCode.truncated, tokenBudget: affectedCode.tokenBudget } });
+              }
               const contextContent = buildWorkerContext({
                 missionDescription: mission.description,
                 milestoneTitle: milestone.title,
@@ -334,6 +348,7 @@ export function createMilestoneLoop(
                 contractCriteria: contract?.content?.criteria ?? [],
                 testCommands: contract?.content?.testCommands ?? [],
                 researchFindings,
+                affectedCode,
               });
 
               callbacks.onAgentStatus(agentId, "worker", "spawned", milestone.id, {
@@ -1067,4 +1082,74 @@ export function createMilestoneLoop(
     }
     rememberRuntimeUnit(milestoneId, unit);
   }
+}
+
+// --- Affected-code scaffold helpers (issue #114) ---
+// These live at module scope so the reducer logic is testable in isolation
+// and the cache type is shared. They are intentionally defensive: any LaPis
+// failure returns an empty cache and the scaffold simply is not injected.
+
+interface AffectedCodeCache {
+  repoName: string;
+  graph?: CodeGraphInput;
+  hotspots?: HotspotsInput;
+}
+
+async function loadAffectedCodeCache(
+  repoRoot: string,
+  lapis: LaPisClient,
+  missionId: string,
+  eventBus: EventBus | undefined,
+): Promise<AffectedCodeCache> {
+  const repoName = path.basename(repoRoot);
+  const cache: AffectedCodeCache = { repoName };
+  try {
+    const [graph, hotspots] = await Promise.all([
+      typeof lapis.getCodeGraph === "function" ? lapis.getCodeGraph(repoName).catch(() => undefined) : Promise.resolve(undefined),
+      typeof lapis.getCodeHotspots === "function" ? lapis.getCodeHotspots(repoName).catch(() => undefined) : Promise.resolve(undefined),
+    ]);
+    cache.graph = graph;
+    cache.hotspots = hotspots;
+    const nodeCount = graph?.nodes?.length ?? 0;
+    const hotspotCount = hotspots?.files?.length ?? 0;
+    if (nodeCount === 0 && hotspotCount === 0) {
+      eventBus?.emit({ type: "mission_log", missionId, phase: "context", message: `Affected-code scaffold disabled: no graph/hotspots for repo ${repoName}.` });
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    eventBus?.emit({ type: "mission_log", missionId, phase: "context", message: `Affected-code scaffold disabled: ${msg}` });
+  }
+  return cache;
+}
+
+/**
+ * Build a per-unit scaffold from the cached graph/hotspots. Returns undefined
+ * when the cache is empty (no graph AND no hotspots) or the token budget is 0,
+ * so `buildWorkerContext` omits the section entirely (backward-compatible).
+ */
+function buildScaffoldForUnit(
+  unit: WorkingUnit,
+  cache: AffectedCodeCache,
+): AffectedCodeScaffold | undefined {
+  let tokenBudget: number;
+  try {
+    tokenBudget = loadConfig().affectedCodeTokenBudget;
+  } catch {
+    // loadConfig() throws if required env vars (REPO_ROOT, LAPIS_ENDPOINT)
+    // are unset — fall back to the documented default so the scaffold still
+    // works in tests / partial environments.
+    tokenBudget = DEFAULT_AFFECTED_CODE_TOKEN_BUDGET;
+  }
+  if (tokenBudget <= 0) return undefined;
+  const hasGraph = cache.graph && (cache.graph.nodes?.length ?? 0) > 0;
+  const hasHotspots = cache.hotspots && (cache.hotspots.files?.length ?? 0) > 0;
+  if (!hasGraph && !hasHotspots) return undefined;
+  return buildAffectedCodeScaffold({
+    unitId: unit.id,
+    declaredPaths: unit.declaredPaths ?? [],
+    declaredModules: unit.declaredModules ?? [],
+    graph: cache.graph ?? { nodes: [], edges: [] },
+    hotspots: cache.hotspots ?? { files: [] },
+    tokenBudget,
+  });
 }

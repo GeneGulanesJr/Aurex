@@ -8,7 +8,7 @@ import type { EventBus } from "../ws/events.js";
 import type { AgentLogger } from "../agents/agent-logger.js";
 import { createCheckpointManager } from "./checkpoint-manager.js";
 import { createMilestoneLoop } from "./milestone-loop.js";
-import { createPlanner, type CodeSummary } from "./planner.js";
+import { createPlanner, type CodeSummary, type CodeGraphSummary, type CodeHotspotsSummary } from "./planner.js";
 import { createCompressionService } from "./compression.js";
 import { prepareRepoForMission } from "./repo-prep.js";
 import { runCheckpointLoop, type CheckpointLoopDeps } from "./checkpoint-loop.js";
@@ -130,6 +130,8 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
       eventBus.emit({ type: "mission_log", missionId, phase: "planning", message: `Calling ${model} to plan milestones…` });
 
       let codeSummary: CodeSummary | undefined;
+      let codeGraph: CodeGraphSummary | undefined;
+      let codeHotspots: CodeHotspotsSummary | undefined;
       try {
         const repoName = path.basename(missionRepoRoot);
         const existingSummary = await lapis.getCodeSummary(repoName).catch(() => null);
@@ -148,12 +150,23 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
             codeSummary = await lapis.getCodeSummary(repoName).catch(() => undefined);
           }
         }
+        // Fetch graph + hotspots once per repo (issue #114) so the planner
+        // can ground declared paths/modules in real nodes/hotspots. Failures
+        // are non-fatal — the planner falls back to the structural summary.
+        if (codeSummary) {
+          const [graphRes, hotspotsRes] = await Promise.all([
+            lapis.getCodeGraph(repoName).catch(() => undefined),
+            lapis.getCodeHotspots(repoName).catch(() => undefined),
+          ]);
+          codeGraph = graphRes;
+          codeHotspots = hotspotsRes;
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         eventBus.emit({ type: "mission_log", missionId, phase: "indexing", message: `Indexing skipped: ${msg}` });
       }
 
-      const planner = createPlanner(lapis, pinyx, { model, eventBus, missionId, codeSummary, maxMilestones: mission.configJson.maxMilestones, maxUnitsPerMilestone: mission.configJson.maxUnitsPerMilestone });
+      const planner = createPlanner(lapis, pinyx, { model, eventBus, missionId, codeSummary, codeGraph, codeHotspots, maxMilestones: mission.configJson.maxMilestones, maxUnitsPerMilestone: mission.configJson.maxUnitsPerMilestone });
 
       const planResult = await planner.plan(mission.description, missionId).catch(async (err) => {
         const msg = err instanceof Error ? err.message : String(err);

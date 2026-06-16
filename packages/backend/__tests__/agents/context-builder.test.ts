@@ -66,6 +66,67 @@ describe("buildWorkerContext", () => {
     expect(ctx).toContain("1. `npm test`");
     expect(ctx).toContain("2. `npm run lint`");
   });
+
+  it("omits the Affected Code section when affectedCode is absent (backward-compatible)", () => {
+    const ctx = buildWorkerContext({
+      missionDescription: "X",
+      milestoneTitle: "Y",
+      milestoneDescription: "Z",
+      unitDescription: "W",
+      unitDeclaredPaths: ["src/foo.ts"],
+      unitDeclaredModules: ["foo"],
+      contractCriteria: [],
+      testCommands: [],
+    });
+    expect(ctx).not.toContain("Affected Code (Map)");
+  });
+
+  it("renders the Affected Code (Map) section when affectedCode is present", () => {
+    const ctx = buildWorkerContext({
+      missionDescription: "X",
+      milestoneTitle: "Y",
+      milestoneDescription: "Z",
+      unitDescription: "W",
+      unitDeclaredPaths: ["src/foo.ts"],
+      unitDeclaredModules: ["foo"],
+      contractCriteria: [],
+      testCommands: [],
+      affectedCode: {
+        unitId: "u1",
+        nodes: [{ id: "src/foo.ts", module: "foo", symbols: 4, importance: 9 }],
+        edges: [{ from: "src/foo.ts", to: "src/bar.ts", kind: "imports" }],
+        hotspots: [{ path: "src/foo.ts", module: "foo", complexity: 7, symbols: 4 }],
+        tokenBudget: 60,
+        truncated: false,
+      },
+    });
+    expect(ctx).toContain("Affected Code (Map)");
+    expect(ctx).toContain("src/foo.ts");
+    expect(ctx).toContain("src/foo.ts → src/bar.ts");
+    expect(ctx).toContain("Hotspots — review these first");
+  });
+
+  it("notes truncation in the Affected Code section when truncated is true", () => {
+    const ctx = buildWorkerContext({
+      missionDescription: "X",
+      milestoneTitle: "Y",
+      milestoneDescription: "Z",
+      unitDescription: "W",
+      unitDeclaredPaths: [],
+      unitDeclaredModules: [],
+      contractCriteria: [],
+      testCommands: [],
+      affectedCode: {
+        unitId: "u1",
+        nodes: [],
+        edges: [],
+        hotspots: [],
+        tokenBudget: 40,
+        truncated: true,
+      },
+    });
+    expect(ctx).toContain("trimmed to token budget");
+  });
 });
 
 describe("buildResearchContext", () => {

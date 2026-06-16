@@ -28,6 +28,9 @@ export interface AppConfig {
 
   maxConcurrentMissions: number;
 
+  /** Soft token budget for the affected-code scaffold injected into worker context. */
+  affectedCodeTokenBudget: number;
+
   quotaEnabled: boolean;
   quotaWindowDurationMs: number;
   quotaBurnDurationMs: number;
@@ -106,6 +109,8 @@ export function loadConfig(): AppConfig {
     auth0Domain: env("AUTH0_DOMAIN", ""),
     auth0Audience: env("AUTH0_AUDIENCE", ""),
     maxConcurrentMissions: envInt("MAX_CONCURRENT_MISSIONS", 3),
+
+    affectedCodeTokenBudget: Math.max(0, envInt("AFFECTED_CODE_TOKEN_BUDGET", 1200)),
 
     quotaEnabled: process.env.QUOTA_ENABLED === "true",
     quotaWindowDurationMs: envInt("QUOTA_WINDOW_HOURS", 5) * 60 * 60 * 1000,
