@@ -88,6 +88,8 @@ async function main() {
     aurexRoot: config.aurexRoot,
     gitMainBranch: config.gitMainBranch,
     maxConcurrent: config.maxConcurrentMissions,
+    researchTimeout: config.researchTimeout,
+    validatorTimeout: config.validatorTimeout,
     onPostMilestoneScan: async (missionId: string, root: string) => {
       try {
         await bumblebeeRunner.triggerScan(missionId, {

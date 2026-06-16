@@ -112,7 +112,23 @@ export interface LaPisClient {
 
   // Research findings
   writeFinding(agentId: string, finding: Omit<ResearchFinding, "id" | "createdAt">): Promise<ResearchFinding>;
-  transitionFinding(findingId: string, newStatus: ResearchLifecycle, actorId: string, actorContext?: StandingContext): Promise<ResearchFinding>;
+  /**
+   * Transitions a finding to a new lifecycle status.
+   *
+   * `opts.reason` persists the rationale for a rejection so future workers can
+   * see why a finding was dismissed. `opts.expectedCurrentStatus` is an
+   * optimistic-concurrency guard: when supplied, the LaPis endpoint should
+   * reject the transition if the finding's status no longer matches, which
+   * closes the stale-read race where two workers transition the same finding
+   * concurrently.
+   */
+  transitionFinding(
+    findingId: string,
+    newStatus: ResearchLifecycle,
+    actorId: string,
+    actorContext?: StandingContext,
+    opts?: { reason?: string; expectedCurrentStatus?: ResearchLifecycle },
+  ): Promise<ResearchFinding>;
   getFindings(missionId: string, status?: ResearchLifecycle): Promise<ResearchFinding[]>;
 
   // Agent sessions
@@ -450,8 +466,14 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
     writeFinding(agentId, finding) {
       return post("/findings", { agentId, ...finding });
     },
-    transitionFinding(findingId, newStatus, actorId, actorContext) {
-      return patch(`/findings/${findingId}`, { newStatus, actorId, actorContext });
+    transitionFinding(findingId, newStatus, actorId, actorContext, opts) {
+      return patch(`/findings/${findingId}`, {
+        newStatus,
+        actorId,
+        actorContext,
+        reason: opts?.reason,
+        expectedCurrentStatus: opts?.expectedCurrentStatus,
+      });
     },
     getFindings(missionId, status) {
       const params = new URLSearchParams();

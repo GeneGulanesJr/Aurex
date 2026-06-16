@@ -4,7 +4,8 @@ import { promisify } from "node:util";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import type { LaPisClient } from "../clients/lapis-client.js";
-import type { Handoff } from "@aurex/shared";
+import type { Handoff, ResearchFinding, StandingContext } from "@aurex/shared";
+import { enforceResearchTransition } from "../enforcement/enforcement-gate.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -18,6 +19,10 @@ export interface WorkerToolsOptions {
    * models that hallucinate a hash instead of running `git commit`).
    */
   worktreePath?: string;
+  /** Mission id — used to look up research findings for verification. */
+  missionId?: string;
+  /** Returns the current worker session id (the actor for finding transitions). */
+  getSessionId?: () => string;
 }
 
 /**
@@ -191,5 +196,140 @@ You MUST actually run 'git add' and 'git commit' on your task branch, then pass 
     },
   });
 
-  return [writeHandoff, searchMemory];
+  const verifyFinding = defineTool({
+    name: "verify_finding",
+    label: "Verify Finding",
+    description:
+      "Mark a research finding as verified. Call this when your implementation work confirms the finding is accurate and relevant to your task. The finding moves from 'unverified' to 'verified' and will be trusted by future workers.",
+    parameters: Type.Object({
+      findingId: Type.String({ description: "The id of the research finding to verify (from the findings in your context)" }),
+    }),
+    execute: async (_toolCallId: string, params: Record<string, unknown>) => {
+      const result = await transitionFindingForWorker(lapis, unitId, opts, params.findingId as string, "verified");
+      return {
+        content: [{ type: "text" as const, text: result.message }],
+        details: {},
+      };
+    },
+  });
+
+  const rejectFinding = defineTool({
+    name: "reject_finding",
+    label: "Reject Finding",
+    description:
+      "Mark a research finding as rejected. Call this when your implementation work shows the finding is inaccurate, outdated, or irrelevant. The finding moves from 'unverified' to 'rejected' so future workers are not misled by it. You MUST supply a reason — it is shown to future workers so they understand why this finding was dismissed and do not re-investigate it.",
+    parameters: Type.Object({
+      findingId: Type.String({ description: "The id of the research finding to reject (from the findings in your context)" }),
+      reason: Type.String({
+        description: "Why this finding is being rejected (e.g. 'outdated: auth now uses OAuth2, not JWT', 'inaccurate: the described function no longer exists'). Be specific so future workers don't re-investigate.",
+      }),
+    }),
+    execute: async (_toolCallId: string, params: Record<string, unknown>) => {
+      const reason = ((params.reason as string) ?? "").trim();
+      if (!reason) {
+        return {
+          content: [{ type: "text" as const, text: "Rejecting a finding requires a non-empty 'reason' so future workers understand why it was dismissed." }],
+          details: {},
+        };
+      }
+      const result = await transitionFindingForWorker(lapis, unitId, opts, params.findingId as string, "rejected", reason);
+      return {
+        content: [{ type: "text" as const, text: result.message }],
+        details: {},
+      };
+    },
+  });
+
+  return [writeHandoff, searchMemory, verifyFinding, rejectFinding];
+}
+
+/**
+ * Looks up a research finding by id (via getFindings for the mission), runs
+ * the enforcement gate, and performs the lifecycle transition. Returns a
+ * user-facing message describing the outcome.
+ *
+ * The gate prevents invalid transitions (e.g. verifying an already-verified
+ * finding) and ensures verification carries a standing context (taskId +
+ * workerSessionId) so the audit trail records which worker confirmed it.
+ *
+ * Concurrency: the finding is re-fetched immediately before the transition and
+ * re-validated, and the status we checked against is forwarded to LaPis as an
+ * optimistic-concurrency guard. This narrows the stale-read window where two
+ * workers could otherwise race on the same finding and overwrite a newer
+ * status.
+ */
+async function transitionFindingForWorker(
+  lapis: LaPisClient,
+  unitId: string,
+  opts: WorkerToolsOptions | undefined,
+  findingId: string,
+  targetStatus: "verified" | "rejected",
+  reason?: string,
+): Promise<{ message: string }> {
+  const missionId = opts?.missionId;
+  const actorId = opts?.getSessionId?.() ?? unitId;
+
+  if (!missionId) {
+    return { message: `Cannot transition finding ${findingId}: mission context is not available.` };
+  }
+
+  // First load: locate the finding and run the enforcement gate against its
+  // current status.
+  let findings: ResearchFinding[];
+  try {
+    findings = await lapis.getFindings(missionId);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return { message: `Failed to load findings for mission ${missionId}: ${detail}` };
+  }
+
+  const finding = findings.find((f) => f.id === findingId);
+  if (!finding) {
+    return { message: `Finding ${findingId} was not found among this mission's findings.` };
+  }
+
+  const standingContext: StandingContext = { taskId: unitId, workerSessionId: actorId };
+  const gate = enforceResearchTransition(finding.status, targetStatus, actorId, standingContext);
+  if (!gate.ok) {
+    return { message: `Cannot transition finding ${findingId} from '${finding.status}' to '${targetStatus}': ${gate.reason}` };
+  }
+
+  // Re-fetch immediately before transitioning and re-validate against the
+  // freshest status. Another worker may have transitioned this same finding
+  // between the gate check above and now; acting on a stale status could
+  // accept an invalid transition or clobber a newer status.
+  let currentStatus = finding.status;
+  try {
+    const refreshed = await lapis.getFindings(missionId);
+    const freshFinding = refreshed.find((f) => f.id === findingId);
+    if (!freshFinding) {
+      return { message: `Cannot transition finding ${findingId}: it was removed before the transition could be applied.` };
+    }
+    if (freshFinding.status !== currentStatus) {
+      return {
+        message: `Cannot transition finding ${findingId}: its status changed from '${currentStatus}' to '${freshFinding.status}' while preparing the transition (concurrent modification). Reload findings and re-evaluate.`,
+      };
+    }
+    currentStatus = freshFinding.status;
+  } catch (err) {
+    // If the freshness re-fetch fails, fall back to forwarding the status we
+    // originally checked as the optimistic-concurrency guard so the server can
+    // still reject a stale transition if it supports the check.
+    const detail = err instanceof Error ? err.message : String(err);
+    console.warn(`[worker-tools] Failed to re-verify finding ${findingId} status before transition: ${detail}`);
+  }
+
+  try {
+    await lapis.transitionFinding(findingId, targetStatus, actorId, standingContext, {
+      reason,
+      expectedCurrentStatus: currentStatus,
+    });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return { message: `Finding ${findingId} could not be transitioned to '${targetStatus}': ${detail}` };
+  }
+
+  const verb = targetStatus === "verified" ? "verified" : "rejected";
+  const reasonSuffix = targetStatus === "rejected" && reason ? ` Reason: ${reason}` : "";
+  return { message: `Finding ${findingId} ${verb}.${reasonSuffix}` };
 }

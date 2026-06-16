@@ -772,6 +772,8 @@ function createCustomTools(
     return createWorkerTools(lapis, opts.unitId, {
       onHandoffAccepted: onWorkerHandoffAccepted,
       worktreePath: opts.cwd,
+      missionId: opts.missionId,
+      getSessionId,
     });
   }
 

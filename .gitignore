@@ -10,3 +10,5 @@ reports/
 certs/
 AGENTS.md
 .cursor
+.kilo/plans/
+.kilo/sessions/

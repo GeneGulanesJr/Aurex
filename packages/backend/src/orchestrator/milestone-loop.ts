@@ -71,6 +71,17 @@ export interface MilestoneLoopConfig {
   logger?: AgentLogger;
   onCompression?: (missionId: string, trigger: CompressionTrigger) => Promise<unknown>;
   onPostMilestoneScan?: (missionId: string, root: string) => Promise<void>;
+  /**
+   * Hard timeout (ms) for research agent sessions. Falls back to the
+   * mission's `workerTimeouts.testHeavy` when unset so existing callers
+   * (and tests) keep their prior behavior.
+   */
+  researchTimeout?: number;
+  /**
+   * Hard timeout (ms) for validator agent sessions. Falls back to the
+   * mission's `workerTimeouts.testHeavy` when unset.
+   */
+  validatorTimeout?: number;
 }
 
 export function createMilestoneLoop(
@@ -211,7 +222,7 @@ export function createMilestoneLoop(
               skillFilePath: `${loopConfig.aurexRoot}/packages/backend/src/skills/research.md`,
               contextContent: preResearchContext,
               taskPrompt: `Research domain knowledge for milestone "${milestone.title}" BEFORE workers begin. Investigate the codebase areas relevant to the declared paths and modules. Submit findings using write_finding.`,
-              timeout: config.workerTimeouts.testHeavy,
+              timeout: loopConfig.researchTimeout ?? config.workerTimeouts.testHeavy,
               model: config.modelHints.research,
             });
             activeHandles.add(preResearchHandle);
@@ -473,6 +484,13 @@ export function createMilestoneLoop(
 
             callbacks.onMilestoneProgress(milestone.id, "in_progress", completedCount, units.length);
           }
+
+          // Workers may have verified/rejected research findings via their
+          // verify_finding/reject_finding tools. Refresh the cached snapshot
+          // now so the upcoming validator phase (and any retry iteration's
+          // workers) see the latest statuses and rejection rationales instead
+          // of a stale view captured before the worker phase ran.
+          researchFindings = await lapis.getFindings(mission.id).catch(() => researchFindings);
 
           if (failedCount > 0) {
             // Per-unit retry: re-spawn only the failed units once before
@@ -799,7 +817,7 @@ export function createMilestoneLoop(
               skillFilePath: `${loopConfig.aurexRoot}/packages/backend/src/skills/validator.md`,
               contextContent,
               taskPrompt: `Validate milestone "${milestone.title}" as ${validatorType}. Use write_verdict when done.`,
-              timeout: config.workerTimeouts.testHeavy,
+              timeout: loopConfig.validatorTimeout ?? config.workerTimeouts.testHeavy,
               model: config.modelHints[validatorType],
               validatorToolCallCap: config.validatorToolCallCap ?? 0,
             });
