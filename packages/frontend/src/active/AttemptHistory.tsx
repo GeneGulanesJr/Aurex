@@ -5,7 +5,13 @@ interface AttemptHistoryProps {
 }
 
 export function AttemptHistory({ history }: AttemptHistoryProps) {
-  if (!history || history.length === 0) return null;
+  if (!history || history.length === 0) {
+    return (
+      <div style={{ marginTop: "12px", padding: "10px 12px", background: "var(--bg-inset)", borderRadius: "4px", fontSize: "11px", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', letterSpacing: "0.5px" }}>
+        No attempt details available for this escalation.
+      </div>
+    );
+  }
 
   return (
     <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>

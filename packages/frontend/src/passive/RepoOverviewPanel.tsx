@@ -80,6 +80,13 @@ export function RepoOverviewPanel({ repoName, fullName, summary, hotspots, sugge
 
   return (
     <div ref={containerRef} style={{ maxWidth: "800px", margin: "0 auto", padding: "24px" }}>
+      {/* Non-blocking error banner: surfaced when some (but not all) analysis
+          sections failed to load, so a partial failure is never silent. */}
+      {error && !allEmpty && (
+        <div className="overview-section" style={{ opacity: 1, marginBottom: "16px", padding: "10px 14px", background: "var(--bg-inset)", border: "1px solid var(--warning)", borderRadius: "6px", fontSize: "11px", color: "var(--warning)", lineHeight: 1.5 }}>
+          ⚠ {error}
+        </div>
+      )}
       {/* Header */}
       <div className="overview-section" style={{ opacity: 0, marginBottom: "24px" }}>
         <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "11px", letterSpacing: "2px", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: "4px" }}>

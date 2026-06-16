@@ -5,9 +5,10 @@ interface RepoPickerProps {
   repos: GitHubRepoResponse[];
   selectedRepoId?: number | null;
   onSelect: (repo: GitHubRepoResponse) => void;
+  loading?: boolean;
 }
 
-export function RepoPicker({ repos, selectedRepoId, onSelect }: RepoPickerProps) {
+export function RepoPicker({ repos, selectedRepoId, onSelect, loading = false }: RepoPickerProps) {
   const [search, setSearch] = useState("");
   const filtered = repos.filter((repo) =>
     repo.full_name.toLowerCase().includes(search.toLowerCase()),
@@ -41,7 +42,7 @@ export function RepoPicker({ repos, selectedRepoId, onSelect }: RepoPickerProps)
           background: "var(--bg-inset)",
         }}
       >
-        {filtered.length === 0 && (
+        {loading ? (
           <div
             style={{
               padding: "8px",
@@ -50,9 +51,20 @@ export function RepoPicker({ repos, selectedRepoId, onSelect }: RepoPickerProps)
               fontFamily: '"Inter", sans-serif',
             }}
           >
-            No repos found
+            Loading repositories…
           </div>
-        )}
+        ) : filtered.length === 0 ? (
+          <div
+            style={{
+              padding: "8px",
+              color: "var(--text-muted)",
+              fontSize: "11px",
+              fontFamily: '"Inter", sans-serif',
+            }}
+          >
+            {repos.length === 0 ? "No repos found" : "No repos match your search"}
+          </div>
+        ) : null}
         {filtered.map((repo) => {
           const selected = repo.id === selectedRepoId;
           return (

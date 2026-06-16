@@ -34,7 +34,9 @@ export function MissionInspectorPanel(props: MissionInspectorPanelProps) {
     hasLatestSummary: Boolean(latestScan?.summary),
   });
   const risk = summarizeSupplyChainRisk(props.scanFindings);
-  const activityCount = Math.min(props.eventStreamCount, props.events.length + props.logs.length);
+  // Show the *real* event volume in the badge; eventStreamCount only limits
+  // how many rows the feed renders, not how many have happened.
+  const activityCount = props.events.length + props.logs.length;
   const isMissionActiveStatus = isMissionActive(props.missionStatus);
 
   return (

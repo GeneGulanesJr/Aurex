@@ -1,7 +1,10 @@
+import { useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 
 export function LoginScreen() {
   const { loginWithRedirect, isLoading } = useAuth();
+  const [signInError, setSignInError] = useState<string | null>(null);
+  const [signingIn, setSigningIn] = useState(false);
 
   return (
     <div
@@ -39,8 +42,18 @@ export function LoginScreen() {
         MISSION CONTROL
       </div>
       <button
-        onClick={() => loginWithRedirect()}
-        disabled={isLoading}
+        onClick={async () => {
+          setSignInError(null);
+          setSigningIn(true);
+          try {
+            await loginWithRedirect();
+          } catch (err) {
+            setSignInError(err instanceof Error ? err.message : "Sign-in failed. Please try again.");
+          } finally {
+            setSigningIn(false);
+          }
+        }}
+        disabled={isLoading || signingIn}
         style={{
           display: "flex",
           alignItems: "center",
@@ -55,8 +68,8 @@ export function LoginScreen() {
           fontWeight: 600,
           letterSpacing: "2px",
           textTransform: "uppercase",
-          cursor: isLoading ? "not-allowed" : "pointer",
-          opacity: isLoading ? 0.7 : 1,
+          cursor: isLoading || signingIn ? "not-allowed" : "pointer",
+          opacity: isLoading || signingIn ? 0.7 : 1,
           boxShadow: "0 0 24px var(--accent-glow)",
         }}
       >
@@ -66,8 +79,27 @@ export function LoginScreen() {
           <path fill="#FBBC05" d="M10.53 28.59a14.5 14.5 0 0 1 0-9.18l-7.98-6.19a24.14 24.14 0 0 0 0 21.56l7.98-6.19z" />
           <path fill="#EA4335" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
         </svg>
-        {isLoading ? "LOADING..." : "SIGN IN WITH GOOGLE"}
+        {isLoading || signingIn ? "LOADING..." : "SIGN IN WITH GOOGLE"}
       </button>
+      {signInError && (
+        <div
+          role="alert"
+          style={{
+            marginTop: "20px",
+            maxWidth: "420px",
+            padding: "10px 14px",
+            background: "var(--bg-inset)",
+            border: "1px solid var(--error, #ef4444)",
+            borderRadius: "4px",
+            color: "var(--error, #ef4444)",
+            fontSize: "12px",
+            fontFamily: '"JetBrains Mono", monospace',
+            textAlign: "center",
+          }}
+        >
+          {signInError}
+        </div>
+      )}
     </div>
   );
 }

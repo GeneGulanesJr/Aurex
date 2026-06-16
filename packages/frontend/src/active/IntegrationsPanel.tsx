@@ -137,14 +137,22 @@ export function IntegrationsPanel({ open, github, onClose, onPinyxConfigUpdate, 
             </div>
           )}
 
-          {pinyx && pinyxTab === "connection" && (
-            <PinyxConnectionTab config={pinyx} onConfigUpdate={handlePinyxConfigUpdate} />
-          )}
-          {pinyx && pinyxTab === "models" && (
-            <PinyxModelsTab config={pinyx} onConfigUpdate={handlePinyxConfigUpdate} />
-          )}
-          {pinyx && pinyxTab === "keys" && (
-            <PinyxKeysTab config={pinyx} onConfigUpdate={handlePinyxConfigUpdate} />
+          {pinyx && (
+            // Keep all three tabs mounted and toggle visibility via CSS so that
+            // unsaved edits (draft keys, model overrides, gateway test results)
+            // are not discarded when the user switches tabs. Previously each
+            // tab unmounted on switch, wiping local component state.
+            <>
+              <div style={{ display: pinyxTab === "connection" ? "block" : "none" }}>
+                <PinyxConnectionTab config={pinyx} onConfigUpdate={handlePinyxConfigUpdate} />
+              </div>
+              <div style={{ display: pinyxTab === "models" ? "block" : "none" }}>
+                <PinyxModelsTab config={pinyx} onConfigUpdate={handlePinyxConfigUpdate} />
+              </div>
+              <div style={{ display: pinyxTab === "keys" ? "block" : "none" }}>
+                <PinyxKeysTab config={pinyx} onConfigUpdate={handlePinyxConfigUpdate} />
+              </div>
+            </>
           )}
         </div>
       </section>
