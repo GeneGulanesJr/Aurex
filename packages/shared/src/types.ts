@@ -135,6 +135,13 @@ export interface ResearchFinding {
   relevance: ResearchRelevance;
   status: ResearchLifecycle;
   verifiedTaskId: string | null;
+  /**
+   * Free-text rationale captured when a worker rejects a finding. Persisted so
+   * future workers can see WHY a finding was dismissed instead of blindly
+   * re-investigating (or re-proposing) it. null/undefined when the finding was
+   * not rejected or no reason was supplied.
+   */
+  rejectionReason?: string | null;
   ttl: number | null;
   expiresAt: string | null;
   createdAt: string;

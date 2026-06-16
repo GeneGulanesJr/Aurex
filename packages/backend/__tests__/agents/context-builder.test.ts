@@ -278,10 +278,10 @@ describe("buildValidatorContext", () => {
     expect(ctx).toContain("Uses RS256 signing");
   });
 
-  it("excludes rejected and expired research findings", () => {
+  it("surfaces rejected findings (with rationale) under a dismissed section and excludes expired ones", () => {
     const findings: ResearchFinding[] = [
       { id: "f-1", missionId: "m-1", authorId: "r-1", domain: ["auth"], title: "Active finding", content: "Useful info", relevance: "high", status: "unverified", verifiedTaskId: null, ttl: null, expiresAt: null, createdAt: "" },
-      { id: "f-2", missionId: "m-1", authorId: "r-1", domain: ["auth"], title: "Rejected finding", content: "Bad info", relevance: "low", status: "rejected", verifiedTaskId: null, ttl: null, expiresAt: null, createdAt: "" },
+      { id: "f-2", missionId: "m-1", authorId: "r-1", domain: ["auth"], title: "Rejected finding", content: "Bad info", relevance: "low", status: "rejected", verifiedTaskId: null, rejectionReason: "auth now uses OAuth2, not JWT", ttl: null, expiresAt: null, createdAt: "" },
       { id: "f-3", missionId: "m-1", authorId: "r-1", domain: ["auth"], title: "Expired finding", content: "Old info", relevance: "low", status: "expired", verifiedTaskId: null, ttl: null, expiresAt: null, createdAt: "" },
     ];
     const ctx = buildWorkerContext({
@@ -295,9 +295,33 @@ describe("buildValidatorContext", () => {
       testCommands: [],
       researchFindings: findings,
     });
+    // Active finding appears in the main findings list.
     expect(ctx).toContain("Active finding");
-    expect(ctx).not.toContain("Rejected finding");
+    // Rejected finding is surfaced (with its rationale) so future workers see
+    // WHY it was dismissed instead of re-investigating the same dead end.
+    expect(ctx).toContain("Dismissed Findings");
+    expect(ctx).toContain("Rejected finding");
+    expect(ctx).toContain("auth now uses OAuth2, not JWT");
+    // Expired findings carry no useful signal and stay excluded.
     expect(ctx).not.toContain("Expired finding");
+  });
+
+  it("notes when a rejected finding has no recorded reason", () => {
+    const findings: ResearchFinding[] = [
+      { id: "f-2", missionId: "m-1", authorId: "r-1", domain: ["auth"], title: "Rejected finding", content: "Bad info", relevance: "low", status: "rejected", verifiedTaskId: null, ttl: null, expiresAt: null, createdAt: "" },
+    ];
+    const ctx = buildWorkerContext({
+      missionDescription: "Build auth",
+      milestoneTitle: "Auth",
+      milestoneDescription: "Auth module",
+      unitDescription: "Login",
+      unitDeclaredPaths: [],
+      unitDeclaredModules: [],
+      contractCriteria: [],
+      testCommands: [],
+      researchFindings: findings,
+    });
+    expect(ctx).toContain("no reason recorded");
   });
 
   it("includes research findings in validator context when provided", () => {

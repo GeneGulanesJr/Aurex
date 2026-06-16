@@ -37,6 +37,10 @@ export interface MissionRunnerConfig {
   aurexRoot: string;
   gitMainBranch: string;
   onPostMilestoneScan?: (missionId: string, root: string) => Promise<void>;
+  /** Hard timeout (ms) for research agent sessions (RESEARCH_TIMEOUT). */
+  researchTimeout?: number;
+  /** Hard timeout (ms) for validator agent sessions (VALIDATOR_TIMEOUT). */
+  validatorTimeout?: number;
 }
 
 const MAX_REENTRY = 3;
@@ -203,7 +207,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
             eventBus.emit({ type: "mission_error", missionId: mId, code, message, workerId: opts?.workerId, milestoneId: opts?.milestoneId, recoverable: opts?.recoverable ?? false, details: opts?.details });
           },
         },
-        { agentDir, repoRoot: missionRepoRoot, aurexRoot, gitMainBranch, eventBus, logger: config.logger, onCompression: (mId, trigger) => compression.run(mId, trigger), onPostMilestoneScan: config.onPostMilestoneScan },
+        { agentDir, repoRoot: missionRepoRoot, aurexRoot, gitMainBranch, eventBus, logger: config.logger, onCompression: (mId, trigger) => compression.run(mId, trigger), onPostMilestoneScan: config.onPostMilestoneScan, researchTimeout: config.researchTimeout, validatorTimeout: config.validatorTimeout },
       );
 
       const contractLookup = new Map<string, string>();

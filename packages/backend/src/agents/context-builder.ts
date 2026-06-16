@@ -395,14 +395,38 @@ function buildAffectedCodeSection(scaffold: AffectedCodeScaffold): string {
 }
 
 function buildResearchFindingsSection(findings: ResearchFinding[]): string {
-  const items = findings
+  const active = findings
     .filter((f) => f.status !== "rejected" && f.status !== "expired")
     .map((f) => {
       const domain = Array.isArray(f.domain) ? f.domain : [String(f.domain ?? "general")];
       return `### ${f.title} [${f.relevance}]\nDomain: ${domain.join(", ")}\n${f.content}`;
     })
     .join("\n\n");
-  return `## Research Findings\n\nThe following findings were gathered by the research agent. Use them to inform your work.\n\n${items}`;
+
+  // Surface rejected findings (with their rationale) so future workers can see
+  // WHY a finding was dismissed instead of silently dropping it and risking a
+  // re-investigation of the same dead end. Expired findings carry no useful
+  // signal and are omitted.
+  const dismissed = findings
+    .filter((f) => f.status === "rejected")
+    .map((f) => {
+      const domain = Array.isArray(f.domain) ? f.domain : [String(f.domain ?? "general")];
+      const reason = (f.rejectionReason ?? "no reason recorded").trim();
+      return `### ${f.title} [REJECTED — do not re-investigate]\nDomain: ${domain.join(", ")}\nRejected because: ${reason}`;
+    })
+    .join("\n\n");
+
+  const sections: string[] = [
+    "## Research Findings",
+    "",
+    "The following findings were gathered by the research agent. Use them to inform your work.",
+    "",
+    active,
+  ];
+  if (dismissed) {
+    sections.push("", "### Dismissed Findings", "", "These findings were checked and rejected by an earlier worker. Trust the rejection rationale — do not re-investigate unless you have concrete new evidence.", "", dismissed);
+  }
+  return sections.join("\n\n");
 }
 
 function formatHandoff(handoff: HandoffRecord): string {
