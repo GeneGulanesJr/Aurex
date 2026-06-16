@@ -1,5 +1,5 @@
 // packages/backend/src/agents/context-builder.ts
-import type { HandoffRecord, ResearchFinding } from "@aurex/shared";
+import type { AffectedCodeScaffold, HandoffRecord, ResearchFinding } from "@aurex/shared";
 
 export interface WorkerContextInput {
   missionDescription: string;
@@ -11,6 +11,13 @@ export interface WorkerContextInput {
   contractCriteria: string[];
   testCommands: string[];
   researchFindings?: ResearchFinding[];
+  /**
+   * Compact map of the code this unit will touch (graph nodes, key import
+   * edges, complexity-ranked hotspots). A navigation map — full file bodies
+   * stay tool-fetched. Omit/undefined to skip the section (backward-compatible).
+   * See Aurex issue #114.
+   */
+  affectedCode?: AffectedCodeScaffold;
 }
 
 export interface ValidatorUnitContext {
@@ -125,6 +132,12 @@ export function buildWorkerContext(input: WorkerContextInput): string {
     sections.push(
       `## SCOPE CONSTRAINT\n\nYou MUST only modify files within:\n${scopeParts.join("\n")}`,
     );
+  }
+
+  // Affected-code map (issue #114). Navigation only — fetch full bodies via
+  // read/grep tools. Rendered conditionally so absence is backward-compatible.
+  if (input.affectedCode) {
+    sections.push(buildAffectedCodeSection(input.affectedCode));
   }
 
   // Validation contract
@@ -341,6 +354,44 @@ function buildScrutinyReviewInstructions(): string {
     "List specific tests that would increase confidence.",
     "```",
   ].join("\n");
+}
+
+function buildAffectedCodeSection(scaffold: AffectedCodeScaffold): string {
+  const parts: string[] = [];
+  parts.push(
+    "The following is a NAVIGATION MAP of the code this unit will touch — graph nodes (importance-ranked), key import edges, and complexity-ranked hotspots within your declared scope. It is a map, NOT full source. Fetch full file bodies on demand with your read/grep tools when you need to edit or inspect them. Use the hotspots list to prioritize where to look first.",
+  );
+
+  if (scaffold.nodes.length > 0) {
+    const nodeLines = scaffold.nodes
+      .map((n) => `- ${n.id} (module: ${n.module || "?"}, symbols: ${n.symbols}, importance: ${n.importance})`)
+      .join("\n");
+    parts.push(`### Graph nodes (${scaffold.nodes.length})\n${nodeLines}`);
+  }
+
+  if (scaffold.edges.length > 0) {
+    const edgeLines = scaffold.edges
+      .map((e) => `- ${e.from} → ${e.to} (${e.kind})`)
+      .join("\n");
+    parts.push(`### Import edges (${scaffold.edges.length})\n${edgeLines}`);
+  }
+
+  if (scaffold.hotspots.length > 0) {
+    const hotspotLines = scaffold.hotspots
+      .map((h) => `- ${h.path} (complexity: ${h.complexity}, symbols: ${h.symbols})`)
+      .join("\n");
+    parts.push(`### Hotspots — review these first (${scaffold.hotspots.length})\n${hotspotLines}`);
+  }
+
+  if (scaffold.nodes.length === 0 && scaffold.edges.length === 0 && scaffold.hotspots.length === 0) {
+    parts.push("(No affected code matched this unit's declared scope. Rely on your read/grep tools.)");
+  }
+
+  if (scaffold.truncated) {
+    parts.push("_Map trimmed to token budget; additional nodes/edges/hotspots may exist — use your tools to explore beyond this list._");
+  }
+
+  return `## Affected Code (Map)\n\n${parts.join("\n\n")}`;
 }
 
 function buildResearchFindingsSection(findings: ResearchFinding[]): string {

@@ -38,6 +38,7 @@ The source of truth is [`.env.example`](../.env.example). This document explains
 | `MAX_VALIDATOR_RETRIES` | int | `2` | Max times the negotiator may retry a failed milestone with a new worker. After this, the milestone escalates. | [`config.ts:81`](../packages/backend/src/config.ts) |
 | `MAX_RESCOPES_PER_MILESTONE` | int | `2` | Max times a single milestone may be re-scoped. Note: `.env.example` ships `5`; the code default is `2`. | [`config.ts:82`](../packages/backend/src/config.ts) |
 | `VALIDATOR_TOOL_CALL_CAP` | int | `0` | Optional per-validator tool-call cap. `0` disables the cap; validator timeout and mission cost cap still apply. | [`config.ts`](../packages/backend/src/config.ts) |
+| `AFFECTED_CODE_TOKEN_BUDGET` | int | `1200` | Soft token budget for the compact affected-code scaffold (graph nodes, key import edges, complexity-ranked hotspots) injected into worker context so workers do not cold-start. The scaffold is a navigation map; full file bodies stay tool-fetched. `0` disables the scaffold. | [`config.ts`](../packages/backend/src/config.ts) |
 
 ## Agent timeouts (milliseconds)
 
@@ -126,6 +127,7 @@ MISSION_COST_CAP=50.00
 MAX_VALIDATOR_RETRIES=2
 MAX_RESCOPES_PER_MILESTONE=5
 VALIDATOR_TOOL_CALL_CAP=0
+AFFECTED_CODE_TOKEN_BUDGET=1200
 
 # GitHub (only needed for the GitHub repo picker)
 GITHUB_CLIENT_ID=Iv23lijYF4sZMcU62MjT

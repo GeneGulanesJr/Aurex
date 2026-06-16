@@ -57,9 +57,9 @@ Use focused context before editing.
 
 1. Read the assigned todo and its `lapisContextQuery`.
 2. **Review the Research Findings section in your context FIRST.** The research agent has already explored the codebase, read relevant files, and documented what it found. Do NOT re-read files whose content is already summarized in research findings. Trust and use them.
-3. Review injected LaPis context.
+3. Review injected LaPis context. If an **Affected Code (Map)** section is present, use it as a navigation map — it lists the graph nodes, key import edges, and complexity-ranked hotspots within your declared scope. Fetch full file bodies on demand with your read/grep tools; start with the listed hotspots.
 4. Use `search_memory` only for targeted gaps not covered by research findings.
-5. Read local files ONLY for files you need to edit or for details not covered in research findings. Do NOT re-read files for discovery — the researcher already did that.
+5. Read local files ONLY for files you need to edit or for details not covered in research findings or the affected-code map. Do NOT re-read files for discovery — the researcher already did that.
 6. Prefer existing local patterns over new abstractions.
 
 Do not ask LaPis for the whole repository. Do not use broad searches as a substitute for reading the files in scope. If context is stale, contradictory, or insufficient for a risky change, block or escalate instead of guessing.
