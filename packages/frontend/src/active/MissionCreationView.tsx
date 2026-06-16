@@ -59,9 +59,12 @@ export function MissionCreationView({
   const containerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // On mount, ensure the form is marked open so the suggestedDescription
+  // effect works. If a draft description was persisted, the lazy reducer
+  // initializer already restored it — don't clobber it with open().
   useEffect(() => {
-    form.open();
-  }, []);
+    if (!form.state.open) form.open();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Rehydrate the repo overview after a refresh. If the parent already passed
   // a preparedRepo (e.g. it was never lost), do nothing. Otherwise, if we

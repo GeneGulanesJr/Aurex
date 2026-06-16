@@ -22,19 +22,25 @@ export function TelemetryBar({ tokens, cost, agentCount, wsConnected, scanFindin
   const tokensRef = useRef<HTMLSpanElement>(null);
   const prevCostRef = useRef(cost);
   const prevTokensRef = useRef(tokens);
+  const costAnimRef = useRef<ReturnType<typeof animateCounter> | null>(null);
+  const tokensAnimRef = useRef<ReturnType<typeof animateCounter> | null>(null);
 
   useEffect(() => {
     if (costRef.current && prevCostRef.current !== cost) {
-      animateCounter(costRef.current, prevCostRef.current, cost);
+      if (costAnimRef.current) costAnimRef.current.pause();
+      costAnimRef.current = animateCounter(costRef.current, prevCostRef.current, cost);
       prevCostRef.current = cost;
     }
+    return () => { costAnimRef.current?.pause(); };
   }, [cost]);
 
   useEffect(() => {
     if (tokensRef.current && prevTokensRef.current !== tokens) {
-      animateCounter(tokensRef.current, prevTokensRef.current, tokens, "tokens");
+      if (tokensAnimRef.current) tokensAnimRef.current.pause();
+      tokensAnimRef.current = animateCounter(tokensRef.current, prevTokensRef.current, tokens, "tokens");
       prevTokensRef.current = tokens;
     }
+    return () => { tokensAnimRef.current?.pause(); };
   }, [tokens]);
 
   return (

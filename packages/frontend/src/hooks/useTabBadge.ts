@@ -16,5 +16,8 @@ export function useTabBadge(pendingEscalations: number, terminalCount: number) {
     } else {
       document.title = baseTitleRef.current;
     }
+    return () => {
+      document.title = baseTitleRef.current;
+    };
   }, [pendingEscalations, terminalCount]);
 }

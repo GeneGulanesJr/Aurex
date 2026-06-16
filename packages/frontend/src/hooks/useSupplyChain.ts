@@ -15,7 +15,9 @@ type Action =
   | { type: "SCAN_COMPLETED"; scanId: string; summary: BumblebeeScanSummary }
   | { type: "SCAN_FINDING"; finding: BumblebeeFinding }
   | { type: "SET_SCANS"; scans: BumblebeeScanResult[] }
+  | { type: "SET_SCANNING"; isScanning: boolean }
   | { type: "SET_ERROR"; error: string }
+  | { type: "CLEAR_ERROR" }
   | { type: "RESET" };
 
 export const initialSupplyChainState: SupplyChainState = {
@@ -75,6 +77,10 @@ export function supplyChainReducer(state: SupplyChainState, action: Action): Sup
     }
     case "SET_ERROR":
       return { ...state, error: action.error, isScanning: false };
+    case "SET_SCANNING":
+      return { ...state, isScanning: action.isScanning };
+    case "CLEAR_ERROR":
+      return { ...state, error: null };
     case "RESET":
       return initialSupplyChainState;
     default:
@@ -105,12 +111,18 @@ export function useSupplyChain(missionId: string | null) {
 
   const handleTriggerScan = useCallback(async (profile?: "baseline" | "project" | "deep", ecosystems?: string[]) => {
     if (!missionId) return;
+    // Optimistic: show scanning immediately so the button gives feedback,
+    // even if the WS scan_started event is delayed.
+    dispatch({ type: "CLEAR_ERROR" });
+    dispatch({ type: "SET_SCANNING", isScanning: true });
     try {
       await triggerScan(missionId, { profile, ecosystems });
     } catch (err) {
       dispatch({ type: "SET_ERROR", error: err instanceof Error ? err.message : "Failed to trigger scan" });
     }
   }, [missionId]);
+
+  const clearError = useCallback(() => dispatch({ type: "CLEAR_ERROR" }), []);
 
   const handleWsEvent = useCallback((event: WsClientEvent) => {
     if (!missionId) return;
@@ -129,5 +141,5 @@ export function useSupplyChain(missionId: string | null) {
     }
   }, [missionId]);
 
-  return { state, dispatch, triggerScan: handleTriggerScan, handleWsEvent };
+  return { state, dispatch, triggerScan: handleTriggerScan, clearError, handleWsEvent };
 }

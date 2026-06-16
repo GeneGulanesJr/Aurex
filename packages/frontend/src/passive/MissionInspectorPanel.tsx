@@ -21,6 +21,8 @@ interface MissionInspectorPanelProps {
   isScanning: boolean;
   scans: BumblebeeScanResult[];
   onTriggerScan?: (profile?: "baseline" | "project" | "deep") => void;
+  scanError?: string | null;
+  onDismissScanError?: () => void;
 }
 
 export function MissionInspectorPanel(props: MissionInspectorPanelProps) {
@@ -63,7 +65,7 @@ export function MissionInspectorPanel(props: MissionInspectorPanelProps) {
         />
       </InspectorSection>
 
-      <InspectorSection title="Code Context" badge="Always visible">
+      <InspectorSection title="Code Context" badge="Code Map">
         <CodeContextPanel
           missionId={props.missionId}
           logs={props.logs}
@@ -81,6 +83,8 @@ export function MissionInspectorPanel(props: MissionInspectorPanelProps) {
             scans={props.scans}
             isScanning={props.isScanning}
             onTriggerScan={props.onTriggerScan}
+            error={props.scanError}
+            onDismissError={props.onDismissScanError}
             variant="inspector"
             hideWhenEmpty
           />

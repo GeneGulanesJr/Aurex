@@ -6,6 +6,7 @@ export interface PinyxStatusState {
   configured: boolean;
   endpoint: string | null;
   loading: boolean;
+  error: string | null;
   refresh: () => Promise<void>;
 }
 
@@ -14,14 +15,16 @@ export function usePinyxStatus(): PinyxStatusState {
     configured: false,
     endpoint: null,
     loading: true,
+    error: null,
   });
 
   const refresh = useCallback(async () => {
     try {
       const status: PinyxStatusResponse = await getPinyxStatus();
-      setState({ configured: status.configured, endpoint: status.endpoint, loading: false });
-    } catch {
-      setState({ configured: false, endpoint: null, loading: false });
+      setState({ configured: status.configured, endpoint: status.endpoint, loading: false, error: null });
+    } catch (err) {
+      // Don't clobber `configured` on a transient failure — surface a separate error.
+      setState((prev) => ({ ...prev, loading: false, error: err instanceof Error ? err.message : "Failed to check PiNyx status" }));
     }
   }, []);
 

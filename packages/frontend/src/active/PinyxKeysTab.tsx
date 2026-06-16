@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { savePinyxConfig } from "../api";
 import type { PinyxConfigResponse } from "../api";
 
@@ -29,6 +29,13 @@ export function PinyxKeysTab({ config, onConfigUpdate }: PinyxKeysTabProps) {
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => {
+    return () => {
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+    };
+  }, []);
 
   // Merge built-in providers with user-added ones.
   // Built-ins are always shown; user providers from config are appended.
@@ -71,6 +78,22 @@ export function PinyxKeysTab({ config, onConfigUpdate }: PinyxKeysTabProps) {
     setAdding(false);
   }
 
+  async function handleDelete(index: number) {
+    const provider = allProviders[index];
+    if (!provider || provider.isBuiltIn) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const providers = config.providers.filter((p) => p.id !== provider.id);
+      const saved = await savePinyxConfig({ ...config, providers });
+      onConfigUpdate(saved);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete provider");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleSave() {
     setSaving(true);
     setError(null);
@@ -94,7 +117,7 @@ export function PinyxKeysTab({ config, onConfigUpdate }: PinyxKeysTabProps) {
           id: bp.id,
           name: bp.name,
           baseUrl: bp.baseUrl,
-          apiKey: existing?.apiKey ?? undefined,
+          ...(existing?.hasApiKey ? { hasApiKey: true } : {}),
         };
       });
 
@@ -146,7 +169,7 @@ export function PinyxKeysTab({ config, onConfigUpdate }: PinyxKeysTabProps) {
       onConfigUpdate(saved);
       cancel();
       setSavedFlash(true);
-      setTimeout(() => setSavedFlash(false), 2000);
+      flashTimer.current = setTimeout(() => setSavedFlash(false), 2000);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to save";
       setError(msg);
@@ -188,6 +211,16 @@ export function PinyxKeysTab({ config, onConfigUpdate }: PinyxKeysTabProps) {
               >
                 {provider.isBuiltIn && !provider.hasApiKey ? "＋" : "✎"}
               </button>
+              {!provider.isBuiltIn && (
+                <button
+                  className="pinyx-provider-edit-btn"
+                  onClick={() => void handleDelete(index)}
+                  title="Delete provider"
+                  disabled={saving}
+                >
+                  ✕
+                </button>
+              )}
             </div>
           ))}
         </div>

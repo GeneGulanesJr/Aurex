@@ -26,11 +26,17 @@ export function IntegrationsPanel({ open, github, onClose, onPinyxConfigUpdate, 
   const [connecting, setConnecting] = useState(false);
   const [pinyxTab, setPinyxTab] = useState(initialPinyxTab ?? "connection");
   const [pinyx, setPinyx] = useState<PinyxConfigResponse | null>(null);
+  const [pinyxLoading, setPinyxLoading] = useState(false);
   const [pinyxError, setPinyxError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    getPinyxConfig().then(setPinyx).catch(() => setPinyxError("Failed to load PiNyx config"));
+    setPinyxLoading(true);
+    setPinyxError(null);
+    getPinyxConfig()
+      .then(setPinyx)
+      .catch(() => setPinyxError("Failed to load PiNyx config"))
+      .finally(() => setPinyxLoading(false));
   }, [open]);
 
   useEffect(() => {
@@ -121,6 +127,13 @@ export function IntegrationsPanel({ open, github, onClose, onPinyxConfigUpdate, 
             <div className="pinyx-error-bar">
               <span>{pinyxError}</span>
               <button className="pinyx-error-bar-close" onClick={() => setPinyxError(null)}>×</button>
+            </div>
+          )}
+
+          {pinyxLoading && !pinyx && (
+            <div style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', fontSize: "11px" }}>
+              <span style={{ animation: "spin 1s linear infinite", display: "inline-block", marginRight: "8px" }}>↻</span>
+              Loading PiNyx config...
             </div>
           )}
 

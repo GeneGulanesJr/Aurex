@@ -83,8 +83,9 @@ export function DependencyGraph({ data, error }: { data: CodeGraphResponse | nul
   }, [data, layout]);
 
   if (error) return <Unavailable label="graph" />;
-  if (!data || !layout) return <GraphSkeleton />;
+  if (!data) return <GraphSkeleton />;
   if (data.nodes.length === 0) return <Unavailable label="no files to graph" />;
+  if (!layout) return <GraphSkeleton />;
 
   const nodeIds = new Set(data.nodes.map((n) => n.id));
   const cycleEdges = new Set(

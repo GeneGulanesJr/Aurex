@@ -36,9 +36,9 @@ export function useGitHub(): UseGitHubReturn {
   const refreshRepos = useCallback(async () => {
     try {
       const repos = await getGitHubRepos();
-      setState((prev) => ({ ...prev, repos }));
-    } catch {
-      setState((prev) => ({ ...prev, repos: [] }));
+      setState((prev) => ({ ...prev, repos, error: null }));
+    } catch (err) {
+      setState((prev) => ({ ...prev, error: err instanceof Error ? err.message : "Failed to load repositories" }));
     }
   }, []);
 

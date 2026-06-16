@@ -10,6 +10,7 @@ interface TopBarProps {
   onThemeChange: (theme: ThemeId) => void;
   githubUser?: { login: string; avatar_url: string } | null;
   pinyxConfigured?: boolean;
+  systemReady?: boolean;
   onOpenIntegrations?: () => void;
   sidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
@@ -54,7 +55,7 @@ function StatusItem({ color, label }: { color: string; label: string }) {
   );
 }
 
-export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, githubUser, pinyxConfigured, onOpenIntegrations, sidebarCollapsed, onToggleSidebar, onOpenSettings, onOpenQuota, quotaStatus, updateStatus }: TopBarProps) {
+export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, githubUser, pinyxConfigured, systemReady, onOpenIntegrations, sidebarCollapsed, onToggleSidebar, onOpenSettings, onOpenQuota, quotaStatus, updateStatus }: TopBarProps) {
   const dotColor = connected ? "var(--success)" : "var(--error)";
   return (
     <header
@@ -92,7 +93,7 @@ export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, 
             }}
             title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            {sidebarCollapsed ? "☰" : "☰"}
+            {sidebarCollapsed ? "»" : "☰"}
           </button>
         )}
         <span
@@ -128,7 +129,7 @@ export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, 
         >
           <StatusItem color={pinyxConfigured ? "var(--success)" : "var(--warning)"} label={pinyxConfigured ? "PINYX CONNECTED" : "PINYX OFFLINE"} />
         </button>
-        <StatusItem color={connected ? "var(--success)" : "var(--warning)"} label="SYSTEMS NOMINAL" />
+        <StatusItem color={systemReady ? "var(--success)" : connected ? "var(--warning)" : "var(--error)"} label={systemReady ? "SYSTEMS NOMINAL" : connected ? "SYSTEMS DEGRADED" : "OFFLINE"} />
       </div>
 
       <div

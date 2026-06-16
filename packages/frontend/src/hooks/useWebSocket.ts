@@ -4,7 +4,11 @@ import type { WsClientEvent } from "@aurex/shared";
 const RECONNECT_BASE_DELAY = 1000;
 const RECONNECT_MAX_DELAY = 30000;
 const RECONNECT_MULTIPLIER = 1.5;
+const RECONNECT_MAX_ATTEMPTS = 20;
 const LAST_SEQ_KEY = "aurex:lastSeq";
+
+/** WS close codes that indicate an auth/session problem — don't reconnect forever. */
+const AUTH_FAILURE_CODES = new Set([4001, 4003, 1008]);
 
 export function buildWsUrl(host: string, protocol: string): string {
   const wsProtocol = protocol === "https:" ? "wss:" : "ws:";
@@ -74,6 +78,8 @@ export interface UseWebSocketOptions {
   enabled?: boolean;
   /** Receives non-event control messages (auth_ok, checkpoint_resolved, etc.). */
   onControl?: (msg: WsControlMessage) => void;
+  /** Invoked when the WebSocket auth handshake fails (expired/revoked token). */
+  onAuthError?: () => void;
 }
 
 export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: UseWebSocketOptions) {
@@ -85,28 +91,38 @@ export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: Use
   onControlRef.current = opts?.onControl;
   const reconnectDelayRef = useRef(RECONNECT_BASE_DELAY);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptsRef = useRef(0);
+  const authFailedRef = useRef(false);
   const mountedRef = useRef(true);
+  const batchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const optsRef = useRef(opts);
   optsRef.current = opts;
+  const onAuthErrorRef = useRef(opts?.onAuthError);
+  onAuthErrorRef.current = opts?.onAuthError;
   const connectFnRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
+    authFailedRef.current = false;
 
     function connect() {
       if (!mountedRef.current) return;
+      if (authFailedRef.current) return;
       if (optsRef.current?.enabled === false) return;
 
       const ws = new WebSocket(buildWsUrl(window.location.host, window.location.protocol));
       ws.onopen = async () => {
         if (!mountedRef.current) { ws.close(); return; }
         reconnectDelayRef.current = RECONNECT_BASE_DELAY;
+        reconnectAttemptsRef.current = 0;
 
         if (optsRef.current?.getToken) {
           try {
             const token = await optsRef.current.getToken();
             ws.send(JSON.stringify({ type: "auth", token }));
           } catch {
+            authFailedRef.current = true;
+            onAuthErrorRef.current?.();
             ws.close(4003, "Auth failed");
             return;
           }
@@ -118,19 +134,25 @@ export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: Use
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (ev) => {
         if (!mountedRef.current) return;
         setConnected(false);
         wsRef.current = null;
+        // Auth failures: don't reconnect forever — the onAuthError handler
+        // (which calls logout()) will redirect to login.
+        if (AUTH_FAILURE_CODES.has(ev.code)) {
+          authFailedRef.current = true;
+          onAuthErrorRef.current?.();
+          return;
+        }
         scheduleReconnect();
       };
 
       // Micro-batch agent_output events to prevent UI freeze during rapid tool calls
       let batchQueue: WsClientEvent[] = [];
-      let batchTimer: ReturnType<typeof setTimeout> | null = null;
 
       function flushBatch() {
-        batchTimer = null;
+        batchTimerRef.current = null;
         if (batchQueue.length === 0) return;
         const events = batchQueue;
         batchQueue = [];
@@ -179,13 +201,13 @@ export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: Use
           if (eventType === "agent_output") {
             // Batch rapid agent_output events
             batchQueue.push(classified.event);
-            if (!batchTimer) {
-              batchTimer = setTimeout(flushBatch, 0);
+            if (!batchTimerRef.current) {
+              batchTimerRef.current = setTimeout(flushBatch, 0);
             }
           } else {
             // Flush any pending batch first, then dispatch immediately
-            if (batchTimer) {
-              clearTimeout(batchTimer);
+            if (batchTimerRef.current) {
+              clearTimeout(batchTimerRef.current);
               flushBatch();
             }
             onEventRef.current(classified.event);
@@ -205,7 +227,12 @@ export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: Use
 
     function scheduleReconnect() {
       if (!mountedRef.current) return;
+      if (authFailedRef.current) return;
       if (optsRef.current?.enabled === false) return;
+      if (reconnectAttemptsRef.current >= RECONNECT_MAX_ATTEMPTS) {
+        return;
+      }
+      reconnectAttemptsRef.current += 1;
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = setTimeout(() => {
         connect();
@@ -221,6 +248,7 @@ export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: Use
     return () => {
       mountedRef.current = false;
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      if (batchTimerRef.current) clearTimeout(batchTimerRef.current);
       wsRef.current?.close();
       wsRef.current = null;
     };
@@ -235,6 +263,8 @@ export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: Use
       }
     } else if (opts?.enabled === true && !wsRef.current && mountedRef.current && connectFnRef.current) {
       reconnectDelayRef.current = RECONNECT_BASE_DELAY;
+      reconnectAttemptsRef.current = 0;
+      authFailedRef.current = false;
       connectFnRef.current();
     }
   }, [opts?.enabled]);
