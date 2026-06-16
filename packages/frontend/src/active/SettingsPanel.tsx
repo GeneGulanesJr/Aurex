@@ -10,11 +10,11 @@ interface SettingsPanelProps {
 }
 
 export function SettingsPanel({ open, settings, onSettingsChange, onReset, onClose }: SettingsPanelProps) {
-  if (!open) return null;
-
   const handleBackdrop = useCallback((e: React.MouseEvent) => {
     if (e.target === e.currentTarget) onClose();
   }, [onClose]);
+
+  if (!open) return null;
 
   return (
     <div className="integrations-drawer" onClick={handleBackdrop}>

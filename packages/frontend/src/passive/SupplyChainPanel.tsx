@@ -8,6 +8,8 @@ interface SupplyChainPanelProps {
   onTriggerScan?: (profile?: "baseline" | "project" | "deep") => void;
   variant?: "inline" | "inspector";
   hideWhenEmpty?: boolean;
+  error?: string | null;
+  onDismissError?: () => void;
 }
 
 const severityConfig: Record<string, { color: string; bg: string; label: string }> = {
@@ -17,7 +19,7 @@ const severityConfig: Record<string, { color: string; bg: string; label: string 
   low: { color: "var(--text-muted)", bg: "var(--bg-inset)", label: "LOW" },
 };
 
-export function SupplyChainPanel({ findings, scans, isScanning, onTriggerScan, variant = "inline", hideWhenEmpty = false }: SupplyChainPanelProps) {
+export function SupplyChainPanel({ findings, scans, isScanning, onTriggerScan, variant = "inline", hideWhenEmpty = false, error, onDismissError }: SupplyChainPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
   const toggle = useCallback(() => setCollapsed((v) => !v), []);
 
@@ -137,6 +139,15 @@ export function SupplyChainPanel({ findings, scans, isScanning, onTriggerScan, v
           ▾
         </span>
       </div>
+
+      {error && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "8px 0", padding: "6px 10px", background: "var(--bg-inset)", border: "1px solid var(--error)", borderRadius: "4px" }}>
+          <span style={{ fontSize: "11px", color: "var(--error)", fontFamily: '"JetBrains Mono", monospace' }}>{error}</span>
+          {onDismissError && (
+            <button onClick={onDismissError} style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "12px" }}>×</button>
+          )}
+        </div>
+      )}
 
       {!collapsed && (
         <div style={{ padding: "12px 0" }}>

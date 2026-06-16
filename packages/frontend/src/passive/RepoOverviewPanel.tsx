@@ -14,6 +14,7 @@ interface RepoOverviewPanelProps {
   packageScan: BumblebeeScanResult | null;
   packageFindings: BumblebeeFinding[];
   loading: boolean;
+  error?: string | null;
   onStartMission: (prefill: string) => void;
 }
 
@@ -41,7 +42,7 @@ const categoryIcons: Record<SuggestionCategory, string> = {
   style: "✨",
 };
 
-export function RepoOverviewPanel({ repoName, fullName, summary, hotspots, suggestions, readiness, packageScan, packageFindings, loading, onStartMission }: RepoOverviewPanelProps) {
+export function RepoOverviewPanel({ repoName, fullName, summary, hotspots, suggestions, readiness, packageScan, packageFindings, loading, error, onStartMission }: RepoOverviewPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -57,6 +58,21 @@ export function RepoOverviewPanel({ repoName, fullName, summary, hotspots, sugge
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
         <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "13px", color: "var(--text-muted)", letterSpacing: "2px" }}>
           ANALYZING REPOSITORY, PACKAGES, AND READINESS…
+        </div>
+      </div>
+    );
+  }
+
+  const allEmpty = !summary && !hotspots && !readiness && !packageScan && suggestions.length === 0 && packageFindings.length === 0;
+
+  if (error && allEmpty) {
+    return (
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", padding: "24px", textAlign: "center" }}>
+        <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "13px", color: "var(--error)", letterSpacing: "2px", marginBottom: "12px" }}>
+          ANALYSIS FAILED
+        </div>
+        <div style={{ fontSize: "12px", color: "var(--text-muted)", maxWidth: "400px", lineHeight: 1.6 }}>
+          {error}
         </div>
       </div>
     );

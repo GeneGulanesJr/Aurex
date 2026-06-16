@@ -63,22 +63,36 @@ export function CodeContextPanel({
 
   // On mount or when missionId changes, try fetching code context immediately.
   // On a live session this will 404 until indexing completes (then the
-  // logBasedIndexingDone path kicks in). On page refresh it succeeds
-  // immediately because the indexed data persists in LaPis.
+  // logBasedIndexingDone-triggered refetch below kicks in). On page refresh it
+  // succeeds immediately because the indexed data persists in LaPis.
   useEffect(() => {
     if (!missionId) return;
     let cancelled = false;
-    getCodeSummary(missionId)
-      .then((data) => { if (!cancelled) setSummary(data); })
-      .catch(() => { if (!cancelled) setSummaryError(true); });
-    getCodeGraph(missionId)
-      .then((data) => { if (!cancelled) setGraph(data); })
-      .catch(() => { if (!cancelled) setGraphError(true); });
-    getCodeHotspots(missionId)
-      .then((data) => { if (!cancelled) setHotspots(data); })
-      .catch(() => { if (!cancelled) setHotspotsError(true); });
+    setSummaryError(false);
+    setGraphError(false);
+    setHotspotsError(false);
+    getCodeSummary(missionId).then((data) => { if (!cancelled) setSummary(data); }).catch(() => { if (!cancelled) setSummaryError(true); });
+    getCodeGraph(missionId).then((data) => { if (!cancelled) setGraph(data); }).catch(() => { if (!cancelled) setGraphError(true); });
+    getCodeHotspots(missionId).then((data) => { if (!cancelled) setHotspots(data); }).catch(() => { if (!cancelled) setHotspotsError(true); });
     return () => { cancelled = true; };
   }, [missionId]);
+
+  // When indexing completes during a live session (detected via a WS log),
+  // the mount-time fetches already failed with 404. Re-run them now that the
+  // data should be available.
+  useEffect(() => {
+    if (!missionId || !logBasedIndexingDone) return;
+    if (summary !== null && graph !== null && hotspots !== null) return;
+    let cancelled = false;
+    setSummaryError(false);
+    setGraphError(false);
+    setHotspotsError(false);
+    getCodeSummary(missionId).then((data) => { if (!cancelled) setSummary(data); }).catch(() => { if (!cancelled) setSummaryError(true); });
+    getCodeGraph(missionId).then((data) => { if (!cancelled) setGraph(data); }).catch(() => { if (!cancelled) setGraphError(true); });
+    getCodeHotspots(missionId).then((data) => { if (!cancelled) setHotspots(data); }).catch(() => { if (!cancelled) setHotspotsError(true); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [missionId, logBasedIndexingDone]);
 
   useEffect(() => {
     const el = panelRef.current;
@@ -87,10 +101,12 @@ export function CodeContextPanel({
   }, [indexingDone]);
 
   useEffect(() => {
-    if (autoCollapse && milestones.length > 0 && indexingDone && !collapsed) {
+    // Don't auto-collapse when there's no collapsed-summary affordance —
+    // otherwise the section vanishes with no way to expand it again.
+    if (autoCollapse && showCollapsedSummary && milestones.length > 0 && indexingDone && !collapsed) {
       setCollapsed(true);
     }
-  }, [autoCollapse, milestones.length, indexingDone, collapsed]);
+  }, [autoCollapse, showCollapsedSummary, milestones.length, indexingDone, collapsed]);
 
   const toggleCollapse = () => setCollapsed((c) => !c);
 
@@ -125,9 +141,11 @@ export function CodeContextPanel({
         <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", letterSpacing: "2px", textTransform: "uppercase", color: "var(--text-muted)" }}>
           Code Context
         </span>
-        <span onClick={toggleCollapse} style={{ cursor: "pointer", fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", color: "var(--text-muted)" }}>
-          ▾ collapse
-        </span>
+        {showCollapsedSummary && (
+          <span onClick={toggleCollapse} style={{ cursor: "pointer", fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", color: "var(--text-muted)" }}>
+            ▾ collapse
+          </span>
+        )}
       </div>
       <ArchitectureSummary data={summary} error={summaryError} />
       <DependencyGraph data={graph} error={graphError} />

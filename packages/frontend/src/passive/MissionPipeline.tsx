@@ -26,6 +26,8 @@ interface MissionPipelineProps {
   isScanning?: boolean;
   scans?: BumblebeeScanResult[];
   onTriggerScan?: (profile?: "baseline" | "project" | "deep") => void;
+  scanError?: string | null;
+  onDismissScanError?: () => void;
 }
 
 const statusConfig: Record<string, { color: string; label: string; icon: string }> = {
@@ -59,7 +61,7 @@ const logEventColor: Record<string, string> = {
   aborted: "var(--text-muted)",
 };
 
-export function MissionPipeline({ mission, milestones, workers, cost, events, logs, errors, agentLogs, eventStreamCount = 8, autoCollapseContext = false, onRetry, onAbort, aborting = false, scanFindings = [], isScanning = false, scans = [], onTriggerScan }: MissionPipelineProps) {
+export function MissionPipeline({ mission, milestones, workers, cost, events, logs, errors, agentLogs, eventStreamCount = 8, autoCollapseContext = false, onRetry, onAbort, aborting = false, scanFindings = [], isScanning = false, scans = [], onTriggerScan, scanError, onDismissScanError }: MissionPipelineProps) {
   const pipelineRef = useRef<HTMLDivElement>(null);
   const prevMilestoneCountRef = useRef(0);
 
@@ -234,6 +236,8 @@ export function MissionPipeline({ mission, milestones, workers, cost, events, lo
         isScanning={isScanning}
         scans={scans}
         onTriggerScan={onTriggerScan}
+        scanError={scanError}
+        onDismissScanError={onDismissScanError}
       />
     </div>
   );

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useCallback } from "react";
 import type { Milestone, WsClientEvent } from "@aurex/shared";
 import type { AgentLogEntry, MissionError } from "../hooks/useMission";
 
@@ -13,21 +13,23 @@ interface MissionDebugLogProps {
 
 export function MissionDebugLog({ mission, milestones, logs, events, errors, agentLogs }: MissionDebugLogProps) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const transcript = useMemo(
     () => buildMissionDebugTranscript({ mission, milestones, logs, events, errors, agentLogs }),
     [mission, milestones, logs, events, errors, agentLogs],
   );
 
-  const copyTranscript = async () => {
+  const copyTranscript = useCallback(async () => {
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     try {
       await navigator.clipboard.writeText(transcript);
       setCopyState("copied");
-      window.setTimeout(() => setCopyState("idle"), 1400);
+      copyTimerRef.current = setTimeout(() => setCopyState("idle"), 1400);
     } catch {
       setCopyState("failed");
-      window.setTimeout(() => setCopyState("idle"), 1800);
+      copyTimerRef.current = setTimeout(() => setCopyState("idle"), 1800);
     }
-  };
+  }, [transcript]);
 
   return (
     <section style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>

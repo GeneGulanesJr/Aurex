@@ -30,6 +30,8 @@ interface StatusBoardProps {
   isScanning?: boolean;
   scans?: BumblebeeScanResult[];
   onTriggerScan?: (profile?: "baseline" | "project" | "deep") => void;
+  scanError?: string | null;
+  onDismissScanError?: () => void;
   preparedRepo?: {
     repoName: string;
     fullName: string;
@@ -45,9 +47,13 @@ interface StatusBoardProps {
   onRepoPrepared?: (info: { repoName: string; fullName: string; summary: CodeSummaryResponse | null }) => void;
   github?: UseGitHubReturn;
   systemReady?: boolean;
+  loading?: boolean;
+  loadError?: string | null;
+  logsRehydrateError?: string | null;
+  onRetryMissionLoad?: () => void;
 }
 
-export function StatusBoard({ mission, milestones, workers, cost, events, logs, errors, agentLogs, blurred, eventStreamCount, autoCollapseContext, onExampleClick, onRetryMission, onAbortMission, abortingMission = false, onDismissErrors, scanFindings = [], isScanning = false, scans = [], onTriggerScan, preparedRepo, onStartFromSuggestion, onRepoPrepared, github, systemReady }: StatusBoardProps) {
+export function StatusBoard({ mission, milestones, workers, cost, events, logs, errors, agentLogs, blurred, eventStreamCount, autoCollapseContext, onExampleClick, onRetryMission, onAbortMission, abortingMission = false, onDismissErrors, scanFindings = [], isScanning = false, scans = [], onTriggerScan, scanError, onDismissScanError, preparedRepo, onStartFromSuggestion, onRepoPrepared, github, systemReady, loading, loadError, logsRehydrateError, onRetryMissionLoad }: StatusBoardProps) {
   const boardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -61,9 +67,48 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
   }, [blurred]);
 
   const nonRecoverableErrors = errors.filter((e) => !e.recoverable);
-  const [errorBannerExpanded, setErrorBannerExpanded] = useState(false);
+  const [errorBannerExpanded, setErrorBannerExpanded] = useState(() => nonRecoverableErrors.length > 0);
+
+  if (loading && !mission) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', letterSpacing: "2px", fontSize: "12px" }}>
+        <span style={{ animation: "spin 1s linear infinite", display: "inline-block", fontSize: "24px", marginBottom: "12px", color: "var(--accent)" }}>↻</span>
+        LOADING MISSION...
+      </div>
+    );
+  }
 
   if (!mission) {
+    if (loadError) {
+      return (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", padding: "24px", textAlign: "center" }}>
+          <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "13px", color: "var(--error)", letterSpacing: "2px", marginBottom: "12px" }}>
+            FAILED TO LOAD MISSION
+          </div>
+          <div style={{ fontSize: "12px", color: "var(--text-muted)", maxWidth: "400px", marginBottom: "16px", lineHeight: 1.6 }}>
+            {loadError}
+          </div>
+          {onRetryMissionLoad && (
+            <button
+              onClick={onRetryMissionLoad}
+              style={{
+                background: "var(--accent)",
+                color: "var(--bg-deep)",
+                border: "none",
+                borderRadius: "4px",
+                padding: "8px 20px",
+                cursor: "pointer",
+                fontFamily: '"JetBrains Mono", monospace',
+                fontSize: "11px",
+                letterSpacing: "1px",
+              }}
+            >
+              Retry
+            </button>
+          )}
+        </div>
+      );
+    }
     return (
       <MissionCreationView
         onSubmit={async (description, cloneUrl) => { await onExampleClick!(description, cloneUrl); }}
@@ -80,6 +125,11 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
 
   return (
     <div ref={boardRef} style={{ height: "100%", overflowY: "auto" }}>
+      {logsRehydrateError && (
+        <div style={{ margin: "12px 16px 0", padding: "8px 16px", background: "var(--bg-inset)", border: "1px solid var(--warning)", borderRadius: "6px", fontSize: "11px", color: "var(--warning)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>{logsRehydrateError}</span>
+        </div>
+      )}
       {!isTerminal && nonRecoverableErrors.length > 0 && (
         <ErrorBanner
           errors={nonRecoverableErrors}
@@ -95,6 +145,7 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
           workers={workers}
           cost={cost}
           events={events}
+          logs={logs}
           errors={errors}
           onRestart={onRetryMission}
           onCreateMission={onExampleClick}
@@ -118,6 +169,8 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
           isScanning={isScanning}
           scans={scans}
           onTriggerScan={onTriggerScan}
+          scanError={scanError}
+          onDismissScanError={onDismissScanError}
         />
       )}
     </div>

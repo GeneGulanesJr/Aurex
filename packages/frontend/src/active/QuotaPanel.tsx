@@ -33,10 +33,11 @@ const STATUS_STYLES: Record<string, { color: string; label: string }> = {
 };
 
 export function QuotaPanel({ open, onClose, quota }: QuotaPanelProps) {
-  const { status, loading, prefire, reset, updateConfig, refresh } = quota;
+  const { status, loading, error: quotaError, prefire, reset, updateConfig, refresh } = quota;
   const [prefireTime, setPrefireTime] = useState("");
   const [prefireResult, setPrefireResult] = useState<Array<{ time: string; event: string }> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const handleBackdrop = useCallback((e: React.MouseEvent) => {
     if (e.target === e.currentTarget) onClose();
@@ -44,15 +45,19 @@ export function QuotaPanel({ open, onClose, quota }: QuotaPanelProps) {
 
   const handleToggleEnabled = useCallback(async () => {
     setError(null);
+    setBusy(true);
     try {
       await updateConfig({ enabled: !status?.enabled });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Toggle failed");
+    } finally {
+      setBusy(false);
     }
   }, [status?.enabled, updateConfig]);
 
   const handleToggleProvider = useCallback(async (providerId: string, currentlyTracked: boolean) => {
     setError(null);
+    setBusy(true);
     try {
       const existingProviders = (status?.providers ?? [])
         .filter((p) => p.providerId !== "default")
@@ -71,36 +76,47 @@ export function QuotaPanel({ open, onClose, quota }: QuotaPanelProps) {
       await updateConfig({ providers: existingProviders });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Toggle failed");
+    } finally {
+      setBusy(false);
     }
   }, [status?.providers, updateConfig]);
 
   const handlePrefire = useCallback(async (providerId?: string) => {
     setError(null);
     setPrefireResult(null);
+    setBusy(true);
     try {
       await prefire(providerId ? { providerId } : undefined);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Prefire failed");
+    } finally {
+      setBusy(false);
     }
   }, [prefire]);
 
   const handleCalculate = useCallback(async () => {
     if (!prefireTime) return;
     setError(null);
+    setBusy(true);
     try {
       const result = await calculatePrefire({ desiredStartTime: prefireTime });
       setPrefireResult(result.timeline);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Calculation failed");
+    } finally {
+      setBusy(false);
     }
   }, [prefireTime]);
 
   const handleReset = useCallback(async (providerId?: string) => {
     setError(null);
+    setBusy(true);
     try {
       await reset(providerId);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Reset failed");
+    } finally {
+      setBusy(false);
     }
   }, [reset]);
 
@@ -123,6 +139,13 @@ export function QuotaPanel({ open, onClose, quota }: QuotaPanelProps) {
           <div style={{ padding: "24px", textAlign: "center", color: "var(--text-muted)", fontSize: "12px" }}>
             Loading quota status...
           </div>
+        ) : quotaError && !status ? (
+          <div style={{ padding: "16px", textAlign: "center" }}>
+            <div style={{ fontSize: "12px", color: "var(--error, #ef4444)", marginBottom: "12px" }}>{quotaError}</div>
+            <button onClick={refresh} style={{ fontSize: "10px", color: "var(--accent)", background: "none", border: "1px solid var(--accent-dim)", borderRadius: "3px", cursor: "pointer", padding: "4px 12px", fontFamily: '"JetBrains Mono", monospace', textTransform: "uppercase", letterSpacing: "1px" }}>
+              Retry
+            </button>
+          </div>
         ) : (
           <>
             <div className="pinyx-section">
@@ -133,12 +156,14 @@ export function QuotaPanel({ open, onClose, quota }: QuotaPanelProps) {
                 </div>
                 <button
                   onClick={handleToggleEnabled}
+                  disabled={busy}
                   style={{
                     background: status?.enabled ? "var(--accent)" : "var(--border)",
                     border: "none",
                     borderRadius: "4px",
                     color: status?.enabled ? "var(--bg)" : "var(--text-muted)",
-                    cursor: "pointer",
+                    cursor: busy ? "wait" : "pointer",
+                    opacity: busy ? 0.6 : 1,
                     fontFamily: '"JetBrains Mono", monospace',
                     fontSize: "10px",
                     fontWeight: 600,
@@ -146,7 +171,7 @@ export function QuotaPanel({ open, onClose, quota }: QuotaPanelProps) {
                     letterSpacing: "1px",
                   }}
                 >
-                  {status?.enabled ? "ENABLED" : "DISABLED"}
+                  {busy ? "..." : status?.enabled ? "ENABLED" : "DISABLED"}
                 </button>
               </div>
             </div>
@@ -161,6 +186,7 @@ export function QuotaPanel({ open, onClose, quota }: QuotaPanelProps) {
                   <ProviderCard
                     key={provider.providerId}
                     provider={provider}
+                    busy={busy}
                     onToggle={() => handleToggleProvider(provider.providerId, provider.tracked)}
                     onPrefire={() => handlePrefire(provider.providerId)}
                     onReset={() => handleReset(provider.providerId)}
@@ -267,11 +293,13 @@ export function QuotaPanel({ open, onClose, quota }: QuotaPanelProps) {
 
 function ProviderCard({
   provider,
+  busy,
   onToggle,
   onPrefire,
   onReset,
 }: {
   provider: QuotaProviderStatus;
+  busy?: boolean;
   onToggle: () => void;
   onPrefire: () => void;
   onReset: () => void;
@@ -302,12 +330,14 @@ function ProviderCard({
         </div>
         <button
           onClick={onToggle}
+          disabled={busy}
           style={{
             background: provider.tracked ? "var(--accent)" : "var(--border)",
             border: "none",
             borderRadius: "4px",
             color: provider.tracked ? "var(--bg)" : "var(--text-muted)",
-            cursor: "pointer",
+            cursor: busy ? "wait" : "pointer",
+            opacity: busy ? 0.6 : 1,
             fontFamily: '"JetBrains Mono", monospace',
             fontSize: "9px",
             fontWeight: 600,
@@ -315,7 +345,7 @@ function ProviderCard({
             letterSpacing: "0.5px",
           }}
         >
-          {provider.tracked ? "TRACKED" : "UNTRACKED"}
+          {busy ? "..." : provider.tracked ? "TRACKED" : "UNTRACKED"}
         </button>
       </div>
 
@@ -350,36 +380,40 @@ function ProviderCard({
           <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
             <button
               onClick={onPrefire}
+              disabled={busy}
               style={{
                 flex: 1,
                 background: "var(--accent)",
                 border: "none",
                 borderRadius: "4px",
                 color: "var(--bg)",
-                cursor: "pointer",
+                cursor: busy ? "wait" : "pointer",
+                opacity: busy ? 0.6 : 1,
                 fontFamily: '"JetBrains Mono", monospace',
                 fontSize: "10px",
                 fontWeight: 600,
                 padding: "6px 12px",
               }}
             >
-              Prefire
+              {busy ? "..." : "Prefire"}
             </button>
             <button
               onClick={onReset}
+              disabled={busy}
               style={{
                 flex: 1,
                 background: "transparent",
                 border: "1px solid var(--border)",
                 borderRadius: "4px",
                 color: "var(--text-muted)",
-                cursor: "pointer",
+                cursor: busy ? "wait" : "pointer",
+                opacity: busy ? 0.6 : 1,
                 fontFamily: '"JetBrains Mono", monospace',
                 fontSize: "10px",
                 padding: "6px 12px",
               }}
             >
-              Reset
+              {busy ? "..." : "Reset"}
             </button>
           </div>
         </>

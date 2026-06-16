@@ -72,7 +72,7 @@ export function App() {
   const { settings, setSettings, resetSettings } = useSettings();
   const { state: missionsState, selectMission, addOptimisticMission, markMissionRestarted, markMissionAborted, handleWsEvent: missionsWsHandler } = useMissions();
   const { state, dispatch, handleWsEvent: missionWsHandler, reloadMission } = useMission(missionsState.selectedMissionId);
-  const { state: supplyChainState, triggerScan: triggerSupplyChainScan, handleWsEvent: supplyChainWsHandler } = useSupplyChain(missionsState.selectedMissionId);
+  const { state: supplyChainState, triggerScan: triggerSupplyChainScan, clearError: clearSupplyChainError, handleWsEvent: supplyChainWsHandler } = useSupplyChain(missionsState.selectedMissionId);
   const quotaWsHandlerRef = useRef<((event: WsClientEvent) => void) | null>(null);
   const quota = useQuota({
     onWsEvent: useCallback((handler: (event: WsClientEvent) => void) => {
@@ -136,6 +136,9 @@ export function App() {
     missionId: missionsState.selectedMissionId,
     getToken,
     enabled: isAuthenticated,
+    onAuthError: useCallback(() => {
+      logout();
+    }, [logout]),
     onControl: useCallback((msg: WsControlMessage) => {
       if (msg.type === "checkpoint_resolved") {
         dispatch({
@@ -393,6 +396,7 @@ export function App() {
         onThemeChange={setTheme}
         githubUser={github.user}
         pinyxConfigured={pinyxStatus.configured}
+        systemReady={systemReady}
         onOpenIntegrations={() => setIntegrationsOpen(true)}
         sidebarCollapsed={bp.isMobile ? !mobileOverlayOpen : sidebarCollapsed}
         onToggleSidebar={toggleSidebar}
@@ -438,6 +442,8 @@ export function App() {
             isScanning={supplyChainState.isScanning}
             scans={supplyChainState.scans}
             onTriggerScan={triggerSupplyChainScan}
+            scanError={supplyChainState.error}
+            onDismissScanError={clearSupplyChainError}
             preparedRepo={preparedRepo}
             onStartFromSuggestion={(prefill: string) => {
               window.dispatchEvent(new CustomEvent("aurex:focus-new-mission", { detail: prefill }));
@@ -445,6 +451,10 @@ export function App() {
             onRepoPrepared={handleRepoPrepared}
             github={github}
             systemReady={systemReady}
+            loading={state.loading}
+            loadError={state.loadError}
+            logsRehydrateError={state.logsRehydrateError}
+            onRetryMissionLoad={reloadMission}
           />
         </main>
         <div className="app-telemetry-row">

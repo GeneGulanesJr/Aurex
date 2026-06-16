@@ -7,6 +7,7 @@ const POLL_INTERVAL = 30_000;
 export interface QuotaState {
   status: QuotaStatusResponse | null;
   loading: boolean;
+  error: string | null;
   prefire: (opts?: PrefireRequest & { providerId?: string }) => Promise<void>;
   reset: (providerId?: string) => Promise<void>;
   updateConfig: (update: QuotaConfigUpdateRequest) => Promise<void>;
@@ -21,11 +22,12 @@ interface UseQuotaDeps {
 export function useQuota({ onWsEvent }: UseQuotaDeps): QuotaState {
   const [quotaStatus, setQuotaStatus] = useState<QuotaStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     getQuotaStatus()
-      .then((s) => { setQuotaStatus(s); setLoading(false); })
-      .catch(() => { setLoading(false); });
+      .then((s) => { setQuotaStatus(s); setLoading(false); setError(null); })
+      .catch((err) => { setLoading(false); setError(err instanceof Error ? err.message : "Failed to load quota status"); });
   }, []);
 
   useEffect(() => {
@@ -61,5 +63,5 @@ export function useQuota({ onWsEvent }: UseQuotaDeps): QuotaState {
     refresh();
   }, [refresh]);
 
-  return { status: quotaStatus, loading, prefire, reset, updateConfig: updateConfigFn, refresh };
+  return { status: quotaStatus, loading, error, prefire, reset, updateConfig: updateConfigFn, refresh };
 }

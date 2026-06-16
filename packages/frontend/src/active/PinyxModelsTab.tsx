@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { getPinyxModels, savePinyxConfig } from "../api";
 import type { PinyxConfigResponse } from "../api";
 
@@ -28,6 +28,13 @@ export function PinyxModelsTab({ config, onConfigUpdate }: PinyxModelsTabProps) 
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => {
+    return () => {
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+    };
+  }, []);
 
   const [overrides, setOverrides] = useState<Record<string, string | null>>(() => {
     const result: Record<string, string | null> = {};
@@ -107,7 +114,7 @@ export function PinyxModelsTab({ config, onConfigUpdate }: PinyxModelsTabProps) 
       const saved = await savePinyxConfig({ ...config, modelHints });
       onConfigUpdate(saved);
       setSavedFlash(true);
-      setTimeout(() => setSavedFlash(false), 2000);
+      flashTimer.current = setTimeout(() => setSavedFlash(false), 2000);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to save";
       setError(msg);

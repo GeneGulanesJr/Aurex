@@ -39,6 +39,12 @@ export interface MissionState {
   pendingCheckpoint: PendingCheckpoint | null;
   /** Human-readable error from the last failed checkpoint submission. */
   pendingCheckpointError: string | null;
+  /** True while the initial mission REST fetch is in flight. */
+  loading: boolean;
+  /** Set when the initial mission REST fetch fails (null while loading/success). */
+  loadError: string | null;
+  /** Non-blocking warning when agent-log rehydration fails after a refresh. */
+  logsRehydrateError: string | null;
 }
 
 type Action =
@@ -58,12 +64,19 @@ type Action =
   | { type: "RESET" }
   | { type: "CHECKPOINT_SUBMITTING"; decision: CheckpointDecision }
   | { type: "CHECKPOINT_ACKED"; checkpointId: string; accepted: boolean; error?: string }
-  | { type: "CLEAR_PENDING_CHECKPOINT_ERROR" };
+  | { type: "CLEAR_PENDING_CHECKPOINT_ERROR" }
+  | { type: "SET_LOADING"; loading: boolean }
+  | { type: "SET_LOAD_ERROR"; error: string }
+  | { type: "CLEAR_LOAD_ERROR" }
+  | { type: "SET_LOGS_REHYDRATE_ERROR"; error: string };
 
 export const initialMissionState: MissionState = {
   mission: null, milestones: [], activeWorkers: [], cost: null, escalation: null, logs: [], errors: [], agentLogs: {},
   pendingCheckpoint: null,
   pendingCheckpointError: null,
+  loading: false,
+  loadError: null,
+  logsRehydrateError: null,
 };
 
 export function missionReducer(state: MissionState, action: Action): MissionState {
@@ -174,6 +187,14 @@ export function missionReducer(state: MissionState, action: Action): MissionStat
     }
     case "CLEAR_PENDING_CHECKPOINT_ERROR":
       return { ...state, pendingCheckpointError: null };
+    case "SET_LOADING":
+      return { ...state, loading: action.loading, ...(action.loading ? { loadError: null } : {}) };
+    case "SET_LOAD_ERROR":
+      return { ...state, loading: false, loadError: action.error };
+    case "CLEAR_LOAD_ERROR":
+      return { ...state, loadError: null };
+    case "SET_LOGS_REHYDRATE_ERROR":
+      return { ...state, logsRehydrateError: action.error };
     default:
       return state;
   }
@@ -193,6 +214,7 @@ export function useMission(missionId: string | null) {
       return;
     }
     let cancelled = false;
+    dispatch({ type: "SET_LOADING", loading: true });
     getMission(missionId)
       .then((payload) => {
         if (!cancelled) {
@@ -203,9 +225,14 @@ export function useMission(missionId: string | null) {
             workers: payload.activeWorkers,
             cost: payload.cost,
           });
+          dispatch({ type: "SET_LOADING", loading: false });
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        if (!cancelled) {
+          dispatch({ type: "SET_LOAD_ERROR", error: err instanceof Error ? err.message : "Failed to load mission" });
+        }
+      });
 
     return () => { cancelled = true; };
   }, [missionId, reloadNonce]);
@@ -238,7 +265,11 @@ export function useMission(missionId: string | null) {
           });
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) {
+          dispatch({ type: "SET_LOGS_REHYDRATE_ERROR", error: "Could not reload agent timeline — recent events may be missing." });
+        }
+      });
     return () => { cancelled = true; };
   }, [missionId]);
 

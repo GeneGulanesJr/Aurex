@@ -9,12 +9,13 @@ interface MissionCompleteProps {
   workers: WorkingUnit[];
   cost: CostSummary | null;
   events: WsClientEvent[];
+  logs: Array<{ phase: string; message: string; timestamp: number }>;
   errors: MissionError[];
   onRestart?: () => void;
   onCreateMission?: (text: string) => void;
 }
 
-export function MissionComplete({ mission, milestones, workers, cost, events, errors, onRestart, onCreateMission }: MissionCompleteProps) {
+export function MissionComplete({ mission, milestones, workers, cost, events, logs, errors, onRestart, onCreateMission }: MissionCompleteProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -25,13 +26,18 @@ export function MissionComplete({ mission, milestones, workers, cost, events, er
   const completedWorkers = workers.filter((w) => w.status === "completed");
   const failedWorkers = workers.filter((w) => w.status === "failed" || w.status === "timed_out");
 
-  // Elapsed time — use mission.createdAt as start, last event with a timestamp as end
+  // Elapsed time — prefer mission.createdAt as start. For the end time, the
+  // logs array entries are always stamped with Date.now() (see useMission
+  // reducer), making them more reliable than WS events (which often carry
+  // synthetic ordering integers instead of real timestamps).
   const createdAt = "createdAt" in mission && typeof mission.createdAt === "string"
     ? new Date(mission.createdAt).getTime()
     : 0;
+  const lastLogTs = logs.length > 0 && logs[logs.length - 1].timestamp > 946_684_800_000
+    ? logs[logs.length - 1].timestamp
+    : 0;
   const lastEventTs = events.length > 0
     ? (() => {
-        // Walk backwards to find the last event with a timestamp
         for (let i = events.length - 1; i >= 0; i--) {
           const evt = events[i];
           if ("timestamp" in evt && typeof (evt as any).timestamp === "string") {
@@ -41,7 +47,8 @@ export function MissionComplete({ mission, milestones, workers, cost, events, er
         return 0;
       })()
     : 0;
-  const elapsedMs = createdAt > 0 && lastEventTs > 0 ? lastEventTs - createdAt : 0;
+  const endTime = lastEventTs || lastLogTs;
+  const elapsedMs = createdAt > 0 && endTime > 0 ? endTime - createdAt : 0;
   const elapsedStr = elapsedMs > 0
     ? (() => {
         const s = Math.floor(elapsedMs / 1000);

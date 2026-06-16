@@ -73,9 +73,9 @@ export function PinyxConnectionTab({ config, onConfigUpdate }: PinyxConnectionTa
 
         <div style={{ marginBottom: "12px" }}>
           <div className="pinyx-status-row">
-            <span className="pinyx-status-dot pinyx-status-dot--success" />
+            <span className={`pinyx-status-dot ${config.endpoint.trim() ? "pinyx-status-dot--success" : "pinyx-status-dot--muted"}`} />
             <span style={{ color: "var(--text-secondary)", fontFamily: '"JetBrains Mono", monospace', fontSize: "11px" }}>
-              Managed by Docker
+              {config.endpoint.trim() ? `Managed by Docker — ${config.endpoint}` : "Not configured — no endpoint set"}
             </span>
           </div>
         </div>

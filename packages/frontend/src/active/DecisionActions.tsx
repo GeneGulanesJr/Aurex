@@ -90,8 +90,8 @@ export function DecisionActions({ onDecision, trigger }: DecisionActionsProps) {
             rows={3}
           />
           <div style={{ display: "flex", gap: "8px", marginTop: "8px", flexWrap: "wrap" }}>
-            <button onClick={() => onDecision("approve", { guidance })} style={{ ...btnBase, background: "var(--success)", color: "var(--bg-deep)" }}>Continue With Guidance</button>
-            <button onClick={() => onDecision("approve", { rescopeGuidance: guidance })} style={{ ...btnBase, background: "var(--info)", color: "var(--bg-deep)" }}>Rescope With Guidance</button>
+            <button onClick={() => onDecision("approve", { guidance: guidance || "Continue with the current milestone scope and retry the failed work." })} style={{ ...btnBase, background: "var(--success)", color: "var(--bg-deep)" }}>Continue With Guidance</button>
+            <button onClick={() => onDecision("approve", { rescopeGuidance: guidance || "Re-plan this milestone to address the failure." })} style={{ ...btnBase, background: "var(--info)", color: "var(--bg-deep)" }}>Rescope With Guidance</button>
           </div>
         </div>
       )}

@@ -1,4 +1,7 @@
 import { useReducer, useCallback, useEffect } from "react";
+import { getSessionState, setSessionState, clearSessionState } from "../lib/sessionState";
+
+const FORM_DESC_KEY = "mission_draft_desc";
 
 export interface FormState {
   open: boolean;
@@ -41,12 +44,14 @@ export function formReducer(state: FormState, action: FormAction): FormState {
     case "CLOSE":
       return initialFormState;
     case "SET_DESCRIPTION":
+      setSessionState(FORM_DESC_KEY, action.value);
       return { ...state, description: action.value };
     case "SET_REPO":
       return { ...state, selectedCloneUrl: action.cloneUrl, selectedRepoId: action.repoId, selectedRepoFullName: action.fullName };
     case "SUBMIT_START":
       return { ...state, submitting: true, error: null };
     case "SUBMIT_SUCCESS":
+      clearSessionState(FORM_DESC_KEY);
       return initialFormState;
     case "SUBMIT_ERROR":
       return { ...state, submitting: false, error: action.error };
@@ -73,7 +78,11 @@ export async function submitIfValid(
 }
 
 export function useNewMissionForm(onSubmit: (description: string, cloneUrl?: string) => Promise<void>, suggestedDescription?: string) {
-  const [state, dispatch] = useReducer(formReducer, initialFormState);
+  const [state, dispatch] = useReducer(formReducer, initialFormState, (init) => {
+    // Rehydrate any draft description persisted before a refresh/remount.
+    const persistedDesc = getSessionState<string>(FORM_DESC_KEY);
+    return persistedDesc ? { ...init, open: true, description: persistedDesc } : init;
+  });
 
   useEffect(() => {
     if (suggestedDescription && !state.open) {
