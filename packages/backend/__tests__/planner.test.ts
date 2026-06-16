@@ -405,4 +405,83 @@ describe("planner", () => {
     expect(userMessage).toContain("auth");
     expect(userMessage).toContain("src/index.ts");
   });
+
+  it("repairs a truncated response cut mid-string inside a path value (real-world failure mode)", async () => {
+    // Reproduces the production failure: model uses the `working_units`
+    // schema with a `path` field, and the response is cut mid-string at
+    // `.../re`. The repair must close the open string, then close all
+    // open structures, producing a valid (if partial) plan that the
+    // normalizer maps to the expected unit fields.
+    const mockLapis = {
+      searchMemory: vi.fn().mockResolvedValue([]),
+      createMilestone: vi.fn().mockResolvedValue({ id: "ms-1", title: "Analyze minimax.ts" }),
+      createWorkingUnit: vi.fn().mockResolvedValue({ id: "unit-1", description: "Read and analyze minimax.ts source" }),
+      createContract: vi.fn().mockResolvedValue({ id: "c-1" }),
+      getContractHistory: vi.fn().mockResolvedValue([]),
+      createMissionLedger: vi.fn().mockResolvedValue({ missionId: "m-1", todos: [] }),
+      createTodo: vi.fn().mockResolvedValue({ id: "td-1" }),
+    } as unknown as LaPisClient;
+
+    // Exactly the payload shape from the reported production error.
+    const truncated = `{"milestones":[{"id":"1","title":"Analyze minimax.ts complexity and structure","working_units":[{"id":"1.1","title":"Read and analyze minimax.ts source","path":"/workspace/repos/GeneGulanesJr-PiGen/re`;
+
+    const mockPinyx = createMockPinyx(truncated);
+    const eventBus = { emit: vi.fn() };
+
+    const planner = createPlanner(mockLapis, mockPinyx as never, { eventBus: eventBus as never, missionId: "m-1" });
+    const result = await planner.plan("Analyze minimax.ts", "m-1");
+
+    // Repair should have produced a parseable plan and the normalizer
+    // should have mapped working_units -> units and path -> declaredPaths.
+    // The plan-level result is the {id, description} from the LaPis mock,
+    // so assert the *planned* unit passed to createWorkingUnit instead.
+    expect(result.milestones).toHaveLength(1);
+    expect(result.milestones[0].title).toBe("Analyze minimax.ts complexity and structure");
+    expect(mockLapis.createWorkingUnit).toHaveBeenCalledWith(
+      "ms-1",
+      expect.objectContaining({
+        description: "Read and analyze minimax.ts source",
+        declaredPaths: ["/workspace/repos/GeneGulanesJr-PiGen/re"],
+      }),
+    );
+
+    // The repair should have been logged.
+    expect(eventBus.emit).toHaveBeenCalledWith(expect.objectContaining({
+      type: "mission_log",
+      phase: "planning",
+      message: expect.stringMatching(/Successfully repaired truncated JSON/),
+    }));
+  });
+
+  it("repairs a truncated response that contains a raw newline inside a string value", async () => {
+    // Real-world LLM failure mode: some models output a literal newline
+    // inside a JSON string value, which is invalid JSON. The repair must
+    // close the open string and then sanitize the raw newline so the
+    // repaired JSON parses. Without this, JSON.parse rejects the repaired
+    // output with "Bad control character in string literal" and the
+    // planner surfaces planner_parse_error.
+    const mockLapis = {
+      searchMemory: vi.fn().mockResolvedValue([]),
+      createMilestone: vi.fn().mockResolvedValue({ id: "ms-1", title: "X" }),
+      createWorkingUnit: vi.fn().mockResolvedValue({ id: "unit-1", description: "D" }),
+      createContract: vi.fn().mockResolvedValue({ id: "c-1" }),
+      getContractHistory: vi.fn().mockResolvedValue([]),
+      createMissionLedger: vi.fn().mockResolvedValue({ missionId: "m-1", todos: [] }),
+      createTodo: vi.fn().mockResolvedValue({ id: "td-1" }),
+    } as unknown as LaPisClient;
+
+    // Raw LF inside the path string, then truncated (no closing quote).
+    const truncated = "{\"milestones\":[{\"id\":\"1\",\"title\":\"X\",\"units\":[{\"description\":\"D\",\"declaredPaths\":[\"/re\nmore";
+
+    const mockPinyx = createMockPinyx(truncated);
+    const eventBus = { emit: vi.fn() };
+
+    const planner = createPlanner(mockLapis, mockPinyx as never, { eventBus: eventBus as never, missionId: "m-1" });
+    const result = await planner.plan("Test", "m-1");
+
+    expect(result.milestones).toHaveLength(1);
+    // The raw newline must be sanitized to an escaped \n so the path is usable.
+    const createCall = (mockLapis.createWorkingUnit as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(createCall.declaredPaths).toEqual(["/re\nmore"]); // backslash-n (two chars), not a raw newline
+  });
 });

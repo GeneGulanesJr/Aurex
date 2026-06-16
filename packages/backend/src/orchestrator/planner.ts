@@ -68,6 +68,52 @@ function repairTruncatedJson(input: string): string {
 }
 // Stryker restore
 
+/**
+ * Replace raw control characters (LF, CR, TAB) that appear INSIDE JSON
+ * string values with their JSON-escaped equivalents. Some LLM providers
+ * emit a literal newline inside a string (which is invalid JSON) when a
+ * plan is truncated mid-value; `JSON.parse` rejects this with
+ * "Bad control character in string literal" even after bracket repair.
+ *
+ * Walks the input character-by-character, tracking the string/escape
+ * state, and only rewrites characters that are inside an open string.
+ * Characters outside strings are left untouched (newlines and tabs are
+ * valid JSON whitespace there).
+ */
+// Stryker disable all
+function sanitizeRawControlCharsInStrings(input: string): string {
+  let out = "";
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    if (escape) {
+      out += ch;
+      escape = false;
+      continue;
+    }
+    if (ch === "\\" && inString) {
+      out += ch;
+      escape = true;
+      continue;
+    }
+    if (ch === '"') {
+      out += ch;
+      inString = !inString;
+      continue;
+    }
+    if (inString) {
+      if (ch === "\n") { out += "\\n"; continue; }
+      if (ch === "\r") { out += "\\r"; continue; }
+      if (ch === "\t") { out += "\\t"; continue; }
+    }
+    out += ch;
+  }
+  return out;
+}
+// Stryker restore
+// Stryker restore
+
 export interface PlanResult {
   milestones: Array<{
     id: string;
@@ -156,7 +202,7 @@ IMPORTANT: Use the codebase structure below to ensure your declared paths and mo
         response = await pinyx.chatStream(
         {
           model,
-          max_tokens: 8192,
+          max_tokens: 12000,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userParts.join("\n") },
@@ -201,9 +247,15 @@ IMPORTANT: Use the codebase structure below to ensure your declared paths and mo
       // new targeted tests.
       let raw: any;
       try {
-        // Strip markdown code fences if present
-        const cleaned = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/s, "").trim();
-        raw = JSON.parse(cleaned);
+        // Strip markdown code fences if present, then sanitize raw
+        // control chars inside string values (some LLMs emit literal
+        // newlines inside strings, which is invalid JSON).
+        const cleaned = content
+          .replace(/^```(?:json)?\s*/i, "")
+          .replace(/\s*```$/s, "")
+          .trim();
+        const sanitized = sanitizeRawControlCharsInStrings(cleaned);
+        raw = JSON.parse(sanitized);
       } catch {
         // Try to extract first JSON object from the response
         const firstBrace = content.indexOf("{");
@@ -226,7 +278,11 @@ IMPORTANT: Use the codebase structure below to ensure your declared paths and mo
             // Also covers the case where there's no closing brace at all.
             try {
               const repaired = repairTruncatedJson(content.slice(firstBrace));
-              raw = JSON.parse(repaired);
+              // Sanitize raw control chars inside string values (some
+              // LLMs emit literal newlines inside strings, which is
+              // invalid JSON even after bracket repair).
+              const sanitized = sanitizeRawControlCharsInStrings(repaired);
+              raw = JSON.parse(sanitized);
               emitLog("planning", `Successfully repaired truncated JSON (finishReason=${response.finishReason})`);
             } catch {
               emitError("planner_parse_error", `Planner returned invalid JSON that could not be repaired`, { recoverable: true, details: { preview: content.slice(0, 200), finishReason: response.finishReason } });
@@ -494,8 +550,11 @@ function buildCodebaseContextSection(summary: CodeSummary | undefined): string {
  * Compact, repo-wide affected-code grounding for the planner (issue #114).
  * Shows the highest-importance graph nodes (so declared modules/symbols are
  * real) and the top complexity hotspots (so declared paths point at real
- * files). Kept small — the planner only needs to know what exists, not every
- * edge. Returns "" when neither input is available.
+ * files). Kept SMALL — the planner only needs to know what exists, not every
+ * edge, and this section contributes to the prompt token budget. Caps of
+ * 15 nodes + 10 hotspots (~500 tokens) balance grounding against the risk
+ * of pushing the model's response past `max_tokens`. Returns "" when
+ * neither input is available.
  */
 function buildAffectedCodePlannerSection(
   graph: CodeGraphSummary | undefined,
@@ -511,16 +570,16 @@ function buildAffectedCodePlannerSection(
   if (hasGraph) {
     const topNodes = [...graph.nodes]
       .sort((a, b) => b.importance - a.importance)
-      .slice(0, 30)
-      .map((n) => `  - ${n.id} (module: ${n.module || "?"}, symbols: ${n.symbols}, importance: ${n.importance})`)
+      .slice(0, 15)
+      .map((n) => `  - ${n.id} (mod=${n.module || "?"}, sym=${n.symbols}, imp=${n.importance})`)
       .join("\n");
     parts.push(`Top graph nodes (by importance):\n${topNodes}`);
   }
   if (hasHotspots) {
     const topHotspots = [...hotspots.files]
       .sort((a, b) => b.complexity - a.complexity)
-      .slice(0, 20)
-      .map((h) => `  - ${h.path} (complexity: ${h.complexity}, symbols: ${h.symbols})`)
+      .slice(0, 10)
+      .map((h) => `  - ${h.path} (cx=${h.complexity}, sym=${h.symbols})`)
       .join("\n");
     parts.push(`Top complexity hotspots:\n${topHotspots}`);
   }
