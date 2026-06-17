@@ -28,6 +28,14 @@ export interface IntegrationLifecycleInput {
   baseBranch: string;
   units: WorkingUnit[];
   testCommands?: string[];
+  /**
+   * A branch that already contains a clean merge of every worker task branch
+   * (typically the validator's `validation/<milestone>` branch). When
+   * provided, integration bases the integration branch on it and skips
+   * re-merging worker branches — avoiding redundant work and divergent
+   * conflict outcomes between the validator and integration merge paths.
+   */
+  preMergedBaseBranch?: string;
 }
 
 export function createIntegrationLifecycle(worktreeManager: WorktreeManager) {
@@ -40,13 +48,35 @@ export function createIntegrationLifecycle(worktreeManager: WorktreeManager) {
         .map((unit) => unit.taskBranch)
         .filter((branch): branch is string => branch.trim().length > 0);
 
-      await worktreeManager.recreateBranch(integrationBranch, input.baseBranch);
+      // When the validator phase already merged all worker branches into a
+      // single validation branch (the precondition for reaching integration),
+      // reuse it as the integration base instead of re-merging every worker
+      // branch from baseBranch. Re-merging duplicates work and — critically —
+      // can conflict differently because the validator and this loop use
+      // different merge code paths. A conflict "resolved" by the validator's
+      // sequential retry must not re-emerge here.
+      const preMergedBase = input.preMergedBaseBranch;
+      let mergedBranches: string[];
+      let conflictedBranches: string[] = [];
+      let oursFallbackBranches: string[] = [];
 
-      const { mergedBranches, conflictedBranches, oursFallbackBranches } = await mergeBranchesWithOursFallback(
-        worktreeManager,
-        inputBranches,
-        integrationBranch,
-      );
+      if (preMergedBase && preMergedBase.trim().length > 0) {
+        // The validation branch already contains every worker's changes.
+        // Build the integration branch directly on top of it; no per-branch
+        // merges needed.
+        await worktreeManager.recreateBranch(integrationBranch, preMergedBase);
+        mergedBranches = [...inputBranches];
+      } else {
+        await worktreeManager.recreateBranch(integrationBranch, input.baseBranch);
+        const merged = await mergeBranchesWithOursFallback(
+          worktreeManager,
+          inputBranches,
+          integrationBranch,
+        );
+        mergedBranches = merged.mergedBranches;
+        conflictedBranches = merged.conflictedBranches;
+        oursFallbackBranches = merged.oursFallbackBranches;
+      }
 
       if (conflictedBranches.length > 0) {
         throw new Error(`Worker branches have merge conflicts: ${conflictedBranches.join(", ")}`);

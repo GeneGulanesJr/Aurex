@@ -16,6 +16,8 @@ export interface IntegrationPhaseInput {
   repoRoot: string;
   onPostMilestoneScan?: (missionId: string, root: string) => Promise<void>;
   onCompression?: (missionId: string, trigger: CompressionTrigger) => Promise<unknown>;
+  /** Optional pre-merged branch forwarded into the integration lifecycle. */
+  preMergedBaseBranch?: string;
 }
 
 export interface IntegrationPhaseSuccess {
@@ -50,6 +52,7 @@ export async function runIntegrationPhase(
       baseBranch: input.baseBranch,
       units: input.integrationUnits,
       testCommands: input.testCommands,
+      ...(input.preMergedBaseBranch ? { preMergedBaseBranch: input.preMergedBaseBranch } : {}),
     });
     const mergedIntegrationUnits = input.integrationUnits.filter(
       (u) => integration.mergedBranches.includes(u.taskBranch),

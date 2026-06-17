@@ -67,6 +67,82 @@ describe("planner", () => {
     }));
   });
 
+  it("collapses a single-file refactor milestone into one worker unit (serial-by-default)", async () => {
+    // Root-cause fix: the planner used to decompose single-file refactors
+    // (e.g. "reduce complexity of minimax.ts") into N parallel worker units
+    // that all necessarily edited the same file. Overlap detection can't
+    // help when the task itself is inherently serial — every unit targets
+    // the one file. When every unit in a milestone targets a single unique
+    // path, collapse to one unit so the milestone runs serially.
+    const mockLapis = {
+      searchMemory: vi.fn().mockResolvedValue([]),
+      createMilestone: vi.fn().mockResolvedValue({ id: "ms-1", title: "Refactor minimax.ts" }),
+      createWorkingUnit: vi.fn().mockImplementation((_, unit) =>
+        Promise.resolve({ id: `unit-${unit.description.slice(0, 4)}`, description: unit.description })),
+      createContract: vi.fn().mockResolvedValue({ id: "c-1" }),
+      getContractHistory: vi.fn().mockResolvedValue([]),
+      createMissionLedger: vi.fn().mockResolvedValue({ missionId: "m-1", todos: [] }),
+      createTodo: vi.fn().mockResolvedValue({ id: "td-1" }),
+    } as unknown as LaPisClient;
+
+    const mockPinyx = createMockPinyx(JSON.stringify({
+      milestones: [
+        {
+          title: "Refactor minimax.ts",
+          description: "Reduce complexity of minimax.ts by breaking it into helpers",
+          units: [
+            { description: "Analyze structure", declaredPaths: ["repo-media/providers/minimax.ts"], declaredModules: ["providers"] },
+            { description: "Extract helpers", declaredPaths: ["repo-media/providers/minimax.ts"], declaredModules: ["providers"] },
+            { description: "Recompose main", declaredPaths: ["repo-media/providers/minimax.ts"], declaredModules: ["providers"] },
+          ],
+          criteria: ["complexity reduced", "tests pass"],
+          testCommands: ["npm test"],
+        },
+      ],
+    }));
+
+    const planner = createPlanner(mockLapis, mockPinyx as never);
+    await planner.plan("Refactor repo-media/providers/minimax.ts to reduce complexity", "m-1");
+
+    // Only ONE working unit should be created, not three.
+    expect(mockLapis.createWorkingUnit).toHaveBeenCalledTimes(1);
+    // The surviving unit's description should carry the full milestone intent.
+    const createdUnit = (mockLapis.createWorkingUnit as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(createdUnit.description).toMatch(/minimax/i);
+  });
+
+  it("does NOT collapse multi-file milestones with distinct unit scopes", async () => {
+    // Guard against over-eager collapsing: when units target distinct files,
+    // parallelism is valid and must be preserved.
+    const mockLapis = {
+      searchMemory: vi.fn().mockResolvedValue([]),
+      createMilestone: vi.fn().mockResolvedValue({ id: "ms-1", title: "Auth" }),
+      createWorkingUnit: vi.fn().mockImplementation((_, unit) =>
+        Promise.resolve({ id: `unit-${unit.description.slice(0, 4)}`, description: unit.description })),
+      createContract: vi.fn().mockResolvedValue({ id: "c-1" }),
+      getContractHistory: vi.fn().mockResolvedValue([]),
+      createMissionLedger: vi.fn().mockResolvedValue({ missionId: "m-1", todos: [] }),
+      createTodo: vi.fn().mockResolvedValue({ id: "td-1" }),
+    } as unknown as LaPisClient;
+
+    const mockPinyx = createMockPinyx(JSON.stringify({
+      milestones: [{
+        title: "Auth",
+        description: "Add login + signup",
+        units: [
+          { description: "Login", declaredPaths: ["src/auth/login.ts"], declaredModules: ["auth"] },
+          { description: "Signup", declaredPaths: ["src/auth/signup.ts"], declaredModules: ["auth"] },
+        ],
+        criteria: ["works"], testCommands: [],
+      }],
+    }));
+
+    const planner = createPlanner(mockLapis, mockPinyx as never);
+    await planner.plan("Add login and signup", "m-1");
+
+    expect(mockLapis.createWorkingUnit).toHaveBeenCalledTimes(2);
+  });
+
   it("still parses valid JSON when graph/hotspots affected-code input is provided", async () => {
     const mockLapis = {
       searchMemory: vi.fn().mockResolvedValue([]),
