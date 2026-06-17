@@ -62,7 +62,13 @@ describe("milestone loop contract", () => {
     expect(selectValidatorTypes("works")).toEqual(["validator_scrutiny", "validator_user_testing"]);
   });
 
-  it("persists runtime fields on worker completion and uses them on refetch", async () => {
+  it("carries runtime fields in-memory on worker completion and re-merges them on refetch", async () => {
+    // Runtime fields (taskBranch/worktreePath) are not persisted to LaPis (it
+    // exposes no route for them — only PATCH /units/:id/status). They are
+    // carried in the loop's in-memory runtimeUnitsByMilestone map and
+    // re-merged onto fetched units via mergeRuntimeUnitFields, so a worker
+    // that completed keeps its branch binding for the validator/integration
+    // phases within the same run.
     let eventSubscriber: (event: unknown) => void = () => {};
     mockSession.subscribe.mockImplementation((fn: (event: unknown) => void) => {
       eventSubscriber = fn;
@@ -79,13 +85,12 @@ describe("milestone loop contract", () => {
 
     const result = await loop.run(makeMission(), [makeMilestone()]);
 
-    expect(lapis.updateWorkingUnit).toHaveBeenCalledWith(
-      "unit-1",
-      expect.objectContaining({
-        taskBranch: expect.stringContaining("task/"),
-        worktreePath: expect.stringContaining(".git-worktrees"),
-      }),
-    );
+    // The non-existent PATCH /units/:id route must NOT be called (it 404s on
+    // every call against real LaPis). Only status updates go to LaPis.
+    expect(lapis.updateWorkingUnit).not.toHaveBeenCalled();
+    // The worker did complete (status advanced), proving the in-memory runtime
+    // state carried the taskBranch through the loop iteration.
+    expect(lapis.updateWorkingUnitStatus).toHaveBeenCalledWith("unit-1", "completed");
     expect(result.status).toBe("checkpoint_needed");
   });
 

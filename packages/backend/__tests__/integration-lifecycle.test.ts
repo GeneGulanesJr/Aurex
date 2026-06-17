@@ -82,6 +82,46 @@ describe("integration lifecycle", () => {
       ],
     })).rejects.toThrow(/drop changes/);
   });
+
+  it("reuses the pre-merged validation branch and skips re-merging worker branches", async () => {
+    // Bug fix: the validator phase already merged all worker branches into a
+    // validation/<milestone> branch (that is the precondition for reaching
+    // integration). Re-merging them from baseBranch duplicates work and can
+    // conflict differently (the validator and integration use different merge
+    // code paths). When preMergedBaseBranch is provided, integration must base
+    // the integration branch on it and NOT call mergeToTarget at all.
+    const worktree = {
+      getRepoRoot: vi.fn().mockReturnValue("/fake/repo"),
+      recreateBranch: vi.fn().mockResolvedValue(undefined),
+      mergeToTarget: vi.fn(),
+      mergeToTargetWithStrategy: vi.fn(),
+      abortMerge: vi.fn(),
+    } as unknown as WorktreeManager;
+
+    const lifecycle = createIntegrationLifecycle(worktree);
+
+    const result = await lifecycle.integrate({
+      missionId: "mission-1",
+      milestoneId: "ms-1",
+      milestoneOrderIndex: 0,
+      baseBranch: "main",
+      preMergedBaseBranch: "validation/ms-1",
+      units: [
+        makeUnit("unit-1", "task/worker-unit-1/unit-1"),
+        makeUnit("unit-2", "task/worker-unit-2/unit-2"),
+      ],
+    });
+
+    // integration branch based on the pre-merged validation branch, not main.
+    expect(worktree.recreateBranch).toHaveBeenNthCalledWith(1, "integration/mission-1/1-ms-1", "validation/ms-1");
+    expect(worktree.recreateBranch).toHaveBeenNthCalledWith(2, "release/mission-1/1-ms-1", "integration/mission-1/1-ms-1");
+    // No per-branch merging — the validation branch already contains them.
+    expect(worktree.mergeToTarget).not.toHaveBeenCalled();
+    expect(worktree.mergeToTargetWithStrategy).not.toHaveBeenCalled();
+    // All worker branches are reported as merged (they are in the base).
+    expect(result.mergedBranches).toEqual(["task/worker-unit-1/unit-1", "task/worker-unit-2/unit-2"]);
+    expect(result.conflictedBranches).toEqual([]);
+  });
 });
 
 function makeUnit(id: string, taskBranch: string): WorkingUnit {

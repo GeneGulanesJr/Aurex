@@ -22,6 +22,46 @@ interface PlannedMilestoneRaw {
 }
 
 /**
+ * Serial-by-default heuristic for single-file / single-target milestones.
+ *
+ * When every unit in a milestone declares the same single concrete path
+ * (e.g. a complexity-reduction refactor of one file, decomposed into analyze
+ * / extract / recompose steps), parallel worker units all necessarily edit
+ * that one file and will conflict at merge time regardless of overlap
+ * detection — the task itself is inherently serial. Collapse to one unit
+ * whose description carries the full milestone intent, so the milestone
+ * runs as a single worker.
+ *
+ * Multi-file milestones with distinct unit scopes are left untouched. Globs
+ * are excluded from the uniqueness check ("src/auth/**" is a directory
+ * scope where parallelism may be legitimate).
+ */
+function collapseSingleFileMilestone(ms: PlannedMilestoneRaw): PlannedMilestoneRaw {
+  if (ms.units.length <= 1) return ms;
+  const concretePaths = new Set<string>();
+  for (const u of ms.units) {
+    for (const p of u.declaredPaths) {
+      if (!p.includes("*") && !p.includes("?") && !p.includes("[")) {
+        concretePaths.add(p);
+      }
+    }
+  }
+  if (concretePaths.size === 1) {
+    const sharedPath = [...concretePaths][0];
+    const steps = ms.units.map((u, idx) => `${idx + 1}. ${u.description}`).join("\n");
+    return {
+      ...ms,
+      units: [{
+        ...ms.units[0],
+        description: `${ms.description || ms.title}. Execute these steps in order on ${sharedPath}:\n${steps}`,
+        declaredPaths: ms.units[0].declaredPaths.length > 0 ? ms.units[0].declaredPaths : [sharedPath],
+      }],
+    };
+  }
+  return ms;
+}
+
+/**
  * Attempt to repair truncated JSON by closing open brackets/braces.
  * Scans character by character, tracking nesting depth, then appends
  * closing characters for any still-open structures.
@@ -364,10 +404,18 @@ IMPORTANT: Use the codebase structure below to ensure your declared paths and mo
         }
       });
 
-      // 4. Create milestones, units, contracts, and todo ledger items in LaPis
+      // 4. Collapse single-file milestones to one unit (serial-by-default).
+      // When every unit in a milestone targets the SAME unique path — e.g. a
+      // refactor of one file decomposed into "analyze / extract / recompose"
+      // steps — parallel worker units all necessarily edit that one file and
+      // conflict at merge time no matter how good the overlap detector is.
+      // The work is inherently serial, so collapse to a single unit.
+      const plan2 = plan.map((ms) => collapseSingleFileMilestone(ms));
+
+      // 5. Create milestones, units, contracts, and todo ledger items in LaPis
       const result: PlanResult["milestones"] = [];
-      for (let i = 0; i < plan.length; i++) {
-        const ms = plan[i];
+      for (let i = 0; i < plan2.length; i++) {
+        const ms = plan2[i];
         const milestone = await lapis.createMilestone(missionId, {
           title: ms.title,
           description: ms.description,

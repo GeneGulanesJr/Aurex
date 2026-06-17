@@ -1020,6 +1020,12 @@ export function createMilestoneLoop(
             milestoneId: milestone.id,
             milestoneOrderIndex: milestone.orderIndex,
             baseBranch: loopConfig.gitMainBranch,
+            // The validator already merged every worker branch into the
+            // validation branch cleanly (that is the precondition for
+            // reaching integration). Reuse it as the integration base so we
+            // don't re-merge — which could conflict differently and re-fail
+            // after a passed validator retry.
+            preMergedBaseBranch: validatorWorktree?.validationBranch,
             integrationUnits,
             testCommands,
             repoRoot: loopConfig.repoRoot,
@@ -1072,15 +1078,12 @@ export function createMilestoneLoop(
   }
 
   async function persistRuntimeUnit(milestoneId: string, unit: WorkingUnit) {
-    if (typeof lapis.updateWorkingUnit === "function") {
-      await lapis.updateWorkingUnit(unit.id, {
-        taskBranch: unit.taskBranch,
-        worktreePath: unit.worktreePath,
-        sessionId: unit.sessionId,
-      }).catch((err) => {
-        console.warn(`[milestone-loop] Failed to persist runtime fields for unit ${unit.id}:`, err instanceof Error ? err.message : err);
-      });
-    }
+    // Runtime fields (taskBranch / worktreePath / sessionId) are carried in the
+    // in-memory runtimeUnitsByMilestone map for the lifetime of this loop run
+    // and re-merged on each fetch via mergeRuntimeUnitFields. LaPis exposes
+    // no route to persist these fields (only PATCH /units/:id/status exists),
+    // so attempting to write them produces a 404 on every call. Keeping the
+    // call would just spam logs and imply persistence that doesn't happen.
     rememberRuntimeUnit(milestoneId, unit);
   }
 }
