@@ -330,7 +330,7 @@ export function createMilestoneLoop(
               const chunk = batch.slice(i, i + MAX_ACTIVE_AGENTS);
               const handles = await Promise.all(chunk.map(async (unit) => {
               const agentId = `worker-${unit.id}`;
-              const { worktreePath, taskBranch } = await worktreeManager.createWorktree(
+              const { worktreePath, taskBranch, baseCommitHash } = await worktreeManager.createWorktree(
                 agentId, unit.id, workerChainBaseBranch,
               );
               await worktreeManager.installBranchGuard(worktreePath, taskBranch);
@@ -382,6 +382,7 @@ export function createMilestoneLoop(
                 missionId: mission.id,
                 milestoneId: milestone.id,
                 cwd: worktreePath,
+                baseCommitHash,
                 skillFilePath: `${loopConfig.aurexRoot}/packages/backend/src/skills/worker.md`,
                 contextContent,
                 taskPrompt: [
@@ -390,7 +391,7 @@ export function createMilestoneLoop(
                   "Research findings from the research agent are in your context under 'Research Findings'. Use them directly. Do NOT re-read files already documented there.",
                   "",
                   "Follow your skill instructions carefully.",
-                  "You MUST call write_handoff with an accepted result before the session ends — even for documentation-only work. Include at least one commandsRun entry (e.g. git commit) and a real gitCommitHash.",
+                  "You MUST run `git add` and `git commit` on your task branch, then call write_handoff with the real `git rev-parse HEAD` hash. The hash is verified: it must be a NEW commit on your branch (not the starting commit). For analysis-only tasks with no code changes, commit a documentation/notes update or an empty commit so there is a real commit to validate against.",
                   "When useful work is committed, verification is blocked, or time is running short, call write_handoff immediately with partial/blocking details.",
                 ].join("\n"),
                 timeout: workerTimeout,

@@ -34,6 +34,31 @@ describe("WorktreeManager", () => {
     expect(calls.some((c) => c.includes("worktree add"))).toBe(true);
   });
 
+  it("resolves and returns baseCommitHash from the agent base branch", async () => {
+    // createWorktree resolves the commit hash of the branch the worker's
+    // task branch was created from, so the spawner can hand it to the
+    // write_handoff guard (reject handoffs where the worker produced no
+    // new commits). The hash comes from `git rev-parse <agentBranch>`.
+    let revParseCount = 0;
+    mockExecAsync.mockImplementation(async (_cmd: string, args: string[]) => {
+      // execFileAsync is called as ("git", ["-C", cwd, ...gitArgs]). The
+      // base-resolution call is `git rev-parse agent/worker-a/auth`.
+      if (args.includes("rev-parse") && args.includes("agent/worker-a/auth")) {
+        revParseCount++;
+        return { stdout: "deadbeefcafebabe\n", stderr: "" };
+      }
+      return { stdout: "", stderr: "" };
+    });
+
+    const manager = createWorktreeManager("/repo/root");
+    const result = await manager.createWorktree("worker-a", "auth-001", "agent/worker-a/auth");
+
+    expect(result.baseCommitHash).toBe("deadbeefcafebabe");
+    expect(revParseCount).toBe(1);
+    const calls = mockExecAsync.mock.calls.map((c) => `${c[0]} ${(c[1] as string[]).join(" ")}`);
+    expect(calls.some((c) => c.includes("rev-parse agent/worker-a/auth"))).toBe(true);
+  });
+
   it("does not run cleanup commands when no stale worktree or branch is registered", async () => {
     // Default mock returns empty stdout for every git call, so
     // `worktree list --porcelain` reports no stale worktrees and
