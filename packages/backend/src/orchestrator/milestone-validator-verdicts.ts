@@ -113,31 +113,3 @@ export async function ensureValidatorVerdicts(
 
   return { verdicts: currentRunVerdicts, runtimeFailures };
 }
-
-export function recordValidatorCapFailure(
-  validatorType: ValidatorType,
-  sessionId: string,
-  lapis: LaPisClient,
-  milestoneId: string,
-  contractId: string,
-  runtimeFailures: string[],
-  runtimeFailureTypes: Set<ValidatorType>,
-): Promise<void> {
-  if (runtimeFailureTypes.has(validatorType)) {
-    return Promise.resolve();
-  }
-  runtimeFailureTypes.add(validatorType);
-  runtimeFailures.push(`${validatorType} exceeded the configured validator tool-call cap.`);
-  const findings = `Validator auto-failed: exceeded tool-call cap without producing a verdict. The model exhausted its configured tool-call budget.`;
-  return lapis.writeVerdict(sessionId, {
-    milestoneId,
-    contractId,
-    validatorType,
-    verdict: "fail",
-    findings,
-    failedUnitIds: [],
-    timestamp: new Date().toISOString(),
-  }).then(() => undefined).catch((err) => {
-    console.warn(`[milestone-loop] Failed to write synthetic validator verdict:`, err instanceof Error ? err.message : err);
-  });
-}

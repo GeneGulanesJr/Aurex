@@ -18,7 +18,6 @@ export interface BumblebeeRunner {
   triggerScan(missionId: string, options: { profile?: "baseline" | "project" | "deep"; ecosystems?: string[]; root?: string }): Promise<{ scanId: string }>;
   getScan(scanId: string): Promise<BumblebeeScanResult | null>;
   listScans(missionId: string): Promise<BumblebeeScanResult[]>;
-  cancelScan(scanId: string): Promise<boolean>;
 }
 
 const ACTIVE_SCANS = new Map<string, AbortController>();
@@ -209,16 +208,6 @@ export function createBumblebeeRunner(config: BumblebeeRunnerConfig) {
     return scans;
   }
 
-  async function cancelScan(scanId: string): Promise<boolean> {
-    const ac = ACTIVE_SCANS.get(scanId);
-    if (ac) {
-      ac.abort();
-      ACTIVE_SCANS.delete(scanId);
-      return true;
-    }
-    return false;
-  }
-
   async function persistScan(scan: BumblebeeScanResult): Promise<void> {
     await config.lapis.setSetting(`bumblebee_scan:${scan.id}`, scan);
   }
@@ -238,6 +227,5 @@ export function createBumblebeeRunner(config: BumblebeeRunnerConfig) {
     triggerScan,
     getScan,
     listScans,
-    cancelScan,
   };
 }

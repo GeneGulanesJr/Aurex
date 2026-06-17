@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { ResearchFinding, LaPisClient as _LC } from "@aurex/shared";
+import type { ResearchFinding } from "@aurex/shared";
 
 // Passthrough defineTool so we can call .execute() directly on the config.
 vi.mock("@earendil-works/pi-coding-agent", () => ({

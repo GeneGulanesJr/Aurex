@@ -228,7 +228,6 @@ async function main() {
     ? createExecutionWorker(
         {
           queue: executionQueue,
-          eventBus,
           handlers: createMissionQueueHandlers({
             pool,
             sessions: preparedSessions,
@@ -241,13 +240,24 @@ async function main() {
     : null;
 
   if (config.preparedSessionsEnabled) {
+    // The prepared-session routes call `queue.enqueue(...)` on `start()`. The
+    // queue worker that drains those jobs is only created when the durable
+    // queue is enabled. Mounting the routes without the worker would let
+    // `start()` enqueue jobs that nothing ever drains → silent ghost sessions.
+    // Fail loudly at boot instead of failing silently at runtime.
+    if (!config.durableQueueEnabled) {
+      throw new Error(
+        "AUREX_PREPARED_SESSIONS_ENABLED=true requires AUREX_DURABLE_QUEUE_ENABLED=true; " +
+          "the queue worker is what drains `agent_session_start` jobs enqueued by the " +
+          "prepared-session routes. Refusing to mount routes without a worker.",
+      );
+    }
     await app.register(agentSessionRoutes, { service: preparedSessionService });
   }
   if (config.durableQueueEnabled) {
     await app.register(executionQueueRoutes, {
       queue: executionQueue,
       sessions: preparedSessions,
-      eventBus,
       reconcilerDryRunDefault: config.staleReconcilerDryRun,
       activeReconciliationEnabled: config.staleReconcilerEnabled,
     });

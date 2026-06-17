@@ -5,7 +5,6 @@ import {
   prefire,
   recordFirstLLMCall,
   checkQuota,
-  getQuotaStatusDisplay,
   calculatePrefireTime,
   buildPrefireTimeline,
   resetWindow,
@@ -215,36 +214,6 @@ describe("resetWindow", () => {
     expect(reset.windowStart).toBe(dateAt(19, 0).toISOString());
     expect(reset.firstLLMCallAt).toBeNull();
     expect(reset.isActive).toBe(false);
-  });
-});
-
-describe("getQuotaStatusDisplay", () => {
-  it("returns disabled when not enabled", () => {
-    const display = getQuotaStatusDisplay(null, new Date(), false);
-    expect(display.enabled).toBe(false);
-    expect(display.status).toBe("unlimited");
-  });
-
-  it("returns unlimited when enabled but no window", () => {
-    const display = getQuotaStatusDisplay(null, new Date(), true);
-    expect(display.enabled).toBe(true);
-    expect(display.status).toBe("unlimited");
-  });
-
-  it("returns active when window has first LLM call and within burn", () => {
-    const w = createQuotaWindow({ now: dateAt(14, 0) });
-    const withCall = recordFirstLLMCall(w, dateAt(18, 0));
-    const display = getQuotaStatusDisplay(withCall, dateAt(18, 30), true);
-    expect(display.status).toBe("active");
-    expect(display.remainingBurnMs).toBe(30 * 60 * 1000);
-    expect(display.burnExpiresAt).toBe(dateAt(19, 0).toISOString());
-  });
-
-  it("returns exhausted when burn used up (window still active)", () => {
-    const w = createQuotaWindow({ now: dateAt(14, 0), windowDurationMs: 10 * HOUR });
-    const withCall = recordFirstLLMCall(w, dateAt(18, 0));
-    const display = getQuotaStatusDisplay(withCall, dateAt(19, 0), true);
-    expect(display.status).toBe("exhausted");
   });
 });
 
@@ -531,84 +500,6 @@ describe("checkQuota boundary conditions (no LLM call)", () => {
     const exactBoundary = new Date(dateAt(14, 0).getTime() + HOUR);
     const result = checkQuota(w, exactBoundary);
     expect(result.reason).toBe("window_expired");
-  });
-});
-
-describe("getQuotaStatusDisplay", () => {
-  // Kills L168, L170, L175, L179, L186, L192 mutants + NoCoverage mutants
-  // on L175, L181, L182.
-  it("returns status 'window_expired' when checkQuota returns window_expired", () => {
-    // Kills L175:7 (condition → false) and L176:14 (status string → "")
-    const w = createQuotaWindow({ now: dateAt(14, 0), windowDurationMs: HOUR });
-    const way = new Date(dateAt(14, 0).getTime() + 2 * HOUR);
-    const display = getQuotaStatusDisplay(w, way, true);
-    expect(display.status).toBe("window_expired");
-  });
-
-  it("returns status 'exhausted' when quota is exhausted (burn done, window alive)", () => {
-    const w = createQuotaWindow({ now: dateAt(14, 0), windowDurationMs: 10 * HOUR, burnDurationMs: HOUR });
-    const withCall = recordFirstLLMCall(w, dateAt(18, 0));
-    const result = checkQuota(withCall, dateAt(19, 0));
-    expect(result.reason).toBe("quota_exhausted");
-    const display = getQuotaStatusDisplay(withCall, dateAt(19, 0), true);
-    expect(display.status).toBe("exhausted");
-  });
-
-  it("returns status 'active' when firstLLMCallAt is set and within burn", () => {
-    // Kills L179 mutants: condition → true, false, === null
-    const w = createQuotaWindow({ now: dateAt(14, 0) });
-    const withCall = recordFirstLLMCall(w, dateAt(18, 0));
-    const display = getQuotaStatusDisplay(withCall, dateAt(18, 30), true);
-    expect(display.status).toBe("active");
-  });
-
-  it("returns status 'active' when firstLLMCallAt is null and window not expired", () => {
-    // Kills L186 mutants: else if (true) — would skip the else branch
-    const w = createQuotaWindow({ now: dateAt(14, 0) });
-    const display = getQuotaStatusDisplay(w, dateAt(15, 0), true);
-    expect(display.status).toBe("active");
-  });
-
-  it("computes correct windowEnd from windowStart + windowDurationMs", () => {
-    // Kills L168:30 ArithmeticOperator (+ → -) mutant
-    const w = createQuotaWindow({ now: dateAt(14, 0), windowDurationMs: 3 * HOUR });
-    const display = getQuotaStatusDisplay(w, dateAt(14, 0), true);
-    const expectedEnd = new Date(dateAt(14, 0).getTime() + 3 * HOUR).toISOString();
-    expect(display.windowEnd).toBe(expectedEnd);
-  });
-
-  it("computes correct elapsedWindowMs as nowMs - windowStartMs", () => {
-    // Kills L170:27 ArithmeticOperator (- → +) mutant.
-    // The mutant would make elapsedWindowMs = nowMs + windowStartMs,
-    // which is a huge positive number, causing remainingWindowMs to
-    // be clamped to 0 immediately.
-    const w = createQuotaWindow({ now: dateAt(14, 0) });
-    const display = getQuotaStatusDisplay(w, dateAt(15, 0), true);
-    // 1 hour elapsed, 4 hours remaining in default 5-hour window
-    expect(display.remainingWindowMs).toBe(4 * HOUR);
-  });
-
-  it("returns enabled: true in the active window return", () => {
-    // Kills L193:14 BooleanLiteral true → false in getQuotaStatusDisplay
-    const w = createQuotaWindow({ now: dateAt(14, 0) });
-    const withCall = recordFirstLLMCall(w, dateAt(18, 0));
-    const display = getQuotaStatusDisplay(withCall, dateAt(18, 30), true);
-    expect(display.enabled).toBe(true);
-  });
-
-  it("includes burnExpiresAt when firstLLMCallAt is set", () => {
-    // Kills L229 NoCoverage mutants on the burnExpiresAt computation
-    const w = createQuotaWindow({ now: dateAt(14, 0), burnDurationMs: HOUR });
-    const withCall = recordFirstLLMCall(w, dateAt(18, 0));
-    const display = getQuotaStatusDisplay(withCall, dateAt(18, 30), true);
-    const expected = new Date(dateAt(18, 0).getTime() + HOUR).toISOString();
-    expect(display.burnExpiresAt).toBe(expected);
-  });
-
-  it("includes null burnExpiresAt when firstLLMCallAt is null", () => {
-    const w = createQuotaWindow({ now: dateAt(14, 0) });
-    const display = getQuotaStatusDisplay(w, dateAt(15, 0), true);
-    expect(display.burnExpiresAt).toBeNull();
   });
 });
 

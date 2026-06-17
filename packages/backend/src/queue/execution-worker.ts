@@ -1,4 +1,3 @@
-import type { EventBus } from "../ws/events.js";
 import type {
   ExecutionQueueClaim,
   ExecutionQueueStore,
@@ -12,7 +11,6 @@ export interface ExecutionWorkerOptions {
 export function createExecutionWorker(
   deps: {
     queue: ExecutionQueueStore;
-    eventBus?: EventBus;
     handlers?: Partial<
       Record<string, (jobId: string, claimToken: string) => Promise<void>>
     >;
@@ -30,12 +28,6 @@ export function createExecutionWorker(
     try {
       claim = await deps.queue.claimNext(options.workerId);
       if (!claim) return;
-      deps.eventBus?.emit({
-        type: "execution_job_claimed",
-        missionId: claim.job.missionId,
-        jobId: claim.job.id,
-        claimedBy: options.workerId,
-      });
       const handler = deps.handlers?.[claim.job.type];
       if (!handler) {
         // No handler is registered for this job type. Fail terminally with an

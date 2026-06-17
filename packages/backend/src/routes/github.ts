@@ -92,27 +92,6 @@ export function registerGitHubRoutes(app: FastifyInstance, deps: GitHubRouteDeps
     };
   });
 
-  app.post("/api/github/config", async (request, reply) => {
-    const body = request.body as Record<string, string>;
-    const { appId, clientId, clientSecret, privateKey, callbackUrl, frontendUrl } = body;
-
-    if (!appId || !clientId || !clientSecret || !callbackUrl || !frontendUrl) {
-      return reply.status(400).send({ error: "appId, clientId, clientSecret, callbackUrl, and frontendUrl are required" });
-    }
-
-    await lapis.setSetting("github_app_config", {
-      app_id: appId,
-      client_id: clientId,
-      client_secret: clientSecret,
-      private_key: privateKey ?? "",
-      callback_url: callbackUrl,
-      frontend_url: frontendUrl,
-      created_at: new Date().toISOString(),
-    });
-
-    return { success: true };
-  });
-
   // --- OAuth Flow ---
 
   app.get("/api/github/connect", async (_request, reply) => {

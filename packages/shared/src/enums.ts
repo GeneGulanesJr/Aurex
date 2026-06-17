@@ -98,14 +98,14 @@ export type CompressionTrigger =
   | "budget_threshold";
 
 // Prepared sessions / durable execution queue
+// NOTE: only roles that are actually produced by the orchestrator are listed
+// here. `researcher` / `merge_manager` / `final_audit` were defined but never
+// produced or consumed anywhere — removed during the dead-code audit (#116).
 export type PreparedAgentRole =
   | "orchestrator"
-  | "researcher"
   | "worker"
   | "validator_scrutiny"
-  | "validator_user_testing"
-  | "merge_manager"
-  | "final_audit";
+  | "validator_user_testing";
 
 export type PreparedAgentSessionStatus =
   | "prepared"
@@ -139,20 +139,19 @@ export type ExecutionJobStatus =
   | "stale"
   | "requeued";
 
+// NOTE: only codes that are actually produced by failure sites
+// (stale-reconciler / launcher / external-dependency outages) are listed here.
+// `MISSION_NO_PROGRESS`, `WORKTREE_PREP_FAILED`, `REPO_PREP_FAILED`,
+// `SETUP_COMMAND_FAILED`, `QUOTA_EXHAUSTED`, `VALIDATION_TIMEOUT`, and
+// `USER_ABORTED` were defined but never produced or consumed — removed during
+// the dead-code audit (#116).
 export type ExecutionFailureCode =
   | "CLAIM_EXPIRED"
   | "HEARTBEAT_TIMEOUT"
   | "SESSION_START_TIMEOUT"
   | "SESSION_LOST"
-  | "MISSION_NO_PROGRESS"
-  | "WORKTREE_PREP_FAILED"
-  | "REPO_PREP_FAILED"
-  | "SETUP_COMMAND_FAILED"
   | "PINYX_UNAVAILABLE"
   | "LAPIS_UNAVAILABLE"
-  | "QUOTA_EXHAUSTED"
   | "MODEL_UNAVAILABLE"
-  | "VALIDATION_TIMEOUT"
-  | "USER_ABORTED"
   | "MAX_ATTEMPTS_EXHAUSTED"
   | "UNKNOWN";

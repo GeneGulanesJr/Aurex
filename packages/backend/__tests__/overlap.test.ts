@@ -1,6 +1,6 @@
 // packages/backend/__tests__/overlap.test.ts
 import { describe, it, expect } from "vitest";
-import { checkPreSpawnOverlap, detectOverlap } from "../src/orchestrator/overlap.js";
+import { checkPreSpawnOverlap } from "../src/orchestrator/overlap.js";
 import type { WorkingUnit } from "@aurex/shared";
 
 function makeUnit(overrides: Partial<WorkingUnit> & { id: string; declaredPaths: string[]; declaredModules: string[] }): WorkingUnit {
@@ -103,39 +103,5 @@ describe("checkPreSpawnOverlap", () => {
     );
     expect(result.overlap).toBe(true);
     expect(result.overlappingUnits).toEqual(["u-other"]);
-  });
-});
-
-describe("detectOverlap", () => {
-  it("detects overlap between file paths and working units", () => {
-    const existing = [
-      makeUnit({ id: "u1", declaredPaths: ["src/foo.ts"], declaredModules: [], status: "working" }),
-    ];
-    const result = detectOverlap(["src/foo.ts"], existing);
-    expect(result.overlap).toBe(true);
-  });
-
-  it("ignores units that are not active", () => {
-    const existing = [
-      makeUnit({ id: "u2", declaredPaths: ["src/foo.ts"], declaredModules: [], status: "planned" }),
-    ];
-    const result = detectOverlap(["src/foo.ts"], existing);
-    expect(result.overlap).toBe(false);
-  });
-
-  it("excludes units by ID when excludeIds is provided", () => {
-    const existing = [
-      makeUnit({ id: "u3", declaredPaths: ["src/foo.ts"], declaredModules: [], status: "working" }),
-    ];
-    const result = detectOverlap(["src/foo.ts"], existing, new Set(["u3"]));
-    expect(result.overlap).toBe(false);
-  });
-
-  it("supports glob patterns in existing unit paths", () => {
-    const existing = [
-      makeUnit({ id: "u4", declaredPaths: ["src/**/*.ts"], declaredModules: [], status: "working" }),
-    ];
-    const result = detectOverlap(["src/foo.ts"], existing);
-    expect(result.overlap).toBe(true);
   });
 });

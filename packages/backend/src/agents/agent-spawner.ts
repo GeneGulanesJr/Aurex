@@ -699,6 +699,9 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
       pinyxModelCache.clear();
     },
 
+    // Test-only observation helpers. Not used by the runtime pool, but kept
+    // because the spawn/shutdown lifecycle tests assert against them; removing
+    // them would require rewriting those assertions for no runtime benefit.
     getActiveCount(): number {
       return activeHandles.size;
     },

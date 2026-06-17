@@ -6,12 +6,10 @@ import type {
 import { reconcileStaleWork } from "../queue/stale-reconciler.js";
 import type { ExecutionQueueStore } from "../queue/execution-queue-store.js";
 import type { PreparedSessionStore } from "../sessions/prepared-session-store.js";
-import type { EventBus } from "../ws/events.js";
 
 export interface ExecutionQueueRouteDeps {
   queue: ExecutionQueueStore;
   sessions: PreparedSessionStore;
-  eventBus?: EventBus;
   reconcilerDryRunDefault?: boolean;
   activeReconciliationEnabled?: boolean;
 }
@@ -54,7 +52,6 @@ export async function executionQueueRoutes(
         { queue: deps.queue, sessions: deps.sessions },
         { dryRun },
       );
-      deps.eventBus?.emit({ type: "stale_reconciliation_completed", summary });
       return reply.code(202).send({ summary });
     },
   );

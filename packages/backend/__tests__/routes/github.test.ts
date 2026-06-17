@@ -106,50 +106,6 @@ describe("GitHub App integration routes", () => {
     });
   });
 
-  describe("POST /api/github/config", () => {
-    it("saves app config to LaPis settings", async () => {
-      const { app, settings } = buildApp();
-
-      const res = await app.inject({
-        method: "POST",
-        url: "/api/github/config",
-        payload: {
-          appId: "12345",
-          clientId: "Iv1.abc",
-          clientSecret: "shh-secret",
-          privateKey: "-----BEGIN RSA-----\n...\n-----END RSA-----",
-          callbackUrl: "http://localhost:3000/api/github/callback",
-          frontendUrl: "http://localhost:5173",
-        },
-      });
-
-      expect(res.statusCode).toBe(200);
-      expect(res.json()).toEqual({ success: true });
-      expect(settings.github_app_config).toEqual({
-        app_id: "12345",
-        client_id: "Iv1.abc",
-        client_secret: "shh-secret",
-        private_key: "-----BEGIN RSA-----\n...\n-----END RSA-----",
-        callback_url: "http://localhost:3000/api/github/callback",
-        frontend_url: "http://localhost:5173",
-        created_at: expect.any(String),
-      });
-    });
-
-    it("rejects missing required fields", async () => {
-      const { app } = buildApp();
-
-      const res = await app.inject({
-        method: "POST",
-        url: "/api/github/config",
-        payload: { appId: "12345" },
-      });
-
-      expect(res.statusCode).toBe(400);
-      expect(res.json()).toEqual({ error: "appId, clientId, clientSecret, callbackUrl, and frontendUrl are required" });
-    });
-  });
-
   describe("GET /api/github/connect", () => {
     it("returns GitHub authorize URL with state nonce", async () => {
       const config: GitHubAppConfig = {
