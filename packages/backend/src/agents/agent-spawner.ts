@@ -49,6 +49,13 @@ export interface SpawnOptions {
   extendTimeoutOnActivity?: boolean;
   /** Upper bound for activity-extended sessions. Defaults to the base timeout when extension is disabled. */
   maxTimeout?: number;
+  /**
+   * Commit hash the worker's task branch was created from. Forwarded to the
+   * worker's write_handoff tool, which uses it to reject handoffs where the
+   * worker produced no new commits (claimed hash == base). Ignored for
+   * non-worker agent types.
+   */
+  baseCommitHash?: string;
 }
 
 export interface SpawnHandle {
@@ -775,6 +782,7 @@ function createCustomTools(
     return createWorkerTools(lapis, opts.unitId, {
       onHandoffAccepted: onWorkerHandoffAccepted,
       worktreePath: opts.cwd,
+      baseCommitHash: opts.baseCommitHash,
       missionId: opts.missionId,
       getSessionId,
     });

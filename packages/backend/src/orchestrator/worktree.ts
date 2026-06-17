@@ -10,7 +10,7 @@ const ALLOWED_MERGE_STRATEGIES = new Set(["ours", "theirs", "union", "ort"]);
 
 export interface WorktreeManager {
   getRepoRoot(): string;
-  createWorktree(agentId: string, taskId: string, agentBranch: string): Promise<{ worktreePath: string; taskBranch: string }>;
+  createWorktree(agentId: string, taskId: string, agentBranch: string): Promise<{ worktreePath: string; taskBranch: string; baseCommitHash?: string }>;
   createBranch(branchName: string, baseBranch: string): Promise<void>;
   /** Delete an existing branch (if present) and recreate it from baseBranch. */
   recreateBranch(branchName: string, baseBranch: string): Promise<void>;
@@ -102,7 +102,17 @@ export function createWorktreeManager(repoRoot: string): WorktreeManager {
       await git(repoRoot, "branch", taskBranch, agentBranch);
       await git(repoRoot, "worktree", "add", worktreePath, taskBranch);
 
-      return { worktreePath, taskBranch };
+      // Resolve the commit hash of the branch the task branch was created
+      // from, so the spawner can hand it to the write_handoff guard. The
+      // guard uses it to reject handoffs where the worker produced no new
+      // commits (claimed hash == base). Best-effort: on any git error we
+      // omit it and the guard falls back to the weaker reachable-from-HEAD
+      // check rather than blocking worktree creation.
+      const baseCommitHash = await git(repoRoot, "rev-parse", agentBranch)
+        .then((h) => (h && h.trim()) || undefined)
+        .catch(() => undefined);
+
+      return { worktreePath, taskBranch, baseCommitHash };
     },
 
     async createBranch(branchName, baseBranch) {

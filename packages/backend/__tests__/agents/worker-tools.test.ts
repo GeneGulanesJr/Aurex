@@ -254,6 +254,89 @@ describe("worker tools", () => {
       expect(mockExecFile).not.toHaveBeenCalled();
     });
 
+    it("rejects when the claimed hash equals the branch base commit (worker produced no new commits)", async () => {
+      // The real bug: a worker that never runs `git commit` but calls
+      // `git rev-parse HEAD` gets the BASE commit hash. That hash is a valid
+      // object AND an ancestor of HEAD (trivially — a commit is its own
+      // ancestor), so the existing reachable-from-HEAD check accepts it,
+      // producing an accepted handoff with an empty diff downstream.
+      // When a baseCommitHash is provided, the guard must reject a claimed
+      // hash that is the base or older than the base.
+      // `merge-base --is-ancestor <claimed> <base>` exits 0 here (claimed ==
+      // base is its own ancestor) => the new check must treat that as a
+      // rejection, not an acceptance.
+      mockExecFile.mockImplementation(async (_cmd: string, args: string[]) => {
+        // cat-file -e <claimed>^{commit} succeeds (base is a real object)
+        if (args.includes("cat-file")) return { stdout: "", stderr: "" };
+        // merge-base --is-ancestor <claimed> HEAD => exits 0 (reachable)
+        // merge-base --is-ancestor <claimed> <base> => exits 0 (claimed IS base)
+        return { stdout: "", stderr: "" };
+      });
+
+      const lapis = createMockLapis();
+      const onHandoffAccepted = vi.fn();
+      const tools = createWorkerTools(lapis, "unit-1", {
+        worktreePath: "/repo/wt",
+        baseCommitHash: "72bbe15",
+        onHandoffAccepted,
+      });
+      const handoffTool = tools.find((t) => t.name === "write_handoff")!;
+
+      const result = await (handoffTool as any).execute("tc-1", {
+        ...validParams,
+        gitCommitHash: "72bbe15", // same as base — worker never committed
+      });
+      const content = result.content as Array<{ type: string; text: string }>;
+      expect(content[0].text.toLowerCase()).toContain("no new commit");
+      expect(lapis.writeHandoff).not.toHaveBeenCalled();
+      expect(onHandoffAccepted).not.toHaveBeenCalled();
+    });
+
+    it("accepts when the claimed hash is a real new commit past the base", async () => {
+      // Happy path with base tracking: claimed hash is valid, reachable from
+      // HEAD, AND strictly newer than the base (is-ancestor base claimed => 0,
+      // is-ancestor claimed base => non-zero). Must be accepted.
+      mockExecFile.mockImplementation(async (_cmd: string, args: string[]) => {
+        if (args.includes("cat-file")) return { stdout: "", stderr: "" };
+        // args from merge-base: [..., "--is-ancestor", A, B]
+        const mbIdx = args.indexOf("merge-base");
+        if (mbIdx !== -1 && args[mbIdx + 1] === "--is-ancestor") {
+          const a = args[args.length - 2];
+          const b = args[args.length - 1];
+          // claimed (a5b6c7) is newer than base (72bbe15):
+          //   is-ancestor base claimed => exit 0 (base is ancestor of claimed)
+          //   is-ancestor claimed base => exit 1 (claimed NOT ancestor of base)
+          if (a === "72bbe15" && b === "a5b6c7d") return { stdout: "", stderr: "" };
+          if (a === "a5b6c7d" && b === "72bbe15") {
+            const err = new Error("exit 1");
+            (err as { code?: number }).code = 1;
+            throw err;
+          }
+          // is-ancestor claimed HEAD => exit 0 (reachable from HEAD)
+          if (a === "a5b6c7d" && b === "HEAD") return { stdout: "", stderr: "" };
+        }
+        return { stdout: "", stderr: "" };
+      });
+
+      const lapis = createMockLapis();
+      const onHandoffAccepted = vi.fn();
+      const tools = createWorkerTools(lapis, "unit-1", {
+        worktreePath: "/repo/wt",
+        baseCommitHash: "72bbe15",
+        onHandoffAccepted,
+      });
+      const handoffTool = tools.find((t) => t.name === "write_handoff")!;
+
+      const result = await (handoffTool as any).execute("tc-1", {
+        ...validParams,
+        gitCommitHash: "a5b6c7d",
+      });
+      const content = result.content as Array<{ type: string; text: string }>;
+      expect(content[0].text).toContain("accepted");
+      expect(lapis.writeHandoff).toHaveBeenCalledTimes(1);
+      expect(onHandoffAccepted).toHaveBeenCalledTimes(1);
+    });
+
     it("skips verification when worktreePath is not provided (backward compatible)", async () => {
       const lapis = createMockLapis();
       const tools = createWorkerTools(lapis, "unit-1"); // no worktreePath

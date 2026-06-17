@@ -19,6 +19,17 @@ export interface WorkerToolsOptions {
    * models that hallucinate a hash instead of running `git commit`).
    */
   worktreePath?: string;
+  /**
+   * The commit hash the worker's task branch was created from (the branch
+   * starting point). When provided alongside worktreePath, write_handoff
+   * additionally rejects a claimed hash that is equal to or older than this
+   * base — i.e. the worker produced NO new commits. This closes the hole
+   * where a worker that forgets `git commit` passes `git rev-parse HEAD`
+   * (which yields the base hash); that hash is a valid object and trivially
+   * an ancestor of itself, so the reachable-from-HEAD check alone accepts
+   * it, leaving an empty diff for validation/integration.
+   */
+  baseCommitHash?: string;
   /** Mission id — used to look up research findings for verification. */
   missionId?: string;
   /** Returns the current worker session id (the actor for finding transitions). */
@@ -34,6 +45,7 @@ export interface WorkerToolsOptions {
 async function verifyCommitReachable(
   worktreePath: string | undefined,
   gitCommitHash: string,
+  baseCommitHash?: string,
 ): Promise<string | null> {
   if (!worktreePath) return null; // verification disabled (e.g. unit tests)
   const hash = (gitCommitHash ?? "").trim();
@@ -62,7 +74,6 @@ async function verifyCommitReachable(
   // (the signal we want), or 128 on error (treat as "cannot verify, allow").
   try {
     await execFileAsync("git", ["-C", worktreePath, "merge-base", "--is-ancestor", hash, "HEAD"]);
-    return null; // ancestor check exits 0 => reachable
   } catch (err) {
     const code = (err as { code?: number }).code;
     if (code === 1) {
@@ -71,6 +82,30 @@ async function verifyCommitReachable(
     // exit 128 or other error — cannot determine, don't block.
     return null;
   }
+
+  // Did the worker actually create a NEW commit, or did it pass the branch
+  // base (e.g. by running `git rev-parse HEAD` without ever committing)? A
+  // commit is its own ancestor, so the reachable-from-HEAD check above
+  // accepts the base hash. When a baseCommitHash is known, reject if the
+  // claimed hash is the base or an ancestor of the base (i.e. not newer).
+  // `merge-base --is-ancestor <claimed> <base>` exits 0 when claimed is the
+  // base or older — that is the "no new commits" signal.
+  const base = (baseCommitHash ?? "").trim();
+  if (base) {
+    try {
+      await execFileAsync("git", ["-C", worktreePath, "merge-base", "--is-ancestor", hash, base]);
+      // exit 0 => claimed is base or older => NO new commits.
+      return `gitCommitHash '${hash}' is the branch starting point (or older) — you produced no new commits on this task branch. Run 'git add' and 'git commit' to record your work (even an empty commit or a documentation update counts), then pass the new 'git rev-parse HEAD' hash. Without a real commit, validation has nothing to merge.`;
+    } catch (err) {
+      const code = (err as { code?: number }).code;
+      // exit 1 => claimed is NOT an ancestor of base => claimed is newer => OK.
+      // exit 128 or other => cannot determine; don't block (defense in depth
+      // from the reachable-from-HEAD check above still applies).
+      if (code !== 1) return null;
+    }
+  }
+
+  return null;
 }
 
 export function createWorkerTools(
@@ -99,12 +134,14 @@ export function createWorkerTools(
       const gitCommitHash = params.gitCommitHash as string;
 
       // Defense-in-depth: before trusting the claimed hash, verify it is a
-      // real commit reachable from this branch HEAD. Reasoning models
-      // sometimes hallucinate a hash (or borrow one from elsewhere in the
-      // repo) instead of actually committing — without this check, the
-      // worker session ends with an accepted handoff but an empty branch,
-      // and validation/integration have nothing to merge.
-      const commitError = await verifyCommitReachable(opts?.worktreePath, gitCommitHash);
+      // real commit reachable from this branch HEAD AND (when a base is
+      // known) strictly newer than the branch starting point. Reasoning
+      // models sometimes hallucinate a hash, borrow one from elsewhere, or
+      // simply forget to `git commit` and pass `git rev-parse HEAD` (the
+      // base hash). Without these checks the worker session ends with an
+      // accepted handoff but an empty branch, and validation/integration
+      // have nothing to merge.
+      const commitError = await verifyCommitReachable(opts?.worktreePath, gitCommitHash, opts?.baseCommitHash);
       if (commitError) {
         return {
           content: [
