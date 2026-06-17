@@ -101,10 +101,12 @@ Per-coding-plan rate limits. The quota gate runs in front of `POST /api/missions
 
 These flags gate the queue-backed agent-session subsystem. **All default off.** Even when enabled, no agent process is launched unless a real `launchAgent` is registered (see [`docs/AUDIT-dead-incomplete-code.md`](./AUDIT-dead-incomplete-code.md) §2.1), so the durable control plane is effectively inert in the default deployment.
 
+> **Coupling requirement:** `AUREX_PREPARED_SESSIONS_ENABLED=true` **requires** `AUREX_DURABLE_QUEUE_ENABLED=true`. The prepared-session routes' `start()` enqueues an `agent_session_start` job; the queue worker started by `AUREX_DURABLE_QUEUE_ENABLED` is what drains it. Enabling prepared sessions without the durable queue would enqueue jobs that never run (silent ghost sessions), so the backend **refuses to boot** in that configuration rather than fail silently.
+
 | Variable | Type | Default | Effect | Source |
 |---|---|---|---|---|
 | `AUREX_DURABLE_QUEUE_ENABLED` | bool | `false` | Mounts the execution-queue routes and starts the queue worker that drains `ExecutionQueueJob`s. | [`config.ts`](../packages/backend/src/config.ts) |
-| `AUREX_PREPARED_SESSIONS_ENABLED` | bool | `false` | Mounts the `/api/agent-sessions/*` routes for prepared agent sessions. | [`config.ts`](../packages/backend/src/config.ts) |
+| `AUREX_PREPARED_SESSIONS_ENABLED` | bool | `false` | Mounts the `/api/agent-sessions/*` routes for prepared agent sessions. **Requires** `AUREX_DURABLE_QUEUE_ENABLED=true`. | [`config.ts`](../packages/backend/src/config.ts) |
 | `AUREX_STALE_RECONCILER_ENABLED` | bool | `false` | Lets the manual `POST /api/execution-queue/reconcile` endpoint actively reclaim/fail stale work (otherwise dry-run only). Does **not** schedule a periodic timer — reconciliation is manual-only today. | [`config.ts`](../packages/backend/src/config.ts) |
 | `AUREX_STALE_RECONCILER_DRY_RUN` | bool | `true` | Default dry-run mode for the manual reconcile endpoint (set to `false` to allow active reconciliation). | [`config.ts`](../packages/backend/src/config.ts) |
 | `AUREX_QUEUE_WORKER_POLL_MS` | int (ms) | `1000` | How often the queue worker polls for claimable jobs. | [`config.ts`](../packages/backend/src/config.ts) |

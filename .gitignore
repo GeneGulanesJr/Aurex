@@ -12,3 +12,4 @@ AGENTS.md
 .cursor
 .kilo/plans/
 .kilo/sessions/
+.pnpm-store/
