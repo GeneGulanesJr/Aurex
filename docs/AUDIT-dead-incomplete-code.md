@@ -7,6 +7,32 @@ Findings are grouped by category and ordered **by runtime impact** (silent failu
 
 ---
 
+## Resolution status (follow-up work)
+
+A follow-up pass acted on these findings. Direction chosen: prune/delete dead code and surface undocumented config, but **do not** add new behaviour to the experimental durable control plane. Verified clean with `pnpm run typecheck` + `pnpm test` (887 passing).
+
+**Resolved by pruning / wiring-down (no runtime behaviour added):**
+
+- **2.4** — Removed the two unhandled WS emissions (`execution_job_claimed`, `stale_reconciliation_completed`), their union members, and the now-unused `eventBus` plumbing in the execution worker + queue routes.
+- **2.5** — Removed the unreachable `bumblebeeRunner.cancelScan` (interface, impl, and tests).
+- **2.6** — Removed the unused `POST /api/github/config` route, the `saveGitHubConfig` frontend client + `GitHubConfigPayload`, and their tests.
+- **2.7** — Added the 8 missing env vars to `.env.example` and documented them in `docs/configuration.md` (flagged experimental/reserved).
+- **3.1** — Deleted the two unused queue modules (`failure-codes.ts`, `execution-queue-service.ts`).
+- **3.2** — Deleted `computePostCommitScope` and `recordValidatorCapFailure`.
+- **3.3** — Removed test-only exports `detectOverlap`, `enforceBroadcastTransition`, `getQuotaStatusDisplay` (+ orphaned `QuotaStatusDisplay`), `AgentLogger.getRecent`, `AGENT_SKILL`, `resolveModel`; deleted the dead enforcement modules `branch-guard.ts` and `contract-immutability.ts` (+ tests + the stale `validateContractAppend` comment in `planner.ts`). **Kept** `getActiveCount`/`getActiveSessions` as test-only observation helpers — they are woven into the spawn/shutdown lifecycle assertions, so removing them would require rewriting those assertions for zero runtime benefit.
+- **3.4** — Deleted dead frontend exports: `triggerRepoScan`, `getBumblebeeStatus`, `getScanResults`, `getExposureCatalog`, `saveExposureCatalog`, `exitActive`, `getCurrentMission`.
+- **3.5** — Removed the unconsumed `removeMission` hook action (callback, `REMOVE` action type, and reducer case).
+- **3.6** — Deleted dead `@aurex/shared` exports: `AgentSpec`, `PlannedMilestone`, `PlannedWorkingUnit`, `StreamingChunk`, `WsServerMessage`, `WsClientMessage`, `AgentSessionMessageResponse`, `TriggerScanRequest`, `ExposureCatalogResponse`, `CreateMissionRequest`, `CheckpointRequest`.
+- **3.7** — Pruned the 7 unused `ExecutionFailureCode` members and the 3 unused `PreparedAgentRole` members.
+- **4.1** — Fixed the broken `LaPisClient as _LC` import in `worker-finding-tools.test.ts`.
+
+**Intentionally deferred (need a product/design decision — rationale below):**
+
+- **2.1 / 2.2 / 2.3** — The durable prepared-session / execution-queue subsystem is **entirely default-off** (`AUREX_DURABLE_QUEUE_ENABLED`, `AUREX_PREPARED_SESSIONS_ENABLED` both `false`); its routes and worker are not mounted unless an operator opts in. The launcher path already fails loudly with a flag-referencing message (it does not fail silently). Wiring a real `launchAgent`, scheduling a reconciler timer, or enqueueing the lifecycle job types are feature decisions, so they were left untouched; the flags are now documented as experimental/reserved instead.
+- **2.8** (agent-status rendering) and **4.2** (hardcoded indexing status) — cosmetic / low-impact; left for a UX pass.
+
+---
+
 ## Category 1 — STUB / PLACEHOLDER IMPLEMENTATIONS
 
 **No pure stubs found.** The app code contains no empty `pass` bodies, no `throw new Error("not implemented")`, and no abstract methods without a concrete implementation. The closest thing to a stub is a deliberately self-failing code path (see **2.1**), which fails loudly rather than silently.

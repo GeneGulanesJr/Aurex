@@ -9,18 +9,6 @@ export const AGENT_TOOLS: Record<AgentType, string[]> = {
   research: ["read", "grep", "find", "ls"],
 };
 
-export const AGENT_SKILL: Record<AgentType, string> = {
-  orchestrator: "src/skills/orchestrator.md",
-  worker: "src/skills/worker.md",
-  validator_scrutiny: "src/skills/validator.md",
-  validator_user_testing: "src/skills/validator.md",
-  research: "src/skills/research.md",
-};
-
 export function needsMemoryLayer(type: AgentType): boolean {
   return type === "worker" || type === "research";
-}
-
-export function resolveModel(type: AgentType, modelHints: Record<AgentType, string>): string {
-  return modelHints[type];
 }

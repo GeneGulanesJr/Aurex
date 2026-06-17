@@ -9,15 +9,6 @@ export function enterActive(overlay: HTMLElement) {
   });
 }
 
-export function exitActive(overlay: HTMLElement) {
-  return animate(overlay, {
-    opacity: [1, 0],
-    scale: [1, 0.9],
-    duration: 200,
-    ease: "inExpo",
-  });
-}
-
 export function dimPassive(board: HTMLElement) {
   return animate(board, {
     opacity: [1, 0.5],

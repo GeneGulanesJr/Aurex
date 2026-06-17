@@ -343,16 +343,6 @@ export interface MilestoneSpec {
   orderIndex: number;
 }
 
-export interface PlannedWorkingUnit extends WorkingUnitSpec {}
-
-export interface PlannedMilestone {
-  title: string;
-  description: string;
-  units: PlannedWorkingUnit[];
-  criteria: string[];
-  testCommands: string[];
-}
-
 export interface MemoryResult {
   id: number;
   title: string;
@@ -511,13 +501,6 @@ export interface AttemptSummary {
 export interface EscalationContext {
   summary?: string;
   [k: string]: unknown;
-}
-
-export interface AgentSpec {
-  taskId: string;
-  instructions: string;
-  declaredPaths: string[];
-  declaredModules: string[];
 }
 
 export interface CheckpointRecord {

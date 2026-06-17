@@ -1,23 +1,6 @@
 // packages/backend/src/enforcement/enforcement-gate.ts
-import { validateBroadcastTransition, canAuthorTransition } from "./broadcast-lifecycle.js";
 import { canTransitionFinding } from "./research-lifecycle.js";
-import type { BroadcastLifecycle, ResearchLifecycle, StandingContext } from "@aurex/shared";
-
-export function enforceBroadcastTransition(
-  current: BroadcastLifecycle,
-  next: BroadcastLifecycle,
-  actorId: string,
-  authorId: string,
-): { ok: boolean; reason?: string } {
-  const transition = validateBroadcastTransition(current, next);
-  if (!transition.valid) return { ok: false, reason: transition.reason };
-
-  if (!canAuthorTransition(actorId, authorId, current, next)) {
-    return { ok: false, reason: `Actor ${actorId} is not authorized to transition broadcast from ${current} to ${next}` };
-  }
-
-  return { ok: true };
-}
+import type { ResearchLifecycle, StandingContext } from "@aurex/shared";
 
 export function enforceResearchTransition(
   current: ResearchLifecycle,

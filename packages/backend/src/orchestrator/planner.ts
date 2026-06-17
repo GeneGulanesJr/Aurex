@@ -2,11 +2,8 @@
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { PinyxClient } from "../clients/pinyx-client.js";
 import type { EventBus } from "../ws/events.js";
-// Note: validateContractAppend is intentionally NOT called here. The planner
-// *supersedes* the previous contract (replacing it with a new version), it
-// does not *append* a new version on top of an active one. The misnamed
-// earlier call was logging a warning for a scenario that didn't apply to
-// this code path.
+// Note: the planner *supersedes* the previous contract (replacing it with a new
+// version); it does not append a new version on top of an active one.
 
 interface PlannedUnit {
   title?: string;

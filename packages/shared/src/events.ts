@@ -3,17 +3,12 @@ import type {
   AgentType,
   AgentStatus,
   MilestoneStatus,
-  CheckpointDecision,
-  PreparedAgentRole,
-  ExecutionFailureCode,
-  ExecutionJobType,
 } from "./enums.js";
 import type {
   AttemptSummary,
   EscalationContext,
   BumblebeeFinding,
   BumblebeeScanSummary,
-  ReconciliationRunSummary,
 } from "./types.js";
 
 export type AgentOutputEventType =
@@ -130,19 +125,7 @@ export type WsClientEvent =
     }
   | { type: "quota_exhausted"; providerId: string; windowResetsAt: string }
   | { type: "mutation_progress"; runId: string; repoName: string; line: string }
-  | {
-      type: "execution_job_claimed";
-      missionId: string;
-      jobId: string;
-      claimedBy: string;
-    }
-  | { type: "stale_reconciliation_completed"; summary: ReconciliationRunSummary }
   | { type: "update_available"; currentSha: string; latestSha: string; behindBy: number };
-
-export type StreamingChunk = {
-  delta: string;
-  done: boolean;
-};
 
 export type EscalationTrigger =
   | { kind: "milestone_complete"; milestoneId: string; releaseBranch?: string }
@@ -160,17 +143,3 @@ export type EscalationTrigger =
     }
   | { kind: "cost_cap_exceeded"; milestoneId: string }
   | { kind: "quota_exhausted"; milestoneId: string; windowResetsAt: string };
-
-export interface WsServerMessage {
-  event: WsClientEvent;
-}
-
-export interface WsClientMessage {
-  event: "subscribe_mission" | "checkpoint_decision";
-  missionId: string;
-  checkpointId?: string;
-  decision?: CheckpointDecision;
-  guidance?: string;
-  reason?: string;
-  rescopeGuidance?: string;
-}

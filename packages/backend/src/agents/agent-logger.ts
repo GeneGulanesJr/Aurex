@@ -32,7 +32,6 @@ export interface AgentLogFilter {
 export interface AgentLogger {
   log(entry: Omit<AgentLogEntry, "timestamp">): void;
   getEntries(filter?: AgentLogFilter): AgentLogEntry[];
-  getRecent(count: number): AgentLogEntry[];
   clear(sessionId?: string): void;
 }
 
@@ -75,10 +74,6 @@ export function createAgentLogger(maxEntriesPerMission: number = 1000): AgentLog
         if (filter.event && e.event !== filter.event) return false;
         return true;
       });
-    },
-
-    getRecent(count) {
-      return entries.slice(-count);
     },
 
     clear(sessionId) {

@@ -1,6 +1,6 @@
 # Aurex Configuration Reference
 
-> _Last updated: 2026-06-08_
+> _Last updated: 2026-06-17_
 
 The source of truth is [`.env.example`](../.env.example). This document explains every variable, its effect, the code location that reads it, and a worked example for the built-in providers.
 
@@ -21,6 +21,8 @@ The source of truth is [`.env.example`](../.env.example). This document explains
 | `PORT` | int | no | `3000` | HTTP port the Fastify backend binds to. WebSocket `/ws` shares this port. | [`config.ts:89`](../packages/backend/src/config.ts) |
 | `API_KEY` | string | no | _(none)_ | If set, every REST request must include this value in an `Authorization: Bearer <key>` header. Leave empty to disable. WebSocket auth is described in [`docs/api.md`](./api.md#websocket-ws). | [`config.ts:90`](../packages/backend/src/config.ts) |
 | `AUREX_ROOT` | path | no | `=REPO_ROOT` | Where the Aurex source tree lives — used to locate the orchestrator's own skill files (`packages/backend/src/skills/*.md`). Inside Docker, this is `/aurex` because the source is bind-mounted there. | [`config.ts:86`](../packages/backend/src/config.ts) |
+| `AUTH_DISABLED` | bool | no | `false` | When `true`, the backend skips Auth0 JWT verification entirely (local dev without an Auth0 tenant). Production must leave this `false`. | [`config.ts`](../packages/backend/src/config.ts) |
+| `PI_AGENT_DIR` | path | no | `$HOME/.pi/agent` | Directory of the Pi agent runtime used by the agent spawner. | [`server.ts`](../packages/backend/src/server.ts) |
 
 ## Repos & branches
 
@@ -94,6 +96,19 @@ Per-coding-plan rate limits. The quota gate runs in front of `POST /api/missions
 | `QUOTA_ENABLED` | bool | `false` | Master switch. When `true`, the backend reads `quota_config` and `quota_windows` from LaPis and gates `POST /api/missions` accordingly. | [`config.ts:93`](../packages/backend/src/config.ts) |
 | `QUOTA_WINDOW_HOURS` | int (hours) | `5` | Length of the rolling quota window per provider. Converted to ms internally (`* 60 * 60 * 1000`). | [`config.ts:94`](../packages/backend/src/config.ts) |
 | `QUOTA_BURN_HOURS` | int (hours) | `1` | Length of the budget-burn window the prefire check projects. Converted to ms internally. | [`config.ts:95`](../packages/backend/src/config.ts) |
+
+## Durable execution control plane (experimental / reserved)
+
+These flags gate the queue-backed agent-session subsystem. **All default off.** Even when enabled, no agent process is launched unless a real `launchAgent` is registered (see [`docs/AUDIT-dead-incomplete-code.md`](./AUDIT-dead-incomplete-code.md) §2.1), so the durable control plane is effectively inert in the default deployment.
+
+| Variable | Type | Default | Effect | Source |
+|---|---|---|---|---|
+| `AUREX_DURABLE_QUEUE_ENABLED` | bool | `false` | Mounts the execution-queue routes and starts the queue worker that drains `ExecutionQueueJob`s. | [`config.ts`](../packages/backend/src/config.ts) |
+| `AUREX_PREPARED_SESSIONS_ENABLED` | bool | `false` | Mounts the `/api/agent-sessions/*` routes for prepared agent sessions. | [`config.ts`](../packages/backend/src/config.ts) |
+| `AUREX_STALE_RECONCILER_ENABLED` | bool | `false` | Lets the manual `POST /api/execution-queue/reconcile` endpoint actively reclaim/fail stale work (otherwise dry-run only). Does **not** schedule a periodic timer — reconciliation is manual-only today. | [`config.ts`](../packages/backend/src/config.ts) |
+| `AUREX_STALE_RECONCILER_DRY_RUN` | bool | `true` | Default dry-run mode for the manual reconcile endpoint (set to `false` to allow active reconciliation). | [`config.ts`](../packages/backend/src/config.ts) |
+| `AUREX_QUEUE_WORKER_POLL_MS` | int (ms) | `1000` | How often the queue worker polls for claimable jobs. | [`config.ts`](../packages/backend/src/config.ts) |
+| `AUREX_QUEUE_WORKER_ID` | string | `$HOSTNAME:$PID` | Identity stamped on job claims. | [`config.ts`](../packages/backend/src/config.ts) |
 
 ---
 

@@ -228,7 +228,6 @@ async function main() {
     ? createExecutionWorker(
         {
           queue: executionQueue,
-          eventBus,
           handlers: createMissionQueueHandlers({
             pool,
             sessions: preparedSessions,
@@ -247,7 +246,6 @@ async function main() {
     await app.register(executionQueueRoutes, {
       queue: executionQueue,
       sessions: preparedSessions,
-      eventBus,
       reconcilerDryRunDefault: config.staleReconcilerDryRun,
       activeReconciliationEnabled: config.staleReconcilerEnabled,
     });

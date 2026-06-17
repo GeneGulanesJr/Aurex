@@ -340,40 +340,4 @@ describe("bumblebee-runner", () => {
       expect(scans).toEqual([]);
     });
   });
-
-  // ── cancelScan ────────────────────────────────────────────────────────
-
-  describe("cancelScan", () => {
-    it("returns true and aborts active scan", async () => {
-      const lapis = createMockLapis();
-      // Make scan hang so we can cancel it
-      const bumblebee = {
-        isAvailable: vi.fn(async () => ({ available: true, version: "v0.1.1" })),
-        scan: vi.fn(async (_opts: any, _onProgress: any, signal: AbortSignal) => {
-          return new Promise((_resolve, reject) => {
-            signal.addEventListener("abort", () => reject(new Error("Aborted")));
-          });
-        }),
-      } as unknown as BumblebeeClient;
-      const eventBus = createMockEventBus();
-
-      const runner = createBumblebeeRunner({ lapis, bumblebee, eventBus });
-      const { scanId } = await runner.triggerScan("mission-1", { root: "/tmp" });
-
-      const cancelled = await runner.cancelScan(scanId);
-      expect(cancelled).toBe(true);
-
-      await new Promise((r) => setTimeout(r, 50));
-    });
-
-    it("returns false for unknown scan", async () => {
-      const lapis = createMockLapis();
-      const bumblebee = createMockBumblebeeClient();
-      const eventBus = createMockEventBus();
-
-      const runner = createBumblebeeRunner({ lapis, bumblebee, eventBus });
-      const cancelled = await runner.cancelScan("nonexistent");
-      expect(cancelled).toBe(false);
-    });
-  });
 });

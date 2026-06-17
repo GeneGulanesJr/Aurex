@@ -64,17 +64,6 @@ describe("createAgentLogger", () => {
     expect(result).toHaveLength(2);
   });
 
-  it("getRecent returns last N entries", () => {
-    const logger = createAgentLogger();
-    for (let i = 0; i < 10; i++) {
-      logger.log(makeEntry({ sessionId: `s-${i}` }));
-    }
-    const recent = logger.getRecent(3);
-    expect(recent).toHaveLength(3);
-    expect(recent[0].sessionId).toBe("s-7");
-    expect(recent[2].sessionId).toBe("s-9");
-  });
-
   it("clear removes all entries", () => {
     const logger = createAgentLogger();
     logger.log(makeEntry({ sessionId: "s-1" }));

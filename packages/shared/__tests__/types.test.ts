@@ -10,8 +10,8 @@ import type {
   RescopeEvent, ValidationVerdict,
 } from "../src/types";
 import type {
-  CreateMissionRequest, CreateMissionResponse, GetMissionResponse,
-  CheckpointRequest, CheckpointResponse,
+  CreateMissionResponse, GetMissionResponse,
+  CheckpointResponse,
 } from "../src/rest";
 import type {
   WsClientEvent, EscalationTrigger,

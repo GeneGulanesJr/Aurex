@@ -33,8 +33,7 @@ type Action =
   | { type: "WS_MISSION_COMPLETED"; missionId: string; finalState: string }
   | { type: "WS_MISSION_STATUS"; missionId: string; status: string }
   | { type: "MISSION_RESTARTED"; missionId: string }
-  | { type: "MISSION_ABORTED"; missionId: string }
-  | { type: "REMOVE"; missionId: string };
+  | { type: "MISSION_ABORTED"; missionId: string };
 
 export const initialMissionsState: MissionsState = {
   missions: [],
@@ -118,13 +117,6 @@ export function missionsReducer(state: MissionsState, action: Action): MissionsS
         selectedMissionId: action.missionId,
       };
     }
-    case "REMOVE": {
-      const missions = state.missions.filter((m) => m.missionId !== action.missionId);
-      const selectedMissionId = state.selectedMissionId === action.missionId
-        ? (missions.find((m) => m.state !== "queued" && m.state !== "completed" && m.state !== "failed" && m.state !== "aborted")?.missionId ?? missions[0]?.missionId ?? null)
-        : state.selectedMissionId;
-      return { ...state, missions, selectedMissionId };
-    }
     default:
       return state;
   }
@@ -196,10 +188,6 @@ export function useMissions() {
     dispatch({ type: "SELECT", missionId });
   }, []);
 
-  const removeMission = useCallback((missionId: string) => {
-    dispatch({ type: "REMOVE", missionId });
-  }, []);
-
   const addOptimisticMission = useCallback((missionId: string, description: string) => {
     dispatch({ type: "MISSION_CREATED", missionId, description });
   }, []);
@@ -212,5 +200,5 @@ export function useMissions() {
     dispatch({ type: "MISSION_ABORTED", missionId });
   }, []);
 
-  return { state, selectMission, removeMission, addOptimisticMission, markMissionRestarted, markMissionAborted, handleWsEvent };
+  return { state, selectMission, addOptimisticMission, markMissionRestarted, markMissionAborted, handleWsEvent };
 }

@@ -7,7 +7,6 @@ import type {
   CostSummary,
   BumblebeeScanResult,
   BumblebeeFinding,
-  ExposureCatalog,
   QuotaProviderStatus,
   PreparedAgentSession,
   PreparedAgentSessionConfig,
@@ -29,23 +28,8 @@ export interface AgentSessionMessageRequest {
   message: string;
 }
 
-export interface AgentSessionMessageResponse {
-  /** Whether the message was accepted for the session. */
-  accepted: boolean;
-  /**
-   * Whether the message was buffered for delivery to the agent. `true` when the
-   * session is non-terminal; the launcher drains buffered messages once it is
-   * running. `false` for terminal sessions.
-   */
-  queued: boolean;
-}
-
 export interface ReconcileExecutionQueueRequest {
   dryRun?: boolean;
-}
-
-export interface CreateMissionRequest {
-  description: string;
 }
 
 export interface CreateMissionResponse {
@@ -58,19 +42,6 @@ export interface GetMissionResponse {
   milestones: Milestone[];
   activeWorkers: WorkingUnit[];
   cost: CostSummary;
-}
-
-export interface CheckpointRequest {
-  checkpointId: string;
-  decision: "approve" | "reject";
-  /**
-   * Optional re-plan request. When present alongside decision: "approve",
-   * the orchestrator re-plans the failing milestone via PiNyx before
-   * continuing the loop. The string is passed as guidance to the model.
-   */
-  rescopeGuidance?: string;
-  /** Free-form reason, surfaced in the mission log. */
-  reason?: string;
 }
 
 export interface CheckpointResponse {
@@ -100,13 +71,6 @@ export interface AgentLogResponse {
   logs: AgentLogEntryResponse[];
 }
 
-export interface TriggerScanRequest {
-  missionId: string;
-  profile?: "baseline" | "project" | "deep";
-  ecosystems?: string[];
-  exposureCatalogPath?: string;
-}
-
 export interface TriggerScanResponse {
   scanId: string;
   status: "running";
@@ -126,10 +90,6 @@ export interface BumblebeeStatusResponse {
   available: boolean;
   version?: string;
   path?: string;
-}
-
-export interface ExposureCatalogResponse {
-  catalog: ExposureCatalog | null;
 }
 
 export interface QuotaStatusResponse {

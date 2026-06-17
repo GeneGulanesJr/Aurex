@@ -9,19 +9,6 @@ export interface QuotaCheckResult {
   windowResetsAt?: string;
 }
 
-export interface QuotaStatusDisplay {
-  enabled: boolean;
-  status: QuotaStatus;
-  windowStart: string | null;
-  windowEnd: string | null;
-  burnDurationMs: number;
-  windowDurationMs: number;
-  firstLLMCallAt: string | null;
-  burnExpiresAt: string | null;
-  remainingBurnMs: number;
-  remainingWindowMs: number;
-}
-
 export const DEFAULT_WINDOW_DURATION_MS = 5 * 60 * 60 * 1000;
 export const DEFAULT_BURN_DURATION_MS = 60 * 60 * 1000;
 
@@ -137,85 +124,6 @@ export function checkQuota(window: QuotaWindow | null, now: Date): QuotaCheckRes
     ok: true,
     remainingBurnMs,
     remainingWindowMs,
-  };
-}
-
-export function getQuotaStatusDisplay(
-  window: QuotaWindow | null,
-  now: Date,
-  enabled: boolean,
-): QuotaStatusDisplay {
-  if (!enabled) {
-    return {
-      enabled: false,
-      status: "unlimited" as QuotaStatus,
-      windowStart: null,
-      windowEnd: null,
-      burnDurationMs: DEFAULT_BURN_DURATION_MS,
-      windowDurationMs: DEFAULT_WINDOW_DURATION_MS,
-      firstLLMCallAt: null,
-      burnExpiresAt: null,
-      remainingBurnMs: Infinity,
-      remainingWindowMs: Infinity,
-    };
-  }
-
-  if (!window) {
-    return {
-      enabled: true,
-      status: "unlimited" as QuotaStatus,
-      windowStart: null,
-      windowEnd: null,
-      burnDurationMs: DEFAULT_BURN_DURATION_MS,
-      windowDurationMs: DEFAULT_WINDOW_DURATION_MS,
-      firstLLMCallAt: null,
-      burnExpiresAt: null,
-      remainingBurnMs: Infinity,
-      remainingWindowMs: Infinity,
-    };
-  }
-
-  const windowStartMs = new Date(window.windowStart).getTime();
-  const windowEnd = new Date(windowStartMs + window.windowDurationMs).toISOString();
-  const nowMs = now.getTime();
-  // Stryker disable next-line ArithmeticOperator: equivalent mutant —
-  // Stryker's perTest analysis is not picking the "computes correct
-  // elapsedWindowMs" test for this line. The `-` vs `+` would produce
-  // a huge positive elapsedWindowMs that immediately triggers
-  // window_expired, but Stryker's test selection doesn't catch it.
-  const elapsedWindowMs = nowMs - windowStartMs;
-
-  const result = checkQuota(window, now);
-
-  let status: QuotaStatus;
-  if (result.reason === "window_expired") {
-    status = "window_expired";
-  } else if (!result.ok) {
-    status = "exhausted";
-  } else {
-    // Stryker disable next-line all: equivalent mutant — this is the
-    // final else branch and always sets status to "active". The condition
-    // is unobservable.
-    status = "active";
-  }
-
-  let burnExpiresAt: string | null = null;
-  if (window.firstLLMCallAt) {
-    const firstCallMs = new Date(window.firstLLMCallAt).getTime();
-    burnExpiresAt = new Date(firstCallMs + window.burnDurationMs).toISOString();
-  }
-
-  return {
-    enabled: true,
-    status,
-    windowStart: window.windowStart,
-    windowEnd,
-    burnDurationMs: window.burnDurationMs,
-    windowDurationMs: window.windowDurationMs,
-    firstLLMCallAt: window.firstLLMCallAt,
-    burnExpiresAt,
-    remainingBurnMs: result.remainingBurnMs,
-    remainingWindowMs: result.remainingWindowMs,
   };
 }
 
