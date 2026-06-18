@@ -89,6 +89,7 @@ import { createMissionRunner } from "../src/orchestrator/mission-runner";
 import type { LaPisClient } from "../src/clients/lapis-client";
 import { createPinyxClient } from "../src/clients/pinyx-client.js";
 import { makeHandoff } from "./helpers/make-handoff.js";
+import { createInMemoryExecutionQueueStore } from "../src/queue/execution-queue-store";
 
 
 function createMockLapis(): LaPisClient {
@@ -522,5 +523,68 @@ describe("MissionRunner", () => {
     );
     expect(repoNameSetting).toBeDefined();
     expect(repoNameSetting?.[1]).toBe("repo");
+  });
+
+  // Phase 1 regression: when a queue + job are provided, the runner mirrors
+  // the job's lifetime — completes it on success, fails it on failure.
+  it("completes the execution-queue job when the mission succeeds", async () => {
+    const lapis = createMockLapis();
+    const queue = createInMemoryExecutionQueueStore();
+    const job = await queue.enqueue({ type: "mission_start", missionId: "m-1", maxAttempts: 1 });
+    const claim = await queue.claimById(job.id, "test");
+    await queue.markRunning(claim!.job.id, claim!.claimToken);
+
+    const runner = createMissionRunner({
+      lapis,
+      eventBus: mockEventBus as any,
+      agentDir: "/test/.pi/agent",
+      repoRoot: "/test/repo",
+      gitMainBranch: "main",
+      queue,
+      job: { jobId: claim!.job.id, claimToken: claim!.claimToken },
+    });
+
+    const done = runner.waitForCompletion();
+    runner.start("m-1");
+    await done;
+
+    expect(runner.getStatus().state).toBe("completed");
+    const finalJob = await queue.get(claim!.job.id);
+    expect(finalJob?.status).toBe("succeeded");
+  });
+
+  it("fails the execution-queue job when the mission fails", async () => {
+    const lapis = createMockLapis();
+    const queue = createInMemoryExecutionQueueStore();
+    const job = await queue.enqueue({ type: "mission_start", missionId: "m-1", maxAttempts: 1 });
+    const claim = await queue.claimById(job.id, "test");
+    await queue.markRunning(claim!.job.id, claim!.claimToken);
+
+    // Force planner failure so the mission ends in "failed".
+    const failingPinyx = {
+      chat: vi.fn(),
+      chatStream: vi.fn().mockRejectedValue(new Error("planner provider unavailable")),
+      ping: vi.fn().mockResolvedValue(undefined),
+    };
+    vi.mocked(createPinyxClient).mockReturnValueOnce(failingPinyx as any);
+
+    const runner = createMissionRunner({
+      lapis,
+      eventBus: mockEventBus as any,
+      agentDir: "/test/.pi/agent",
+      repoRoot: "/test/repo",
+      gitMainBranch: "main",
+      queue,
+      job: { jobId: claim!.job.id, claimToken: claim!.claimToken },
+    });
+
+    const done = runner.waitForCompletion();
+    runner.start("m-1");
+    await done;
+
+    expect(runner.getStatus().state).toBe("failed");
+    const finalJob = await queue.get(claim!.job.id);
+    expect(finalJob?.status).toBe("failed");
+    expect(finalJob?.failureCode).toBe("MISSION_FAILED");
   });
 });
