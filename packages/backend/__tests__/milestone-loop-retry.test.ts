@@ -40,8 +40,8 @@ import type { LaPisClient } from "../src/clients/lapis-client";
 import type { PinyxClient } from "../src/clients/pinyx-client";
 import { makeHandoff } from "./helpers/make-handoff.js";
 
-function makeMission(): Mission {
-  return {
+function makeMission(overrides?: Partial<Mission>): Mission {
+  const base: Mission = {
     id: "m-1", description: "Build app", status: "running",
     configJson: {
       modelHints: { orchestrator: "kilo/kilo-auto/free", worker: "kilo/kilo-auto/free", validator_scrutiny: "kilo/kilo-auto/free", validator_user_testing: "kilo/kilo-auto/free", research: "kilo/kilo-auto/free" },
@@ -50,21 +50,20 @@ function makeMission(): Mission {
     },
     createdAt: "2026-01-01",
   };
+  if (!overrides) return base;
+  return {
+    ...base,
+    ...overrides,
+    configJson: { ...base.configJson, ...(overrides.configJson ?? {}) },
+  };
 }
 
 function makeMilestone(): Milestone {
-  return {
-    id: "ms-1", missionId: "m-1", title: "Phase 1", description: "Build", orderIndex: 0,
-    status: "planned", validationContractId: "c-1",
-  };
+  return { id: "ms-1", missionId: "m-1", title: "Phase 1", description: "Build", orderIndex: 0, status: "planned", validationContractId: "c-1" };
 }
 
 function makeUnit(id: string, paths: string[], modules: string[]): WorkingUnit {
-  return {
-    id, milestoneId: "ms-1", description: `Unit ${id}`,
-    declaredPaths: paths, declaredModules: modules,
-    status: "planned", taskBranch: "", worktreePath: "", sessionId: "",
-  };
+  return { id, milestoneId: "ms-1", description: `Unit ${id}`, declaredPaths: paths, declaredModules: modules, status: "planned", taskBranch: "", worktreePath: "", sessionId: "" };
 }
 
 const passVerdict: ValidationVerdict = {
@@ -78,41 +77,26 @@ const failVerdict: (failedIds: string[]) => ValidationVerdict = (failedIds) => (
   classification: "patchable", timestamp: "",
 });
 
-
 function createMockLapis(units: WorkingUnit[], verdicts: ValidationVerdict[], handoffs = units.map((unit) => makeHandoff(unit.id))): LaPisClient {
-  let callCount = 0;
   return {
     updateMissionStatus: vi.fn().mockResolvedValue(undefined),
     updateMilestoneStatus: vi.fn().mockResolvedValue(undefined),
     updateWorkingUnitStatus: vi.fn().mockResolvedValue(undefined),
-    getWorkingUnitsForMilestone: vi.fn().mockImplementation(async (msId: string) => {
-      // First call returns planned units; subsequent calls return units reset to "planned"
-      // (simulating retry resetting status)
-      return units.map(u => ({ ...u, status: "planned" }));
-    }),
-    getContractHistory: vi.fn().mockResolvedValue([{
-      id: "c-1", content: { criteria: ["works"], testCommands: ["npm test"], acceptanceBehavior: "" },
-    }]),
-    getVerdicts: vi.fn().mockImplementation(async (msId: string) => {
-      callCount++;
-      // First negotiation: fail. Second negotiation (after retry): pass.
-      if (callCount <= 1) return verdicts;
-      return [passVerdict];
-    }),
+    getWorkingUnitsForMilestone: vi.fn().mockResolvedValue(units.map((u) => ({ ...u, status: "planned" }))),
+    getContractHistory: vi.fn().mockResolvedValue([{ id: "c-1", content: { criteria: ["works"], testCommands: ["npm test"], acceptanceBehavior: "" } }]),
+    getVerdicts: vi.fn().mockResolvedValue(verdicts),
     getSessionsForMilestone: vi.fn().mockResolvedValue([
       { sessionId: "mock-session", agentType: "validator_scrutiny", missionId: "m-1", milestoneId: "ms-1", terminatedAt: null },
     ]),
     getRetryCounter: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
-    incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
     registerAgentSession: vi.fn().mockResolvedValue(undefined),
     logCost: vi.fn().mockResolvedValue(undefined),
     writeHandoff: vi.fn().mockResolvedValue({ accepted: true, errors: [] }),
     searchMemory: vi.fn().mockResolvedValue([]),
     writeVerdict: vi.fn().mockResolvedValue({}),
     getHandoffsForMilestone: vi.fn().mockResolvedValue(handoffs),
-    createWorkingUnit: vi.fn().mockImplementation(async (_msId: string, unit: any) => ({
-      id: `new-${Date.now()}`, ...unit, milestoneId: _msId, status: "planned", taskBranch: "", worktreePath: "", sessionId: "",
-    })),
+    getHandoffForUnit: vi.fn().mockImplementation(async (unitId: string) => handoffs.find((h) => h.unitId === unitId) ?? null),
+    createWorkingUnit: vi.fn().mockImplementation(async (_msId: string, unit: any) => ({ id: `new-${Date.now()}`, ...unit, milestoneId: _msId, status: "planned", taskBranch: "", worktreePath: "", sessionId: "" })),
     getFindings: vi.fn().mockResolvedValue([]),
     logRescope: vi.fn().mockResolvedValue(undefined),
     runCompression: vi.fn().mockResolvedValue(undefined),
@@ -120,155 +104,78 @@ function createMockLapis(units: WorkingUnit[], verdicts: ValidationVerdict[], ha
 }
 
 function createMockPinyx(): PinyxClient {
-  return {
-    chat: vi.fn().mockResolvedValue({ content: "{}", finishReason: "stop", usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 } }),
-    ping: vi.fn().mockResolvedValue(undefined),
-  } as unknown as PinyxClient;
+  return { chat: vi.fn().mockResolvedValue({ content: '{"units":[{"description":"retry unit","declaredPaths":["src/auth/"],"declaredModules":["auth"]}]}', finishReason: "stop", usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 } }), ping: vi.fn() } as unknown as PinyxClient;
 }
 
-describe("milestone loop — retry/rescope handling", () => {
+function makeCallbacks() {
+  return { onEscalation: vi.fn(), onAgentStatus: vi.fn(), onMilestoneProgress: vi.fn(), onCostUpdate: vi.fn(), onError: vi.fn() };
+}
+
+describe("milestone loop — sequential retry/rescope handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockExecAsync.mockResolvedValue({ stdout: "", stderr: "" });
-    mockSession.subscribe.mockImplementation((fn: any) => {
-      setTimeout(() => fn({ type: "agent_end" }), 0);
-      return () => {};
-    });
+    mockSession.subscribe.mockImplementation((fn: any) => { setTimeout(() => fn({ type: "agent_end" }), 0); return () => {}; });
     mockSession.prompt.mockResolvedValue(undefined);
   });
 
-  it("increments retry counter only after negotiator chooses retry", async () => {
+  it("retries a unit that completes without a handoff up to the per-unit budget, then escalates", async () => {
+    const units = [makeUnit("u-1", ["src/auth/"], ["auth"])];
+    const lapis = createMockLapis(units, [passVerdict], []);
+    const callbacks = makeCallbacks();
+
+    const loop = createMilestoneLoop(lapis, createMockPinyx(), callbacks, {
+      agentDir: "/test/.pi/agent", repoRoot: "/test/repo", gitMainBranch: "main",
+    });
+
+    const result = await loop.run(makeMission({ configJson: { maxPerUnitRetries: 1 } as any }), [makeMilestone()]);
+
+    expect(result.status).toBe("checkpoint_needed");
+    expect(result.summary).toContain("valid handoff");
+    const workerSpawns = (lapis.registerAgentSession as any).mock.calls.filter((c: any[]) => c[0] === "worker");
+    expect(workerSpawns.length).toBe(2);
+    expect(lapis.updateWorkingUnitStatus).toHaveBeenCalledWith("u-1", "planned");
+    expect(callbacks.onError).toHaveBeenCalledWith(
+      "m-1", "worker_handoff_invalid",
+      expect.stringContaining("valid handoff"),
+      expect.objectContaining({ recoverable: true }),
+    );
+  });
+
+  it("retries and escalates when the smoke check keeps failing", async () => {
+    const units = [makeUnit("u-1", ["src/auth/"], ["auth"])];
+    const lapis = createMockLapis(units, [passVerdict]);
+    const callbacks = makeCallbacks();
+
+    // Make bash commands fail (smoke check) while letting git pass.
+    mockExecAsync.mockImplementation((cmd: string, args?: string[]) => {
+      if (cmd === "bash") return Promise.reject(Object.assign(new Error("typecheck errors"), { stderr: "typecheck failed" }));
+      return Promise.resolve({ stdout: "", stderr: "" });
+    });
+
+    const loop = createMilestoneLoop(lapis, createMockPinyx(), callbacks, {
+      agentDir: "/test/.pi/agent", repoRoot: "/test/repo", gitMainBranch: "main",
+    });
+
+    const result = await loop.run(makeMission({ configJson: { maxPerUnitRetries: 1 } as any }), [makeMilestone()]);
+
+    expect(result.status).toBe("checkpoint_needed");
+    expect(result.summary).toContain("Smoke check failed");
+    const workerSpawns = (lapis.registerAgentSession as any).mock.calls.filter((c: any[]) => c[0] === "worker");
+    expect(workerSpawns.length).toBe(2);
+    expect(callbacks.onError).toHaveBeenCalledWith(
+      "m-1", "smoke_check_failed",
+      expect.stringContaining("Smoke check failed"),
+      expect.objectContaining({ recoverable: true }),
+    );
+  });
+
+  it("escalates to the user (validation_failed) instead of auto-rescoping when auto-rescope is disabled", async () => {
     const units = [makeUnit("u-1", ["src/auth/"], ["auth"])];
     const verdicts = [failVerdict(["u-1"])];
     const lapis = createMockLapis(units, verdicts);
-    (lapis.getRetryCounter as any)
-      .mockResolvedValueOnce({ milestoneId: "ms-1", retries: 0, rescopes: 0 })
-      .mockResolvedValueOnce({ milestoneId: "ms-1", retries: 1, rescopes: 0 });
-
     const pinyx = createMockPinyx();
-    const callbacks = {
-      onEscalation: vi.fn(),
-      onAgentStatus: vi.fn(),
-      onMilestoneProgress: vi.fn(),
-      onCostUpdate: vi.fn(),
-      onError: vi.fn(),
-    };
-
-    const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
-      agentDir: "/test/.pi/agent", repoRoot: "/test/repo", gitMainBranch: "main",
-    });
-
-    const mission = makeMission();
-    const result = await loop.run({
-      ...mission,
-      configJson: { ...mission.configJson, maxValidatorRetries: 1 },
-    }, [makeMilestone()]);
-
-    expect(result.status).toBe("checkpoint_needed");
-
-    const workerCalls = (lapis.registerAgentSession as any).mock.calls
-      .filter((c: any[]) => c[0] === "worker");
-    expect(workerCalls.length).toBeGreaterThanOrEqual(2);
-    expect((lapis.incrementRetry as any).mock.calls.length).toBe(1);
-  });
-
-  it("keeps successful unit branch metadata across validator retry cycles", async () => {
-    const passUnit = makeUnit("u-pass", ["src/pass.ts"], ["pass"]);
-    const failUnit = makeUnit("u-fail", ["src/fail.ts"], ["fail"]);
-    const firstFail = failVerdict(["u-fail"]);
-    const lapis = createMockLapis([passUnit, failUnit], [firstFail]);
-
-    let unitFetchCount = 0;
-    (lapis.getWorkingUnitsForMilestone as any).mockImplementation(async () => {
-      unitFetchCount++;
-      if (unitFetchCount === 1) {
-        return [passUnit, failUnit];
-      }
-      return [
-        { ...passUnit, status: "completed", taskBranch: "", worktreePath: "", sessionId: "" },
-        { ...failUnit, status: "planned", taskBranch: "", worktreePath: "", sessionId: "" },
-      ];
-    });
-    (lapis.getVerdicts as any)
-      .mockResolvedValueOnce([firstFail])
-      .mockResolvedValueOnce([passVerdict]);
-    (lapis.getRetryCounter as any)
-      .mockResolvedValueOnce({ milestoneId: "ms-1", retries: 0, rescopes: 0 })
-      .mockResolvedValueOnce({ milestoneId: "ms-1", retries: 1, rescopes: 0 });
-
-    const pinyx = createMockPinyx();
-    const callbacks = {
-      onEscalation: vi.fn(),
-      onAgentStatus: vi.fn(),
-      onMilestoneProgress: vi.fn(),
-      onCostUpdate: vi.fn(),
-      onError: vi.fn(),
-    };
-
-    const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
-      agentDir: "/test/.pi/agent", repoRoot: "/test/repo", gitMainBranch: "main",
-    });
-
-    const result = await loop.run(makeMission(), [makeMilestone()]);
-
-    expect(result.status).toBe("checkpoint_needed");
-    const calls = mockExecAsync.mock.calls.map((c: any) => `${c[0]} ${(c[1] as string[]).join(" ")}`);
-    const passBranchMerges = calls.filter((c: string) => c.includes("merge --no-ff --no-commit task/worker-u-pass/u-pass"));
-    const failBranchMerges = calls.filter((c: string) => c.includes("merge --no-ff --no-commit task/worker-u-fail/u-fail"));
-    expect(passBranchMerges.length).toBeGreaterThanOrEqual(2);
-    expect(failBranchMerges.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it("escalates to user instead of auto-rescoping when AUTO_RESCOPE_BATCH_LIMIT=0", async () => {
-    const units = [makeUnit("u-1", ["src/auth/"], ["auth"])];
-    const verdicts = [failVerdict(["u-1"])];
-    const lapis = createMockLapis(units, verdicts);
-
-    // Retries exhausted → escalate instead of auto-rescoping.
-    (lapis.getRetryCounter as any)
-      .mockResolvedValueOnce({ milestoneId: "ms-1", retries: 2, rescopes: 1 });
-
-    (lapis.getVerdicts as any).mockResolvedValueOnce(verdicts);
-
-    const pinyx = createMockPinyx();
-    const callbacks = {
-      onEscalation: vi.fn(),
-      onAgentStatus: vi.fn(),
-      onMilestoneProgress: vi.fn(),
-      onCostUpdate: vi.fn(),
-      onError: vi.fn(),
-    };
-
-    const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
-      agentDir: "/test/.pi/agent", repoRoot: "/test/repo", gitMainBranch: "main",
-    });
-
-    const result = await loop.run(makeMission(), [makeMilestone()]);
-
-    // Should escalate to user instead of auto-rescoping
-    expect(result.status).toBe("checkpoint_needed");
-    if (result.status === "checkpoint_needed") {
-      expect(result.trigger).toBe("validation_failed");
-    }
-
-    // PiNyx should NOT have been called — no auto-rescope
-    expect((pinyx.chat as any).mock.calls.length).toBe(0);
-  });
-
-  it("asks for human direction after two automatic rescopes even when configured higher", async () => {
-    const units = [makeUnit("u-1", ["src/auth/"], ["auth"] )];
-    const verdicts = [failVerdict(["u-1"] )];
-    const lapis = createMockLapis(units, verdicts);
-    (lapis.getRetryCounter as any).mockResolvedValue({ milestoneId: "ms-1", retries: 3, rescopes: 3 });
-
-    const pinyx = createMockPinyx();
-    const callbacks = {
-      onEscalation: vi.fn(),
-      onAgentStatus: vi.fn(),
-      onMilestoneProgress: vi.fn(),
-      onCostUpdate: vi.fn(),
-      onError: vi.fn(),
-    };
+    const callbacks = makeCallbacks();
 
     const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
       agentDir: "/test/.pi/agent", repoRoot: "/test/repo", gitMainBranch: "main",
@@ -281,54 +188,39 @@ describe("milestone loop — retry/rescope handling", () => {
       expect(result.trigger).toBe("validation_failed");
       expect(result.summary).toContain("Auto-rescope is disabled");
     }
-    expect(pinyx.chat).not.toHaveBeenCalled();
+    expect((pinyx.chat as any).mock.calls.length).toBe(0);
   });
 
-  it("escalates when incrementRetry cannot persist to LaPis", async () => {
+  it("auto-rescopes (planner re-plan) when a budget remains, then escalates after it is exhausted", async () => {
     const units = [makeUnit("u-1", ["src/auth/"], ["auth"])];
     const verdicts = [failVerdict(["u-1"])];
     const lapis = createMockLapis(units, verdicts);
-    (lapis.getRetryCounter as any).mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 });
-    (lapis.incrementRetry as any).mockRejectedValue(new Error("LaPis unavailable"));
+    let rescopeCount = 0;
+    (lapis.logRescope as any).mockImplementation(async () => { rescopeCount += 1; });
+    (lapis.getRetryCounter as any).mockImplementation(async () => ({ milestoneId: "ms-1", retries: 0, rescopes: rescopeCount }));
+    const pinyx = createMockPinyx();
+    const callbacks = makeCallbacks();
 
-    const callbacks = {
-      onEscalation: vi.fn(),
-      onAgentStatus: vi.fn(),
-      onMilestoneProgress: vi.fn(),
-      onCostUpdate: vi.fn(),
-      onError: vi.fn(),
-    };
-
-    const loop = createMilestoneLoop(lapis, createMockPinyx(), callbacks, {
+    const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
       agentDir: "/test/.pi/agent", repoRoot: "/test/repo", gitMainBranch: "main",
     });
 
-    const result = await loop.run(makeMission(), [makeMilestone()]);
+    const result = await loop.run(makeMission({
+      configJson: { maxRescopes: 2, maxAutoRescopes: 1 } as any,
+    }), [makeMilestone()]);
 
     expect(result.status).toBe("checkpoint_needed");
     if (result.status === "checkpoint_needed") {
-      expect(result.trigger).toBe("unclassifiable_error");
-      expect(result.summary).toContain("Failed to persist validator retry counter");
+      expect(result.trigger).toBe("validation_failed");
     }
-    expect(callbacks.onError).toHaveBeenCalledWith(
-      "m-1",
-      "lapis_retry_counter_failed",
-      expect.stringContaining("Failed to persist validator retry counter"),
-      expect.objectContaining({ milestoneId: "ms-1", recoverable: true }),
-    );
+    expect((pinyx.chat as any).mock.calls.length).toBe(1);
+    expect((lapis.logRescope as any).mock.calls.length).toBe(1);
   });
 
   it("escalates when getWorkingUnitsForMilestone fails", async () => {
     const lapis = createMockLapis([makeUnit("u-1", ["src/auth/"], ["auth"])], [failVerdict(["u-1"])]);
     (lapis.getWorkingUnitsForMilestone as any).mockRejectedValue(new Error("LaPis timeout"));
-
-    const callbacks = {
-      onEscalation: vi.fn(),
-      onAgentStatus: vi.fn(),
-      onMilestoneProgress: vi.fn(),
-      onCostUpdate: vi.fn(),
-      onError: vi.fn(),
-    };
+    const callbacks = makeCallbacks();
 
     const loop = createMilestoneLoop(lapis, createMockPinyx(), callbacks, {
       agentDir: "/test/.pi/agent", repoRoot: "/test/repo", gitMainBranch: "main",
@@ -342,30 +234,18 @@ describe("milestone loop — retry/rescope handling", () => {
       expect(result.summary).toContain("Failed to load working units");
     }
     expect(callbacks.onError).toHaveBeenCalledWith(
-      "m-1",
-      "lapis_units_fetch_failed",
+      "m-1", "lapis_units_fetch_failed",
       expect.stringContaining("Failed to load working units"),
       expect.objectContaining({ milestoneId: "ms-1", recoverable: true }),
     );
   });
 
-  it("escalates when all retries and rescopes exhausted", async () => {
+  it("completes the milestone (release + checkpoint) when the end-of-milestone validator passes", async () => {
     const units = [makeUnit("u-1", ["src/auth/"], ["auth"])];
-    const verdicts = [failVerdict(["u-1"])];
-    const lapis = createMockLapis(units, verdicts);
+    const lapis = createMockLapis(units, [passVerdict]);
+    const callbacks = makeCallbacks();
 
-    (lapis.getRetryCounter as any).mockResolvedValue({ milestoneId: "ms-1", retries: 6, rescopes: 6 });
-
-    const pinyx = createMockPinyx();
-    const callbacks = {
-      onEscalation: vi.fn(),
-      onAgentStatus: vi.fn(),
-      onMilestoneProgress: vi.fn(),
-      onCostUpdate: vi.fn(),
-      onError: vi.fn(),
-    };
-
-    const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
+    const loop = createMilestoneLoop(lapis, createMockPinyx(), callbacks, {
       agentDir: "/test/.pi/agent", repoRoot: "/test/repo", gitMainBranch: "main",
     });
 
@@ -373,7 +253,9 @@ describe("milestone loop — retry/rescope handling", () => {
 
     expect(result.status).toBe("checkpoint_needed");
     if (result.status === "checkpoint_needed") {
-      expect(result.trigger).toBe("validation_failed");
+      expect(result.trigger).toBe("milestone_complete");
+      expect(result.summary).toContain("Release branch");
     }
+    expect(lapis.updateWorkingUnitStatus).toHaveBeenCalledWith("u-1", "completed");
   });
 });

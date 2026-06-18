@@ -32,8 +32,10 @@ describe("runSmokeCheck", () => {
   });
 
   it("records failures for commands that exit non-zero and continues running subsequent checks", async () => {
-    mockExecAsync.mockImplementation(async (cmd: string) => {
-      if (cmd === "bash") {
+    // Reject only the typecheck command so the subsequent lint/test run
+    // independently (the smoke check does not short-circuit on failure).
+    mockExecAsync.mockImplementation(async (cmd: string, args?: string[]) => {
+      if (cmd === "bash" && args?.[1] === "tsc --noEmit") {
         return Promise.reject(Object.assign(new Error("typecheck errors"), { stderr: "src/x.ts:1:1 error" }));
       }
       return { stdout: "", stderr: "" };
@@ -45,7 +47,8 @@ describe("runSmokeCheck", () => {
     });
     expect(result.pass).toBe(false);
     expect(result.failures.some((f) => f.includes("typecheck"))).toBe(true);
-    expect(result.failures.some((f) => f.includes("npm test"))).toBe(false); // succeeded
+    // npm test was permitted to run; its failure (if any) is independent.
+    expect(result.failures.some((f) => f.includes("npm test"))).toBe(false);
   });
 
   it("rejects commands with shell metacharacters and does not execute them", async () => {

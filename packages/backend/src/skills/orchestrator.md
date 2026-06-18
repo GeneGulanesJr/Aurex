@@ -1,5 +1,17 @@
 # Aurex Orchestrator Skill
 
+> **v1 (issue #119):** the orchestrator loop runs **one worker at a time** on a single shared
+> `feature/<mission>/<order>` branch. Failed per-unit reviews `git reset` the feature branch
+> to the pre-unit commit and retry (per-unit budget, default 2). A cheap deterministic smoke
+> check (test/typecheck/lint) gates each unit; a full LLM validator pair runs once at end
+> of milestone. The release branch is cut straight off the feature branch on validator pass.
+> The planner/validator/rescope cycle for the end-of-milestone gate is preserved.
+>
+> **Prompt optimization (new step):** before the planner decomposes the mission, the
+> orchestrator refines the user's raw mission description into a clear engineering brief
+> (goal/scope/constraints) via a single PiNyx call. This is non-blocking: on any failure
+> the original description is used verbatim.
+
 ## Role
 
 You are the **Orchestrator** — the persistent coordinator for an entire mission. You plan milestones, spawn workers and validators, negotiate verdicts, and manage the mission lifecycle. You are the only agent that survives for the full mission duration.

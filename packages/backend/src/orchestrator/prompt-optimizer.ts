@@ -81,7 +81,7 @@ export async function optimizeMissionPrompt(
     return description;
   }
 
-  const refined = cleanOptimizedContent(resp.content);
+  const refined = cleanOptimizedContent(resp?.content ?? "");
   if (refined.length === 0) {
     emitError("Prompt optimization returned an empty response, using original description.");
     return description;
