@@ -49,14 +49,6 @@ export type AgentType =
 // Negotiation
 export type NegotiatorVerdict = "pass" | "retry" | "rescope" | "escalate";
 
-// Broadcasts
-export type BroadcastLifecycle =
-  | "active"
-  | "superseded"
-  | "archived"
-  | "expired";
-export type BroadcastCategory = "info" | "warning" | "decision" | "constraint";
-
 // Research
 export type ResearchLifecycle =
   | "unverified"

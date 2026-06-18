@@ -2,7 +2,7 @@
 import type {
   Mission, MissionConfig, Milestone, MilestoneSpec,
   WorkingUnit, WorkingUnitSpec, WorkerStatus,
-  Handoff, HandoffRecord, HandoffResult, Broadcast, BroadcastLifecycle,
+  Handoff, HandoffRecord, HandoffResult,
   ResearchFinding, ResearchLifecycle, StandingContext,
   AgentSessionRecord, CostSummary,
   RetryCounter, RescopeEvent, MemoryResult,
@@ -104,11 +104,6 @@ export interface LaPisClient {
   writeVerdict(sessionId: string, verdict: Omit<ValidationVerdict, "id" | "sessionId">): Promise<ValidationVerdict>;
   classifyVerdict(verdictId: string, classification: "patchable" | "blocking"): Promise<ValidationVerdict>;
   getVerdicts(milestoneId: string): Promise<ValidationVerdict[]>;
-
-  // Broadcasts
-  writeBroadcast(agentId: string, broadcast: Omit<Broadcast, "id" | "createdAt">): Promise<Broadcast>;
-  transitionBroadcast(broadcastId: string, newStatus: BroadcastLifecycle, actorId: string): Promise<Broadcast>;
-  getBroadcasts(missionId: string, opts?: { status?: BroadcastLifecycle[] }): Promise<Broadcast[]>;
 
   // Research findings
   writeFinding(agentId: string, finding: Omit<ResearchFinding, "id" | "createdAt">): Promise<ResearchFinding>;
@@ -447,19 +442,6 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
     async getVerdicts(milestoneId) {
       const verdicts = await get<RawValidationVerdict[]>(`/milestones/${milestoneId}/verdicts`);
       return verdicts.map(normalizeVerdict);
-    },
-
-    // Broadcasts
-    writeBroadcast(agentId, broadcast) {
-      return post("/broadcasts", { agentId, ...broadcast });
-    },
-    transitionBroadcast(broadcastId, newStatus, actorId) {
-      return patch(`/broadcasts/${broadcastId}`, { newStatus, actorId });
-    },
-    getBroadcasts(missionId, opts) {
-      const params = new URLSearchParams();
-      if (opts?.status?.length) params.set("status", opts.status.join(","));
-      return get(`/missions/${missionId}/broadcasts?${params}`);
     },
 
     // Research findings

@@ -1,12 +1,12 @@
 import { describe, it, expect } from "vitest";
 import type {
   MissionStatus, MilestoneStatus, AgentStatus, WorkerStatus, AgentType,
-  NegotiatorVerdict, BroadcastLifecycle, BroadcastCategory,
+  NegotiatorVerdict,
   ResearchLifecycle, ResearchRelevance, CheckpointTrigger, CheckpointDecision,
 } from "../src/enums";
 import type {
   Mission, MissionConfig, Milestone, WorkingUnit, ValidationContract,
-  Handoff, Broadcast, ResearchFinding, AgentSessionRecord, CostEntry,
+  Handoff, ResearchFinding, AgentSessionRecord, CostEntry,
   RescopeEvent, ValidationVerdict,
 } from "../src/types";
 import type {

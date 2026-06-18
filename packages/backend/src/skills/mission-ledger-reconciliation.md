@@ -42,7 +42,7 @@ Expect:
 - Merge reports and CI/check results
 - Failure recovery plans
 - Human checkpoints and decisions
-- Active broadcasts, research findings, and focused LaPis context gaps
+- Active research findings and focused LaPis context gaps
 - Cost, elapsed time, retry counters, and rescope counters
 
 ## Reconciliation Steps

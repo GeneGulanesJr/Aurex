@@ -203,6 +203,30 @@ describe("worker finding tools", () => {
     });
   });
 
+  // #87 regression: the enforcement gate (enforceResearchTransition) must be the
+  // thing blocking invalid transitions at the worker-tools wiring layer, and its
+  // reason must be surfaced — not a generic guard. If the gate call were removed
+  // from worker-tools.ts, superseded→verified would fall through to LaPis.
+  describe("enforcement gate wiring (#87 regression)", () => {
+    it("surfaces the gate's specific reason for an invalid transition and does not call LaPis", async () => {
+      // superseded may only transition to expired — verifying it is invalid.
+      const { lapis, transitionFinding } = createMockLapis([makeFinding({ status: "superseded" })]);
+      const tools = createWorkerTools(lapis, "unit-1", {
+        missionId: "m-1",
+        getSessionId: () => "ws-1",
+      });
+
+      const result = await runTool(tools, "verify_finding", { findingId: "finding-1" });
+
+      expect(result.content[0].text).toContain("Cannot transition");
+      // The gate's own reason string is forwarded verbatim — proves the gate
+      // (not a generic block) rejected it.
+      expect(result.content[0].text).toContain("Invalid transition: superseded → verified");
+      expect(result.content[0].text).toContain("Allowed: [expired]");
+      expect(transitionFinding).not.toHaveBeenCalled();
+    });
+  });
+
   it("still includes write_handoff and search_memory tools", () => {
     const { lapis } = createMockLapis();
     const tools = createWorkerTools(lapis, "unit-1", {

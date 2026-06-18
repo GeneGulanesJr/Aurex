@@ -4,8 +4,6 @@ import type {
   MilestoneStatus,
   AgentType,
   WorkerStatus,
-  BroadcastLifecycle,
-  BroadcastCategory,
   ResearchLifecycle,
   ResearchRelevance,
   CheckpointDecision,
@@ -122,20 +120,6 @@ export interface HandoffRecord extends Handoff {
 export interface HandoffResult {
   accepted: boolean;
   errors: string[];
-}
-
-export interface Broadcast {
-  id: string;
-  missionId: string;
-  authorId: string;
-  authorType: AgentType;
-  category: BroadcastCategory;
-  title: string;
-  content: string;
-  status: BroadcastLifecycle;
-  ttl: number | null;
-  expiresAt: string | null;
-  createdAt: string;
 }
 
 export interface ResearchFinding {
