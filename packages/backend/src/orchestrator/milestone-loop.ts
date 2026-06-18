@@ -436,7 +436,27 @@ export function createMilestoneLoop(
       ctx.activeHandles.add(handle);
       callbacks.onAgentStatus(agentId, "worker", "working", milestone.id);
 
-      const result = await handle.completed;
+      // Await the worker. A worker that completes-but-failed (timeout, aborted,
+      // no handoff) RESOLVES with a failure status and is handled by
+      // classifyWorkerFailure below, which resets the branch. But the awaited
+      // promise can also REJECT — e.g. QuotaExhaustedError thrown mid-session
+      // after the worker already ran `git commit` but before write_handoff.
+      // A rejecting path bypasses classifyWorkerFailure, so an unvalidated
+      // partial commit would otherwise survive on the feature branch. Catch
+      // here, reset to the pre-unit commit, then re-throw so the caller's
+      // quota/abort handling still runs. (On resume, createFeatureWorktree
+      // preserves the branch — now correctly back at the last approved commit.)
+      let result;
+      try {
+        result = await handle.completed;
+      } catch (err) {
+        ctx.activeHandles.delete(handle);
+        handle.dispose();
+        await worktreeManager.resetTo(featureWorktree.worktreePath, baseSha).catch((resetErr: unknown) => {
+          console.warn(`[milestone-loop] Failed to reset feature branch after interrupted worker ${agentId}:`, resetErr instanceof Error ? resetErr.message : resetErr);
+        });
+        throw err;
+      }
       ctx.activeHandles.delete(handle);
       handle.dispose();
 
@@ -732,6 +752,11 @@ function resolveSmokeCommands(contractTestCommands: string[]): { test?: string; 
  * envs). Env vars are static for the process lifetime, so the result is
  * memoized — `resolveSmokeCommands` and `buildScaffoldForUnit` call this
  * per-unit and would otherwise re-parse env on every worker spawn.
+ *
+ * NOTE: the cache is never invalidated. This is correct for the current design
+ * (env does not change at runtime), but if hot-reloading of config is ever
+ * added, this cache MUST be invalidated/reloaded or it will serve stale values
+ * for the rest of the process.
  */
 let _defensiveConfig: { maxPerUnitRetries: number; smokeCheckCommands: { test?: string; typecheck?: string; lint?: string } } | null = null;
 function loadConfigDefensive(): {

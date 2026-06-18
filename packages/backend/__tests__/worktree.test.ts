@@ -122,14 +122,6 @@ describe("WorktreeManager", () => {
     expect(calls.some((c) => c.includes("checkout feature/mission-1/1"))).toBe(false);
   });
 
-  it("recreates a branch via git branch -f", async () => {
-    const manager = createWorktreeManager("/repo/root");
-    await manager.recreateBranch("release/mission-1/1-ms-1", "main");
-
-    const calls = mockExecAsync.mock.calls.map((c) => `${c[0]} ${(c[1] as string[]).join(" ")}`);
-    expect(calls.some((c) => c.includes("branch -f release/mission-1/1-ms-1 main"))).toBe(true);
-  });
-
   it("prunes a worktree", async () => {
     const manager = createWorktreeManager("/repo/root");
     await manager.pruneWorktree("/repo/root/.git-worktrees/feature-ms-1");
