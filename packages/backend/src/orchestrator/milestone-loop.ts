@@ -44,8 +44,15 @@ const execFileAsync = promisify(execFile);
 // giving the human direct control over whether to rescope, retry, or abort.
 const AUTO_RESCOPE_BATCH_LIMIT = 0;
 
-/** v1 runs one worker at a time (issue #119). Kept for spawner parity. */
-const MAX_ACTIVE_AGENTS = 1;
+/**
+ * v1 runs one worker at a time (issue #119). Workers are serialized by the
+ * per-unit `for` loop (each `runUnit` is awaited before the next), NOT by
+ * this cap. The cap only needs to accommodate the end-of-milestone validator
+ * pair (scrutiny + user_testing), which runs concurrently via `Promise.all`.
+ * A cap of 1 would make the second validator spawn throw
+ * "AgentSpawner concurrency limit reached". 2 = max validator pair size.
+ */
+const MAX_ACTIVE_AGENTS = 2;
 
 export type MilestoneLoopResult =
   | { status: "completed" }
@@ -219,10 +226,19 @@ export function createMilestoneLoop(
         if (unit.status === "completed") continue;
         ctx.throwIfAborted();
 
+        // Cost cap check BEFORE spawning the next unit too: retries of a
+        // prior unit (or a single expensive worker) can push cumulativeCost
+        // past the cap without a unit completing. Stopping here avoids
+        // spending more on the next unit before the human approves.
+        if (config.costCap > 0 && cumulativeCost >= config.costCap) {
+          const summary = `Mission cost cap exceeded: ${cumulativeCost.toFixed(2)} >= ${config.costCap.toFixed(2)}`;
+          return { status: "checkpoint_needed", trigger: "cost_cap_exceeded", milestoneId: milestone.id, summary };
+        }
+
         const unitOutcome = await runUnit({
           mission, milestone, unit, units, criteria, testCommands,
           featureWorktree, researchFindings, contract, retryBudget,
-          maxPerUnitRetries, affectedCodeCache, ctx,
+          maxPerUnitRetries, affectedCodeCache, completedCount, ctx,
         });
         if (unitOutcome.status !== "continue") return unitOutcome;
         completedCount += 1;
@@ -230,7 +246,7 @@ export function createMilestoneLoop(
 
         // Cost cap check after each unit.
         if (config.costCap > 0 && cumulativeCost >= config.costCap) {
-          const summary = `Mission cost cap exceeded: $${cumulativeCost.toFixed(2)} >= $${config.costCap.toFixed(2)}`;
+          const summary = `Mission cost cap exceeded: ${cumulativeCost.toFixed(2)} >= ${config.costCap.toFixed(2)}`;
           return { status: "checkpoint_needed", trigger: "cost_cap_exceeded", milestoneId: milestone.id, summary };
         }
       }
@@ -341,6 +357,7 @@ export function createMilestoneLoop(
     researchFindings: ResearchFinding[]; contract: any;
     retryBudget: ReturnType<typeof createRetryBudget>; maxPerUnitRetries: number;
     affectedCodeCache: AffectedCodeCache;
+    completedCount: number;
     ctx: { throwIfAborted: () => void; activeHandles: Set<{ abort: () => void }> };
   }): Promise<MilestoneLoopResult | { status: "continue" }> {
     const { mission, milestone, unit, featureWorktree, affectedCodeCache, ctx } = args;
@@ -468,7 +485,9 @@ export function createMilestoneLoop(
         if (canRetryUnit(args.retryBudget, unit.id, args.maxPerUnitRetries)) {
           markUnitRetry(args.retryBudget, unit.id);
           await lapis.updateWorkingUnitStatus(unit.id, "planned");
-          callbacks.onMilestoneProgress(milestone.id, "retrying", 0, 0);
+          // Report meaningful progress (completed so far / total) instead of
+          // 0/0, so UI consumers don't flicker the progress bar during a retry.
+          callbacks.onMilestoneProgress(milestone.id, "retrying", args.completedCount, args.units.length);
           attemptFeedback = retryFeedback ?? "";
           continue; // retry THIS unit
         }

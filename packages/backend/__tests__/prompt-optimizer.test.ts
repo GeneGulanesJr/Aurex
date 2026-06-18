@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { optimizeMissionPrompt } from "../src/orchestrator/prompt-optimizer";
+import { QuotaExhaustedError } from "../src/clients/pinyx-quota-wrapper";
 import type { PinyxClient } from "../src/clients/pinyx-client";
 
 function makePinyx(content: string): PinyxClient {
@@ -28,10 +29,37 @@ describe("optimizeMissionPrompt", () => {
     expect(result).toBe("## Goal\nX");
   });
 
+  it("strips a chatty preamble before the first Markdown heading", async () => {
+    const pinyx = makePinyx("Sure! Here is the refined mission description:\n\n## Goal\nShip auth");
+    const result = await optimizeMissionPrompt(pinyx, "x", { model: "m" });
+    expect(result).toBe("## Goal\nShip auth");
+  });
+
+  it("strips a 'Here is…' preamble when the brief has no headings", async () => {
+    const pinyx = makePinyx("Here is the refined version:\nBuild the thing.");
+    const result = await optimizeMissionPrompt(pinyx, "x", { model: "m" });
+    expect(result).toBe("Build the thing.");
+  });
+
+  it("preserves a heading that starts at offset 0 (no preamble)", async () => {
+    const pinyx = makePinyx("## Goal\nX");
+    const result = await optimizeMissionPrompt(pinyx, "x", { model: "m" });
+    expect(result).toBe("## Goal\nX");
+  });
+
   it("falls back to the original description on PiNyx error", async () => {
     const pinyx = { chat: vi.fn().mockRejectedValue(new Error("quota exhausted")) } as unknown as PinyxClient;
     const result = await optimizeMissionPrompt(pinyx, "original", { model: "m" });
     expect(result).toBe("original");
+  });
+
+  it("re-throws QuotaExhaustedError instead of swallowing it", async () => {
+    // A quota-exhaustion signal must propagate so mission-runner pauses for
+    // quota recovery, rather than degrading to the raw description and then
+    // failing on the subsequent planner call.
+    const quotaError = new QuotaExhaustedError("prov-1", new Date(Date.now() + 3600_000).toISOString());
+    const pinyx = { chat: vi.fn().mockRejectedValue(quotaError) } as unknown as PinyxClient;
+    await expect(optimizeMissionPrompt(pinyx, "original", { model: "m" })).rejects.toBe(quotaError);
   });
 
   it("falls back to the original description on empty refinement", async () => {

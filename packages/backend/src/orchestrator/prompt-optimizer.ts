@@ -1,6 +1,7 @@
 // packages/backend/src/orchestrator/prompt-optimizer.ts
 import type { PinyxClient } from "../clients/pinyx-client.js";
 import type { EventBus } from "../ws/events.js";
+import { QuotaExhaustedError } from "../clients/pinyx-quota-wrapper.js";
 
 /**
  * The prompt-optimization step (issue #119 + user request).
@@ -38,9 +39,25 @@ function buildOptimizeUserMessage(description: string): string {
 
 function cleanOptimizedContent(content: string): string {
   let out = content;
+  // Strip model reasoning blocks some providers prepend.
   out = out.replace(/<think[\s\S]*?<\/think>\s*/gi, "");
+  // Strip a wrapping code fence if the whole response is fenced.
   out = out.replace(/^```(?:markdown|text|plaintext)?\s*/i, "").replace(/\s*```$/s, "");
-  out = out.replace(/^(?:refined\s+mission\s+(?:description|brief)\s*:?|here\s+is[^:\n]*:?)\s*\n+/i, "");
+
+  // Strip verbose preambles like "Sure! Here is the refined version:" that
+  // some models emit despite instructions. If the refined brief uses Markdown
+  // headings (the requested format), drop everything before the FIRST heading
+  // — that reliably removes any chatty lead-in. Otherwise fall back to a
+  // targeted preamble regex for non-heading output.
+  const headingMatch = out.match(/^(#{1,6})\s+\S/m);
+  if (headingMatch && headingMatch.index !== undefined && headingMatch.index > 0) {
+    out = out.slice(headingMatch.index);
+  } else {
+    out = out.replace(
+      /^(?:refined\s+mission\s+(?:description|brief)\s*:?|here\s+is[^:\n]*:?|sure!?\s*,?\s*here[^:\n]*:?)\s*\n+/i,
+      "",
+    );
+  }
   return out.trim();
 }
 
@@ -76,6 +93,11 @@ export async function optimizeMissionPrompt(
       ],
     });
   } catch (err) {
+    // Re-throw quota exhaustion so mission-runner pauses for quota recovery
+    // (QuotaExhaustedError) instead of degrading to the raw description and
+    // then failing on the subsequent planner call. Only soft/parse errors
+    // fall back to the original description.
+    if (err instanceof QuotaExhaustedError) throw err;
     const msg = err instanceof Error ? err.message : String(err);
     emitError(`Prompt optimization failed, using original description: ${msg}`);
     return description;

@@ -140,6 +140,10 @@ function createMockLapis(): LaPisClient {
     ]),
     getContractHistory: vi.fn().mockResolvedValue([]),
     getHandoffsForMilestone: vi.fn().mockResolvedValue([makeHandoff("u-1"), makeHandoff("u-done")]),
+    // v1 milestone loop looks up handoffs per-unit (lapis.getHandoffForUnit)
+    // rather than via the milestone-level query. Mock it so a worker that
+    // completes produces a valid handoff and the unit can succeed.
+    getHandoffForUnit: vi.fn().mockResolvedValue(makeHandoff("u-1")),
     getVerdicts: vi.fn().mockResolvedValue([
       { verdict: "pass", validatorType: "validator_scrutiny", sessionId: "mock" },
     ]),

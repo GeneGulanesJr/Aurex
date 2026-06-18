@@ -146,6 +146,73 @@ describe("milestone loop — validator phase", () => {
     expect(registrations.filter((t: string) => t === "validator_scrutiny" || t === "validator_user_testing").length).toBeGreaterThanOrEqual(2);
   });
 
+  it("runs the validator pair concurrently without tripping the spawner cap", async () => {
+    // Regression guard: the end-of-milestone validator pair is spawned via
+    // Promise.all, so BOTH spawns are issued before either handle completes.
+    // The spawner's maxConcurrent check runs synchronously at the top of each
+    // spawn() before any handle is registered, so the pair does not trip it in
+    // practice — but MAX_ACTIVE_AGENTS is sized (2) to accommodate the pair
+    // so that if registration ever became synchronous the pair would still
+    // coexist. This test pins the concurrent-overlap behavior: both validator
+    // sessions are live at the same instant, and no concurrency error fires.
+    const completedUnit: WorkingUnit = {
+      id: "unit-1", milestoneId: "ms-1", description: "Do thing",
+      declaredPaths: ["src/auth.ts"], declaredModules: ["auth"],
+      status: "completed", taskBranch: "feature/m-1/1", worktreePath: "/wt", sessionId: "sess-1",
+    };
+    const passVerdicts: ValidationVerdict[] = [
+      { id: "v-1", milestoneId: "ms-1", contractId: "c-1", validatorType: "validator_scrutiny", sessionId: "mock-session", verdict: "pass", findings: "OK", failedUnitIds: [], timestamp: "" },
+      { id: "v-2", milestoneId: "ms-1", contractId: "c-1", validatorType: "validator_user_testing", sessionId: "mock-session", verdict: "pass", findings: "OK", failedUnitIds: [], timestamp: "" },
+    ];
+    const lapis = createMockLapis([completedUnit], passVerdicts);
+    // Pre-populate findings so the pre-worker research phase is skipped —
+    // only the two validator sessions subscribe, which we hold open to force
+    // concurrent overlap.
+    (lapis.getFindings as any).mockResolvedValue([
+      { id: "f-1", missionId: "m-1", domain: ["auth"], title: "ctx", content: "skip research", relevance: "low", status: "active", createdAt: "" },
+    ]);
+    const pinyx = createMockPinyx();
+
+    // Hold every subscribing session open. With research skipped and the unit
+    // already completed, the only subscribers are the two validators. Each
+    // held session self-releases on a macrotask once BOTH have landed, which
+    // forces the pair to be live simultaneously.
+    let liveSessions = 0;
+    let peakConcurrent = 0;
+    const held: Array<(e: unknown) => void> = [];
+    mockSession.subscribe.mockImplementation((fn: (e: unknown) => void) => {
+      liveSessions += 1;
+      peakConcurrent = Math.max(peakConcurrent, liveSessions);
+      held.push(fn);
+      // Once both validators are live, release them both on a macrotask so
+      // the overlap is observed before either completes.
+      if (held.length === 2) {
+        const toRelease = [...held];
+        setTimeout(() => {
+          for (const f of toRelease) { liveSessions -= 1; f({ type: "agent_end" }); }
+        }, 0);
+      }
+      return () => {};
+    });
+
+    const callbacks = {
+      onEscalation: vi.fn(), onAgentStatus: vi.fn(), onMilestoneProgress: vi.fn(),
+      onCostUpdate: vi.fn(), onError: vi.fn(),
+    };
+    const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
+      agentDir: "/test/.pi/agent", repoRoot: "/test/repo", gitMainBranch: "main",
+    });
+
+    const result = await loop.run(makeMission(), [makeMilestone({ description: "Implement auth. Acceptance: none" })]);
+
+    expect(result.status).toBe("checkpoint_needed");
+    // Both validators were alive at the same instant — the cap allowed the pair.
+    expect(peakConcurrent).toBeGreaterThanOrEqual(2);
+    expect(callbacks.onError).not.toHaveBeenCalledWith(
+      "m-1", expect.stringMatching(/concurrency limit/i), expect.anything(), expect.anything(),
+    );
+  });
+
   it("returns checkpoint_needed when validator fails and rescope limit hit", async () => {
     const completedUnit: WorkingUnit = {
       id: "unit-1", milestoneId: "ms-1", description: "Do thing",
