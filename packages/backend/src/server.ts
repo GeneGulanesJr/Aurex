@@ -110,7 +110,9 @@ async function main() {
   // process crash/restart. Previously only "paused" missions were resumed; a
   // crash mid-build left missions stuck in running/planning/executing forever.
   try {
-    const nonTerminalStatuses = ["paused", "running", "planning", "executing", "waiting_checkpoint"];
+    // Only real MissionStatus values (not RunnerStatus internal states like
+    // "executing"/"waiting_checkpoint" which are never persisted to LaPis).
+    const nonTerminalStatuses = ["paused", "running", "planning"];
     const orphans: string[] = [];
     for (const st of nonTerminalStatuses) {
       const missions = await lapis.listMissions({ status: st });
@@ -288,8 +290,10 @@ async function main() {
   async function reconcileOrphanedMissions() {
     try {
       const liveIds = activePoolMissionIds();
-      const nonTerminal = ["running", "planning", "executing", "waiting_checkpoint"];
-      for (const st of nonTerminal) {
+      // Only scan for actively-running missions with no live runner. "paused"
+      // is intentionally human-in-the-loop — never auto-fail it.
+      const orphanStatuses = ["running", "planning"];
+      for (const st of orphanStatuses) {
         const missions = await lapis.listMissions({ status: st });
         for (const mission of missions) {
           if (liveIds.has(mission.id)) continue;

@@ -125,7 +125,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         // at finalization, but fail defensively).
         const code = finalState === "aborted" ? "MISSION_ABORTED" : "MISSION_FAILED";
         const msg = finalState === "aborted" ? "Mission aborted by user" : `Mission ended in state: ${finalState}`;
-        await config.queue.fail(jobId, claimToken, code as any, msg);
+        await config.queue.fail(jobId, claimToken, code, msg);
       }
     } catch (err) {
       console.warn("[runner] job finalization failed:", err instanceof Error ? err.message : err);

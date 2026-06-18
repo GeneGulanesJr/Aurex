@@ -146,4 +146,6 @@ export type ExecutionFailureCode =
   | "LAPIS_UNAVAILABLE"
   | "MODEL_UNAVAILABLE"
   | "MAX_ATTEMPTS_EXHAUSTED"
+  | "MISSION_FAILED"
+  | "MISSION_ABORTED"
   | "UNKNOWN";
