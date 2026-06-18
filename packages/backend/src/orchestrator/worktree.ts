@@ -29,7 +29,6 @@ export interface WorktreeManager {
   currentHead(worktreePath: string): Promise<string>;
   resetTo(worktreePath: string, sha: string): Promise<void>;
   cutReleaseBranch(missionId: string, milestoneOrderIndex: number, milestoneId: string, fromBranch: string): Promise<string>;
-  recreateBranch(branchName: string, baseBranch: string): Promise<void>;
   pruneWorktree(worktreePath: string): Promise<void>;
   installBranchGuard(worktreePath: string, allowedBranch: string): Promise<void>;
 }
@@ -157,14 +156,6 @@ export function createWorktreeManager(repoRoot: string): WorktreeManager {
       // Stryker disable next-line StringLiteral: git command args
       await git(repoRoot, "branch", "-f", releaseBranch, fromBranch);
       return releaseBranch;
-    },
-
-    async recreateBranch(branchName, baseBranch) {
-      // Legacy helper retained for compatibility. Creates/forces a branch ref
-      // at baseBranch's HEAD without checking either out (avoids worktree
-      // conflicts on linked branches).
-      // Stryker disable next-line StringLiteral: git command args
-      await git(repoRoot, "branch", "-f", branchName, baseBranch);
     },
 
     async pruneWorktree(worktreePath) {

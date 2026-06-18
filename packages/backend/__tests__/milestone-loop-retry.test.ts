@@ -170,6 +170,40 @@ describe("milestone loop — sequential retry/rescope handling", () => {
     );
   });
 
+  it("resets the feature branch to the pre-unit commit when a worker attempt fails", async () => {
+    // Regression guard: a worker that completed-but-failed (no valid handoff)
+    // must git reset the shared feature branch back to the pre-unit commit so
+    // the branch only ever holds approved work. The reset must use the SHA
+    // captured by currentHead() BEFORE the worker ran.
+    const units = [makeUnit("u-1", ["src/auth/"], ["auth"])];
+    const lapis = createMockLapis(units, [passVerdict], []); // no handoff → failure
+    const callbacks = makeCallbacks();
+
+    // Script git rev-parse HEAD to return a stable pre-unit SHA so we can
+    // assert reset --hard uses exactly that SHA.
+    const preUnitSha = "preunit-sha-abc123";
+    let revParseCalls = 0;
+    mockExecAsync.mockImplementation(async (cmd: string, args?: string[]) => {
+      if (cmd === "git" && args?.includes("rev-parse") && args?.includes("HEAD")) {
+        revParseCalls++;
+        return { stdout: `${preUnitSha}\n`, stderr: "" };
+      }
+      return { stdout: "", stderr: "" };
+    });
+
+    const loop = createMilestoneLoop(lapis, createMockPinyx(), callbacks, {
+      agentDir: "/test/.pi/agent", repoRoot: "/test/repo", gitMainBranch: "main",
+    });
+
+    await loop.run(makeMission({ configJson: { maxPerUnitRetries: 0 } as any }), [makeMilestone()]);
+
+    // The worker failed (no handoff) → the branch must be hard-reset to the
+    // pre-unit SHA captured before the worker spawned.
+    const calls = mockExecAsync.mock.calls.map((c: any) => `${c[0]} ${(c[1] as string[]).join(" ")}`);
+    expect(calls.some((c) => c.includes(`reset --hard ${preUnitSha}`))).toBe(true);
+    expect(revParseCalls).toBeGreaterThan(0);
+  });
+
   it("escalates to the user (validation_failed) instead of auto-rescoping when auto-rescope is disabled", async () => {
     const units = [makeUnit("u-1", ["src/auth/"], ["auth"])];
     const verdicts = [failVerdict(["u-1"])];
