@@ -10,8 +10,13 @@ name: Mutation Testing
 on:
   pull_request:
     paths:
-      - "packages/backend/src/orchestrator/negotiator.ts"
       - "packages/backend/src/enforcement/**"
+      - "packages/backend/src/orchestrator/checkpoint-manager.ts"
+      - "packages/backend/src/orchestrator/compression.ts"
+      - "packages/backend/src/orchestrator/rescope.ts"
+      - "packages/backend/src/orchestrator/planner.ts"
+      - "packages/backend/src/orchestrator/worktree.ts"
+      - "packages/backend/src/orchestrator/bumblebee-runner.ts"
       - "packages/backend/src/orchestrator/milestone-loop.ts"
       - "packages/backend/src/orchestrator/mission-runner.ts"
       - "stryker.config.mjs"
@@ -20,8 +25,13 @@ on:
   push:
     branches: [main]
     paths:
-      - "packages/backend/src/orchestrator/negotiator.ts"
       - "packages/backend/src/enforcement/**"
+      - "packages/backend/src/orchestrator/checkpoint-manager.ts"
+      - "packages/backend/src/orchestrator/compression.ts"
+      - "packages/backend/src/orchestrator/rescope.ts"
+      - "packages/backend/src/orchestrator/planner.ts"
+      - "packages/backend/src/orchestrator/worktree.ts"
+      - "packages/backend/src/orchestrator/bumblebee-runner.ts"
       - "packages/backend/src/orchestrator/milestone-loop.ts"
       - "packages/backend/src/orchestrator/mission-runner.ts"
       - "stryker.config.mjs"
