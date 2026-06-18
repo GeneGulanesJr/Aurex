@@ -146,6 +146,73 @@ describe("milestone loop — validator phase", () => {
     expect(registrations.filter((t: string) => t === "validator_scrutiny" || t === "validator_user_testing").length).toBeGreaterThanOrEqual(2);
   });
 
+  it("runs the validator pair concurrently without tripping the spawner cap", async () => {
+    // Regression guard: the end-of-milestone validator pair is spawned via
+    // Promise.all, so BOTH spawns are issued before either handle completes.
+    // The spawner's maxConcurrent check runs synchronously at the top of each
+    // spawn() before any handle is registered, so the pair does not trip it in
+    // practice — but MAX_ACTIVE_AGENTS is sized (2) to accommodate the pair
+    // so that if registration ever became synchronous the pair would still
+    // coexist. This test pins the concurrent-overlap behavior: both validator
+    // sessions are live at the same instant, and no concurrency error fires.
+    const completedUnit: WorkingUnit = {
+      id: "unit-1", milestoneId: "ms-1", description: "Do thing",
+      declaredPaths: ["src/auth.ts"], declaredModules: ["auth"],
+      status: "completed", taskBranch: "feature/m-1/1", worktreePath: "/wt", sessionId: "sess-1",
+    };
+    const passVerdicts: ValidationVerdict[] = [
+      { id: "v-1", milestoneId: "ms-1", contractId: "c-1", validatorType: "validator_scrutiny", sessionId: "mock-session", verdict: "pass", findings: "OK", failedUnitIds: [], timestamp: "" },
+      { id: "v-2", milestoneId: "ms-1", contractId: "c-1", validatorType: "validator_user_testing", sessionId: "mock-session", verdict: "pass", findings: "OK", failedUnitIds: [], timestamp: "" },
+    ];
+    const lapis = createMockLapis([completedUnit], passVerdicts);
+    // Pre-populate findings so the pre-worker research phase is skipped —
+    // only the two validator sessions subscribe, which we hold open to force
+    // concurrent overlap.
+    (lapis.getFindings as any).mockResolvedValue([
+      { id: "f-1", missionId: "m-1", domain: ["auth"], title: "ctx", content: "skip research", relevance: "low", status: "active", createdAt: "" },
+    ]);
+    const pinyx = createMockPinyx();
+
+    // Hold every subscribing session open. With research skipped and the unit
+    // already completed, the only subscribers are the two validators. Each
+    // held session self-releases on a macrotask once BOTH have landed, which
+    // forces the pair to be live simultaneously.
+    let liveSessions = 0;
+    let peakConcurrent = 0;
+    const held: Array<(e: unknown) => void> = [];
+    mockSession.subscribe.mockImplementation((fn: (e: unknown) => void) => {
+      liveSessions += 1;
+      peakConcurrent = Math.max(peakConcurrent, liveSessions);
+      held.push(fn);
+      // Once both validators are live, release them both on a macrotask so
+      // the overlap is observed before either completes.
+      if (held.length === 2) {
+        const toRelease = [...held];
+        setTimeout(() => {
+          for (const f of toRelease) { liveSessions -= 1; f({ type: "agent_end" }); }
+        }, 0);
+      }
+      return () => {};
+    });
+
+    const callbacks = {
+      onEscalation: vi.fn(), onAgentStatus: vi.fn(), onMilestoneProgress: vi.fn(),
+      onCostUpdate: vi.fn(), onError: vi.fn(),
+    };
+    const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
+      agentDir: "/test/.pi/agent", repoRoot: "/test/repo", gitMainBranch: "main",
+    });
+
+    const result = await loop.run(makeMission(), [makeMilestone({ description: "Implement auth. Acceptance: none" })]);
+
+    expect(result.status).toBe("checkpoint_needed");
+    // Both validators were alive at the same instant — the cap allowed the pair.
+    expect(peakConcurrent).toBeGreaterThanOrEqual(2);
+    expect(callbacks.onError).not.toHaveBeenCalledWith(
+      "m-1", expect.stringMatching(/concurrency limit/i), expect.anything(), expect.anything(),
+    );
+  });
+
   it("returns checkpoint_needed when validator fails and rescope limit hit", async () => {
     const completedUnit: WorkingUnit = {
       id: "unit-1", milestoneId: "ms-1", description: "Do thing",
@@ -177,22 +244,20 @@ describe("milestone loop — validator phase", () => {
     expect(result.status).toBe("checkpoint_needed");
   });
 
-  it("returns a runtime checkpoint when scrutiny times out while user testing writes a verdict", async () => {
+  it("returns a runtime checkpoint when one validator type omits its verdict", async () => {
+    // v1 runs the validator pair concurrently. If one type writes a verdict
+    // and the other completes without calling write_verdict, the missing type
+    // gets a synthetic fail and the milestone returns a runtime checkpoint
+    // (it must NOT be approved on the strength of the single present verdict).
     const completedUnit: WorkingUnit = {
       id: "unit-1", milestoneId: "ms-1", description: "Do thing",
       declaredPaths: ["src/auth.ts"], declaredModules: ["auth"],
-      status: "completed", taskBranch: "task/w-1/unit-1", worktreePath: "/wt", sessionId: "sess-1",
+      status: "completed", taskBranch: "feature/m-1/1", worktreePath: "/wt", sessionId: "sess-1",
     };
     const userTestingVerdict: ValidationVerdict = {
-      id: "v-2",
-      milestoneId: "ms-1",
-      contractId: "c-1",
-      validatorType: "validator_user_testing",
-      sessionId: "mock-session",
-      verdict: "pass",
-      findings: "OK",
-      failedUnitIds: [],
-      timestamp: "",
+      id: "v-2", milestoneId: "ms-1", contractId: "c-1",
+      validatorType: "validator_user_testing", sessionId: "mock-session",
+      verdict: "pass", findings: "OK", failedUnitIds: [], timestamp: "",
     };
     const lapis = createMockLapis([completedUnit], [userTestingVerdict]);
     const pinyx = createMockPinyx();
@@ -204,55 +269,38 @@ describe("milestone loop — validator phase", () => {
       onError: vi.fn(),
     };
 
-    let subscribeCount = 0;
-    mockSession.subscribe.mockImplementation((fn: any) => {
-      subscribeCount++;
-      if (subscribeCount === 2) {
-        return () => {};
-      }
-      setTimeout(() => fn({ type: "agent_end" }), 0);
-      return () => {};
-    });
-
-    const mission = makeMission({
-      configJson: {
-        ...makeMission().configJson,
-        workerTimeouts: { simple: 120_000, build: 300_000, testHeavy: 5 },
-      },
-    });
     const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
-      agentDir: "/test/.pi/agent",
-      repoRoot: "/test/repo",
-      gitMainBranch: "main",
+      agentDir: "/test/.pi/agent", repoRoot: "/test/repo", gitMainBranch: "main",
     });
 
-    const result = await loop.run(mission, [makeMilestone()]);
+    const result = await loop.run(makeMission(), [makeMilestone()]);
 
     expect(result.status).toBe("checkpoint_needed");
     if (result.status === "checkpoint_needed") {
       expect(result.trigger).toBe("unclassifiable_error");
-      expect(result.summary).toContain("validator_scrutiny timed out before submitting write_verdict");
     }
+    // A synthetic fail verdict must have been written for the missing
+    // validator_scrutiny type (user_testing already has a real verdict).
     expect(lapis.writeVerdict).toHaveBeenCalledWith(
       "mock-session",
-      expect.objectContaining({
-        validatorType: "validator_scrutiny",
-        verdict: "fail",
-        findings: expect.stringContaining("timed out before calling write_verdict"),
-      }),
+      expect.objectContaining({ validatorType: "validator_scrutiny", verdict: "fail" }),
     );
-    expect(callbacks.onEscalation).toHaveBeenCalledWith(
-      "m-1",
-      expect.objectContaining({ kind: "unclassifiable_error", milestoneId: "ms-1" }),
-      expect.objectContaining({ summary: expect.stringContaining("validator_scrutiny timed out") }),
+    expect(callbacks.onError).toHaveBeenCalledWith(
+      "m-1", "validator_runtime_failure",
+      expect.stringContaining("validator_scrutiny"),
+      expect.objectContaining({ milestoneId: "ms-1", recoverable: true }),
     );
   });
 
-  it("does not spawn validators while working units are incomplete", async () => {
+  it("resets a stale in-progress unit to planned and re-runs it before validation", async () => {
+    // v1 has no "incomplete units" gate that aborts validation. Instead, a
+    // unit left in a transient state (e.g. after a pause/checkpoint) is reset
+    // to "planned" and re-run as a worker; validators only run once every
+    // unit has completed.
     const staleUnit: WorkingUnit = {
       id: "unit-1", milestoneId: "ms-1", description: "Do thing",
       declaredPaths: ["src/auth.ts"], declaredModules: ["auth"],
-      status: "working", taskBranch: "task/w-1/unit-1", worktreePath: "/wt", sessionId: "sess-1",
+      status: "working", taskBranch: "feature/m-1/1", worktreePath: "/wt", sessionId: "sess-1",
     };
     const lapis = createMockLapis([staleUnit], []);
     const pinyx = createMockPinyx();
@@ -265,27 +313,16 @@ describe("milestone loop — validator phase", () => {
     };
 
     const loop = createMilestoneLoop(lapis, pinyx, callbacks, {
-      agentDir: "/test/.pi/agent",
-      repoRoot: "/test/repo",
-      gitMainBranch: "main",
+      agentDir: "/test/.pi/agent", repoRoot: "/test/repo", gitMainBranch: "main",
     });
 
-    const result = await loop.run(makeMission(), [makeMilestone()]);
+    await loop.run(makeMission(), [makeMilestone()]);
 
-    expect(result.status).toBe("checkpoint_needed");
-    if (result.status === "checkpoint_needed") {
-      expect(result.trigger).toBe("unclassifiable_error");
-      expect(result.summary).toContain("not completed");
-    }
+    // The stale unit was reset to planned so a worker could pick it up.
     expect(lapis.updateWorkingUnitStatus).toHaveBeenCalledWith("unit-1", "planned");
+    // A worker was spawned for the reset unit.
     const registrations = (lapis.registerAgentSession as any).mock.calls.map((call: any[]) => call[0]);
-    expect(registrations).not.toContain("validator_scrutiny");
-    expect(callbacks.onError).toHaveBeenCalledWith(
-      "m-1",
-      "validation_blocked_incomplete_units",
-      expect.stringContaining("not completed"),
-      expect.objectContaining({ milestoneId: "ms-1", recoverable: true }),
-    );
+    expect(registrations).toContain("worker");
   });
 
   it("returns a runtime checkpoint when scrutiny completes without writing a verdict (death-spiral guard)", async () => {

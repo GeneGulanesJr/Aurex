@@ -57,8 +57,8 @@ function createMockLapis(units: WorkingUnit[] = [], handoffs = units.map((unit) 
     getRetryCounter: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
     incrementRetry: vi.fn().mockResolvedValue({ milestoneId: "ms-1", retries: 0, rescopes: 0 }),
     getVerdicts: vi.fn().mockResolvedValue([
-      { verdict: "pass", validatorType: "validator_scrutiny" },
-      { verdict: "pass", validatorType: "validator_user_testing" },
+      { verdict: "pass", validatorType: "validator_scrutiny", sessionId: "test-session-123" },
+      { verdict: "pass", validatorType: "validator_user_testing", sessionId: "test-session-123" },
     ]),
     getSessionsForMilestone: vi.fn().mockResolvedValue([
       { sessionId: "s1", agentType: "validator_scrutiny", missionId: "m-1", milestoneId: "ms-1", terminatedAt: null },
@@ -213,7 +213,8 @@ describe("milestone loop with spawner", () => {
     // Contract should have been fetched
     expect(lapis.getContractHistory).toHaveBeenCalledWith("ms-1");
 
-    // A worker should have been spawned (session created)
+    // A worker should have been spawned (session created). One unit →
+    // research + worker + 2 end-of-milestone validators = 4 agent sessions.
     expect(mockCreateAgentSession).toHaveBeenCalled();
     expect(mockCreateAgentSession).toHaveBeenCalledTimes(4);
 
@@ -223,7 +224,7 @@ describe("milestone loop with spawner", () => {
       expect.objectContaining({
         declaredPaths: ["src/auth/login.ts"],
         declaredModules: ["auth"],
-        taskBranch: "task/worker-unit-1/unit-1",
+        taskBranch: "feature/m-1/1",
         description: "Create login endpoint",
       }),
     );
@@ -594,11 +595,14 @@ describe("milestone loop with spawner", () => {
       configJson: {
         ...makeMission().configJson,
         workerTimeouts: { simple: 5, build: 5, testHeavy: 5 },
+        maxPerUnitRetries: 1,
       },
     }), [makeMilestone()]);
 
     expect(result.status).toBe("checkpoint_needed");
-    expect(result.summary).toContain("timed out after retry");
+    expect(result.summary).toContain("timed out after 2 attempt(s)");
+    // Pre-worker research is skipped (findings already present), so only
+    // the 2 worker attempts (1 initial + 1 retry) create agent sessions.
     expect(mockCreateAgentSession).toHaveBeenCalledTimes(2);
     expect(lapis.updateWorkingUnitStatus).toHaveBeenCalledWith("unit-timeout", "planned");
     expect(callbacks.onError).toHaveBeenCalledWith(
@@ -647,10 +651,12 @@ describe("milestone loop with spawner", () => {
       gitMainBranch: "main",
     });
 
-    const result = await loop.run(makeMission(), [makeMilestone()]);
+    const result = await loop.run(makeMission({
+      configJson: { ...makeMission().configJson, maxPerUnitRetries: 1 },
+    }), [makeMilestone()]);
 
     expect(result.status).toBe("checkpoint_needed");
-    expect(result.summary).toContain("failed to submit a valid handoff");
+    expect(result.summary).toContain("valid handoff");
     expect(lapis.updateWorkingUnitStatus).toHaveBeenCalledWith("unit-1", "planned");
     expect(callbacks.onError).toHaveBeenCalledWith(
       "m-1",
@@ -660,7 +666,7 @@ describe("milestone loop with spawner", () => {
     );
   });
 
-  it("prunes worktrees for workers retried due to missing handoff", async () => {
+  it("prunes the feature worktree when the milestone completes", async () => {
     let eventSubscriber: (event: any) => void = () => {};
     (mockSession.subscribe as any).mockImplementation((fn: any) => {
       eventSubscriber = fn;
@@ -677,12 +683,13 @@ describe("milestone loop with spawner", () => {
       declaredPaths: ["src/auth/index.ts"],
       declaredModules: ["auth"],
       status: "planned" as any,
-      taskBranch: "task/unit-wt",
-      worktreePath: "/repo/.git-worktrees/unit-wt",
+      taskBranch: "",
+      worktreePath: "",
       sessionId: "",
     };
 
-    const lapis = createMockLapis([unit], []);
+    // Valid handoff → unit passes → validator passes → milestone_complete prunes the feature worktree.
+    const lapis = createMockLapis([unit]);
     const pinyx = createMockPinyx();
     const callbacks = {
       onEscalation: vi.fn(),
@@ -698,7 +705,8 @@ describe("milestone loop with spawner", () => {
       gitMainBranch: "main",
     });
 
-    await loop.run(makeMission(), [makeMilestone()]);
+    const result = await loop.run(makeMission(), [makeMilestone()]);
+    expect(result.status).toBe("checkpoint_needed");
 
     const allCalls = mockExecAsync.mock.calls.map((c: any) => JSON.stringify(c));
     const pruneCall = allCalls.find((c: string) => c.includes("worktree") && c.includes("remove"));
@@ -728,7 +736,8 @@ describe("milestone loop with spawner", () => {
     };
 
     const lapis = createMockLapis([unit], []);
-    (lapis.getHandoffsForMilestone as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("LaPis unavailable"));
+    // The per-unit handoff lookup throws → distinct fetch-failure path.
+    (lapis.getHandoffForUnit as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("LaPis unavailable"));
     const pinyx = createMockPinyx();
     const callbacks = {
       onEscalation: vi.fn(),
@@ -744,7 +753,7 @@ describe("milestone loop with spawner", () => {
       gitMainBranch: "main",
     });
 
-    await loop.run(makeMission(), [makeMilestone()]);
+    await loop.run(makeMission({ configJson: { ...makeMission().configJson, maxPerUnitRetries: 1 } }), [makeMilestone()]);
 
     expect(callbacks.onError).toHaveBeenCalledWith(
       "m-1",

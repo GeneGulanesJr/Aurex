@@ -26,17 +26,18 @@ describe("worktree manager — branch guard hooks", () => {
   it("installs pre-commit hook in new worktree", async () => {
     const manager = createWorktreeManager(repoRoot);
 
-    const { worktreePath, taskBranch } = await manager.createWorktree(
-      "worker-1", "u-1", "main",
+    const { worktreePath, featureBranch } = await manager.createFeatureWorktree(
+      "mission-1", 0, "ms-1", "main",
     );
 
     // Install branch guard hooks
-    await manager.installBranchGuard(worktreePath, taskBranch);
+    await manager.installBranchGuard(worktreePath, featureBranch);
 
-    // Check that the pre-commit hook exists and allows task/* branches
+    // Check that the pre-commit hook exists and allows the feature branch.
     const hookPath = path.join(repoRoot, ".git", "hooks", "pre-commit");
     const hookContent = await readFile(hookPath, "utf-8");
-    expect(hookContent).toContain("task/worker-1/u-1");
+    expect(hookContent).toContain("feature/mission-1/1");
+    expect(hookContent).toContain("feature/*");
     expect(hookContent).toContain("branch guard");
 
     // Clean up worktree
@@ -46,11 +47,11 @@ describe("worktree manager — branch guard hooks", () => {
   it("pre-commit hook rejects commits on main", async () => {
     const manager = createWorktreeManager(repoRoot);
 
-    const { worktreePath, taskBranch } = await manager.createWorktree(
-      "worker-2", "u-2", "main",
+    const { worktreePath, featureBranch } = await manager.createFeatureWorktree(
+      "mission-2", 0, "ms-2", "main",
     );
 
-    await manager.installBranchGuard(worktreePath, taskBranch);
+    await manager.installBranchGuard(worktreePath, featureBranch);
 
     // Try to commit on main branch
     await git(repoRoot, "checkout", "main");
@@ -69,16 +70,16 @@ describe("worktree manager — branch guard hooks", () => {
     await manager.pruneWorktree(worktreePath);
   });
 
-  it("pre-commit hook allows commits on task/* branches", async () => {
+  it("pre-commit hook allows commits on feature/* branches", async () => {
     const manager = createWorktreeManager(repoRoot);
 
-    const { worktreePath, taskBranch } = await manager.createWorktree(
-      "worker-3", "u-3", "main",
+    const { worktreePath, featureBranch } = await manager.createFeatureWorktree(
+      "mission-3", 0, "ms-3", "main",
     );
 
-    await manager.installBranchGuard(worktreePath, taskBranch);
+    await manager.installBranchGuard(worktreePath, featureBranch);
 
-    // The worktree should already be on a task/* branch
+    // The worktree is already on the feature/* branch.
     await writeFile(path.join(worktreePath, "test.txt"), "data\n");
     await git(worktreePath, "add", ".");
     await git(worktreePath, "commit", "-m", "should succeed");

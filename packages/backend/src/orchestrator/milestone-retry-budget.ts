@@ -1,45 +1,26 @@
-export type StaleUnitResetPhase = "worker" | "validation";
-
+/**
+ * Per-unit retry budget for the v1 sequential milestone loop (issue #119).
+ *
+ * The old budget tracked separate worker/handoff/stale-reset counters across
+ * a whole milestone because workers ran in parallel batches and had to be
+ * retried in groups. v1 runs one unit at a time on a shared feature branch,
+ * so retry is inherently per-unit: a unit that fails its worker run or smoke
+ * check is retried (with feedback) up to `maxRetries` times before the
+ * milestone escalates to a human.
+ */
 export interface MilestoneRetryBudget {
-  workerRetriesUsed: number;
-  handoffRetriesUsed: number;
-  workerStaleResetUsed: boolean;
-  validationStaleResetUsed: boolean;
+  retriesByUnit: Map<string, number>;
 }
 
 export function createRetryBudget(): MilestoneRetryBudget {
-  return {
-    workerRetriesUsed: 0,
-    handoffRetriesUsed: 0,
-    workerStaleResetUsed: false,
-    validationStaleResetUsed: false,
-  };
+  return { retriesByUnit: new Map() };
 }
 
-export function canRetryWorkers(budget: MilestoneRetryBudget, maxRetries = 1): boolean {
-  return budget.workerRetriesUsed < maxRetries;
+export function canRetryUnit(budget: MilestoneRetryBudget, unitId: string, maxRetries = 2): boolean {
+  const used = budget.retriesByUnit.get(unitId) ?? 0;
+  return used < maxRetries;
 }
 
-export function canRetryHandoffs(budget: MilestoneRetryBudget, maxRetries = 1): boolean {
-  return budget.handoffRetriesUsed < maxRetries;
-}
-
-export function markWorkerRetry(budget: MilestoneRetryBudget): void {
-  budget.workerRetriesUsed += 1;
-}
-
-export function markHandoffRetry(budget: MilestoneRetryBudget): void {
-  budget.handoffRetriesUsed += 1;
-}
-
-export function canResetStaleUnits(budget: MilestoneRetryBudget, phase: StaleUnitResetPhase): boolean {
-  return phase === "worker" ? !budget.workerStaleResetUsed : !budget.validationStaleResetUsed;
-}
-
-export function markStaleUnitReset(budget: MilestoneRetryBudget, phase: StaleUnitResetPhase): void {
-  if (phase === "worker") {
-    budget.workerStaleResetUsed = true;
-    return;
-  }
-  budget.validationStaleResetUsed = true;
+export function markUnitRetry(budget: MilestoneRetryBudget, unitId: string): void {
+  budget.retriesByUnit.set(unitId, (budget.retriesByUnit.get(unitId) ?? 0) + 1);
 }

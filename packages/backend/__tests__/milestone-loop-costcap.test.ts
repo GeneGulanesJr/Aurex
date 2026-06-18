@@ -93,6 +93,7 @@ function createMockLapis(units: WorkingUnit[]): LaPisClient {
     searchMemory: vi.fn().mockResolvedValue([]),
     writeVerdict: vi.fn().mockResolvedValue({}),
     getHandoffsForMilestone: vi.fn().mockResolvedValue(units.map((unit) => makeHandoff(unit.id))),
+    getHandoffForUnit: vi.fn().mockImplementation(async (unitId: string) => makeHandoff(unitId)),
     getFindings: vi.fn().mockResolvedValue([]),
     runCompression: vi.fn().mockResolvedValue(undefined),
   } as unknown as LaPisClient;

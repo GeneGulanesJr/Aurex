@@ -6,24 +6,32 @@ import path from "node:path";
 
 const execFileAsync = promisify(execFile);
 
-const ALLOWED_MERGE_STRATEGIES = new Set(["ours", "theirs", "union", "ort"]);
+/**
+ * v1 worktree manager (issue #119).
+ *
+ * The previous design created one `task/*` branch per working unit, merged
+ * them into integration / validation / release branches, and had the
+ * validator dry-merge worker branches. v1 collapses all of that into a
+ * SINGLE feature branch per milestone: every worker commits onto it
+ * sequentially, the validator reviews it at milestone HEAD, and the release
+ * branch is cut straight off it. Failed per-unit reviews `git reset` the
+ * feature branch back to the pre-unit commit.
+ */
 
 export interface WorktreeManager {
   getRepoRoot(): string;
-  createWorktree(agentId: string, taskId: string, agentBranch: string): Promise<{ worktreePath: string; taskBranch: string; baseCommitHash?: string }>;
-  createBranch(branchName: string, baseBranch: string): Promise<void>;
-  /** Delete an existing branch (if present) and recreate it from baseBranch. */
+  createFeatureWorktree(
+    missionId: string,
+    milestoneOrderIndex: number,
+    milestoneId: string,
+    mainBranch: string,
+  ): Promise<{ worktreePath: string; featureBranch: string; baseCommitHash?: string }>;
+  currentHead(worktreePath: string): Promise<string>;
+  resetTo(worktreePath: string, sha: string): Promise<void>;
+  cutReleaseBranch(missionId: string, milestoneOrderIndex: number, milestoneId: string, fromBranch: string): Promise<string>;
   recreateBranch(branchName: string, baseBranch: string): Promise<void>;
-  mergeToTarget(sourceBranch: string, targetBranch: string): Promise<void>;
-  mergeToTargetWithStrategy(sourceBranch: string, targetBranch: string, strategy: string): Promise<void>;
-  abortMerge(): Promise<void>;
   pruneWorktree(worktreePath: string): Promise<void>;
   installBranchGuard(worktreePath: string, allowedBranch: string): Promise<void>;
-  createValidatorWorktree(
-    milestoneId: string,
-    baseBranch: string,
-    taskBranches: string[],
-  ): Promise<CreateValidatorWorktreeResult>;
 }
 
 function sanitizeGitArg(arg: string): void {
@@ -33,13 +41,6 @@ function sanitizeGitArg(arg: string): void {
   if (arg.includes("\x00") || /[\n\r;'`$\\!"#&|<>(){}]/.test(arg)) {
     throw new Error(`Invalid git argument: ${arg}`);
   }
-}
-
-export interface CreateValidatorWorktreeResult {
-  worktreePath: string;
-  validationBranch: string;
-  mergedUnitIds: string[];
-  conflictedBranches: string[];
 }
 
 export function createWorktreeManager(repoRoot: string): WorktreeManager {
@@ -70,15 +71,13 @@ export function createWorktreeManager(repoRoot: string): WorktreeManager {
       return repoRoot;
     },
 
-    async createWorktree(agentId, taskId, agentBranch) {
-      const taskBranch = `task/${agentId}/${taskId}`;
-      const worktreePath = `${worktreeBase}/${agentId}-${taskId}`;
+    async createFeatureWorktree(missionId, milestoneOrderIndex, milestoneId, mainBranch) {
+      const featureBranch = `feature/${missionId}/${milestoneOrderIndex + 1}`;
+      const worktreePath = `${worktreeBase}/feature-${milestoneId}`;
 
-      // Retry paths reuse the same agent/task identifiers. Detect stale
-      // state via `git worktree list --porcelain` and only clean up the
-      // specific stale worktree/branch we are about to recreate — never run
-      // a global `worktree prune`, which can also remove valid metadata
-      // for unrelated worktrees (e.g. siblings in a multi-mission run).
+      // Idempotent stale cleanup. Retry/resume paths reuse the same identifiers;
+      // remove a stale worktree/branch for this milestone before recreating.
+      // Never run a global `worktree prune` — it can remove unrelated metadata.
       const existingWorktrees = await git(repoRoot, "worktree", "list", "--porcelain").catch(() => "");
       const hasStaleWorktree = existingWorktrees
         .split("\n")
@@ -86,68 +85,61 @@ export function createWorktreeManager(repoRoot: string): WorktreeManager {
       if (hasStaleWorktree) {
         try { await git(repoRoot, "worktree", "remove", worktreePath, "--force"); }
         catch (err) {
-          console.warn(`[worktree] Failed to remove stale worktree ${worktreePath}:`, err instanceof Error ? err.message : err);
+          console.warn(`[worktree] Failed to remove stale feature worktree ${worktreePath}:`, err instanceof Error ? err.message : err);
         }
       }
-      const branchList = await git(repoRoot, "branch", "--list", taskBranch).catch(() => "");
-      if (branchList.includes(taskBranch)) {
-        try { await git(repoRoot, "branch", "-D", taskBranch); }
+      const branchList = await git(repoRoot, "branch", "--list", featureBranch).catch(() => "");
+      if (branchList.includes(featureBranch)) {
+        try { await git(repoRoot, "branch", "-D", featureBranch); }
         catch (err) {
-          console.warn(`[worktree] Failed to delete stale branch ${taskBranch}:`, err instanceof Error ? err.message : err);
+          console.warn(`[worktree] Failed to delete stale feature branch ${featureBranch}:`, err instanceof Error ? err.message : err);
         }
       }
 
-      // Stryker disable next-line StringLiteral: git command args —
-      // mutant changing "branch" to "" would fail at runtime.
-      await git(repoRoot, "branch", taskBranch, agentBranch);
-      await git(repoRoot, "worktree", "add", worktreePath, taskBranch);
+      // Stryker disable next-line StringLiteral: git command args
+      await git(repoRoot, "branch", featureBranch, mainBranch);
+      // Stryker disable next-line StringLiteral: git command args
+      await git(repoRoot, "worktree", "add", worktreePath, featureBranch);
 
-      // Resolve the commit hash of the branch the task branch was created
-      // from, so the spawner can hand it to the write_handoff guard. The
-      // guard uses it to reject handoffs where the worker produced no new
-      // commits (claimed hash == base). Best-effort: on any git error we
-      // omit it and the guard falls back to the weaker reachable-from-HEAD
-      // check rather than blocking worktree creation.
-      const baseCommitHash = await git(repoRoot, "rev-parse", agentBranch)
+      // Resolve the starting commit so the worker's write_handoff guard can
+      // reject handoffs that produced no new commits on the feature branch.
+      const baseCommitHash = await git(repoRoot, "rev-parse", mainBranch)
         .then((h) => (h && h.trim()) || undefined)
         .catch(() => undefined);
 
-      return { worktreePath, taskBranch, baseCommitHash };
+      return { worktreePath, featureBranch, baseCommitHash };
     },
 
-    async createBranch(branchName, baseBranch) {
+    async currentHead(worktreePath) {
+      return git(worktreePath, "rev-parse", "HEAD").catch(() => "");
+    },
+
+    async resetTo(worktreePath, sha) {
+      // Hard-reset the feature branch to the pre-unit commit so the branch
+      // only ever contains committed-and-approved work. Guard against an
+      // empty sha (e.g. a mocked environment) — git would reject it.
+      if (!sha || sha.trim().length === 0) return;
       // Stryker disable next-line StringLiteral: git command args
-      await git(repoRoot, "branch", branchName, baseBranch);
+      await git(worktreePath, "reset", "--hard", sha);
+    },
+
+    async cutReleaseBranch(missionId, milestoneOrderIndex, milestoneId, fromBranch) {
+      const releaseBranch = `release/${missionId}/${milestoneOrderIndex + 1}-${milestoneId}`;
+      // Force-create the release ref at the feature branch HEAD WITHOUT a
+      // checkout. Checking out `fromBranch` in the main worktree would fail
+      // because it is already checked out in the linked feature worktree.
+      // `git branch -f <name> <start>` moves only the ref, so it is safe.
+      // Stryker disable next-line StringLiteral: git command args
+      await git(repoRoot, "branch", "-f", releaseBranch, fromBranch);
+      return releaseBranch;
     },
 
     async recreateBranch(branchName, baseBranch) {
-      try { await git(repoRoot, "merge", "--abort"); } catch { /* nothing to abort */ }
-      await git(repoRoot, "checkout", baseBranch);
-      try { await git(repoRoot, "branch", "-D", branchName); } catch { /* not present */ }
-      await git(repoRoot, "branch", branchName, baseBranch);
-    },
-
-    async mergeToTarget(sourceBranch, targetBranch) {
+      // Legacy helper retained for compatibility. Creates/forces a branch ref
+      // at baseBranch's HEAD without checking either out (avoids worktree
+      // conflicts on linked branches).
       // Stryker disable next-line StringLiteral: git command args
-      await git(repoRoot, "checkout", targetBranch);
-      // Stryker disable next-line StringLiteral: git command args
-      await git(repoRoot, "merge", sourceBranch, "--no-ff");
-    },
-
-    async mergeToTargetWithStrategy(sourceBranch, targetBranch, strategy) {
-      if (!ALLOWED_MERGE_STRATEGIES.has(strategy)) {
-        throw new Error(`Invalid merge strategy: ${strategy}. Allowed: ${[...ALLOWED_MERGE_STRATEGIES].join(", ")}`);
-      }
-      // Stryker disable next-line StringLiteral: git command args
-      await git(repoRoot, "checkout", targetBranch);
-      // Stryker disable next-line StringLiteral: git command args
-      await git(repoRoot, "merge", sourceBranch, "--no-ff", `-X${strategy}`);
-    },
-
-    async abortMerge() {
-      try {
-        await git(repoRoot, "merge", "--abort");
-      } catch { /* nothing to abort */ }
+      await git(repoRoot, "branch", "-f", branchName, baseBranch);
     },
 
     async pruneWorktree(worktreePath) {
@@ -157,72 +149,10 @@ export function createWorktreeManager(repoRoot: string): WorktreeManager {
       await git(repoRoot, "worktree", "prune");
     },
 
-    async createValidatorWorktree(milestoneId, baseBranch, taskBranches) {
-      const validationBranch = `validation/${milestoneId}`;
-      const worktreePath = `${worktreeBase}/validator-${milestoneId}`;
-
-      // Idempotent cleanup: if a previous run left the worktree behind, remove it.
-      // Stryker disable next-line StringLiteral: git command args
-      try { await git(repoRoot, "worktree", "remove", worktreePath, "--force"); } catch { /* not present */ }
-      try { await git(repoRoot, "branch", "-D", validationBranch); } catch { /* not present */ }
-      // Stryker disable next-line StringLiteral: git command args
-      try { await git(repoRoot, "worktree", "prune"); } catch { /* best-effort */ }
-
-      // Stryker disable next-line StringLiteral: git command args
-      await git(repoRoot, "branch", validationBranch, baseBranch);
-      // Stryker disable next-line StringLiteral: git command args
-      await git(repoRoot, "worktree", "add", worktreePath, validationBranch);
-
-      const mergedUnitIds: string[] = [];
-      const conflictedBranches: string[] = [];
-
-      for (const taskBranch of taskBranches) {
-        // Stryker disable next-line StringLiteral: git command args
-        // --no-commit so we can detect conflicts and abort cleanly.
-        try {
-          const mergeOut = await git(worktreePath, "merge", "--no-ff", "--no-commit", taskBranch);
-          // "Already up to date." means the task branch is already an
-          // ancestor of the validation branch (its commits are present in
-          // the base). This is NOT a conflict — git leaves no merge in
-          // progress, so attempting to commit would fail with "nothing to
-          // commit". Treat the branch as cleanly merged (a no-op merge).
-          // Stryker disable next-line StringLiteral: git status hint
-          if (/already up to date/i.test(mergeOut)) {
-            mergedUnitIds.push(taskBranch);
-            continue;
-          }
-          // Stryker disable next-line StringLiteral: git rev-parse args
-          // Only commit if a merge is actually in progress; a successful
-          // --no-commit merge creates MERGE_HEAD, an up-to-date one does not.
-          let mergeInProgress = "";
-          try {
-            mergeInProgress = await git(worktreePath, "rev-parse", "-q", "--verify", "MERGE_HEAD");
-          } catch { /* no merge in progress */ }
-          if (mergeInProgress) {
-            // Stryker disable next-line StringLiteral: git commit args
-            // --no-verify bypasses the branch-guard pre-commit hook (which
-            // restricts to task/integration/release/*; validation/* is not
-            // in that list but is a legitimate internal branch).
-            await git(worktreePath, "commit", "--no-verify", "-m", `merge ${taskBranch} into ${validationBranch}`);
-          }
-          mergedUnitIds.push(taskBranch);
-        } catch {
-          // Stryker disable next-line StringLiteral: git command args
-          // Conflict: abort the in-progress merge so the worktree is clean.
-          try {
-            await git(worktreePath, "merge", "--abort");
-          } catch { /* nothing to abort */ }
-          conflictedBranches.push(taskBranch);
-        }
-      }
-
-      return { worktreePath, validationBranch, mergedUnitIds, conflictedBranches };
-    },
-
     async installBranchGuard(_worktreePath, allowedBranch) {
       const hooksDir = path.join(repoRoot, ".git", "hooks");
       const hookPath = path.join(hooksDir, "pre-commit");
-      const allowedPatterns = [allowedBranch, "integration/*", "release/*"];
+      const allowedPatterns = [allowedBranch, "feature/*", "release/*"];
       const caseStatements = allowedPatterns
         .map((p) => `  ${p}) exit 0 ;;`)
         .join("\n");

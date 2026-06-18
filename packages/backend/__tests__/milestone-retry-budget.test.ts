@@ -1,38 +1,29 @@
 import { describe, it, expect } from "vitest";
 import {
-  canRetryHandoffs,
-  canRetryWorkers,
-  canResetStaleUnits,
+  canRetryUnit,
   createRetryBudget,
-  markHandoffRetry,
-  markStaleUnitReset,
-  markWorkerRetry,
+  markUnitRetry,
 } from "../src/orchestrator/milestone-retry-budget";
 
 describe("milestone-retry-budget", () => {
-  it("tracks worker and handoff retries independently", () => {
+  it("tracks retries per unit independently up to the budget", () => {
     const budget = createRetryBudget();
-    expect(canRetryWorkers(budget)).toBe(true);
-    expect(canRetryHandoffs(budget)).toBe(true);
+    expect(canRetryUnit(budget, "u-1")).toBe(true);
+    expect(canRetryUnit(budget, "u-2")).toBe(true);
 
-    markWorkerRetry(budget);
-    expect(canRetryWorkers(budget)).toBe(false);
-    expect(canRetryHandoffs(budget)).toBe(true);
+    markUnitRetry(budget, "u-1");
+    expect(canRetryUnit(budget, "u-1")).toBe(true);
+    expect(canRetryUnit(budget, "u-2")).toBe(true);
 
-    markHandoffRetry(budget);
-    expect(canRetryHandoffs(budget)).toBe(false);
+    markUnitRetry(budget, "u-1");
+    expect(canRetryUnit(budget, "u-1")).toBe(false);
+    expect(canRetryUnit(budget, "u-2")).toBe(true);
   });
 
-  it("tracks stale unit resets per phase", () => {
+  it("respects a custom max-retries budget", () => {
     const budget = createRetryBudget();
-    expect(canResetStaleUnits(budget, "worker")).toBe(true);
-    expect(canResetStaleUnits(budget, "validation")).toBe(true);
-
-    markStaleUnitReset(budget, "worker");
-    expect(canResetStaleUnits(budget, "worker")).toBe(false);
-    expect(canResetStaleUnits(budget, "validation")).toBe(true);
-
-    markStaleUnitReset(budget, "validation");
-    expect(canResetStaleUnits(budget, "validation")).toBe(false);
+    expect(canRetryUnit(budget, "u-1", 1)).toBe(true);
+    markUnitRetry(budget, "u-1");
+    expect(canRetryUnit(budget, "u-1", 1)).toBe(false);
   });
 });
