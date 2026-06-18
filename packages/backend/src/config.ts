@@ -16,6 +16,11 @@ export interface AppConfig {
   validatorToolCallCap: number;
   missionCostCap: number;
 
+  /** Per-unit retry budget for the v1 sequential milestone loop. Default 2. */
+  maxPerUnitRetries: number;
+  /** Cheap per-unit smoke-check commands (test/typecheck/lint). */
+  smokeCheckCommands: { test?: string; typecheck?: string; lint?: string };
+
   repoRoot: string;
   aurexRoot: string;
   gitMainBranch: string;
@@ -99,6 +104,13 @@ export function loadConfig(): AppConfig {
     maxRescopes: envInt("MAX_RESCOPES_PER_MILESTONE", 2),
     validatorToolCallCap: Math.max(0, envInt("VALIDATOR_TOOL_CALL_CAP", 0)),
     missionCostCap: envFloat("MISSION_COST_CAP", 50.0),
+
+    maxPerUnitRetries: envInt("MAX_PER_UNIT_RETRIES", 2),
+    smokeCheckCommands: {
+      test: process.env.SMOKE_CHECK_TEST || undefined,
+      typecheck: process.env.SMOKE_CHECK_TYPECHECK || undefined,
+      lint: process.env.SMOKE_CHECK_LINT || undefined,
+    },
 
     repoRoot: env("REPO_ROOT"),
     aurexRoot: env("AUREX_ROOT", env("REPO_ROOT")),

@@ -9,6 +9,7 @@ import type { AgentLogger } from "../agents/agent-logger.js";
 import { createCheckpointManager } from "./checkpoint-manager.js";
 import { createMilestoneLoop } from "./milestone-loop.js";
 import { createPlanner, type CodeSummary, type CodeGraphSummary, type CodeHotspotsSummary } from "./planner.js";
+import { optimizeMissionPrompt } from "./prompt-optimizer.js";
 import { createCompressionService } from "./compression.js";
 import { prepareRepoForMission } from "./repo-prep.js";
 import { runCheckpointLoop, type CheckpointLoopDeps } from "./checkpoint-loop.js";
@@ -168,7 +169,17 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
 
       const planner = createPlanner(lapis, pinyx, { model, eventBus, missionId, codeSummary, codeGraph, codeHotspots, maxMilestones: mission.configJson.maxMilestones, maxUnitsPerMilestone: mission.configJson.maxUnitsPerMilestone });
 
-      const planResult = await planner.plan(mission.description, missionId).catch(async (err) => {
+      // --- Prompt-optimization step (issue #119 + user request) ---
+      // The orchestrator refines the user's raw mission description into a
+      // clear engineering brief before the planner decomposes it. This is
+      // non-blocking: on any failure it falls back to the original text so a
+      // bad refinement can never stop a mission.
+      const refinedDescription = await optimizeMissionPrompt(pinyx, mission.description, { model, eventBus, missionId });
+      if (refinedDescription !== mission.description) {
+        eventBus.emit({ type: "mission_log", missionId, phase: "planning", message: `Mission prompt optimized (${mission.description.length} → ${refinedDescription.length} chars).` });
+      }
+
+      const planResult = await planner.plan(refinedDescription, missionId).catch(async (err) => {
         const msg = err instanceof Error ? err.message : String(err);
         eventBus.emit({ type: "mission_error", missionId, code: "planner_failed", message: `Planning failed: ${msg}`, recoverable: true });
         await lapis.updateMissionStatus(missionId, "failed").catch(() => {});

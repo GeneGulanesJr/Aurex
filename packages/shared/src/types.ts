@@ -42,6 +42,19 @@ export interface MissionConfig {
   maxAutoRescopes?: number;
   /** Max validator tool calls per session. 0 or undefined means unlimited. */
   validatorToolCallCap?: number;
+  /**
+   * Per-unit retry budget for the v1 sequential loop. A unit that fails its
+   * smoke check or worker handoff is retried this many times (with feedback)
+   * before the milestone escalates to a human. Default 2.
+   */
+  maxPerUnitRetries?: number;
+  /**
+   * Commands run as a cheap, deterministic per-unit smoke check on the shared
+   * feature branch (issue #119). Each runs in the feature worktree after a
+   * worker commits. A full LLM validator review still runs at end of milestone.
+   * Omitted/empty entries are skipped.
+   */
+  smokeCheckCommands?: { test?: string; typecheck?: string; lint?: string };
 }
 
 export interface Milestone {
