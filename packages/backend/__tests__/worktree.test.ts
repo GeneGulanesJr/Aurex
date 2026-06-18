@@ -33,11 +33,13 @@ describe("WorktreeManager", () => {
     expect(calls.some((c) => c.includes("worktree add"))).toBe(true);
   });
 
-  it("resolves and returns baseCommitHash from the main branch", async () => {
-    let revParseCount = 0;
+  it("resolves and returns baseCommitHash from the feature branch on a fresh start", async () => {
+    // Fresh start: the branch is created off main, then rev-parse'd by NAME
+    // (feature/...). On a fresh start the feature HEAD == main HEAD.
+    let revParseFeatureCount = 0;
     mockExecAsync.mockImplementation(async (_cmd: string, args: string[]) => {
-      if (args.includes("rev-parse") && args.includes("main")) {
-        revParseCount++;
+      if (args.includes("rev-parse") && args.includes("feature/mission-1/1")) {
+        revParseFeatureCount++;
         return { stdout: "deadbeefcafebabe\n", stderr: "" };
       }
       return { stdout: "", stderr: "" };
@@ -47,7 +49,7 @@ describe("WorktreeManager", () => {
     const result = await manager.createFeatureWorktree("mission-1", 0, "ms-1", "main");
 
     expect(result.baseCommitHash).toBe("deadbeefcafebabe");
-    expect(revParseCount).toBe(1);
+    expect(revParseFeatureCount).toBe(1);
   });
 
   it("does not run cleanup commands when no stale worktree or branch is registered", async () => {
@@ -59,15 +61,18 @@ describe("WorktreeManager", () => {
     expect(calls.some((c) => c.includes("branch -D feature/mission-1/1"))).toBe(false);
   });
 
-  it("cleans a stale feature worktree and branch before recreating", async () => {
+  it("removes a stale worktree directory but PRESERVES the existing branch on resume", async () => {
+    // Resume path: the feature branch already exists (it carries approved
+    // unit commits) and must NOT be deleted back to main. Only the stale
+    // worktree directory is removed and re-attached.
     const staleWorktreePath = "/repo/root/.git-worktrees/feature-ms-1";
-    const staleBranch = "feature/mission-1/1";
+    const existingBranch = "feature/mission-1/1";
     mockExecAsync.mockImplementation(async (_cmd: string, args: string[]) => {
       if (args.includes("worktree") && args.includes("list") && args.includes("--porcelain")) {
         return { stdout: `worktree ${staleWorktreePath}\nHEAD abcdef\n`, stderr: "" };
       }
       if (args.includes("branch") && args.includes("--list")) {
-        return { stdout: `${staleBranch}\n`, stderr: "" };
+        return { stdout: `${existingBranch}\n`, stderr: "" };
       }
       return { stdout: "", stderr: "" };
     });
@@ -76,8 +81,13 @@ describe("WorktreeManager", () => {
     await manager.createFeatureWorktree("mission-1", 0, "ms-1", "main");
 
     const calls = mockExecAsync.mock.calls.map((c) => `${c[0]} ${(c[1] as string[]).join(" ")}`);
+    // Stale worktree directory IS removed.
     expect(calls.some((c) => c.includes(`worktree remove ${staleWorktreePath} --force`))).toBe(true);
-    expect(calls.some((c) => c.includes(`branch -D ${staleBranch}`))).toBe(true);
+    // The existing branch is NOT deleted and NOT recreated off main — it is
+    // preserved and the worktree is re-attached to it directly.
+    expect(calls.some((c) => c.includes(`branch -D ${existingBranch}`))).toBe(false);
+    expect(calls.some((c) => c.includes(`branch ${existingBranch} main`))).toBe(false);
+    expect(calls.some((c) => c.includes(`worktree add ${staleWorktreePath} ${existingBranch}`))).toBe(true);
   });
 
   it("resolves the current HEAD of a worktree", async () => {

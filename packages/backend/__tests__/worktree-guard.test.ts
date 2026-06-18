@@ -92,6 +92,62 @@ describe("worktree manager — branch guard hooks", () => {
   });
 });
 
+describe("worktree manager — resume preserves committed work", () => {
+  let repoRoot: string;
+
+  beforeEach(async () => {
+    repoRoot = await mkdtemp(path.join(tmpdir(), "aurex-worktree-resume-"));
+    await git(repoRoot, "init", "-b", "main");
+    await git(repoRoot, "config", "user.email", "aurex@test.com");
+    await git(repoRoot, "config", "user.name", "Aurex Test");
+    await writeFile(path.join(repoRoot, "README.md"), "test\n");
+    await git(repoRoot, "add", ".");
+    await git(repoRoot, "commit", "-m", "init");
+  });
+
+  afterEach(async () => {
+    await rm(repoRoot, { recursive: true, force: true });
+  });
+
+  it("preserves approved unit commits when re-entering createFeatureWorktree (resume)", async () => {
+    // Regression guard for the data-loss bug: a mid-milestone checkpoint
+    // (cost_cap_exceeded / quota_exhausted / validation_failed) returns from
+    // the loop WITHOUT pruning the feature worktree. On resume, the loop calls
+    // createFeatureWorktree again for the same milestone. The OLD code ran
+    // `git branch -D feature/...` and recreated off main, destroying the
+    // committed-and-approved work. The new code must PRESERVE the branch.
+    const manager = createWorktreeManager(repoRoot);
+
+    // --- First run: create the feature branch + worktree, commit unit A ---
+    const first = await manager.createFeatureWorktree("mission-1", 0, "ms-1", "main");
+    await writeFile(path.join(first.worktreePath, "unit-a.txt"), "unit-a work\n");
+    await git(first.worktreePath, "add", "unit-a.txt");
+    await git(first.worktreePath, "commit", "-m", "unit A: approved work");
+    const headAfterUnitA = await manager.currentHead(first.worktreePath);
+
+    // Simulate a checkpoint: prune the worktree but LEAVE the branch (exactly
+    // what the loop does on a non-milestone_complete checkpoint — it only
+    // prunes on milestone_complete).
+    await manager.pruneWorktree(first.worktreePath);
+
+    // --- Resume: re-enter createFeatureWorktree for the SAME milestone ---
+    const resumed = await manager.createFeatureWorktree("mission-1", 0, "ms-1", "main");
+
+    // The resumed feature branch must still point at unit A's commit.
+    const headAfterResume = await manager.currentHead(resumed.worktreePath);
+    expect(headAfterResume).toBe(headAfterUnitA);
+
+    // And unit A's commit content must be present in the resumed worktree.
+    const content = await readFile(path.join(resumed.worktreePath, "unit-a.txt"), "utf8");
+    expect(content).toBe("unit-a work\n");
+
+    // The resumed baseCommitHash is the feature branch HEAD (unit A), not main.
+    expect(resumed.baseCommitHash).toBe(headAfterUnitA);
+
+    await manager.pruneWorktree(resumed.worktreePath);
+  });
+});
+
 async function git(cwd: string, ...args: string[]): Promise<string> {
   const { execFile } = await import("node:child_process");
   const { promisify } = await import("node:util");

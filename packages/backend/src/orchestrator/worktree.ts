@@ -75,9 +75,20 @@ export function createWorktreeManager(repoRoot: string): WorktreeManager {
       const featureBranch = `feature/${missionId}/${milestoneOrderIndex + 1}`;
       const worktreePath = `${worktreeBase}/feature-${milestoneId}`;
 
-      // Idempotent stale cleanup. Retry/resume paths reuse the same identifiers;
-      // remove a stale worktree/branch for this milestone before recreating.
-      // Never run a global `worktree prune` — it can remove unrelated metadata.
+      // Resume vs. fresh-start semantics.
+      //
+      // On a FRESH milestone, the feature branch does not exist yet — create it
+      // off `mainBranch`. On a RESUME (e.g. after a cost_cap_exceeded /
+      // quota_exhausted / validation_failed checkpoint mid-milestone), the
+      // feature branch ALREADY EXISTS and holds committed-and-approved work
+      // from prior units. Wiping it back to main would silently destroy that
+      // work and leave completed units unbacked by git history. So when the
+      // branch exists, we PRESERVE it and only re-attach the worktree.
+      //
+      // We still remove a stale *worktree* (a leftover directory from a
+      // crashed run) before re-adding — but never `git branch -D` an existing
+      // feature branch, and never run a global `worktree prune` (it can
+      // remove unrelated metadata).
       const existingWorktrees = await git(repoRoot, "worktree", "list", "--porcelain").catch(() => "");
       const hasStaleWorktree = existingWorktrees
         .split("\n")
@@ -89,21 +100,26 @@ export function createWorktreeManager(repoRoot: string): WorktreeManager {
         }
       }
       const branchList = await git(repoRoot, "branch", "--list", featureBranch).catch(() => "");
-      if (branchList.includes(featureBranch)) {
-        try { await git(repoRoot, "branch", "-D", featureBranch); }
-        catch (err) {
-          console.warn(`[worktree] Failed to delete stale feature branch ${featureBranch}:`, err instanceof Error ? err.message : err);
-        }
+      const branchAlreadyExists = branchList.includes(featureBranch);
+
+      if (branchAlreadyExists) {
+        // RESUME: preserve the existing feature branch (it carries approved
+        // unit commits) and re-attach the worktree at its current HEAD.
+        // Stryker disable next-line StringLiteral: git command args
+        await git(repoRoot, "worktree", "add", worktreePath, featureBranch);
+      } else {
+        // FRESH: create the feature branch off main and add the worktree.
+        // Stryker disable next-line StringLiteral: git command args
+        await git(repoRoot, "branch", featureBranch, mainBranch);
+        // Stryker disable next-line StringLiteral: git command args
+        await git(repoRoot, "worktree", "add", worktreePath, featureBranch);
       }
 
-      // Stryker disable next-line StringLiteral: git command args
-      await git(repoRoot, "branch", featureBranch, mainBranch);
-      // Stryker disable next-line StringLiteral: git command args
-      await git(repoRoot, "worktree", "add", worktreePath, featureBranch);
-
-      // Resolve the starting commit so the worker's write_handoff guard can
-      // reject handoffs that produced no new commits on the feature branch.
-      const baseCommitHash = await git(repoRoot, "rev-parse", mainBranch)
+      // Resolve the starting commit. On a resume this is the feature branch's
+      // own HEAD (the last approved commit), NOT main — so the worker's
+      // write_handoff guard correctly requires a NEW commit on top of the
+      // preserved work rather than on top of main.
+      const baseCommitHash = await git(repoRoot, "rev-parse", featureBranch)
         .then((h) => (h && h.trim()) || undefined)
         .catch(() => undefined);
 
@@ -118,6 +134,15 @@ export function createWorktreeManager(repoRoot: string): WorktreeManager {
       // Hard-reset the feature branch to the pre-unit commit so the branch
       // only ever contains committed-and-approved work. Guard against an
       // empty sha (e.g. a mocked environment) — git would reject it.
+      //
+      // Invariant: by the time we get here a failed worker has ALWAYS either
+      // committed (then produced a bad handoff / failed smoke) or committed
+      // nothing (then timed out / crashed before committing). In both cases
+      // resetting to `sha` (the pre-unit HEAD) is correct and loses nothing:
+      // a committed-but-rejected attempt is exactly the work we want to drop,
+      // and a no-commit attempt leaves nothing on the branch to discard.
+      // The empty-sha guard is defensive only — it should never fire in a real
+      // repo because createFeatureWorktree always resolves a HEAD.
       if (!sha || sha.trim().length === 0) return;
       // Stryker disable next-line StringLiteral: git command args
       await git(worktreePath, "reset", "--hard", sha);
