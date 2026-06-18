@@ -727,20 +727,41 @@ function resolveSmokeCommands(contractTestCommands: string[]): { test?: string; 
   };
 }
 
-/** Load config without throwing when required env vars are unset (tests/partial envs). */
+/**
+ * Load config without throwing when required env vars are unset (tests/partial
+ * envs). Env vars are static for the process lifetime, so the result is
+ * memoized — `resolveSmokeCommands` and `buildScaffoldForUnit` call this
+ * per-unit and would otherwise re-parse env on every worker spawn.
+ */
+let _defensiveConfig: { maxPerUnitRetries: number; smokeCheckCommands: { test?: string; typecheck?: string; lint?: string } } | null = null;
 function loadConfigDefensive(): {
   maxPerUnitRetries: number;
   smokeCheckCommands: { test?: string; typecheck?: string; lint?: string };
 } {
+  if (_defensiveConfig) return _defensiveConfig;
   try {
     const c = loadConfig();
-    return { maxPerUnitRetries: c.maxPerUnitRetries, smokeCheckCommands: c.smokeCheckCommands };
+    _defensiveConfig = { maxPerUnitRetries: c.maxPerUnitRetries, smokeCheckCommands: c.smokeCheckCommands };
+    return _defensiveConfig;
   } catch {
-    return { maxPerUnitRetries: 2, smokeCheckCommands: {} };
+    _defensiveConfig = { maxPerUnitRetries: 2, smokeCheckCommands: {} };
+    return _defensiveConfig;
   }
 }
 
-/** One diff for the whole milestone: feature branch vs main. */
+/**
+ * One diff for the whole milestone: feature branch vs main.
+ *
+ * Uses the THREE-dot form (`main...HEAD`) deliberately: it diffs against the
+ * merge-base of `baseBranch` and HEAD, i.e. the commit the feature branch was
+ * cut from. This captures the milestone's FULL change set even when:
+ *  - `baseBranch` has advanced since the worktree was cut (unrelated merges
+ *    on main don't pollute the diff), and
+ *  - the milestone was resumed after a checkpoint (prior units' commits are
+ *    already on the feature branch and remain included).
+ * Two-dot (`main..HEAD`) would instead diff against main's CURRENT tip and
+ * could either omit work or include unrelated main-side changes.
+ */
 async function collectFeatureDiff(worktreePath: string, baseBranch: string): Promise<string> {
   try {
     const { stdout } = await execFileAsync(
