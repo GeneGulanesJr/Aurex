@@ -520,7 +520,11 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
             lapis.logCost({
               missionId: opts.missionId,
               agentSessionId: session.sessionId,
-              model: opts.agentType,
+              // Record the resolved model id (e.g. "minimax/MiniMax-M3"), not the
+              // agent type. Previously this logged opts.agentType ("worker"),
+              // which misattributed every cost row to the agent type and broke
+              // any downstream cost analytics grouped by model.
+              model: opts.model ?? opts.agentType,
               promptTokens: usage.promptTokens ?? 0,
               completionTokens: usage.completionTokens ?? 0,
               cost: delta,

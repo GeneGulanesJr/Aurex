@@ -178,7 +178,25 @@ You MUST actually run 'git add' and 'git commit' on your task branch, then pass 
         gitCommitHash,
       };
 
-      const result = await lapis.writeHandoff(unitId, handoff);
+      let result;
+      try {
+        result = await lapis.writeHandoff(unitId, handoff);
+      } catch (err) {
+        // A LaPis outage (network/DB) would otherwise throw out of the tool
+        // executor as an unhandled exception. Surface it as a recoverable
+        // rejection the model can act on, matching the sibling tools'
+        // (verify_finding/reject_finding) error handling.
+        const detail = err instanceof Error ? err.message : String(err);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Handoff could not be submitted to shared state: ${detail}\n\nPlease retry write_handoff. If this persists, report the error via errorsEncountered and still submit the handoff so your work is recorded.`,
+            },
+          ],
+          details: {},
+        };
+      }
 
       if (result.accepted) {
         opts?.onHandoffAccepted?.();

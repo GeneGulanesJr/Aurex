@@ -136,6 +136,36 @@ describe("worker tools", () => {
     expect(content[0].text).toContain("rationale is too short");
   });
 
+  it("write_handoff returns a recoverable rejection when lapis.writeHandoff throws", async () => {
+    // A LaPis outage (network/DB) used to throw out of the tool executor as an
+    // unhandled exception. It must instead surface as a recoverable rejection
+    // the model can retry, matching the sibling tools' error handling.
+    const lapis = createMockLapis();
+    (lapis.writeHandoff as any).mockRejectedValue(new Error("LaPis connection refused"));
+    const onHandoffAccepted = vi.fn();
+    const tools = createWorkerTools(lapis, "unit-456", { onHandoffAccepted });
+    const handoffTool = tools.find((t) => t.name === "write_handoff")!;
+
+    const result = await (handoffTool as any).execute("tc-1", {
+      featureName: "F",
+      description: "D",
+      implemented: "I",
+      remaining: "R",
+      rationale: "Refactored X for clarity and testability",
+      assumptions: "A",
+      unresolvedUncertainties: "U",
+      errorsEncountered: "E",
+      commandsRun: "[]",
+      gitCommitHash: "deadbeef",
+    });
+
+    const content = result.content as Array<{ type: string; text: string }>;
+    expect(content[0].text).toContain("could not be submitted");
+    expect(content[0].text).toContain("LaPis connection refused");
+    // The handoff was NOT accepted, so the session must not be completed.
+    expect(onHandoffAccepted).not.toHaveBeenCalled();
+  });
+
   it("search_memory calls lapis.searchMemory", async () => {
     const lapis = createMockLapis();
     const tools = createWorkerTools(lapis, "unit-456");

@@ -408,31 +408,88 @@ export function createMilestoneLoop(
       await reconcileMissionLedger(lapis, { missionId: mission.id, milestoneId: milestone.id, reason: "worker spawned", actorId: "orchestrator" });
 
       const workerTimeout = selectWorkerTimeout(unit, config.workerTimeouts);
-      const handle = await spawner.spawn({
-        agentType: "worker",
-        agentId,
-        unitId: unit.id,
-        missionId: mission.id,
-        milestoneId: milestone.id,
-        cwd: featureWorktree.worktreePath,
-        baseCommitHash: baseSha || undefined,
-        skillFilePath: `${loopConfig.aurexRoot}/packages/backend/src/skills/worker.md`,
-        contextContent,
-        taskPrompt: [
-          `Implement: ${unit.description}`,
-          "",
-          attemptFeedback ? `FEEDBACK FROM PRIOR ATTEMPT (address this):\n${attemptFeedback}` : "",
-          "Research findings from the research agent are in your context under 'Research Findings'. Use them directly. Do NOT re-read files already documented there.",
-          "",
-          "Follow your skill instructions carefully.",
-          "You MUST run `git add` and `git commit` on the feature branch, then call write_handoff with the real `git rev-parse HEAD` hash. The hash is verified: it must be a NEW commit on your branch (not the starting commit). For analysis-only tasks with no code changes, commit a documentation/notes update or an empty commit so there is a real commit to validate against.",
-          "When useful work is committed, verification is blocked, or time is running short, call write_handoff immediately with partial/blocking details.",
-        ].join("\n"),
-        timeout: workerTimeout,
-        extendTimeoutOnActivity: true,
-        maxTimeout: selectWorkerMaxTimeout(workerTimeout),
-        model: config.modelHints.worker,
-      });
+      let handle;
+      try {
+        handle = await spawner.spawn({
+          agentType: "worker",
+          agentId,
+          unitId: unit.id,
+          missionId: mission.id,
+          milestoneId: milestone.id,
+          cwd: featureWorktree.worktreePath,
+          baseCommitHash: baseSha || undefined,
+          skillFilePath: `${loopConfig.aurexRoot}/packages/backend/src/skills/worker.md`,
+          contextContent,
+          taskPrompt: [
+            `Implement: ${unit.description}`,
+            "",
+            attemptFeedback ? `FEEDBACK FROM PRIOR ATTEMPT (address this):\n${attemptFeedback}` : "",
+            "Research findings from the research agent are in your context under 'Research Findings'. Use them directly. Do NOT re-read files already documented there.",
+            "",
+            "Follow your skill instructions carefully.",
+            "You MUST run `git add` and `git commit` on the feature branch, then call write_handoff with the real `git rev-parse HEAD` hash. The hash is verified: it must be a NEW commit on your branch (not the starting commit). For analysis-only tasks with no code changes, commit a documentation/notes update or an empty commit so there is a real commit to validate against.",
+            "When useful work is committed, verification is blocked, or time is running short, call write_handoff immediately with partial/blocking details.",
+          ].join("\n"),
+          timeout: workerTimeout,
+          extendTimeoutOnActivity: true,
+          maxTimeout: selectWorkerMaxTimeout(workerTimeout),
+          model: config.modelHints.worker,
+        });
+      } catch (spawnErr) {
+        // spawn() threw before returning a handle (e.g. model-resolution
+        // failure, spawner concurrency limit, session creation error). The
+        // "spawned"/"in_progress" status callbacks above already fired, so we
+        // must roll the unit/branch back to a consistent state. Reset the
+        // branch to the pre-unit commit, record a recoverable error, and feed
+        // the attempt through the SAME retry/escalate path as any other worker
+        // failure rather than crashing the whole milestone.
+        callbacks.onAgentStatus(agentId, "worker", "failed", milestone.id);
+        callbacks.onError(
+          mission.id, "worker_spawn_failed",
+          `Worker "${unit.description}" could not be spawned: ${spawnErr instanceof Error ? spawnErr.message : String(spawnErr)}`,
+          { workerId: agentId, milestoneId: milestone.id, recoverable: true, details: { error: spawnErr instanceof Error ? spawnErr.message : String(spawnErr) } },
+        );
+        await worktreeManager.resetTo(featureWorktree.worktreePath, baseSha).catch((resetErr: unknown) => {
+          console.warn(`[milestone-loop] Failed to reset feature branch after spawn failure for worker ${agentId}:`, resetErr instanceof Error ? resetErr.message : resetErr);
+        });
+        await markWorkerTodoProgress(lapis, {
+          missionId: mission.id,
+          unit: { ...unit, taskBranch: "", worktreePath: "" },
+          workerId: agentId,
+          status: "blocked",
+          reason: `worker spawn failed: ${spawnErr instanceof Error ? spawnErr.message : String(spawnErr)}`,
+          branch: "",
+          notes: [`Worker ${agentId} spawn failed`],
+        });
+        await reconcileMissionLedger(lapis, { missionId: mission.id, milestoneId: milestone.id, reason: "worker spawn failed", actorId: "orchestrator" });
+
+        const failureRecord: UnitFailure = {
+          kind: "failed", code: "worker_spawn_failed",
+          message: `Worker "${unit.description}" could not be spawned`,
+          feedback: `The previous worker attempt failed to spawn (${spawnErr instanceof Error ? spawnErr.message : String(spawnErr)}). Retry the implementation.`,
+        };
+        // Only retry spawn failures that have a chance of succeeding on a
+        // re-attempt. A DETERMINISTIC spawn error (model not registered, bad
+        // provider/config, "no such provider") will fail identically on every
+        // retry — burning the per-unit retry budget for nothing. Retry only
+        // TRANSIENT spawn errors (concurrency limit, which clears when another
+        // agent finishes; or an opaque session-creation error that might be a
+        // transient network blip). Deterministic errors escalate immediately.
+        const isDeterministicSpawnError = isDeterministicSpawnFailure(spawnErr);
+        if (!isDeterministicSpawnError && canRetryUnit(args.retryBudget, unit.id, args.maxPerUnitRetries)) {
+          markUnitRetry(args.retryBudget, unit.id);
+          await lapis.updateWorkingUnitStatus(unit.id, "planned");
+          callbacks.onMilestoneProgress(milestone.id, "retrying", args.completedCount, args.units.length);
+          attemptFeedback = failureRecord.feedback;
+          continue; // retry THIS unit
+        }
+        const attemptNote = isDeterministicSpawnError
+          ? " (configuration/model error — not retried)"
+          : ` after ${args.maxPerUnitRetries + 1} attempt(s)`;
+        const summary = `${failureRecord.message}${attemptNote}.`;
+        callbacks.onEscalation(mission.id, { kind: "unclassifiable_error", milestoneId: milestone.id }, { summary });
+        return { status: "checkpoint_needed", trigger: "unclassifiable_error", milestoneId: milestone.id, summary };
+      }
       ctx.activeHandles.add(handle);
       callbacks.onAgentStatus(agentId, "worker", "working", milestone.id);
 
@@ -618,48 +675,88 @@ export function createMilestoneLoop(
       taskBranch: featureWorktree.featureBranch, worktreePath: featureWorktree.worktreePath,
     }));
 
-    const validatorResults: ValidatorRunResult[] = [];
-    await Promise.all(validatorTypes.map(async (validatorType) => {
-      const agentId = `${validatorType}-${milestone.id}`;
-      const contextContent = buildValidatorContext({
-        validatorType,
-        missionDescription: mission.description,
-        milestoneTitle: milestone.title,
-        milestoneDescription: milestone.description,
-        contractId: args.contractId,
-        contractCriteria: args.criteria,
-        testCommands: args.testCommands,
-        acceptanceBehavior: args.acceptanceBehavior,
-        baseBranch: loopConfig.gitMainBranch,
-        units: validatorUnits,
-        researchFindings: args.researchFindings,
-        diffSummary: diffSummary || undefined,
-        validatorToolCallCap: config.validatorToolCallCap ?? 0,
-        validatorWorktree: {
-          path: featureWorktree.worktreePath,
-          mergedBranches: [featureWorktree.featureBranch],
-          conflictedBranches: [],
-        },
+      const validatorResults: ValidatorRunResult[] = [];
+      const outcomes = await Promise.allSettled(validatorTypes.map(async (validatorType) => {
+        const agentId = `${validatorType}-${milestone.id}`;
+        const contextContent = buildValidatorContext({
+          validatorType,
+          missionDescription: mission.description,
+          milestoneTitle: milestone.title,
+          milestoneDescription: milestone.description,
+          contractId: args.contractId,
+          contractCriteria: args.criteria,
+          testCommands: args.testCommands,
+          acceptanceBehavior: args.acceptanceBehavior,
+          baseBranch: loopConfig.gitMainBranch,
+          units: validatorUnits,
+          researchFindings: args.researchFindings,
+          diffSummary: diffSummary || undefined,
+          validatorToolCallCap: config.validatorToolCallCap ?? 0,
+          validatorWorktree: {
+            path: featureWorktree.worktreePath,
+            mergedBranches: [featureWorktree.featureBranch],
+            conflictedBranches: [],
+          },
+        });
+        callbacks.onAgentStatus(agentId, validatorType, "spawned", milestone.id);
+        const handle = await spawner.spawn({
+          agentType: validatorType, agentId, missionId: mission.id, milestoneId: milestone.id,
+          contractId: args.contractId, cwd: featureWorktree.worktreePath,
+          skillFilePath: `${loopConfig.aurexRoot}/packages/backend/src/skills/validator.md`,
+          contextContent,
+          taskPrompt: `Validate milestone "${milestone.title}" as ${validatorType}. Use write_verdict when done.`,
+          timeout: loopConfig.validatorTimeout ?? config.workerTimeouts.testHeavy,
+          model: config.modelHints[validatorType],
+          validatorToolCallCap: config.validatorToolCallCap ?? 0,
+        });
+        ctx.activeHandles.add(handle);
+        callbacks.onAgentStatus(agentId, validatorType, "reviewing", milestone.id);
+        try {
+          const result = await handle.completed;
+          return { validatorType, sessionId: handle.sessionId, result } satisfies ValidatorRunResult;
+        } finally {
+          // Dispose THIS handle in finally, regardless of pass/fail. Previously
+          // dispose ran only after a successful await; if a sibling validator
+          // rejected, Promise.all rejected and the surviving handle was never
+          // disposed (a runaway/orphaned session). allSettled + per-handle
+          // finally guarantees every validator session is torn down.
+          ctx.activeHandles.delete(handle);
+          handle.dispose();
+        }
+      }));
+
+      // allSettled: rejections are failures to spawn/run a validator (e.g.
+      // spawn() throw, session crash, or an abort). QuotaExhaustedError is
+      // special — it must propagate to the mission-runner's quota-recovery
+      // path rather than be treated as a milestone-level validation failure.
+      // Other rejections become failed ValidatorRunResults below so the
+      // existing synthetic-verdict machinery (ensureValidatorVerdicts) can
+      // record a fail verdict for the type and route through the normal
+      // validation_failed → rescope/escalate path.
+      for (const o of outcomes) {
+        if (o.status === "rejected" && o.reason instanceof QuotaExhaustedError) {
+          throw o.reason;
+        }
+      }
+
+      // Collect results. Fulfillments carry a usable ValidatorRunResult;
+      // non-quota rejections are turned into a "failed" ValidatorRunResult so
+      // the downstream verdict reconciliation can synthesize a fail verdict
+      // for the type. outcomes are in validatorTypes order → index maps to type.
+      outcomes.forEach((o, i) => {
+        const validatorType = validatorTypes[i];
+        const agentId = `${validatorType}-${milestone.id}`;
+        if (o.status === "fulfilled") {
+          callbacks.onAgentStatus(agentId, validatorType, o.value.result.status === "completed" ? "completed" : o.value.result.status, milestone.id);
+          validatorResults.push(o.value);
+        } else {
+          callbacks.onAgentStatus(agentId, validatorType, "failed", milestone.id);
+          validatorResults.push({
+            validatorType, sessionId: "",
+            result: { status: "failed", sessionId: "", error: `validator rejected: ${o.reason instanceof Error ? o.reason.message : String(o.reason)}` },
+          });
+        }
       });
-      callbacks.onAgentStatus(agentId, validatorType, "spawned", milestone.id);
-      const handle = await spawner.spawn({
-        agentType: validatorType, agentId, missionId: mission.id, milestoneId: milestone.id,
-        contractId: args.contractId, cwd: featureWorktree.worktreePath,
-        skillFilePath: `${loopConfig.aurexRoot}/packages/backend/src/skills/validator.md`,
-        contextContent,
-        taskPrompt: `Validate milestone "${milestone.title}" as ${validatorType}. Use write_verdict when done.`,
-        timeout: loopConfig.validatorTimeout ?? config.workerTimeouts.testHeavy,
-        model: config.modelHints[validatorType],
-        validatorToolCallCap: config.validatorToolCallCap ?? 0,
-      });
-      ctx.activeHandles.add(handle);
-      callbacks.onAgentStatus(agentId, validatorType, "reviewing", milestone.id);
-      const result = await handle.completed;
-      ctx.activeHandles.delete(handle);
-      validatorResults.push({ validatorType, sessionId: handle.sessionId, result });
-      callbacks.onAgentStatus(agentId, validatorType, result.status === "completed" ? "completed" : result.status, milestone.id);
-      handle.dispose();
-    }));
 
     const { verdicts, runtimeFailures } = await ensureValidatorVerdicts(lapis, milestone.id, args.contractId, validatorResults);
     if (runtimeFailures.length > 0) {
@@ -734,6 +831,29 @@ interface UnitFailure {
   code: string;
   message: string;
   feedback: string;
+}
+
+/**
+ * Classify a worker `spawn()` failure as deterministic (will fail identically
+ * on every retry) vs. transient (might succeed on re-attempt). Deterministic
+ * failures should NOT consume the per-unit retry budget.
+ *
+ * Deterministic signals (from the spawner / Pi SDK):
+ *   - "Unable to register PiNyx model" — the configured model id is invalid
+ *   - "no such provider" / model-resolution failures — bad provider config
+ *   - "requires unitId" / "requires contractId" — programming-contract errors
+ *
+ * Transient signals (retry-worthy):
+ *   - "AgentSpawner concurrency limit reached" — clears when an agent finishes
+ *   - other opaque session-creation errors — might be a transient network blip
+ *
+ * The list is intentionally conservative: when unclear, default to TRANSIENT
+ * (retry), because a wasted retry is cheaper than wrongly giving up on a unit
+ * that might have succeeded.
+ */
+function isDeterministicSpawnFailure(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /unable to register (pinyx )?model|no such provider|requires (unitId|contractId)|model resolution failed/i.test(msg);
 }
 
 /** Resolve smoke-check commands: config overrides, else contract test command for tests. */
