@@ -31,14 +31,17 @@ export default {
   timeoutMS: 60_000,
   // P0: security-critical, financial, decision-logic (all at 100%)
   // P1: important decision logic with existing tests
+  //
+  // NOTE: previously listed negotiator.ts, branch-guard.ts,
+  // contract-immutability.ts, and broadcast-lifecycle.ts — all deleted
+  // (issue #119 removed the multi-branch negotiator; #116 dropped
+  // contract-immutability + branch-guard as dead code; #87 removed the
+  // broadcast system). Stale mutate targets caused Stryker to emit 0 mutants
+  // across every file, so the mutation score was meaningless.
   mutate: [
     // P0
-    "packages/backend/src/orchestrator/negotiator.ts",
-    "packages/backend/src/enforcement/branch-guard.ts",
-    "packages/backend/src/enforcement/contract-immutability.ts",
     "packages/backend/src/enforcement/creator-verifier.ts",
     "packages/backend/src/enforcement/handoff-validator.ts",
-    "packages/backend/src/enforcement/broadcast-lifecycle.ts",
     "packages/backend/src/enforcement/research-lifecycle.ts",
     "packages/backend/src/enforcement/enforcement-gate.ts",
     "packages/backend/src/enforcement/quota-gate.ts",

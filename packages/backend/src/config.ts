@@ -128,7 +128,7 @@ export function loadConfig(): AppConfig {
     quotaWindowDurationMs: envInt("QUOTA_WINDOW_HOURS", 5) * 60 * 60 * 1000,
     quotaBurnDurationMs: envInt("QUOTA_BURN_HOURS", 1) * 60 * 60 * 1000,
 
-    durableQueueEnabled: process.env.AUREX_DURABLE_QUEUE_ENABLED === "true",
+    durableQueueEnabled: process.env.AUREX_DURABLE_QUEUE_ENABLED !== "false",
     preparedSessionsEnabled:
       process.env.AUREX_PREPARED_SESSIONS_ENABLED === "true",
     staleReconcilerEnabled:

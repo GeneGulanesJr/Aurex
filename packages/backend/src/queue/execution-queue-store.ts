@@ -38,6 +38,13 @@ export interface ExecutionQueueStore {
   list(filter?: ExecutionQueueListFilter): Promise<ExecutionQueueJob[]>;
   get(jobId: string): Promise<ExecutionQueueJob | null>;
   claimNext(workerId: string, now?: Date): Promise<ExecutionQueueClaim | null>;
+  /**
+   * Claim a SPECIFIC job by id. Used by the mission pool to claim a mission
+   * lifecycle job it just enqueued, preventing the execution worker's
+   * generic `claimNext` from grabbing it. Like `claimNext`, increments the
+   * attempt counter.
+   */
+  claimById(jobId: string, workerId: string, now?: Date): Promise<ExecutionQueueClaim | null>;
   markRunning(
     jobId: string,
     claimToken: string,
@@ -191,6 +198,25 @@ export function createInMemoryExecutionQueueStore(
       });
       return { job: claimed, claimToken };
     },
+    async claimById(jobId, workerId, now = new Date()) {
+      const job = jobs.get(jobId);
+      if (!job) return null;
+      if (job.status !== "queued") return null;
+      if (job.attempt >= job.maxAttempts) return null;
+      const dueAt = iso(now);
+      const claimToken = randomUUID();
+      const claimed = await write({
+        ...job,
+        status: "claimed",
+        claimToken,
+        claimedBy: workerId,
+        claimedAt: dueAt,
+        heartbeatAt: dueAt,
+        attempt: job.attempt + 1,
+        updatedAt: dueAt,
+      });
+      return { job: claimed, claimToken };
+    },
     async markRunning(jobId, claimToken, now = new Date()) {
       const job = jobs.get(jobId);
       if (!job) throw new Error(`Execution job ${jobId} not found`);
@@ -322,6 +348,8 @@ export function createSettingsExecutionQueueStore(
     },
     claimNext: (workerId, now) =>
       withPersistence(() => memory.claimNext(workerId, now)),
+    claimById: (jobId, workerId, now) =>
+      withPersistence(() => memory.claimById(jobId, workerId, now)),
     markRunning: (jobId, claimToken, now) =>
       withPersistence(() => memory.markRunning(jobId, claimToken, now)),
     heartbeat: (jobId, claimToken, now) =>

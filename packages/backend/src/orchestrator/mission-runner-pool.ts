@@ -1,6 +1,7 @@
 import type { MissionRunner, MissionRunnerConfig } from "./mission-runner.js";
 import { createMissionRunner } from "./mission-runner.js";
 import type { EventBus } from "../ws/events.js";
+import type { ExecutionQueueStore } from "../queue/execution-queue-store.js";
 
 export interface PoolMissionStatus {
   missionId: string;
@@ -20,6 +21,12 @@ export interface MissionRunnerPool {
 export interface MissionRunnerPoolConfig extends Omit<MissionRunnerConfig, "eventBus"> {
   maxConcurrent: number;
   eventBus: EventBus;
+  /**
+   * When provided, each runner mirrors a durable execution-queue job's
+   * lifetime (heartbeat → complete/fail). The pool enqueues + claims the job
+   * itself so the generic execution worker never picks it up.
+   */
+  queue?: ExecutionQueueStore;
 }
 
 type RunningEntry = {
@@ -28,11 +35,13 @@ type RunningEntry = {
   completionPromise: Promise<void>;
 };
 
+const POOL_WORKER_ID = "mission-pool";
+
 export function createMissionRunnerPool(poolConfig: MissionRunnerPoolConfig): MissionRunnerPool {
-  const { maxConcurrent, eventBus: _eventBus, ...baseConfig } = poolConfig;
+  const { maxConcurrent, eventBus: _eventBus, queue: executionQueue, ...baseConfig } = poolConfig;
   const eventBus = _eventBus;
   const running = new Map<string, RunningEntry>();
-  const queue: string[] = [];
+  const pending: string[] = [];
   const completionWaiters = new Map<string, Array<() => void>>();
 
   function drainWaiters(missionId: string) {
@@ -57,14 +66,37 @@ export function createMissionRunnerPool(poolConfig: MissionRunnerPoolConfig): Mi
   }
 
   function startNext() {
-    while (running.size < maxConcurrent && queue.length > 0) {
-      const missionId = queue.shift()!;
-      startRunner(missionId);
+    while (running.size < maxConcurrent && pending.length > 0) {
+      const missionId = pending.shift()!;
+      void startRunner(missionId);
     }
   }
 
-  function startRunner(missionId: string) {
-    const runnerConfig: MissionRunnerConfig = { ...baseConfig, eventBus };
+  async function startRunner(missionId: string) {
+    let runnerConfig: MissionRunnerConfig = { ...baseConfig, eventBus };
+
+    // When a durable queue is configured, enqueue + claim a mission lifecycle
+    // job so the runner owns it. The claim is by-id (not claimNext) so the
+    // generic execution worker can't grab it. On any queue error, fall back
+    // to non-durable behavior — the mission still runs, just without
+    // queue-backed durability for this invocation.
+    if (executionQueue) {
+      try {
+        const job = await executionQueue.enqueue({
+          type: "mission_start",
+          missionId,
+          maxAttempts: 1,
+        });
+        const claim = await executionQueue.claimById(job.id, POOL_WORKER_ID);
+        if (claim) {
+          await executionQueue.markRunning(claim.job.id, claim.claimToken);
+          runnerConfig = { ...runnerConfig, queue: executionQueue, job: { jobId: claim.job.id, claimToken: claim.claimToken } };
+        }
+      } catch (err) {
+        console.warn(`[pool] durable job setup failed for mission ${missionId}:`, err instanceof Error ? err.message : err);
+      }
+    }
+
     const runner = createMissionRunner(runnerConfig);
 
     const completionPromise = new Promise<void>((resolve) => {
@@ -87,15 +119,15 @@ export function createMissionRunnerPool(poolConfig: MissionRunnerPoolConfig): Mi
 
   return {
     submit(missionId) {
-      if (running.has(missionId) || queue.includes(missionId)) {
+      if (running.has(missionId) || pending.includes(missionId)) {
         return;
       }
 
       if (running.size < maxConcurrent) {
-        startRunner(missionId);
+        void startRunner(missionId);
       } else {
-        queue.push(missionId);
-        eventBus.emit({ type: "mission_queued", missionId, queuePosition: queue.length });
+        pending.push(missionId);
+        eventBus.emit({ type: "mission_queued", missionId, queuePosition: pending.length });
       }
     },
 
@@ -105,9 +137,9 @@ export function createMissionRunnerPool(poolConfig: MissionRunnerPoolConfig): Mi
         entry.runner.abort();
         return;
       }
-      const idx = queue.indexOf(missionId);
+      const idx = pending.indexOf(missionId);
       if (idx !== -1) {
-        queue.splice(idx, 1);
+        pending.splice(idx, 1);
         drainWaiters(missionId);
       }
     },
@@ -118,7 +150,7 @@ export function createMissionRunnerPool(poolConfig: MissionRunnerPoolConfig): Mi
         const runnerState = entry.runner.getStatus().state;
         return { missionId, state: runnerState as PoolMissionStatus["state"] };
       }
-      const queueIdx = queue.indexOf(missionId);
+      const queueIdx = pending.indexOf(missionId);
       if (queueIdx !== -1) {
         return { missionId, state: "queued", queuePosition: queueIdx + 1 };
       }
@@ -131,8 +163,8 @@ export function createMissionRunnerPool(poolConfig: MissionRunnerPoolConfig): Mi
         const runnerState = entry.runner.getStatus().state;
         results.push({ missionId, state: runnerState as PoolMissionStatus["state"] });
       }
-      for (let i = 0; i < queue.length; i++) {
-        results.push({ missionId: queue[i], state: "queued", queuePosition: i + 1 });
+      for (let i = 0; i < pending.length; i++) {
+        results.push({ missionId: pending[i], state: "queued", queuePosition: i + 1 });
       }
       return results;
     },
@@ -142,7 +174,7 @@ export function createMissionRunnerPool(poolConfig: MissionRunnerPoolConfig): Mi
       if (entry) {
         return entry.completionPromise;
       }
-      if (!queue.includes(missionId)) {
+      if (!pending.includes(missionId)) {
         return Promise.resolve();
       }
       return new Promise<void>((resolve) => {
@@ -153,7 +185,7 @@ export function createMissionRunnerPool(poolConfig: MissionRunnerPoolConfig): Mi
     },
 
     async drain() {
-      queue.length = 0;
+      pending.length = 0;
       for (const [, entry] of running) {
         entry.runner.abort();
       }

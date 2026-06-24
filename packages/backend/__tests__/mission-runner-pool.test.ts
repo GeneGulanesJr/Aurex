@@ -332,4 +332,46 @@ describe("MissionRunnerPool", () => {
     const m1Count = active.filter((m) => m.missionId === "m-1").length;
     expect(m1Count).toBe(1);
   });
+
+  // Phase 2 regression: when a durable queue is provided, submit enqueues a
+  // mission_start job, claims it by id, and marks it running — so the runner
+  // owns the job and can heartbeat/complete it.
+  it("durable submit enqueues, claims by id, and marks the job running", async () => {
+    const lapis = createMockLapis();
+    const { createInMemoryExecutionQueueStore } = await import("../src/queue/execution-queue-store");
+    const queue = createInMemoryExecutionQueueStore();
+    const enqueueSpy = vi.spyOn(queue, "enqueue");
+    const claimByIdSpy = vi.spyOn(queue, "claimById");
+    const markRunningSpy = vi.spyOn(queue, "markRunning");
+
+    const pool = createMissionRunnerPool({
+      lapis,
+      pinyx: createMockPinyx(),
+      eventBus: mockEventBus as any,
+      agentDir: "/test/.pi/agent",
+      repoRoot: "/test/repo",
+      gitMainBranch: "main",
+      maxConcurrent: 1,
+      queue,
+    });
+
+    pool.submit("m-1");
+    // Give the async startRunner a tick to complete the enqueue+claim.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(enqueueSpy).toHaveBeenCalledWith(expect.objectContaining({
+      type: "mission_start",
+      missionId: "m-1",
+    }));
+    expect(claimByIdSpy).toHaveBeenCalledWith(expect.any(String), "mission-pool");
+    expect(markRunningSpy).toHaveBeenCalled();
+
+    // The job must exist and have been claimed by the pool (not left queued for
+    // the generic worker to grab).
+    const jobs = await queue.list();
+    expect(jobs.length).toBe(1);
+    expect(jobs[0].type).toBe("mission_start");
+    expect(jobs[0].missionId).toBe("m-1");
+    expect(jobs[0].claimedBy).toBe("mission-pool");
+  });
 });

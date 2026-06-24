@@ -90,6 +90,7 @@ async function main() {
     maxConcurrent: config.maxConcurrentMissions,
     researchTimeout: config.researchTimeout,
     validatorTimeout: config.validatorTimeout,
+    queue: executionQueue,
     onPostMilestoneScan: async (missionId: string, root: string) => {
       try {
         await bumblebeeRunner.triggerScan(missionId, {
@@ -105,15 +106,30 @@ async function main() {
     },
   });
 
+  // Boot recovery: resume any mission left in a non-terminal state by a prior
+  // process crash/restart. Previously only "paused" missions were resumed; a
+  // crash mid-build left missions stuck in running/planning/executing forever.
   try {
-    const paused = await lapis.listMissions({ status: "paused" });
-    for (const mission of paused) {
-      console.log(`[startup] Resuming paused mission: ${mission.id}`);
-      pool.submit(mission.id);
+    // Only real MissionStatus values (not RunnerStatus internal states like
+    // "executing"/"waiting_checkpoint" which are never persisted to LaPis).
+    const nonTerminalStatuses = ["paused", "running", "planning"];
+    const orphans: string[] = [];
+    for (const st of nonTerminalStatuses) {
+      const missions = await lapis.listMissions({ status: st });
+      for (const mission of missions) {
+        orphans.push(mission.id);
+      }
+    }
+    const seen = new Set<string>();
+    for (const missionId of orphans) {
+      if (seen.has(missionId)) continue;
+      seen.add(missionId);
+      console.log(`[startup] Resuming non-terminal mission: ${missionId}`);
+      pool.submit(missionId);
     }
   } catch (err) {
     console.warn(
-      "[startup] Could not check for paused missions:",
+      "[startup] Could not check for non-terminal missions:",
       err instanceof Error ? err.message : err,
     );
   }
@@ -265,6 +281,34 @@ async function main() {
   }
 
   // Start
+  // Scheduled mission reconciler: detects missions whose LaPis status is
+  // non-terminal but that have no live runner in the pool (orphaned by a
+  // crash, OOM kill, or unhandled error that left status stale). Marks them
+  // failed so they don't block /api/missions/current forever.
+  const RECONCILER_INTERVAL_MS = 120_000;
+  const activePoolMissionIds = () => new Set(pool.getActiveMissions().map((m) => m.missionId));
+  async function reconcileOrphanedMissions() {
+    try {
+      const liveIds = activePoolMissionIds();
+      // Only scan for actively-running missions with no live runner. "paused"
+      // is intentionally human-in-the-loop — never auto-fail it.
+      const orphanStatuses = ["running", "planning"];
+      for (const st of orphanStatuses) {
+        const missions = await lapis.listMissions({ status: st });
+        for (const mission of missions) {
+          if (liveIds.has(mission.id)) continue;
+          console.warn(`[reconciler] Mission ${mission.id} is non-terminal (${st}) but has no live runner — marking failed.`);
+          await lapis.updateMissionStatus(mission.id, "failed").catch(() => {});
+          eventBus.emit({ type: "mission_error", missionId: mission.id, code: "runner_lost", message: `Mission was ${st} with no live runner; marked failed by reconciler.`, recoverable: false });
+          eventBus.emit({ type: "mission_status", missionId: mission.id, status: "failed" });
+        }
+      }
+    } catch (err) {
+      console.warn("[reconciler] scan failed:", err instanceof Error ? err.message : err);
+    }
+  }
+  const reconcilerTimer = setInterval(() => { void reconcileOrphanedMissions(); }, RECONCILER_INTERVAL_MS);
+
   try {
     await app.listen({ port: config.port, host: "0.0.0.0" });
     console.log(`[server] Listening on port ${config.port}`);
@@ -283,6 +327,7 @@ async function main() {
       new Promise<void>((resolve) => setTimeout(resolve, 30_000)),
     ]);
     console.log("[shutdown] Agents drained, closing server");
+    clearInterval(reconcilerTimer);
     await executionWorker?.stop();
     await app.close();
     await telemetry.shutdown();
