@@ -152,4 +152,39 @@ describe("milestone-unit-context", () => {
   it("extends worker timeout floor for analysis-heavy work", () => {
     expect(selectWorkerMaxTimeout(120_000)).toBeGreaterThanOrEqual(480_000);
   });
+
+  it("infers modules correctly for Rust mod.rs paths", () => {
+    // Regression guard: the module inference previously emitted "mod" for the
+    // Rust crate-root `src/mod.rs` (the dead `parts[srcIndex - 1]` branch
+    // short-circuited because srcIndex is 0, so parts[-1] is undefined, and it
+    // fell through to stripping the extension of "mod.rs" → "mod"). It must
+    // instead SKIP a path whose only segment under src is "mod.rs" (there is
+    // no module name to extract), and still resolve a real submodule like
+    // `src/auth/mod.rs` → "auth" and a normal file like `src/auth/login.ts`
+    // → "auth".
+    const mission = makeMission();
+    const milestone = makeMilestone();
+
+    // src/auth/mod.rs → "auth" (the segment directly under src, before mod.rs)
+    const submodule = applyWorkingUnitScopeFallback(
+      { id: "u", milestoneId: "ms-1", description: "", declaredPaths: ["src/auth/mod.rs"], declaredModules: [], status: "planned", taskBranch: "", worktreePath: "", sessionId: "" },
+      mission, milestone, "/repo",
+    );
+    expect(submodule.declaredModules).toContain("auth");
+    expect(submodule.declaredModules).not.toContain("mod");
+
+    // src/auth/login.ts → "auth"
+    const normalFile = applyWorkingUnitScopeFallback(
+      { id: "u", milestoneId: "ms-1", description: "", declaredPaths: ["src/auth/login.ts"], declaredModules: [], status: "planned", taskBranch: "", worktreePath: "", sessionId: "" },
+      mission, milestone, "/repo",
+    );
+    expect(normalFile.declaredModules).toContain("auth");
+
+    // src/mod.rs (crate root) → no "mod" module inferred
+    const crateRoot = applyWorkingUnitScopeFallback(
+      { id: "u", milestoneId: "ms-1", description: "", declaredPaths: ["src/mod.rs"], declaredModules: [], status: "planned", taskBranch: "", worktreePath: "", sessionId: "" },
+      mission, milestone, "/repo",
+    );
+    expect(crateRoot.declaredModules).not.toContain("mod");
+  });
 });

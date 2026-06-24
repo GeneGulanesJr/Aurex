@@ -139,7 +139,18 @@ function inferModulesFromPaths(paths: string[]): string[] {
     const parts = filePath.split("/").filter(Boolean);
     const srcIndex = parts.lastIndexOf("src");
     if (srcIndex >= 0 && parts[srcIndex + 1]) {
-      modules.add(parts[srcIndex + 1] === "mod.rs" && parts[srcIndex - 1] ? parts[srcIndex - 1] : parts[srcIndex + 1].replace(/\.[^.]+$/, ""));
+      // The segment directly under src is normally the module name
+      // (e.g. `src/auth/login.ts` → "auth", `src/auth/mod.rs` → "auth").
+      // The one exception is the Rust crate-root `src/mod.rs`, whose only
+      // segment is "mod.rs" itself — there is no module name to extract, so
+      // skip it rather than emit the meaningless "mod". (Previously this fell
+      // through to `.replace()` on "mod.rs", yielding "mod" for every crate
+      // root — and the dead `parts[srcIndex - 1]` branch never fired because
+      // `srcIndex` is 0 there, making `parts[-1]` undefined.)
+      if (parts[srcIndex + 1] === "mod.rs" && parts[srcIndex + 2] === undefined) {
+        continue;
+      }
+      modules.add(parts[srcIndex + 1].replace(/\.[^.]+$/, ""));
       continue;
     }
     if (parts.length > 1) {
