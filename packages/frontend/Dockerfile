@@ -26,14 +26,31 @@ RUN pnpm -r run build
 
 FROM nginx:alpine
 
-RUN apk add --no-cache curl
+RUN apk add --no-cache curl openssl
 
 COPY --from=build /app/packages/frontend/dist /usr/share/nginx/html
 COPY packages/frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
-# Copy certs and fix permissions for non-root nginx user
-COPY certs/ /etc/nginx/certs/
-RUN chown -R nginx:nginx /etc/nginx/certs/ && \
+# --- TLS certificates -------------------------------------------------------
+# The certs/ directory is gitignored (it holds environment-specific TLS
+# material and must not be committed), so a fresh clone has no certs and a
+# naive `COPY certs/` fails the build. To make `docker compose up --build`
+# work out of the box, bake in a self-signed cert as the default. For real
+# deployments, override by mounting production certs at runtime:
+#
+#   volumes:
+#     - /path/to/prod/certs:/etc/nginx/certs:ro
+#
+# (A bind mount at the same path takes precedence over the image layer, so the
+# baked-in self-signed cert is only used when nothing is mounted.)
+RUN mkdir -p /etc/nginx/certs && \
+    openssl req -x509 -nodes -newkey rsa:2048 \
+      -days 825 \
+      -keyout /etc/nginx/certs/key.pem \
+      -out /etc/nginx/certs/cert.pem \
+      -subj "/CN=localhost" \
+      -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" && \
+    chown -R nginx:nginx /etc/nginx/certs/ && \
     chmod 644 /etc/nginx/certs/cert.pem && \
     chmod 640 /etc/nginx/certs/key.pem
 

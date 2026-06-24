@@ -116,6 +116,11 @@ services:
     ports: ["8080:443"]
     depends_on:
       backend: { condition: service_healthy }
+    # TLS certs: the image bakes in a self-signed cert for localhost by default
+    # (see packages/frontend/Dockerfile). To use real certs in production,
+    # mount them over the same path (the bind mount overrides the image layer):
+    #   volumes:
+    #     - ./certs:/etc/nginx/certs:ro
     restart: unless-stopped
 
 volumes:
