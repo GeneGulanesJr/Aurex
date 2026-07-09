@@ -294,7 +294,7 @@ export function App() {
   }, []);
 
   const handleRescanRepo = useCallback(async () => {
-    if (!preparedRepo) return;
+    if (!preparedRepo || preparedRepo.loading) return;
     await handleRepoPrepared(
       {
         repoName: preparedRepo.repoName,
@@ -325,10 +325,13 @@ export function App() {
     if (!reviewId || !repoName) return;
     try {
       const { report } = await updateIssueStatus(repoName, reviewId, issueId, status);
-      setPreparedRepo((prev) => (prev ? { ...prev, report } : null));
+      setPreparedRepo((prev) => {
+        if (!prev || prev.repoName !== repoName || prev.report?.id !== reviewId) return prev;
+        return { ...prev, report };
+      });
     } catch {
       setPreparedRepo((prev) => {
-        if (!prev?.report) return prev;
+        if (!prev?.report || prev.repoName !== repoName || prev.report.id !== reviewId) return prev;
         return {
           ...prev,
           report: {

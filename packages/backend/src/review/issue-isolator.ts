@@ -112,8 +112,20 @@ function scopePathsForFinding(finding: BumblebeeFinding): string[] {
 }
 
 function packageIssueId(finding: BumblebeeFinding): string {
-  const discriminator = finding.catalogId || finding.findingType || finding.id;
-  return `package-${finding.severity}-${finding.packageName}-${finding.version}-${discriminator}`;
+  const discriminator = finding.catalogId || finding.findingType || "finding";
+  return `package-${finding.severity}-${finding.packageName}-${finding.version}-${discriminator}-${finding.id}`;
+}
+
+function entryPointScope(
+  summary: CodeSummaryInput,
+  graph: CodeGraphInput,
+  hotspots: HotspotsInput,
+): string[] {
+  const resolved = summary.entryPoints
+    .slice(0, MAX_SCOPE_PATHS)
+    .map((ep) => resolveEntryPointPath(ep, graph, hotspots));
+  if (resolved.length > 0) return resolved;
+  return hotspots.files.slice(0, MAX_SCOPE_PATHS).map((f) => f.path);
 }
 
 function topImportFanoutPaths(graph: CodeGraphInput, limit: number): string[] {
@@ -421,9 +433,7 @@ export function isolateIssues(
   const srcFileCount = srcModules.reduce((s, m) => s + m.fileCount, 0);
   const testFileCount = testModules.reduce((s, m) => s + m.fileCount, 0);
   if (srcFileCount > 10 && testFileCount === 0) {
-    const entryScope = summary.entryPoints
-      .slice(0, MAX_SCOPE_PATHS)
-      .map((ep) => resolveEntryPointPath(ep, graph, hotspots));
+    const entryScope = entryPointScope(summary, graph, hotspots);
     issues.push(draft({
       id: "test-coverage-none",
       tier: "P3",
@@ -442,9 +452,7 @@ export function isolateIssues(
   } else if (srcFileCount > 0 && testFileCount > 0) {
     const ratio = testFileCount / srcFileCount;
     if (ratio < 0.2) {
-      const entryScope = summary.entryPoints
-        .slice(0, MAX_SCOPE_PATHS)
-        .map((ep) => resolveEntryPointPath(ep, graph, hotspots));
+      const entryScope = entryPointScope(summary, graph, hotspots);
       issues.push(draft({
         id: "test-coverage-low",
         tier: "P3",
@@ -486,21 +494,23 @@ export function isolateIssues(
 
   if (summary.files > 0 && summary.edges / Math.max(summary.files, 1) > 5) {
     const fanoutPaths = topImportFanoutPaths(graph, MAX_SCOPE_PATHS);
-    issues.push(draft({
-      id: "performance-import-density",
-      tier: "P4",
-      category: "performance",
-      title: `Audit import density — ${(summary.edges / summary.files).toFixed(1)} edges/file`,
-      description: "High import density can slow builds and inflate bundles.",
-      detail: `${summary.edges} imports across ${summary.files} files`,
-      scopePaths: fanoutPaths,
-      scopeModules: modulesFromPaths(fanoutPaths, hotspots),
-      confidence: "medium",
-      estimatedEffort: "medium",
-      estimatedRisk: "low",
-      evidence: [{ type: "lapis", message: `${summary.edges} edges across ${summary.files} files` }],
-      labels: [],
-    }));
+    if (fanoutPaths.length > 0) {
+      issues.push(draft({
+        id: "performance-import-density",
+        tier: "P4",
+        category: "performance",
+        title: `Audit import density — ${(summary.edges / summary.files).toFixed(1)} edges/file`,
+        description: "High import density can slow builds and inflate bundles.",
+        detail: `${summary.edges} imports across ${summary.files} files`,
+        scopePaths: fanoutPaths,
+        scopeModules: modulesFromPaths(fanoutPaths, hotspots),
+        confidence: "medium",
+        estimatedEffort: "medium",
+        estimatedRisk: "low",
+        evidence: [{ type: "lapis", message: `${summary.edges} edges across ${summary.files} files` }],
+        labels: [],
+      }));
+    }
   }
 
   if (summary.modules.length > 2) {

@@ -7,6 +7,7 @@
 - **Review follow-ups:** Re-added repo-level heuristics (test coverage, per-entry-point documentation capped at 5, import density, naming, style); category-specific proposed-fix steps; server-side Export all via `GET /review/:id/export` + `exportRepoReview()`; `RepoScanDashboard` unit tests.
 - **Review hardening:** Fresh prepare always runs a new review scan; unique package issue IDs when `catalogId` is empty; lockfile findings scoped to manifest paths; entry points resolved to qualified file paths; PATCH failure rolls back optimistic issue status; export feedback/error UX fixes.
 - **Review polish:** Cycle scope uses crossing import edges (not whole modules); ambiguous entry points rank by importance; readiness/style/performance issues scoped to avoid full-graph prompts; scan timestamp in dashboard; stale error responses respect version guard.
+- **Review edge cases:** Package issue IDs always include finding.id; test-coverage scope falls back to hotspots; performance issue skipped when graph has no fan-out; issue-status PATCH guarded by review/repo identity; re-scan blocked while loading.
 - **Product:** Refocused reviewer-first plan on scan → isolated issues → copy-ready fix prompts (LaPis-heavy). Removed fix-with-agent from v1 scope.
 - **Docs:** New files `docs/superpowers/specs/2026-07-09-reviewer-first-pivot-design.md` and `docs/superpowers/plans/2026-07-09-reviewer-first-pivot.md`; indexed in `docs/INDEX.md`.
 

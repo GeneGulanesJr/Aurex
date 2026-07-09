@@ -133,8 +133,21 @@ describe("isolateIssues", () => {
       entryPoints: ["index.ts"],
       cycles: { count: 0, paths: [] },
     };
-    const issues = isolateIssues(summary, { files: [] }, emptyGraph, null, null);
+    const graph = {
+      nodes: [
+        { id: "src/a.ts", module: "src", symbols: 5, importance: 3 },
+        { id: "src/b.ts", module: "src", symbols: 4, importance: 2 },
+      ],
+      edges: [
+        { from: "src/a.ts", to: "src/b.ts", kind: "static" },
+        { from: "src/a.ts", to: "src/c.ts", kind: "static" },
+        { from: "src/a.ts", to: "src/d.ts", kind: "static" },
+      ],
+    };
+    const issues = isolateIssues(summary, { files: [] }, graph, null, null);
     expect(issues.some((i) => i.id === "performance-import-density")).toBe(true);
+    const perf = issues.find((i) => i.id === "performance-import-density");
+    expect(perf?.scopePaths?.length).toBeGreaterThan(0);
   });
 
   it("assigns unique IDs when catalogId is empty", () => {
@@ -305,6 +318,81 @@ describe("isolateIssues", () => {
     expect(cycle?.scopePaths).toEqual(expect.arrayContaining(["auth/a.ts", "billing/c.ts"]));
     expect(cycle?.scopePaths).not.toContain("auth/b.ts");
     expect(cycle?.scopePaths?.length).toBeLessThanOrEqual(3);
+  });
+
+  it("assigns unique IDs when findings share package and findingType", () => {
+    const scan = {
+      id: "scan-1",
+      missionId: "repo:test",
+      profile: "project" as const,
+      status: "completed" as const,
+      startedAt: "",
+      completedAt: new Date().toISOString(),
+      summary: { totalPackages: 1, totalFindings: 2, criticalCount: 0, highCount: 2, mediumCount: 0, lowCount: 0, ecosystems: ["npm"] },
+      findings: [
+        {
+          id: "finding-a",
+          scanId: "scan-1",
+          missionId: "repo:test",
+          findingType: "cve",
+          severity: "high" as const,
+          catalogId: "",
+          catalogName: "CVE-1",
+          ecosystem: "npm",
+          packageName: "lodash",
+          normalizedName: "lodash",
+          version: "1.0.0",
+          sourceType: "dependency",
+          sourceFile: "package.json",
+          confidence: "high" as const,
+          evidence: "evidence a",
+        },
+        {
+          id: "finding-b",
+          scanId: "scan-1",
+          missionId: "repo:test",
+          findingType: "cve",
+          severity: "high" as const,
+          catalogId: "",
+          catalogName: "CVE-2",
+          ecosystem: "npm",
+          packageName: "lodash",
+          normalizedName: "lodash",
+          version: "1.0.0",
+          sourceType: "dependency",
+          sourceFile: "package.json",
+          confidence: "high" as const,
+          evidence: "evidence b",
+        },
+      ],
+    };
+    const issues = isolateIssues(
+      { files: 5, symbols: 10, edges: 5, modules: [{ name: "src", fileCount: 5 }], entryPoints: [], cycles: { count: 0, paths: [] } },
+      { files: [] },
+      emptyGraph,
+      scan,
+      null,
+    );
+    const security = issues.filter((i) => i.category === "security");
+    expect(security).toHaveLength(2);
+    expect(new Set(security.map((i) => i.id)).size).toBe(2);
+  });
+
+  it("falls back to hotspot paths for test coverage when entry points are missing", () => {
+    const summary = {
+      files: 50,
+      symbols: 200,
+      edges: 100,
+      modules: [{ name: "src", fileCount: 50 }],
+      entryPoints: [],
+      cycles: { count: 0, paths: [] },
+    };
+    const hotspots = {
+      files: [{ path: "src/main.ts", module: "src", complexity: 5, symbols: 10 }],
+    };
+    const issues = isolateIssues(summary, hotspots, emptyGraph, null, null);
+    const testIssue = issues.find((i) => i.id === "test-coverage-none");
+    expect(testIssue?.scopePaths).toEqual(["src/main.ts"]);
   });
 });
 
