@@ -503,6 +503,58 @@ describe("isolateIssues", () => {
     expect(docIssues).toHaveLength(1);
     expect(docIssues[0].scopePaths).toEqual(["src/index.ts"]);
   });
+
+  it("caps complexity issues at 10 highest-complexity files", () => {
+    const summary = {
+      files: 50,
+      symbols: 500,
+      edges: 200,
+      modules: [{ name: "src", fileCount: 50 }],
+      entryPoints: ["index.ts"],
+      cycles: { count: 0, paths: [] },
+    };
+    const hotspots = {
+      files: Array.from({ length: 15 }, (_, i) => ({
+        path: `src/file-${i}.ts`,
+        module: "src",
+        complexity: 25 + i,
+        symbols: 5,
+      })),
+    };
+    const issues = isolateIssues(summary, hotspots, emptyGraph, null, null);
+    const complexity = issues.filter((i) => i.category === "complexity");
+    expect(complexity).toHaveLength(10);
+    expect(complexity[0].title).toContain("file-14.ts");
+  });
+
+  it("creates issues for readiness warnings", () => {
+    const summary = {
+      files: 10,
+      symbols: 50,
+      edges: 20,
+      modules: [{ name: "src", fileCount: 10 }],
+      entryPoints: ["index.ts"],
+      cycles: { count: 0, paths: [] },
+    };
+    const readiness = {
+      repoName: "test",
+      profile: "node",
+      packageManager: "pnpm",
+      languages: ["TypeScript"],
+      frameworks: [],
+      monorepo: false,
+      lockfiles: [],
+      commands: [],
+      blockers: [],
+      warnings: ["Missing test script in package.json"],
+      confidence: "high" as const,
+      generatedAt: new Date().toISOString(),
+    };
+    const issues = isolateIssues(summary, { files: [] }, emptyGraph, null, readiness);
+    const warningIssue = issues.find((i) => i.id === "readiness-warning-0");
+    expect(warningIssue?.category).toBe("structure");
+    expect(warningIssue?.tier).toBe("P2");
+  });
 });
 
 describe("fix prompts", () => {

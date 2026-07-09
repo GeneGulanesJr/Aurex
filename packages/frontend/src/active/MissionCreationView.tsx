@@ -387,9 +387,9 @@ function ScanLaunchChecklist({
   ];
 
   return (
-    <div className="creation-section mission-launch-checklist" aria-label="Mission launch checklist">
+    <div className="creation-section mission-launch-checklist" aria-label="Review checklist">
       <div className="mission-launch-checklist__header">
-        <span>Launch checklist</span>
+        <span>Review checklist</span>
         <span>{items.filter((item) => item.complete).length}/{items.length} ready</span>
       </div>
       <div className="mission-launch-checklist__items">

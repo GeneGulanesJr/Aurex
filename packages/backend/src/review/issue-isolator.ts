@@ -42,6 +42,7 @@ export interface IssueDraft {
 }
 
 const MAX_SCOPE_PATHS = 3;
+const MAX_COMPLEXITY_ISSUES = 10;
 const TIER_ORDER: Record<SuggestionTier, number> = { P0: 0, P1: 1, P2: 2, P3: 3, P4: 4, P5: 5 };
 
 function fileName(p: string): string {
@@ -286,7 +287,12 @@ export function isolateIssues(
     }));
   }
 
-  for (const file of hotspots.files) {
+  const complexityCandidates = [...hotspots.files]
+    .filter((file) => file.complexity > 20)
+    .sort((a, b) => b.complexity - a.complexity)
+    .slice(0, MAX_COMPLEXITY_ISSUES);
+
+  for (const file of complexityCandidates) {
     if (file.complexity > 30) {
       issues.push(draft({
         id: `complexity-critical-${sanitizeIdSegment(file.path)}`,
@@ -398,6 +404,24 @@ export function isolateIssues(
         estimatedRisk: "low",
         evidence: [{ type: "readiness", message: blocker }],
         labels: ["safest-first"],
+      }));
+    }
+    for (let i = 0; i < readiness.warnings.length; i++) {
+      const warning = readiness.warnings[i];
+      issues.push(draft({
+        id: `readiness-warning-${i}`,
+        tier: "P2",
+        category: "structure",
+        title: `Address setup warning: ${warning.slice(0, 60)}${warning.length > 60 ? "…" : ""}`,
+        description: warning,
+        detail: "Readiness analysis warning",
+        scopePaths: ["README.md"],
+        scopeModules: [],
+        confidence: "medium",
+        estimatedEffort: "small",
+        estimatedRisk: "low",
+        evidence: [{ type: "readiness", message: warning }],
+        labels: [],
       }));
     }
   }

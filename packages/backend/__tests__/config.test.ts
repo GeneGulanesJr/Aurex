@@ -33,6 +33,7 @@ describe("loadConfig", () => {
     delete process.env.AUTH0_DOMAIN;
     delete process.env.AUTH0_AUDIENCE;
     delete process.env.AUTH_DISABLED;
+    delete process.env.AUREX_MISSIONS_ENABLED;
   });
 
   it("reads LAPIS_ENDPOINT", () => {
@@ -206,6 +207,18 @@ describe("loadConfig", () => {
     expect(config.quotaEnabled).toBe(false);
     expect(config.quotaWindowDurationMs).toBe(5 * 60 * 60 * 1000);
     expect(config.quotaBurnDurationMs).toBe(1 * 60 * 60 * 1000);
+  });
+
+  it("defaults missionsEnabled to false", () => {
+    setDefaults();
+    const config = loadConfig();
+    expect(config.missionsEnabled).toBe(false);
+  });
+
+  it("enables missions when AUREX_MISSIONS_ENABLED=true", () => {
+    setDefaults({ AUREX_MISSIONS_ENABLED: "true" });
+    const config = loadConfig();
+    expect(config.missionsEnabled).toBe(true);
   });
 
   it("throws with the key name for missing required vars", () => {

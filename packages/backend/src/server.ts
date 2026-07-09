@@ -193,7 +193,12 @@ async function main() {
       pinyxOk = false;
     }
     const ok = lapisOk && pinyxOk;
-    return { status: ok ? "ok" : "degraded", lapis: lapisOk, pinyx: pinyxOk };
+    return {
+      status: ok ? "ok" : "degraded",
+      lapis: lapisOk,
+      pinyx: pinyxOk,
+      features: { missionsEnabled: config.missionsEnabled },
+    };
   });
 
   // REST routes

@@ -50,9 +50,10 @@ interface StatusBoardProps {
   loadError?: string | null;
   logsRehydrateError?: string | null;
   onRetryMissionLoad?: () => void;
+  missionsEnabled?: boolean;
 }
 
-export function StatusBoard({ mission, milestones, workers, cost, events, logs, errors, agentLogs, blurred, eventStreamCount, autoCollapseContext, onExampleClick, onRetryMission, onAbortMission, abortingMission = false, onDismissErrors, scanFindings = [], isScanning = false, scans = [], onTriggerScan, scanError, onDismissScanError, preparedRepo, onRescanRepo, onIssueStatusChange, onRepoPrepared, github, systemReady, loading, loadError, logsRehydrateError, onRetryMissionLoad }: StatusBoardProps) {
+export function StatusBoard({ mission, milestones, workers, cost, events, logs, errors, agentLogs, blurred, eventStreamCount, autoCollapseContext, onExampleClick, onRetryMission, onAbortMission, abortingMission = false, onDismissErrors, scanFindings = [], isScanning = false, scans = [], onTriggerScan, scanError, onDismissScanError, preparedRepo, onRescanRepo, onIssueStatusChange, onRepoPrepared, github, systemReady, loading, loadError, logsRehydrateError, onRetryMissionLoad, missionsEnabled = true }: StatusBoardProps) {
   const boardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -80,7 +81,7 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
     lastErrorCountRef.current = nonRecoverableErrors.length;
   }, [nonRecoverableErrors.length]);
 
-  if (loading && !mission) {
+  if (loading && !mission && missionsEnabled) {
     return (
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', letterSpacing: "2px", fontSize: "12px" }}>
         <span style={{ animation: "spin 1s linear infinite", display: "inline-block", fontSize: "24px", marginBottom: "12px", color: "var(--accent)" }}>↻</span>
@@ -89,8 +90,8 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
     );
   }
 
-  if (!mission) {
-    if (loadError) {
+  if (!mission || !missionsEnabled) {
+    if (loadError && missionsEnabled) {
       return (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", padding: "24px", textAlign: "center" }}>
           <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "13px", color: "var(--error)", letterSpacing: "2px", marginBottom: "12px" }}>

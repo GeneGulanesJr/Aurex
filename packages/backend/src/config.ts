@@ -47,6 +47,9 @@ export interface AppConfig {
   staleReconcilerDryRun: boolean;
   queueWorkerPollMs: number;
   queueWorkerId: string;
+
+  /** When false (default), the UI hides mission orchestration and shows reviewer-first flow only. */
+  missionsEnabled: boolean;
 }
 
 function env(key: string, fallback?: string): string {
@@ -140,5 +143,7 @@ export function loadConfig(): AppConfig {
       "AUREX_QUEUE_WORKER_ID",
       `${process.env.HOSTNAME ?? "local"}:${process.pid}`,
     ),
+
+    missionsEnabled: process.env.AUREX_MISSIONS_ENABLED === "true",
   };
 }

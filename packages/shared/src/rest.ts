@@ -53,6 +53,9 @@ export interface HealthResponse {
   status: "ok" | "degraded";
   lapis: boolean;
   pinyx: boolean;
+  features?: {
+    missionsEnabled: boolean;
+  };
 }
 
 export interface AgentLogEntryResponse {

@@ -14,6 +14,7 @@ import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useSupplyChain } from "./hooks/useSupplyChain";
 import { useQuota } from "./hooks/useQuota";
 import { useUpdateStatus } from "./hooks/useUpdateStatus";
+import { useAppFeatures } from "./hooks/useAppFeatures";
 import { countActiveMissions, countTerminalMissions } from "./passive/missionUiModel";
 import { MissionSidebar } from "./active/MissionSidebar";
 import { StatusBoard } from "./passive/StatusBoard";
@@ -67,6 +68,7 @@ export function App() {
     _version?: number;
   } | null>(null);
   const { settings, setSettings, resetSettings } = useSettings();
+  const { missionsEnabled } = useAppFeatures();
   const { state: missionsState, selectMission, addOptimisticMission, markMissionRestarted, markMissionAborted, handleWsEvent: missionsWsHandler } = useMissions();
   const { state, dispatch, handleWsEvent: missionWsHandler, reloadMission } = useMission(missionsState.selectedMissionId);
   const { state: supplyChainState, triggerScan: triggerSupplyChainScan, clearError: clearSupplyChainError, handleWsEvent: supplyChainWsHandler } = useSupplyChain(missionsState.selectedMissionId);
@@ -415,9 +417,9 @@ export function App() {
       }
     },
     // No onDismiss: Esc must not silently clear a pending checkpoint.
-    onNewMission: () => {
-      selectMission(null);
-    },
+    onNewMission: missionsEnabled
+      ? () => { selectMission(null); }
+      : undefined,
     onToggleSidebar: toggleSidebar,
   });
 
@@ -462,9 +464,11 @@ export function App() {
     );
   }
 
-  const activeMissionCount = countActiveMissions(missionsState.missions.map((m) => m.state));
+  const activeMissionCount = missionsEnabled
+    ? countActiveMissions(missionsState.missions.map((m) => m.state))
+    : 0;
 
-  const gridColumns = bp.isMobile
+  const gridColumns = bp.isMobile || !missionsEnabled
     ? "1fr"
     : sidebarCollapsed
       ? "48px 1fr"
@@ -477,6 +481,7 @@ export function App() {
       <TopBar
         connected={connected}
         missionCount={activeMissionCount}
+        missionsEnabled={missionsEnabled}
         uptime={uptime}
         theme={theme}
         onThemeChange={setTheme}
@@ -484,15 +489,15 @@ export function App() {
         pinyxConfigured={pinyxStatus.configured}
         systemReady={systemReady}
         onOpenIntegrations={() => setIntegrationsOpen(true)}
-        sidebarCollapsed={bp.isMobile ? !mobileOverlayOpen : sidebarCollapsed}
-        onToggleSidebar={toggleSidebar}
+        sidebarCollapsed={missionsEnabled ? (bp.isMobile ? !mobileOverlayOpen : sidebarCollapsed) : true}
+        onToggleSidebar={missionsEnabled ? toggleSidebar : undefined}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenQuota={() => setQuotaOpen(true)}
         quotaStatus={quotaStatus?.providers?.find(p => p.tracked)?.status ?? null}
         updateStatus={updateStatus}
       />
       <div className="app-workspace" style={{ gridTemplateColumns: gridColumns }}>
-        {!bp.isMobile && (
+        {!bp.isMobile && missionsEnabled && (
           <MissionSidebar
             missions={missionsState.missions}
             selectedMissionId={missionsState.selectedMissionId}
@@ -537,12 +542,14 @@ export function App() {
             onRepoPrepared={handleRepoPrepared}
             github={github}
             systemReady={systemReady}
+            missionsEnabled={missionsEnabled}
             loading={state.loading}
             loadError={state.loadError}
             logsRehydrateError={state.logsRehydrateError}
             onRetryMissionLoad={reloadMission}
           />
         </main>
+        {missionsEnabled && (
         <div className="app-telemetry-row">
           <TelemetryBar
             tokens={state.cost?.totalTokens ?? 0}
@@ -553,8 +560,9 @@ export function App() {
             isScanning={supplyChainState.isScanning}
           />
         </div>
+        )}
       </div>
-      {showMobileOverlay && (
+      {showMobileOverlay && missionsEnabled && (
         <>
           <div
             className="sidebar-backdrop"
@@ -586,7 +594,7 @@ export function App() {
         onReset={resetSettings}
         onClose={() => setSettingsOpen(false)}
       />
-      {state.escalation?.type === "escalation" && (
+      {state.escalation?.type === "escalation" && missionsEnabled && (
         <EscalationOverlay
           event={state.escalation}
           onDecision={handleDecision}

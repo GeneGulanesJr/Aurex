@@ -151,4 +151,51 @@ describe("review routes", () => {
     const updated = (res.json() as { report: ReviewReport }).report;
     expect(updated.issues.find((i) => i.id === complexity!.id)?.status).toBe("dismissed");
   });
+
+  it("POST /review returns 404 when repo is not prepared", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/repos/unprepared-repo/review",
+    });
+    expect(res.statusCode).toBe(404);
+    expect((res.json() as { error: string }).error).toContain("not found");
+  });
+
+  it("GET /review returns 404 when no review exists", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/repos/empty-repo/review",
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("PATCH returns 400 for invalid status", async () => {
+    const post = await app.inject({ method: "POST", url: "/api/repos/my-repo/review" });
+    const { report } = post.json() as { report: ReviewReport };
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/api/repos/my-repo/review/${report.id}/issues/${report.issues[0].id}`,
+      payload: { status: "invalid" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("PATCH returns 404 for unknown issue id", async () => {
+    const post = await app.inject({ method: "POST", url: "/api/repos/my-repo/review" });
+    const { report } = post.json() as { report: ReviewReport };
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/api/repos/my-repo/review/${report.id}/issues/unknown-issue`,
+      payload: { status: "dismissed" },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("GET /graph returns 404 when repo is not prepared", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/repos/no-such-repo/graph",
+    });
+    expect(res.statusCode).toBe(404);
+  });
 });

@@ -1,10 +1,30 @@
 # Aurex
 
-**An AI-powered mission control for coding tasks.**
+**Scan your repo → isolated issues → copy-ready fix prompts.**
 
-> _Last updated: 2026-06-08 · 700 tests across 71 files, all passing._
+> _Last updated: 2026-07-09 · Reviewer-first v1: connect GitHub, scan a repo, copy LaPis-backed fix prompts per issue._
 
-Give Aurex a goal — "add authentication to the API", "write tests for the payment module", "refactor the database layer" — and it orchestrates a team of AI agents to plan, build, validate, and deliver the work. You watch from a real-time dashboard, stepping in only when it needs your approval.
+Aurex indexes your codebase with LaPis, runs supply-chain and heuristic analysis, and produces **one copy-ready fix prompt per isolated issue** — ready to paste into Cursor, Claude, or any coding workflow. No in-app agent execution required for the default reviewer experience.
+
+**Optional (legacy):** Set `AUREX_MISSIONS_ENABLED=true` to expose the AI mission orchestrator — plan → build → validate → merge with workers and validators.
+
+---
+
+## Reviewer flow (default)
+
+1. **Connect GitHub** — OAuth via Integrations
+2. **Pick a repo** — clone + LaPis index on prepare
+3. **Scan** — summary, graph, hotspots, Bumblebee supply chain, readiness
+4. **Review issues** — filtered list with tier, category, and metadata
+5. **Copy fix prompt** — one bounded change per issue, LaPis context included
+
+Export all prompts as Markdown, filter by tier/category/status, or inspect architecture (modules, cycles, entry points) in the dashboard.
+
+---
+
+## Mission orchestrator (optional)
+
+**An AI-powered mission control for coding tasks** when `AUREX_MISSIONS_ENABLED=true`.
 
 ---
 
