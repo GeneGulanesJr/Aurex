@@ -253,7 +253,7 @@ export function App() {
   }, [addOptimisticMission]);
 
   const handleRepoPrepared = useCallback(async (
-    info: { repoName: string; fullName: string; summary: CodeSummaryResponse | null },
+    info: { repoName: string; fullName: string; summary: CodeSummaryResponse | null; freshIndex?: boolean },
     opts?: { forceRescan?: boolean },
   ) => {
     const { repoName, fullName, summary } = info;
@@ -262,7 +262,8 @@ export function App() {
     setPreparedRepo({ repoName, fullName, summary, report: null, loading: true, error: null, _version: version });
     try {
       let report: ReviewReport;
-      if (!opts?.forceRescan) {
+      const shouldRunFreshReview = opts?.forceRescan || info.freshIndex;
+      if (!shouldRunFreshReview) {
         try {
           ({ report } = await getRepoReview(repoName));
         } catch {
@@ -308,10 +309,12 @@ export function App() {
   const handleIssueStatusChange = useCallback(async (issueId: string, status: import("@aurex/shared").IssueStatus) => {
     let reviewId: string | null = null;
     let repoName: string | null = null;
+    let priorStatus: import("@aurex/shared").IssueStatus | undefined;
     setPreparedRepo((prev) => {
       if (!prev?.report) return prev;
       reviewId = prev.report.id;
       repoName = prev.repoName;
+      priorStatus = prev.report.issues.find((i) => i.id === issueId)?.status ?? "open";
       return {
         ...prev,
         report: {
@@ -325,7 +328,19 @@ export function App() {
       const { report } = await updateIssueStatus(repoName, reviewId, issueId, status);
       setPreparedRepo((prev) => (prev ? { ...prev, report } : null));
     } catch {
-      // Optimistic update already applied; keep local state on PATCH failure.
+      setPreparedRepo((prev) => {
+        if (!prev?.report) return prev;
+        return {
+          ...prev,
+          report: {
+            ...prev.report,
+            issues: prev.report.issues.map((i) =>
+              i.id === issueId ? { ...i, status: priorStatus ?? "open" } : i,
+            ),
+          },
+          error: prev.error ?? "Could not save issue status. Try again.",
+        };
+      });
     }
   }, []);
 

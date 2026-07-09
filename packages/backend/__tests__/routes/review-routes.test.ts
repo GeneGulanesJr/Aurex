@@ -121,4 +121,17 @@ describe("review routes", () => {
     expect(res.statusCode).toBe(200);
     expect((res.json() as { report: ReviewReport }).report.repoName).toBe("my-repo");
   });
+
+  it("GET /review/:id/export returns markdown", async () => {
+    const post = await app.inject({ method: "POST", url: "/api/repos/my-repo/review" });
+    const { report } = post.json() as { report: ReviewReport };
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/repos/my-repo/review/${report.id}/export`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/markdown");
+    expect(res.body).toContain("# Code Review — my-repo");
+    expect(res.body).toContain("## Issue");
+  });
 });

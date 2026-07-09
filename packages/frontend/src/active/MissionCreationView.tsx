@@ -14,6 +14,7 @@ interface PreparedRepoInfo {
   repoName: string;
   fullName: string;
   summary: CodeSummaryResponse | null;
+  freshIndex?: boolean;
 }
 
 interface MissionCreationViewProps {
@@ -182,6 +183,7 @@ export function MissionCreationView({
       repoName: preparedRepoName,
       fullName: pendingRepo.full_name,
       summary: exploreSummary,
+      freshIndex: true,
     });
     setPendingRepo(null);
   }

@@ -48,6 +48,50 @@ function fileName(p: string): string {
   return p.split("/").pop() ?? p;
 }
 
+function resolveEntryPointPath(
+  ep: string,
+  graph: CodeGraphInput,
+  hotspots: HotspotsInput,
+): string {
+  const normEp = ep.replace(/\/+$/, "");
+  for (const n of graph.nodes) {
+    if (n.id === normEp || n.id.endsWith(`/${normEp}`)) return n.id;
+    if (fileName(n.id) === fileName(normEp)) return n.id;
+  }
+  for (const f of hotspots.files) {
+    if (f.path === normEp || f.path.endsWith(`/${normEp}`)) return f.path;
+    if (fileName(f.path) === fileName(normEp)) return f.path;
+  }
+  return ep;
+}
+
+function scopePathsForFinding(finding: BumblebeeFinding): string[] {
+  const file = finding.sourceFile?.trim();
+  if (file) return [file];
+  const eco = finding.ecosystem?.toLowerCase() ?? "";
+  const fallback: Record<string, string> = {
+    npm: "package.json",
+    node: "package.json",
+    pypi: "requirements.txt",
+    python: "requirements.txt",
+    cargo: "Cargo.toml",
+    rust: "Cargo.toml",
+    go: "go.mod",
+    maven: "pom.xml",
+    java: "pom.xml",
+    nuget: "Directory.Build.props",
+  };
+  for (const [key, path] of Object.entries(fallback)) {
+    if (eco.includes(key)) return [path];
+  }
+  return ["package.json"];
+}
+
+function packageIssueId(finding: BumblebeeFinding): string {
+  const discriminator = finding.catalogId || finding.findingType || finding.id;
+  return `package-${finding.severity}-${finding.packageName}-${finding.version}-${discriminator}`;
+}
+
 function pathsForCyclePath(
   cyclePath: string[],
   graph: CodeGraphInput,
@@ -95,9 +139,9 @@ export function isolateIssues(
   };
 
   for (const finding of scan?.findings ?? []) {
-    const scopePaths = finding.sourceFile ? [finding.sourceFile].slice(0, MAX_SCOPE_PATHS) : [];
+    const scopePaths = scopePathsForFinding(finding).slice(0, MAX_SCOPE_PATHS);
     issues.push(draft({
-      id: `package-${finding.severity}-${finding.packageName}-${finding.version}-${finding.catalogId ?? finding.findingType ?? finding.id}`,
+      id: packageIssueId(finding),
       tier: severityTier[finding.severity],
       category: "security",
       title: `${finding.severity === "critical" ? "Remove or upgrade" : "Audit"} ${finding.packageName}@${finding.version}`,
@@ -294,6 +338,9 @@ export function isolateIssues(
   const srcFileCount = srcModules.reduce((s, m) => s + m.fileCount, 0);
   const testFileCount = testModules.reduce((s, m) => s + m.fileCount, 0);
   if (srcFileCount > 10 && testFileCount === 0) {
+    const entryScope = summary.entryPoints
+      .slice(0, MAX_SCOPE_PATHS)
+      .map((ep) => resolveEntryPointPath(ep, graph, hotspots));
     issues.push(draft({
       id: "test-coverage-none",
       tier: "P3",
@@ -301,7 +348,7 @@ export function isolateIssues(
       title: "Add test infrastructure — no test directory found",
       description: `${srcFileCount} source files but zero test files detected. No safety net for changes.`,
       detail: `${srcFileCount} source files · 0 test files`,
-      scopePaths: summary.entryPoints.slice(0, MAX_SCOPE_PATHS),
+      scopePaths: entryScope,
       scopeModules: [],
       confidence: "medium",
       estimatedEffort: "large",
@@ -312,6 +359,9 @@ export function isolateIssues(
   } else if (srcFileCount > 0 && testFileCount > 0) {
     const ratio = testFileCount / srcFileCount;
     if (ratio < 0.2) {
+      const entryScope = summary.entryPoints
+        .slice(0, MAX_SCOPE_PATHS)
+        .map((ep) => resolveEntryPointPath(ep, graph, hotspots));
       issues.push(draft({
         id: "test-coverage-low",
         tier: "P3",
@@ -319,7 +369,7 @@ export function isolateIssues(
         title: `Improve test coverage — ${Math.round(ratio * 100)}% test-to-source ratio`,
         description: `Only ${testFileCount} test files for ${srcFileCount} source files. Aim for ≥ 20% ratio as a baseline.`,
         detail: `${testFileCount} tests / ${srcFileCount} sources · target: ≥ 20%`,
-        scopePaths: summary.entryPoints.slice(0, MAX_SCOPE_PATHS),
+        scopePaths: entryScope,
         scopeModules: [],
         confidence: "medium",
         estimatedEffort: "medium",
@@ -331,20 +381,21 @@ export function isolateIssues(
   }
 
   if (summary.symbols > 50 && summary.entryPoints.length > 0) {
-    for (const ep of summary.entryPoints.slice(0, 5)) {
+    for (const [i, ep] of summary.entryPoints.slice(0, 5).entries()) {
+      const resolvedPath = resolveEntryPointPath(ep, graph, hotspots);
       issues.push(draft({
-        id: `documentation-${ep.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 60)}`,
+        id: `documentation-${i}-${resolvedPath.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 60)}`,
         tier: "P3",
         category: "documentation",
-        title: `Document entry point: ${fileName(ep)}`,
+        title: `Document entry point: ${fileName(resolvedPath)}`,
         description: `Add JSDoc/TSDoc to this public entry point for discoverability.`,
-        detail: `Entry point: ${ep}`,
-        scopePaths: [ep],
-        scopeModules: modulesFromPaths([ep], hotspots),
+        detail: `Entry point: ${resolvedPath}`,
+        scopePaths: [resolvedPath],
+        scopeModules: modulesFromPaths([resolvedPath], hotspots),
         confidence: "medium",
         estimatedEffort: "small",
         estimatedRisk: "low",
-        evidence: [{ type: "lapis", message: `Entry point among ${summary.entryPoints.length} detected`, file: ep }],
+        evidence: [{ type: "lapis", message: `Entry point among ${summary.entryPoints.length} detected`, file: resolvedPath }],
         labels: [],
       }));
     }

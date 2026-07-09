@@ -120,6 +120,7 @@ describe("isolateIssues", () => {
     const issues = isolateIssues(summary, { files: [] }, emptyGraph, null, null);
     const docIssues = issues.filter((i) => i.category === "documentation" && i.id.startsWith("documentation-"));
     expect(docIssues).toHaveLength(5);
+    expect(new Set(docIssues.map((d) => d.id)).size).toBe(5);
     expect(docIssues.every((d) => d.scopePaths.length === 1)).toBe(true);
   });
 
@@ -134,6 +135,122 @@ describe("isolateIssues", () => {
     };
     const issues = isolateIssues(summary, { files: [] }, emptyGraph, null, null);
     expect(issues.some((i) => i.id === "performance-import-density")).toBe(true);
+  });
+
+  it("assigns unique IDs when catalogId is empty", () => {
+    const scan = {
+      id: "scan-1",
+      missionId: "repo:test",
+      profile: "project" as const,
+      status: "completed" as const,
+      startedAt: "",
+      completedAt: new Date().toISOString(),
+      summary: { totalPackages: 2, totalFindings: 2, criticalCount: 0, highCount: 2, mediumCount: 0, lowCount: 0, ecosystems: ["npm"] },
+      findings: [
+        {
+          id: "finding-a",
+          scanId: "scan-1",
+          missionId: "repo:test",
+          findingType: "typosquat",
+          severity: "high" as const,
+          catalogId: "",
+          catalogName: "Typosquat",
+          ecosystem: "npm",
+          packageName: "lodash",
+          normalizedName: "lodash",
+          version: "1.0.0",
+          sourceType: "dependency",
+          sourceFile: "package.json",
+          confidence: "high" as const,
+          evidence: "evidence a",
+        },
+        {
+          id: "finding-b",
+          scanId: "scan-1",
+          missionId: "repo:test",
+          findingType: "malware",
+          severity: "high" as const,
+          catalogId: "",
+          catalogName: "Malware",
+          ecosystem: "npm",
+          packageName: "lodash",
+          normalizedName: "lodash",
+          version: "1.0.0",
+          sourceType: "dependency",
+          sourceFile: "package.json",
+          confidence: "high" as const,
+          evidence: "evidence b",
+        },
+      ],
+    };
+    const issues = isolateIssues(
+      { files: 5, symbols: 10, edges: 5, modules: [{ name: "src", fileCount: 5 }], entryPoints: [], cycles: { count: 0, paths: [] } },
+      { files: [] },
+      emptyGraph,
+      scan,
+      null,
+    );
+    const security = issues.filter((i) => i.category === "security");
+    expect(security).toHaveLength(2);
+    expect(new Set(security.map((i) => i.id)).size).toBe(2);
+  });
+
+  it("scopes lockfile findings to manifest when sourceFile is empty", () => {
+    const scan = {
+      id: "scan-1",
+      missionId: "repo:test",
+      profile: "project" as const,
+      status: "completed" as const,
+      startedAt: "",
+      completedAt: new Date().toISOString(),
+      summary: { totalPackages: 1, totalFindings: 1, criticalCount: 1, highCount: 0, mediumCount: 0, lowCount: 0, ecosystems: ["npm"] },
+      findings: [{
+        id: "finding-lock",
+        scanId: "scan-1",
+        missionId: "repo:test",
+        findingType: "cve",
+        severity: "critical" as const,
+        catalogId: "",
+        catalogName: "CVE",
+        ecosystem: "npm",
+        packageName: "bad-pkg",
+        normalizedName: "bad-pkg",
+        version: "9.9.9",
+        sourceType: "lockfile",
+        sourceFile: "",
+        confidence: "high" as const,
+        evidence: "lockfile match",
+      }],
+    };
+    const issues = isolateIssues(
+      { files: 5, symbols: 10, edges: 5, modules: [{ name: "src", fileCount: 5 }], entryPoints: [], cycles: { count: 0, paths: [] } },
+      { files: [] },
+      emptyGraph,
+      scan,
+      null,
+    );
+    expect(issues[0].scopePaths).toEqual(["package.json"]);
+  });
+
+  it("resolves basename entry points to qualified hotspot paths", () => {
+    const summary = {
+      files: 30,
+      symbols: 100,
+      edges: 50,
+      modules: [{ name: "src", fileCount: 30 }],
+      entryPoints: ["index.ts"],
+      cycles: { count: 0, paths: [] },
+    };
+    const hotspots = {
+      files: [{ path: "src/index.ts", module: "src", complexity: 5, symbols: 10 }],
+    };
+    const graph = {
+      nodes: [{ id: "src/index.ts", module: "src", symbols: 10, importance: 5 }],
+      edges: [],
+    };
+    const issues = isolateIssues(summary, hotspots, graph, null, null);
+    const doc = issues.find((i) => i.category === "documentation");
+    expect(doc?.scopePaths).toEqual(["src/index.ts"]);
   });
 });
 

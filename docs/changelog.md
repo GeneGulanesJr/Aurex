@@ -5,6 +5,7 @@
 - **Review (Phase 1a):** Implemented scan → isolated issues → copy-ready fix prompts. Backend: `issue-isolator`, `fix-prompt-builder`, `review-generator`, `review-store`, `POST/GET /api/repos/:name/review`, repo graph endpoint. Frontend: `RepoScanDashboard` with issue list, fix prompt panel, copy/export. LaPis-heavy context via `affected-code` scaffold in each prompt.
 - **Review fixes:** Rehydrate cached review on refresh (GET before POST); scan works with GitHub only (no PiNyx required); reduce false-positive dead-code (inbound edges, cap 5, skip scoped files); optimistic dismiss/copy UI; immutable review store updates.
 - **Review follow-ups:** Re-added repo-level heuristics (test coverage, per-entry-point documentation capped at 5, import density, naming, style); category-specific proposed-fix steps; server-side Export all via `GET /review/:id/export` + `exportRepoReview()`; `RepoScanDashboard` unit tests.
+- **Review hardening:** Fresh prepare always runs a new review scan; unique package issue IDs when `catalogId` is empty; lockfile findings scoped to manifest paths; entry points resolved to qualified file paths; PATCH failure rolls back optimistic issue status; export feedback/error UX fixes.
 - **Product:** Refocused reviewer-first plan on scan → isolated issues → copy-ready fix prompts (LaPis-heavy). Removed fix-with-agent from v1 scope.
 - **Docs:** New files `docs/superpowers/specs/2026-07-09-reviewer-first-pivot-design.md` and `docs/superpowers/plans/2026-07-09-reviewer-first-pivot.md`; indexed in `docs/INDEX.md`.
 

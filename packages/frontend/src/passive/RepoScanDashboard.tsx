@@ -31,7 +31,8 @@ export function RepoScanDashboard({
   onIssueStatusChange,
 }: RepoScanDashboardProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<{ message: string; ok: boolean } | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const issues = report?.issues ?? [];
   const selected = issues.find((i) => i.id === selectedId) ?? issues[0] ?? null;
@@ -49,17 +50,18 @@ export function RepoScanDashboard({
   const handleCopy = useCallback(async (text: string, issueId?: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      setCopyFeedback("Copied!");
+      setActionFeedback({ message: "Copied!", ok: true });
       if (issueId && onIssueStatusChange) onIssueStatusChange(issueId, "copied");
-      setTimeout(() => setCopyFeedback(null), 2000);
+      setTimeout(() => setActionFeedback(null), 2000);
     } catch {
-      setCopyFeedback("Copy failed");
-      setTimeout(() => setCopyFeedback(null), 2000);
+      setActionFeedback({ message: "Copy failed", ok: false });
+      setTimeout(() => setActionFeedback(null), 2000);
     }
   }, [onIssueStatusChange]);
 
   const handleExportAll = useCallback(async () => {
-    if (!report) return;
+    if (!report || exporting) return;
+    setExporting(true);
     try {
       const markdown = await exportRepoReview(repoName, report.id);
       const blob = new Blob([markdown], { type: "text/markdown" });
@@ -69,11 +71,15 @@ export function RepoScanDashboard({
       a.download = `${repoName}-fix-prompts.md`;
       a.click();
       URL.revokeObjectURL(url);
+      setActionFeedback({ message: "Exported!", ok: true });
+      setTimeout(() => setActionFeedback(null), 2000);
     } catch {
-      setCopyFeedback("Export failed");
-      setTimeout(() => setCopyFeedback(null), 2000);
+      setActionFeedback({ message: "Export failed", ok: false });
+      setTimeout(() => setActionFeedback(null), 2000);
+    } finally {
+      setExporting(false);
     }
-  }, [report, repoName]);
+  }, [report, repoName, exporting]);
 
   if (loading) {
     return (
@@ -122,16 +128,17 @@ export function RepoScanDashboard({
           </div>
         </div>
         <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-          {copyFeedback && (
-            <span style={{ fontSize: "10px", color: "var(--success)", fontFamily: '"JetBrains Mono", monospace' }}>{copyFeedback}</span>
+          {actionFeedback && (
+            <span style={{ fontSize: "10px", color: actionFeedback.ok ? "var(--success)" : "var(--error)", fontFamily: '"JetBrains Mono", monospace' }}>{actionFeedback.message}</span>
           )}
           {report && issues.length > 0 && (
             <button
               type="button"
               onClick={handleExportAll}
-              style={{ padding: "6px 12px", background: "transparent", color: "var(--accent)", border: "1px solid var(--accent-dim)", borderRadius: "4px", cursor: "pointer", fontFamily: '"JetBrains Mono", monospace', fontSize: "10px" }}
+              disabled={exporting}
+              style={{ padding: "6px 12px", background: "transparent", color: "var(--accent)", border: "1px solid var(--accent-dim)", borderRadius: "4px", cursor: exporting ? "wait" : "pointer", opacity: exporting ? 0.6 : 1, fontFamily: '"JetBrains Mono", monospace', fontSize: "10px" }}
             >
-              Export all
+              {exporting ? "Exporting…" : "Export all"}
             </button>
           )}
           {onRescan && (
