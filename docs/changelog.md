@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-07-09
+
+- **Product:** Added reviewer-first pivot design spec and implementation plan. Codebase health review becomes the primary entry point; mission orchestration deferred behind `AUREX_MISSIONS_ENABLED` for Phase 2.
+- **Docs:** New files `docs/superpowers/specs/2026-07-09-reviewer-first-pivot-design.md` and `docs/superpowers/plans/2026-07-09-reviewer-first-pivot.md`; indexed in `docs/INDEX.md`.
+
 ## 2026-06-15
 
 - **Docs:** README Quick Start documents `LAPIS_PULL` / `PINYX_PULL` rebuild commands for fresh LaPis/PiNyx Docker images.

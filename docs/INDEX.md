@@ -20,6 +20,8 @@ A pointer to every document in the repo. Start with the top-level files, then di
 | File | Purpose |
 |---|---|
 | [`docs/superpowers/plans/PROGRESS.md`](./superpowers/plans/PROGRESS.md) | Subsystem status, test history, remaining gaps, key decisions |
+| [`docs/superpowers/specs/2026-07-09-reviewer-first-pivot-design.md`](./superpowers/specs/2026-07-09-reviewer-first-pivot-design.md) | **Active product direction:** codebase reviewer first; coding agents deferred |
+| [`docs/superpowers/plans/2026-07-09-reviewer-first-pivot.md`](./superpowers/plans/2026-07-09-reviewer-first-pivot.md) | Implementation plan for reviewer-first pivot (Phase 1a–3) |
 
 ## Architecture diagrams
 
