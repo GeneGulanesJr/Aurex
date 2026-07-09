@@ -1,8 +1,9 @@
 # Reviewer-First Pivot — Design Spec
 
-> **Status:** Proposed · **Date:** 2026-07-09  
+> **Status:** Proposed · **Date:** 2026-07-09 · **Updated:** 2026-07-09 (prompt-first scope)  
 > **Supersedes (product priority):** Long-horizon autonomous coding agent as the primary entry point  
-> **Preserves (deferred):** Mission orchestrator, workers, validators, worktrees — behind a feature flag until review quality is proven
+> **v1 product:** Scan repo → isolated issues → copy-ready fix prompts with LaPis-backed context  
+> **Out of scope for now:** Fix-with-agent, missions, workers, validators, worktrees
 
 ---
 
@@ -25,41 +26,47 @@ The gap is **product shape**, not infrastructure: findings are framed as “Next
 
 ## Goal
 
-**Lead with codebase review.** Users connect a repo, get a prioritized health report within minutes, and can export or triage findings — without starting a coding mission.
+**Scan the repo, isolate each issue, generate a small targeted fix prompt with accurate LaPis context.**
 
-Coding agents (workers + validators + orchestrator) become **Phase 2**: optional “Fix this finding” actions once review trust is established.
+Users connect a repo, Aurex indexes it via LaPis, identifies discrete problems, and produces **copy-ready prompts** — one per issue — that a human (or any external coding tool) can paste and execute. No in-app agent execution in v1.
+
+This is a **prompt delivery product**, not a coding agent product (yet).
 
 ---
 
-## Non-Goals (for v1 reviewer product)
+## Non-Goals (v1)
 
+- Fix-with-agent / mission orchestration / workers / validators
+- One mega-prompt that tries to fix the whole repo
 - Competing as a general-purpose long-horizon coding agent
 - Wiring the durable prepared-session / execution-queue control plane
-- Auto-fixing or auto-merging without explicit user opt-in
-- Replacing dedicated SAST/SCA vendors (SonarQube, Snyk, Semgrep) — we integrate and unify, not replicate every rule
+- Auto-fixing or auto-merging code inside Aurex
+- Replacing dedicated SAST/SCA vendors — we unify signals, not every rule engine
 
 ---
 
 ## Product Principles
 
-1. **Read-only by default** — review never writes branches or merges code
-2. **Evidence-backed findings** — every item cites LaPis data, scan output, or file paths; LLM narrative supplements, never replaces, deterministic signals
-3. **Fast time-to-value** — first useful report within one prepare + explore cycle
-4. **Triage before execution** — acknowledge, dismiss, export, or optionally “Fix later”
-5. **Reuse existing stack** — LaPis, Bumblebee, mutation scanner, prompt-optimizer pattern; don’t rebuild analysis from scratch
+1. **One issue, one prompt** — never bundle unrelated fixes; small scoped changes only
+2. **LaPis-grounded context** — every prompt cites indexed evidence: files, graph edges, cycle paths, complexity, imports
+3. **Prompt includes the fix direction** — not just “this is broken” but a concrete proposed approach and acceptance checks
+4. **Read-only in Aurex** — we scan and write prompts; the user executes elsewhere
+5. **Evidence before LLM** — deterministic LaPis + scan data defines the issue; LLM optionally enriches prompt wording, never invents issues
+6. **Fast time-to-value** — first prompt list within one prepare + index + scan cycle
 
 ---
 
 ## User Journey (v1)
 
 ```
-Connect GitHub → Pick repo → Prepare (clone + index)
-    → Auto-run: explore, readiness, package scan, suggestions
-    → Health Report dashboard (findings, graph, hotspots, supply chain, mutation)
-    → User: export Markdown / triage findings / (later) Fix this finding
+Connect GitHub → Pick repo → Prepare (clone + LaPis index)
+    → Scan: summary, graph, hotspots, supply chain, readiness
+    → Issue list (isolated, prioritized P0–P5)
+    → User opens one issue → sees full Fix Prompt (context + proposed fix)
+    → User copies prompt → pastes into Cursor / Claude / their workflow
 ```
 
-Mission creation moves to a secondary action (“Fix with agent”) hidden until Phase 2.
+No missions. No agents. Export all prompts as Markdown optional.
 
 ---
 
@@ -80,28 +87,133 @@ Mission creation moves to a secondary action (“Fix with agent”) hidden until
 
 | Component | Purpose |
 |---|---|
-| **`POST /api/repos/:repoName/review`** | Orchestrate full review run; persist report in LaPis settings |
-| **`GET /api/repos/:repoName/review`** | Fetch latest (or specific) review report |
-| **`GET /api/repos/:repoName/graph`** | Repo-level dependency graph (mirror mission code-context) |
-| **`review-generator.ts`** | Merge deterministic suggestions + scan data into structured report; optional LLM narrative |
-| **`reviewer.md` skill** | Read-only agent prompt for deep-dive on top-N findings (Phase 1b) |
-| **`ReviewReport` type** | Shared contract: findings, scores, sections, metadata |
-| **Frontend: Review-first layout** | Default view after prepare; mission form de-emphasized |
+| **`issue-isolator.ts`** | Split bundled heuristics into one issue per cycle / file / package / blocker |
+| **`fix-prompt-builder.ts`** | Build copy-ready prompt from LaPis context + proposed fix |
+| **`POST /api/repos/:repoName/review`** | Index + scan + isolate issues + generate prompts |
+| **`GET /api/repos/:repoName/review`** | Fetch latest scan report with all fix prompts |
+| **`GET /api/repos/:repoName/graph`** | Repo-level dependency graph for prompt context |
+| **`ReviewReport` / `FixPrompt` types** | Shared contracts |
+| **Frontend: Issue list + prompt panel** | Select issue → view/copy full fix prompt |
 
-### What we defer (feature-flagged)
+### What we defer entirely (not v1)
 
-| Component | Flag / behavior |
+| Component | Notes |
 |---|---|
-| Mission orchestrator | `AUREX_MISSIONS_ENABLED=false` (default off in reviewer mode) |
-| Worker spawner / worktrees | Only when user clicks “Fix with agent” |
-| Durable queue / prepared sessions | Remain experimental; no v1 dependency |
-| Prompt optimizer | Mission-only today; reuse *pattern* for review narrative, not the mission hook |
+| Mission orchestrator, workers, validators | Future phase; do not expose in UI |
+| Fix-with-agent button | User copies prompt externally |
+| Durable queue / prepared sessions | Remain experimental |
+| LLM-generated fix prompts (Phase 1b) | v1 uses template + LaPis context; LLM polishes wording only |
+
+---
+
+## Core Concept: Isolated Issues + Fix Prompts
+
+### One issue, one prompt
+
+Each **Issue** is a single, bounded change a developer can complete in one PR:
+
+| ✅ Good (isolated) | ❌ Bad (bundled) |
+|---|---|
+| Break cycle `auth → billing → auth` | “Fix all 5 dependency cycles” |
+| Refactor `src/payment/handler.ts` (complexity 42) | “Refactor all high-complexity files” |
+| Upgrade `lodash@4.17.15` in `package.json` | “Fix all supply-chain findings” |
+| Remove dead file `utils/legacy.ts` | “Audit 12 orphan files at once” |
+
+**Splitting rules** (implement in `issue-isolator.ts`):
+
+| Source signal | Split granularity |
+|---|---|
+| LaPis `cycles.paths[]` | **One issue per cycle path** |
+| Hotspots `complexity > 30` | **One issue per file** (already mostly true) |
+| Hotspots `complexity 20–30` | **One issue per file** |
+| Bumblebee findings | **One issue per package finding** (already true) |
+| Dead code orphans | **One issue per file** (change from today’s bundled “audit N files”) |
+| Readiness blockers | **One issue per blocker string** |
+| Coupling (giant module) | **One issue per module**, scope limited to “identify one extraction seam” |
+
+Today’s `generateSuggestions()` already isolates per-file complexity and per-package security. **Main fix:** split `critical-cycles` into per-cycle issues and `dead-code-scan` into per-file issues.
+
+### LaPis context in every prompt
+
+LaPis is the source of truth for code intelligence. Each fix prompt pulls from:
+
+| LaPis API | Used in prompt for |
+|---|---|
+| `indexRepo` | Ensure repo is indexed before issue detection |
+| `getCodeSummary` | Module layout, entry points, cycle count |
+| `getCodeGraph` | Import edges touching affected files, cycle path, neighbor nodes |
+| `getCodeHotspots` | Complexity, symbol count, module |
+| Settings (`readiness`) | Verify commands: test, lint, typecheck, build |
+
+Reuse `affected-code.ts` pattern: given an issue’s `scopePaths` / `scopeModules`, build a compact scaffold (nodes, edges, hotspots) injected into the prompt — **navigation map, not full file bodies**.
+
+Optional: read file snippets for top-N lines around the issue (bounded, e.g. 40 lines) when repo is on disk — only for single-file issues.
+
+### Fix prompt template (v1 deterministic)
+
+Each issue exposes a **`fixPrompt`** string (Markdown) with this structure:
+
+```markdown
+## Issue
+[One-line title — e.g. "Break dependency cycle: auth/middleware.ts → billing/hooks.ts → auth/middleware.ts"]
+
+## Problem
+[What LaPis/scan detected, with numbers]
+
+## Context (from LaPis index)
+- **Affected files:** `path/a.ts`, `path/b.ts`
+- **Cycle path:** A → B → C → A  (or: complexity 42, 18 symbols)
+- **Import edges:** `a.ts` imports `b.ts` (kind: static)
+- **Module:** `packages/backend`
+- **Neighbors (high importance):** …
+
+## Proposed fix
+[Concrete steps — extract interface, invert dependency, upgrade package, delete unused export, etc.]
+
+## Scope
+- **In:** only the files/imports listed above
+- **Out:** no unrelated refactors, no API changes unless required for the decoupling
+
+## Verification
+Run after applying the fix:
+- `pnpm test` (from readiness profile)
+- `pnpm typecheck`
+- Re-index check: cycle count for this path should be 0 / complexity should drop below 30
+```
+
+The **Proposed fix** section is template-driven per category in v1 (like today’s `prefill` but richer). Phase 1b may use PiNyx to refine wording — **must not expand scope**.
+
+### `FixPrompt` type
+
+```typescript
+interface IsolatedIssue {
+  id: string;
+  tier: SuggestionTier;
+  category: SuggestionCategory;
+  title: string;
+  description: string;
+
+  // Isolation bounds — enforce one-small-fix
+  scopePaths: string[];       // max ~3 files for v1; split if more needed
+  scopeModules: string[];
+
+  evidence: SuggestionEvidence[];
+  confidence: SuggestionConfidence;
+  estimatedEffort: SuggestionEffort;
+  estimatedRisk: SuggestionRisk;
+
+  fixPrompt: string;          // full copy-ready Markdown
+  fixPromptVersion: string;   // e.g. "1.0-template"
+
+  status?: "open" | "acknowledged" | "dismissed" | "copied";
+}
+```
 
 ---
 
 ## Review Report Structure
 
-A unified artifact replacing scattered suggestion/scan/hotspot calls:
+A unified artifact: scan results + isolated issues + fix prompts.
 
 ```typescript
 interface ReviewReport {
@@ -116,92 +228,74 @@ interface ReviewReport {
     symbols: number;
     modules: number;
     cycleCount: number;
-    findingCounts: Record<SuggestionTier, number>;
+    issueCounts: Record<SuggestionTier, number>;
     supplyChainSeverity?: BumblebeeScanSummary;
-    mutationScore?: number | null;
   };
 
-  sections: {
-    critical: ReviewFinding[];      // P0–P1
-    improvements: ReviewFinding[];  // P2–P3
-    polish: ReviewFinding[];        // P4–P5
-    supplyChain: BumblebeeFinding[];
-    hotspots: CodeHotspot[];
-    architecture: {
-      modules: ModuleSummary[];
-      cycles: string[][];
-      entryPoints: string[];
-    };
-    readiness: RepoReadinessProfile;
+  issues: IsolatedIssue[];    // flat list, sorted tier then category
+
+  architecture: {
+    modules: ModuleSummary[];
+    cycles: string[][];
+    entryPoints: string[];
   };
 
-  narrative?: string;  // Optional LLM executive summary (Phase 1b)
+  readiness: RepoReadinessProfile;
   recommended?: { highestImpact?: string; safestFirst?: string };
 }
 ```
-
-`ReviewFinding` extends today’s `RepoSuggestion` with triage state: `status: "open" | "acknowledged" | "dismissed" | "fix_queued"`.
 
 ---
 
 ## Analysis Layers
 
-### Layer 1 — Deterministic (ship first)
+### Layer 1 — LaPis + deterministic isolation (ship first)
 
-Already implemented in `generateSuggestions()` + LaPis + Bumblebee:
+1. **Index** via `lapis.indexRepo`
+2. **Fetch** summary, graph, hotspots, readiness; run Bumblebee if needed
+3. **Detect** raw signals (cycles, hotspots, packages, heuristics)
+4. **Isolate** via `issue-isolator.ts` — one issue per cycle/file/package/blocker
+5. **Build prompt** via `fix-prompt-builder.ts` — template + LaPis scaffold per issue
 
-- Dependency cycles, complexity hotspots, coupling, layer violations
-- Test/doc heuristics, supply-chain severity mapping
-- Readiness blockers
+No LLM required for v1 MVP.
 
-**Action:** Bundle into `POST /review`, auto-trigger package scan if none exists.
-
-### Layer 2 — LLM narrative (Phase 1b)
+### Layer 2 — LLM prompt polish (Phase 1b, optional)
 
 Adapt `prompt-optimizer.ts` pattern:
 
-- Input: structured findings JSON + repo summary (not raw repo)
-- Output: executive summary, cross-finding themes, recommended order of attack
-- Fail-safe: return deterministic report only if PiNyx unavailable
+- Input: deterministic `fixPrompt` + issue JSON (not whole repo)
+- Output: clearer wording, sharper proposed fix steps
+- Rules: **same scopePaths, same acceptance criteria, no new issues**
+- Fail-safe: return template prompt if PiNyx unavailable
 
-**Do not** let the LLM invent findings — it narrates and prioritizes existing evidence.
+### Layer 3 — In-app agent execution (future, not planned in v1)
 
-### Layer 3 — Deep-dive reviewer agent (Phase 1b, optional)
-
-Read-only agent using `research.md` + `validator.md` scrutiny rules:
-
-- Spawned only for user-selected finding or top-N P0/P1 items
-- Tools: `read`, `bash` (git log, grep), LaPis graph lookup
-- Output: appended `deepDive` field on finding
+Deferred indefinitely until prompt quality and user copy-rate are validated.
 
 ---
 
 ## Frontend Changes
 
-### Primary view: Health Report
+### Primary view: Issue list + Fix Prompt panel
 
-Evolve `RepoOverviewPanel` → **`RepoHealthReport`**:
+Evolve `RepoOverviewPanel` → **`RepoScanDashboard`**:
 
-| Section | Source |
+| Area | Behavior |
 |---|---|
-| Executive summary | Review report narrative + counts |
-| Critical findings | P0–P1 with evidence expanders |
-| Architecture | Graph (`DependencyGraph`), cycles, modules |
-| Hotspots | `HotspotHeatmap` |
-| Supply chain | Findings table + severity badges |
-| Test quality | `MutationPanel` (when Stryker present) |
-| Readiness | Commands, blockers, package manager |
+| **Left: Issue list** | Isolated issues sorted P0→P5; badge per tier; filter by category |
+| **Right: Fix Prompt panel** | Full Markdown prompt for selected issue; **Copy prompt** button |
+| **Header** | Repo name, file/symbol counts, last scan time, Re-scan |
+| **Architecture tab** | Graph, cycles, hotspots (context for prompts, not separate product) |
 
-### De-emphasize mission creation
+Primary CTA: **Copy fix prompt** — not Start Mission.
 
-- Remove “Start Mission →” as the only CTA on every finding
-- Replace with: **Acknowledge**, **Dismiss**, **Export**, **Copy details**
-- Phase 2: **Fix with agent** (prefills mission, requires `AUREX_MISSIONS_ENABLED`)
+Secondary: Acknowledge, Dismiss, Export all prompts.
 
 ### Navigation
 
-- Sidebar: **Repositories** (prepared repos + last review date) before **Missions**
-- Empty state: “Connect a repo to run your first health review”
+- Sidebar: **Repositories** (prepared repos + issue count badge)
+- Empty state: “Connect a repo to scan for issues and generate fix prompts”
+- Hide mission UI entirely in v1
 
 ---
 
@@ -223,11 +317,13 @@ Triage updates patch individual findings inside `review:<id>`.
 
 | Metric | Target (v1) |
 |---|---|
-| Time to first report after prepare | < 2 min for repos < 5k files |
-| Findings with evidence | 100% of deterministic items |
-| User can complete flow without mission | Yes |
-| Export produces valid Markdown | Yes |
-| False-positive rate (P0/P1) | Track via dismiss rate; tune heuristics |
+| Time to first issue list after prepare | < 2 min for repos < 5k files |
+| Issues are isolated (≤3 scope files each) | 100% |
+| Every issue has `fixPrompt` with LaPis context | 100% |
+| Copy prompt works | Yes |
+| Export all prompts as Markdown | Yes |
+| False-positive rate (P0/P1) | Track via dismiss rate |
+| Prompt copy rate | Track — leading indicator of value |
 
 ---
 
@@ -235,11 +331,11 @@ Triage updates patch individual findings inside `review:<id>`.
 
 | Risk | Mitigation |
 |---|---|
-| “Another scanner” without differentiation | Unified report + graph + supply chain + optional LLM narrative + future fix path |
-| LLM hallucinated findings | LLM narrates only; findings come from deterministic layer |
-| Package scan never ran (today’s gap) | Auto-run on review; show partial status if scan fails |
-| Mission code bit-rots | Feature-flag, keep tests, don’t delete orchestrator |
-| Stryker not configured | Mutation section shows “not configured”; don’t block report |
+| Prompts too vague to act on | LaPis scaffold + proposed fix template per category |
+| Prompts too large (whole-repo fix) | `issue-isolator` enforces ≤3 files; split cycles per path |
+| LLM expands scope in Phase 1b | Constrain LLM to polish wording only; validate scopePaths unchanged |
+| Package scan never ran | Auto-run on scan; partial status if fails |
+| “Another scanner” | Differentiate on **actionable isolated fix prompts**, not just findings |
 
 ---
 
@@ -247,10 +343,9 @@ Triage updates patch individual findings inside `review:<id>`.
 
 | Phase | Scope | User-visible outcome |
 |---|---|---|
-| **1a** | Unified review API + auto-scan + graph endpoint + UI reframe | One-click health report, no missions required |
-| **1b** | LLM narrative + optional deep-dive reviewer agent | Executive summary and richer finding detail |
-| **2** | “Fix with agent” + `AUREX_MISSIONS_ENABLED` | Findings → scoped missions |
-| **3** | Long-horizon missions, multi-milestone goals | Full Aurex mission control (original vision) |
+| **1a** | LaPis scan + issue isolation + template fix prompts + copy UI | Select repo → issue list → copy fix prompt |
+| **1b** | LLM polish on fix prompts (optional) | Richer proposed fix wording, same scope |
+| **Future** | In-app agent / missions | Only if copy-rate validates demand |
 
 ---
 
@@ -258,13 +353,13 @@ Triage updates patch individual findings inside `review:<id>`.
 
 | Area | Files |
 |---|---|
+| Isolation | new `packages/backend/src/review/issue-isolator.ts` |
+| Prompts | new `packages/backend/src/review/fix-prompt-builder.ts` |
+| LaPis context | reuse `packages/backend/src/orchestrator/affected-code.ts` |
 | API | `packages/backend/src/routes/repo-explore.ts`, new `review-routes.ts` |
-| Generator | new `packages/backend/src/review/review-generator.ts` |
-| LLM | new `packages/backend/src/review/review-narrator.ts` (pattern from `prompt-optimizer.ts`) |
-| Skills | new `packages/backend/src/skills/reviewer.md` |
-| Types | `packages/shared/src/rest.ts` |
-| Frontend | `RepoOverviewPanel.tsx` → `RepoHealthReport.tsx`, `App.tsx`, `api.ts`, `StatusBoard.tsx` |
-| Config | `.env.example`, `docs/api.md` — `AUREX_MISSIONS_ENABLED` |
+| Orchestration | new `packages/backend/src/review/review-generator.ts` |
+| Types | new `packages/shared/src/review.ts` |
+| Frontend | `RepoOverviewPanel.tsx` → `RepoScanDashboard.tsx`, `App.tsx`, `api.ts` |
 
 ---
 
@@ -273,7 +368,8 @@ Triage updates patch individual findings inside `review:<id>`.
 1. **GitHub App vs PAT only for v1?** — Keep existing OAuth; no change required.
 2. **Review re-run policy** — Manual “Re-run review” button; no auto-schedule in v1.
 3. **PR comment integration** — Defer to Phase 2 (needs GitHub check run or comment API).
-4. **Pricing model** — Review-only may use fewer tokens; quota gate still applies for LLM narrative.
+4. **Pricing model** — v1 is mostly LaPis + templates (cheap); LLM polish optional
+5. **Max scope per issue** — Confirm ≤3 files cap; split further if needed
 
 ---
 
