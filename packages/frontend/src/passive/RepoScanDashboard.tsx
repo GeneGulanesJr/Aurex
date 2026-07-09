@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import type { IsolatedIssue, ReviewReport, SuggestionTier, IssueStatus } from "@aurex/shared";
+import { exportRepoReview } from "../api";
 
 interface RepoScanDashboardProps {
   repoName: string;
@@ -57,19 +58,22 @@ export function RepoScanDashboard({
     }
   }, [onIssueStatusChange]);
 
-  const handleExportAll = useCallback(() => {
+  const handleExportAll = useCallback(async () => {
     if (!report) return;
-    const blob = new Blob(
-      [issues.map((i) => i.fixPrompt).join("\n\n---\n\n")],
-      { type: "text/markdown" },
-    );
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${repoName}-fix-prompts.md`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [report, issues, repoName]);
+    try {
+      const markdown = await exportRepoReview(repoName, report.id);
+      const blob = new Blob([markdown], { type: "text/markdown" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${repoName}-fix-prompts.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setCopyFeedback("Export failed");
+      setTimeout(() => setCopyFeedback(null), 2000);
+    }
+  }, [report, repoName]);
 
   if (loading) {
     return (

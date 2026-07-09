@@ -71,9 +71,23 @@ function proposedFix(draft: IssueDraft): string {
         "3. Remove the direct deep import.",
       ].join("\n");
     case "documentation":
+      if (draft.evidence.some((e) => e.type === "readiness")) {
+        return [
+          "1. Address the specific blocker described in the Problem section.",
+          "2. Update README or package scripts so install/test/build work.",
+        ].join("\n");
+      }
       return [
-        "1. Address the specific blocker described in the Problem section.",
-        "2. Update README or package scripts so install/test/build work.",
+        "1. Add JSDoc/TSDoc to the scoped entry point or public API surface.",
+        "2. Document parameters, return types, and any side effects.",
+        "3. Keep changes limited to documentation comments — no behavior changes.",
+      ].join("\n");
+    case "test_coverage":
+      return [
+        "1. Identify the highest-risk untested path (entry point or critical module).",
+        "2. Add a focused unit or integration test for that path only.",
+        "3. Run the test suite and confirm the new test passes.",
+        "4. Do not attempt to test the entire repo in one change.",
       ].join("\n");
     case "structure":
       return [
@@ -81,14 +95,23 @@ function proposedFix(draft: IssueDraft): string {
         "2. Extract it with clear public exports.",
         "3. Leave the rest of the module unchanged in this change.",
       ].join("\n");
-    case "test_coverage":
     case "performance":
+      return [
+        "1. Pick one file or barrel with unusually high import fan-out.",
+        "2. Remove unnecessary re-exports or split the barrel into focused modules.",
+        "3. Re-run build/typecheck — bundle size or compile time should improve.",
+      ].join("\n");
     case "naming":
+      return [
+        "1. Pick one naming convention (kebab-case, camelCase, or PascalCase) for modules.",
+        "2. Rename one outlier module or folder to match — do not rename the whole repo.",
+        "3. Update imports in direct callers only.",
+      ].join("\n");
     case "style":
       return [
-        "1. Make the smallest change that resolves the issue described above.",
-        "2. Stay within the scoped files/modules only.",
-        "3. Run verification commands after the change.",
+        "1. Add CONTRIBUTING.md with setup, PR process, and code style rules.",
+        "2. Link it from README.md.",
+        "3. Keep it concise — no unrelated policy docs in this change.",
       ].join("\n");
     default: {
       const _exhaustive: never = cat;

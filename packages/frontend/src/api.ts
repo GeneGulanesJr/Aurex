@@ -399,6 +399,12 @@ export async function updateIssueStatus(
   return res.json() as Promise<{ report: import("@aurex/shared").ReviewReport }>;
 }
 
+export async function exportRepoReview(repoName: string, reviewId: string): Promise<string> {
+  const res = await apiFetch(`/api/repos/${repoName}/review/${reviewId}/export`);
+  if (!res.ok) throw new Error(`Failed to export repo review: ${res.status}`);
+  return res.text();
+}
+
 // Bumblebee supply-chain scanner
 export async function triggerScan(
   missionId: string,

@@ -87,6 +87,54 @@ describe("isolateIssues", () => {
     const issues = isolateIssues(summary, { files: [] }, graph, null, null);
     expect(issues[0].scopePaths.length).toBeLessThanOrEqual(3);
   });
+
+  it("creates repo-level test coverage issue when no tests exist", () => {
+    const summary = {
+      files: 50,
+      symbols: 200,
+      edges: 100,
+      modules: [
+        { name: "src", fileCount: 40 },
+        { name: "lib", fileCount: 10 },
+      ],
+      entryPoints: ["src/index.ts"],
+      cycles: { count: 0, paths: [] },
+    };
+    const issues = isolateIssues(summary, { files: [] }, emptyGraph, null, null);
+    const testIssue = issues.find((i) => i.id === "test-coverage-none");
+    expect(testIssue?.category).toBe("test_coverage");
+    expect(testIssue?.tier).toBe("P3");
+    expect(testIssue?.labels).toContain("safest-first");
+  });
+
+  it("creates one documentation issue per entry point (capped at 5)", () => {
+    const entryPoints = Array.from({ length: 8 }, (_, i) => `src/ep-${i}.ts`);
+    const summary = {
+      files: 30,
+      symbols: 100,
+      edges: 50,
+      modules: [{ name: "src", fileCount: 30 }],
+      entryPoints,
+      cycles: { count: 0, paths: [] },
+    };
+    const issues = isolateIssues(summary, { files: [] }, emptyGraph, null, null);
+    const docIssues = issues.filter((i) => i.category === "documentation" && i.id.startsWith("documentation-"));
+    expect(docIssues).toHaveLength(5);
+    expect(docIssues.every((d) => d.scopePaths.length === 1)).toBe(true);
+  });
+
+  it("creates performance issue for high import density", () => {
+    const summary = {
+      files: 10,
+      symbols: 50,
+      edges: 60,
+      modules: [{ name: "src", fileCount: 10 }],
+      entryPoints: ["index.ts"],
+      cycles: { count: 0, paths: [] },
+    };
+    const issues = isolateIssues(summary, { files: [] }, emptyGraph, null, null);
+    expect(issues.some((i) => i.id === "performance-import-density")).toBe(true);
+  });
 });
 
 describe("fix prompts", () => {

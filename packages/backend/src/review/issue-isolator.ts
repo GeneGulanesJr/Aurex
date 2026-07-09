@@ -285,6 +285,131 @@ export function isolateIssues(
     }));
   }
 
+  const testModules = summary.modules.filter((m) =>
+    /^(test|tests|spec|specs|__tests__)/i.test(m.name),
+  );
+  const srcModules = summary.modules.filter(
+    (m) => !/^(test|tests|spec|specs|__tests__|node_modules|dist|build|\.)/i.test(m.name),
+  );
+  const srcFileCount = srcModules.reduce((s, m) => s + m.fileCount, 0);
+  const testFileCount = testModules.reduce((s, m) => s + m.fileCount, 0);
+  if (srcFileCount > 10 && testFileCount === 0) {
+    issues.push(draft({
+      id: "test-coverage-none",
+      tier: "P3",
+      category: "test_coverage",
+      title: "Add test infrastructure — no test directory found",
+      description: `${srcFileCount} source files but zero test files detected. No safety net for changes.`,
+      detail: `${srcFileCount} source files · 0 test files`,
+      scopePaths: summary.entryPoints.slice(0, MAX_SCOPE_PATHS),
+      scopeModules: [],
+      confidence: "medium",
+      estimatedEffort: "large",
+      estimatedRisk: "low",
+      evidence: [{ type: "lapis", message: `${srcFileCount} source files and no test modules detected` }],
+      labels: ["safest-first"],
+    }));
+  } else if (srcFileCount > 0 && testFileCount > 0) {
+    const ratio = testFileCount / srcFileCount;
+    if (ratio < 0.2) {
+      issues.push(draft({
+        id: "test-coverage-low",
+        tier: "P3",
+        category: "test_coverage",
+        title: `Improve test coverage — ${Math.round(ratio * 100)}% test-to-source ratio`,
+        description: `Only ${testFileCount} test files for ${srcFileCount} source files. Aim for ≥ 20% ratio as a baseline.`,
+        detail: `${testFileCount} tests / ${srcFileCount} sources · target: ≥ 20%`,
+        scopePaths: summary.entryPoints.slice(0, MAX_SCOPE_PATHS),
+        scopeModules: [],
+        confidence: "medium",
+        estimatedEffort: "medium",
+        estimatedRisk: "low",
+        evidence: [{ type: "lapis", message: `${testFileCount}/${srcFileCount} test-to-source file ratio` }],
+        labels: ["safest-first"],
+      }));
+    }
+  }
+
+  if (summary.symbols > 50 && summary.entryPoints.length > 0) {
+    for (const ep of summary.entryPoints.slice(0, 5)) {
+      issues.push(draft({
+        id: `documentation-${ep.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 60)}`,
+        tier: "P3",
+        category: "documentation",
+        title: `Document entry point: ${fileName(ep)}`,
+        description: `Add JSDoc/TSDoc to this public entry point for discoverability.`,
+        detail: `Entry point: ${ep}`,
+        scopePaths: [ep],
+        scopeModules: modulesFromPaths([ep], hotspots),
+        confidence: "medium",
+        estimatedEffort: "small",
+        estimatedRisk: "low",
+        evidence: [{ type: "lapis", message: `Entry point among ${summary.entryPoints.length} detected`, file: ep }],
+        labels: [],
+      }));
+    }
+  }
+
+  if (summary.files > 0 && summary.edges / Math.max(summary.files, 1) > 5) {
+    issues.push(draft({
+      id: "performance-import-density",
+      tier: "P4",
+      category: "performance",
+      title: `Audit import density — ${(summary.edges / summary.files).toFixed(1)} edges/file`,
+      description: "High import density can slow builds and inflate bundles.",
+      detail: `${summary.edges} imports across ${summary.files} files`,
+      scopePaths: [],
+      scopeModules: [],
+      confidence: "medium",
+      estimatedEffort: "medium",
+      estimatedRisk: "low",
+      evidence: [{ type: "lapis", message: `${summary.edges} edges across ${summary.files} files` }],
+      labels: [],
+    }));
+  }
+
+  if (summary.modules.length > 2) {
+    const kebabCase = summary.modules.filter((m) => /^[a-z]+(-[a-z]+)+$/.test(m.name));
+    const camelCase = summary.modules.filter((m) => /^[a-z]+[A-Z]/.test(m.name));
+    const pascalCase = summary.modules.filter((m) => /^[A-Z]/.test(m.name));
+    const conventions = [kebabCase, camelCase, pascalCase].filter((c) => c.length > 0);
+    if (conventions.length >= 2) {
+      issues.push(draft({
+        id: "naming-convention",
+        tier: "P5",
+        category: "naming",
+        title: `Standardize naming — ${conventions.length} conventions detected`,
+        description: `Modules use ${conventions.length} different naming styles. Standardizing improves readability.`,
+        detail: `Styles: ${[kebabCase.length && "kebab-case", camelCase.length && "camelCase", pascalCase.length && "PascalCase"].filter(Boolean).join(", ")}`,
+        scopePaths: [],
+        scopeModules: summary.modules.slice(0, MAX_SCOPE_PATHS).map((m) => m.name),
+        confidence: "medium",
+        estimatedEffort: "medium",
+        estimatedRisk: "medium",
+        evidence: [{ type: "heuristic", message: `${conventions.length} naming conventions detected` }],
+        labels: [],
+      }));
+    }
+  }
+
+  if (summary.files > 15 && summary.modules.length > 2) {
+    issues.push(draft({
+      id: "style-contributing",
+      tier: "P5",
+      category: "style",
+      title: "Add contributing guidelines and code style guide",
+      description: `A project with ${summary.files} files and ${summary.modules.length} modules should have contributor documentation.`,
+      detail: `${summary.files} files · ${summary.modules.length} modules`,
+      scopePaths: [],
+      scopeModules: [],
+      confidence: "low",
+      estimatedEffort: "small",
+      estimatedRisk: "low",
+      evidence: [{ type: "heuristic", message: `${summary.files} files and ${summary.modules.length} modules detected` }],
+      labels: [],
+    }));
+  }
+
   issues.sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier]);
   return issues;
 }
