@@ -26,10 +26,9 @@ import { QuotaPanel } from "./active/QuotaPanel";
 import { TopBar } from "./frame/TopBar";
 import { TelemetryBar } from "./frame/TelemetryBar";
 import { setTokenGetter, setAuthErrorHandler } from "./api";
-import { submitCheckpoint, createMission, restartMission, abortMission, getRepoHotspots, getRepoSuggestions, getRepoReadiness, listRepoScans } from "./api";
-import type { WsClientEvent, CheckpointDecision } from "@aurex/shared";
-import type { CodeSummaryResponse, CodeHotspotsResponse, RepoSuggestion, RepoReadinessProfile } from "./api";
-import type { BumblebeeScanResult, BumblebeeFinding, ListScansResponse } from "@aurex/shared";
+import { submitCheckpoint, createMission, restartMission, abortMission, runRepoReview, updateIssueStatus } from "./api";
+import type { WsClientEvent, CheckpointDecision, ReviewReport } from "@aurex/shared";
+import type { CodeSummaryResponse } from "./api";
 
 export function App() {
   const { theme, setTheme } = useTheme();
@@ -62,11 +61,7 @@ export function App() {
     repoName: string;
     fullName: string;
     summary: CodeSummaryResponse | null;
-    hotspots: CodeHotspotsResponse | null;
-    suggestions: RepoSuggestion[];
-    readiness: RepoReadinessProfile | null;
-    packageScan: BumblebeeScanResult | null;
-    packageFindings: BumblebeeFinding[];
+    report: ReviewReport | null;
     loading: boolean;
     error: string | null;
     _version?: number;
@@ -259,44 +254,56 @@ export function App() {
 
   const handleRepoPrepared = useCallback(async (info: { repoName: string; fullName: string; summary: CodeSummaryResponse | null }) => {
     const { repoName, fullName, summary } = info;
-    // Persist so a page refresh can rehydrate the overview without re-cloning.
     setSessionState("prepared_repo", { repoName, fullName });
     const version = Date.now();
-    setPreparedRepo({ repoName, fullName, summary, hotspots: null, suggestions: [], readiness: null, packageScan: null, packageFindings: [], loading: true, error: null, _version: version } as any);
-    // Track which analysis sections fail so we can surface a real error to the
-    // user instead of silently showing empty cards for every section.
-    const failures: string[] = [];
-    const track = <T,>(p: Promise<T>, label: string, fallback: T): Promise<T> =>
-      p.catch(() => { failures.push(label); return fallback; });
+    setPreparedRepo({ repoName, fullName, summary, report: null, loading: true, error: null, _version: version });
     try {
-      const [hotspots, readiness, scanList] = await Promise.all([
-        track(getRepoHotspots(repoName), "hotspots", null),
-        track(getRepoReadiness(repoName), "readiness", null),
-        track(listRepoScans(repoName), "scans", { scans: [] } as ListScansResponse),
-      ]);
-      const latestScan = scanList.scans.at(-1);
-      const suggestionsRes = await track(getRepoSuggestions(repoName), "suggestions", { suggestions: [], analysisVersion: "2.0" });
-      const error = failures.length > 0 ? `Some analysis sections could not be loaded (${failures.join(", ")}).` : null;
+      const { report } = await runRepoReview(repoName);
+      const error = report.errors?.length
+        ? report.errors.join("; ")
+        : report.status === "partial"
+          ? "Review completed with partial data."
+          : null;
       setPreparedRepo((prev) => {
-        // Don't overwrite if cleared (e.g., mission created while loading)
-        if (!prev || (prev as any)._version !== version) return prev;
-        return {
-          repoName,
-          fullName,
-          summary,
-          hotspots,
-          suggestions: suggestionsRes.suggestions,
-          readiness,
-          packageScan: latestScan ?? null,
-          packageFindings: latestScan?.findings ?? [],
-          loading: false,
-          error,
-        };
+        if (!prev || prev._version !== version) return prev;
+        return { repoName, fullName, summary, report, loading: false, error };
       });
-    } catch {
-      setPreparedRepo((prev) => prev ? { ...prev, loading: false, error: "Repository analysis failed unexpectedly." } : null);
+    } catch (err) {
+      setPreparedRepo((prev) =>
+        prev
+          ? {
+              ...prev,
+              loading: false,
+              error: err instanceof Error ? err.message : "Repository scan failed.",
+            }
+          : null,
+      );
     }
   }, []);
+
+  const handleRescanRepo = useCallback(async () => {
+    if (!preparedRepo) return;
+    await handleRepoPrepared({
+      repoName: preparedRepo.repoName,
+      fullName: preparedRepo.fullName,
+      summary: preparedRepo.summary,
+    });
+  }, [preparedRepo, handleRepoPrepared]);
+
+  const handleIssueStatusChange = useCallback(async (issueId: string, status: import("@aurex/shared").IssueStatus) => {
+    if (!preparedRepo?.report) return;
+    try {
+      const { report } = await updateIssueStatus(
+        preparedRepo.repoName,
+        preparedRepo.report.id,
+        issueId,
+        status,
+      );
+      setPreparedRepo((prev) => (prev ? { ...prev, report } : null));
+    } catch {
+      // Keep local state if patch fails
+    }
+  }, [preparedRepo]);
 
   const handleRestartMission = useCallback(async (missionId: string) => {
     try {
@@ -458,9 +465,8 @@ export function App() {
             scanError={supplyChainState.error}
             onDismissScanError={clearSupplyChainError}
             preparedRepo={preparedRepo}
-            onStartFromSuggestion={(prefill: string) => {
-              window.dispatchEvent(new CustomEvent("aurex:focus-new-mission", { detail: prefill }));
-            }}
+            onRescanRepo={() => { void handleRescanRepo(); }}
+            onIssueStatusChange={(issueId, status) => { void handleIssueStatusChange(issueId, status); }}
             onRepoPrepared={handleRepoPrepared}
             github={github}
             systemReady={systemReady}

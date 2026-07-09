@@ -3,3 +3,4 @@ export * from "./enums.js";
 export * from "./types.js";
 export * from "./events.js";
 export * from "./rest.js";
+export * from "./review.js";

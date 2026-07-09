@@ -538,7 +538,7 @@ function addPackageScriptCommands(commands: RepoReadinessCommand[], manager: str
   }
 }
 
-async function buildReadinessProfile(repoName: string, repoPath: string): Promise<RepoReadinessProfile> {
+export async function buildReadinessProfile(repoName: string, repoPath: string): Promise<RepoReadinessProfile> {
   const files = await listFiles(repoPath, 4);
   const fileSet = new Set(files);
   const rootPkg = await readJson(join(repoPath, "package.json"));

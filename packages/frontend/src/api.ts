@@ -366,6 +366,39 @@ export async function listRepoScans(repoName: string): Promise<ListScansResponse
   return res.json() as Promise<ListScansResponse>;
 }
 
+// Repo review (isolated issues + fix prompts)
+export type { IsolatedIssue, ReviewReport, IssueStatus, SuggestionTier as ReviewSuggestionTier } from "@aurex/shared";
+
+export async function runRepoReview(repoName: string): Promise<{ report: import("@aurex/shared").ReviewReport }> {
+  const res = await apiFetch(`/api/repos/${repoName}/review`, { method: "POST" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? `Failed to run repo review: ${res.status}`);
+  }
+  return res.json() as Promise<{ report: import("@aurex/shared").ReviewReport }>;
+}
+
+export async function getRepoReview(repoName: string): Promise<{ report: import("@aurex/shared").ReviewReport }> {
+  const res = await apiFetch(`/api/repos/${repoName}/review`);
+  if (!res.ok) throw new Error(`Failed to fetch repo review: ${res.status}`);
+  return res.json() as Promise<{ report: import("@aurex/shared").ReviewReport }>;
+}
+
+export async function updateIssueStatus(
+  repoName: string,
+  reviewId: string,
+  issueId: string,
+  status: import("@aurex/shared").IssueStatus,
+): Promise<{ report: import("@aurex/shared").ReviewReport }> {
+  const res = await apiFetch(`/api/repos/${repoName}/review/${reviewId}/issues/${issueId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  if (!res.ok) throw new Error(`Failed to update issue status: ${res.status}`);
+  return res.json() as Promise<{ report: import("@aurex/shared").ReviewReport }>;
+}
+
 // Bumblebee supply-chain scanner
 export async function triggerScan(
   missionId: string,
