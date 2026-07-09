@@ -134,4 +134,21 @@ describe("review routes", () => {
     expect(res.body).toContain("# Code Review — my-repo");
     expect(res.body).toContain("## Issue");
   });
+
+  it("PATCH /review/:id/issues/:issueId updates issue status for URL-safe ids", async () => {
+    const post = await app.inject({ method: "POST", url: "/api/repos/my-repo/review" });
+    const { report } = post.json() as { report: ReviewReport };
+    const complexity = report.issues.find((i) => i.category === "complexity");
+    expect(complexity).toBeDefined();
+    expect(complexity!.id).not.toContain("/");
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/api/repos/my-repo/review/${report.id}/issues/${encodeURIComponent(complexity!.id)}`,
+      payload: { status: "dismissed" },
+    });
+    expect(res.statusCode).toBe(200);
+    const updated = (res.json() as { report: ReviewReport }).report;
+    expect(updated.issues.find((i) => i.id === complexity!.id)?.status).toBe("dismissed");
+  });
 });

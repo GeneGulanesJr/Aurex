@@ -48,6 +48,10 @@ function fileName(p: string): string {
   return p.split("/").pop() ?? p;
 }
 
+function sanitizeIdSegment(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
 function resolveEntryPointPath(
   ep: string,
   graph: CodeGraphInput,
@@ -113,7 +117,7 @@ function scopePathsForFinding(finding: BumblebeeFinding): string[] {
 
 function packageIssueId(finding: BumblebeeFinding): string {
   const discriminator = finding.catalogId || finding.findingType || "finding";
-  return `package-${finding.severity}-${finding.packageName}-${finding.version}-${discriminator}-${finding.id}`;
+  return `package-${finding.severity}-${sanitizeIdSegment(finding.packageName)}-${sanitizeIdSegment(finding.version)}-${sanitizeIdSegment(discriminator)}-${finding.id}`;
 }
 
 function entryPointScope(
@@ -121,9 +125,12 @@ function entryPointScope(
   graph: CodeGraphInput,
   hotspots: HotspotsInput,
 ): string[] {
+  const graphPaths = new Set(graph.nodes.map((n) => n.id));
+  const hotspotPaths = new Set(hotspots.files.map((f) => f.path));
   const resolved = summary.entryPoints
     .slice(0, MAX_SCOPE_PATHS)
-    .map((ep) => resolveEntryPointPath(ep, graph, hotspots));
+    .map((ep) => resolveEntryPointPath(ep, graph, hotspots))
+    .filter((p) => graphPaths.has(p) || hotspotPaths.has(p));
   if (resolved.length > 0) return resolved;
   return hotspots.files.slice(0, MAX_SCOPE_PATHS).map((f) => f.path);
 }
@@ -271,7 +278,7 @@ export function isolateIssues(
   for (const file of hotspots.files) {
     if (file.complexity > 30) {
       issues.push(draft({
-        id: `complexity-critical-${file.path}`,
+        id: `complexity-critical-${sanitizeIdSegment(file.path)}`,
         tier: "P1",
         category: "complexity",
         title: `Refactor ${fileName(file.path)} — complexity ${file.complexity}`,
@@ -287,7 +294,7 @@ export function isolateIssues(
       }));
     } else if (file.complexity > 20) {
       issues.push(draft({
-        id: `complexity-high-${file.path}`,
+        id: `complexity-high-${sanitizeIdSegment(file.path)}`,
         tier: "P4",
         category: "complexity",
         title: `Simplify ${fileName(file.path)} — complexity ${file.complexity}`,

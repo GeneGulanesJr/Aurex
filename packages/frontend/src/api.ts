@@ -390,7 +390,7 @@ export async function updateIssueStatus(
   issueId: string,
   status: import("@aurex/shared").IssueStatus,
 ): Promise<{ report: import("@aurex/shared").ReviewReport }> {
-  const res = await apiFetch(`/api/repos/${repoName}/review/${reviewId}/issues/${issueId}`, {
+  const res = await apiFetch(`/api/repos/${repoName}/review/${reviewId}/issues/${encodeURIComponent(issueId)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status }),

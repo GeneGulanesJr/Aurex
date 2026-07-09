@@ -149,6 +149,7 @@ export async function runReview(
       await appendToScanIndex(lapis, repoName, scan.id);
     } catch (err) {
       errors.push(`Package scan: ${err instanceof Error ? err.message : String(err)}`);
+      if (!scanIsRecent(scan)) scan = null;
     }
   }
 

@@ -8,6 +8,7 @@
 - **Review hardening:** Fresh prepare always runs a new review scan; unique package issue IDs when `catalogId` is empty; lockfile findings scoped to manifest paths; entry points resolved to qualified file paths; PATCH failure rolls back optimistic issue status; export feedback/error UX fixes.
 - **Review polish:** Cycle scope uses crossing import edges (not whole modules); ambiguous entry points rank by importance; readiness/style/performance issues scoped to avoid full-graph prompts; scan timestamp in dashboard; stale error responses respect version guard.
 - **Review edge cases:** Package issue IDs always include finding.id; test-coverage scope falls back to hotspots; performance issue skipped when graph has no fan-out; issue-status PATCH guarded by review/repo identity; re-scan blocked while loading.
+- **Review URL safety:** Sanitize path/package segments in issue IDs (fixes dismiss/copy PATCH 404s); encode issueId in client PATCH; drop expired Bumblebee scan when refresh fails; entry-point scope ignores unresolved paths before hotspot fallback.
 - **Product:** Refocused reviewer-first plan on scan → isolated issues → copy-ready fix prompts (LaPis-heavy). Removed fix-with-agent from v1 scope.
 - **Docs:** New files `docs/superpowers/specs/2026-07-09-reviewer-first-pivot-design.md` and `docs/superpowers/plans/2026-07-09-reviewer-first-pivot.md`; indexed in `docs/INDEX.md`.
 

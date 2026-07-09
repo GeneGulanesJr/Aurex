@@ -394,6 +394,46 @@ describe("isolateIssues", () => {
     const testIssue = issues.find((i) => i.id === "test-coverage-none");
     expect(testIssue?.scopePaths).toEqual(["src/main.ts"]);
   });
+
+  it("sanitizes complexity issue IDs so PATCH routes stay URL-safe", () => {
+    const hotspots = {
+      files: [{ path: "src/deep/file.ts", module: "src", complexity: 35, symbols: 10 }],
+    };
+    const issues = isolateIssues(
+      {
+        files: 5,
+        symbols: 20,
+        edges: 10,
+        modules: [{ name: "src", fileCount: 5 }],
+        entryPoints: [],
+        cycles: { count: 0, paths: [] },
+      },
+      hotspots,
+      emptyGraph,
+      null,
+      null,
+    );
+    const complexity = issues.find((i) => i.category === "complexity");
+    expect(complexity?.id).toBe("complexity-critical-src_deep_file_ts");
+    expect(complexity?.id).not.toContain("/");
+  });
+
+  it("falls back to hotspots when entry points do not resolve in the graph", () => {
+    const summary = {
+      files: 50,
+      symbols: 200,
+      edges: 100,
+      modules: [{ name: "src", fileCount: 50 }],
+      entryPoints: ["missing-entry.ts"],
+      cycles: { count: 0, paths: [] },
+    };
+    const hotspots = {
+      files: [{ path: "src/main.ts", module: "src", complexity: 5, symbols: 10 }],
+    };
+    const issues = isolateIssues(summary, hotspots, emptyGraph, null, null);
+    const testIssue = issues.find((i) => i.id === "test-coverage-none");
+    expect(testIssue?.scopePaths).toEqual(["src/main.ts"]);
+  });
 });
 
 describe("fix prompts", () => {
