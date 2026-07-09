@@ -14,7 +14,7 @@ import {
  */
 export interface MissionQueuePool {
   /** Begin (or re-begin) a mission's lifecycle. Idempotent for in-flight ids. */
-  submit(missionId: string): void;
+  submit(missionId: string, options?: { restart?: boolean }): void;
   /** Abort a running or queued mission. No-op if the mission is not active. */
   abort(missionId: string): void;
 }

@@ -138,6 +138,11 @@ export function useSupplyChain(missionId: string | null) {
       case "scan_finding":
         dispatch({ type: "SCAN_FINDING", finding: event.finding });
         break;
+      case "mission_error":
+        if (event.code === "scan_failed") {
+          dispatch({ type: "SET_ERROR", error: event.message });
+        }
+        break;
     }
   }, [missionId]);
 

@@ -11,6 +11,8 @@ import {
   isMissionStoppable,
   countActiveMissions,
   countTerminalMissions,
+  getMissionErrorLabel,
+  isOrchestrationWarningError,
 } from "./missionUiModel";
 
 describe("missionUiModel", () => {
@@ -101,5 +103,12 @@ describe("missionUiModel", () => {
     expect(isMissionStoppable("completed")).toBe(false);
     expect(countActiveMissions(["queued", "running", "completed", "aborted"])).toBe(2);
     expect(countTerminalMissions(["completed", "failed", "aborted", "running"])).toBe(3);
+  });
+
+  it("labels orchestration warning errors for the UI", () => {
+    expect(getMissionErrorLabel("feature_diff_failed")).toBe("Feature diff unavailable");
+    expect(getMissionErrorLabel("research_spawn_failed")).toBe("Research agent could not start");
+    expect(isOrchestrationWarningError("feature_diff_failed")).toBe(true);
+    expect(isOrchestrationWarningError("worker_spawn_failed")).toBe(false);
   });
 });

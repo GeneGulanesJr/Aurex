@@ -335,7 +335,7 @@ describe("POST /api/missions/:id/restart", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ restarted: true, missionId: "m-failed", status: "planning" });
     expect(mockLapis.updateMissionStatus).toHaveBeenCalledWith("m-failed", "planning");
-    expect(pool.submit).toHaveBeenCalledWith("m-failed");
+    expect(pool.submit).toHaveBeenCalledWith("m-failed", { restart: true });
   });
 
   it("rejects restart while mission is already active", async () => {

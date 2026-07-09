@@ -1,4 +1,4 @@
-import type { CheckpointTrigger, Milestone, Mission } from "@aurex/shared";
+import type { CheckpointTrigger, Milestone, Mission, ResearchFinding, ValidationVerdict, WorkingUnit } from "@aurex/shared";
 import type { EscalationTrigger, EscalationContext } from "@aurex/shared";
 import type { PinyxClient } from "../clients/pinyx-client.js";
 import type { LaPisClient } from "../clients/lapis-client.js";
@@ -79,7 +79,7 @@ export async function runCheckpointLoop(
       context: { summary: cp.summary } as EscalationContext,
     });
 
-    const resolved = await checkpointManager.waitForResolution(checkpointId);
+    const resolved = await checkpointManager.waitForResolution(checkpointId, signal);
 
     if (resolved.decision === "reject") {
       await lapis.updateMissionStatus(missionId, "aborted");
@@ -88,15 +88,47 @@ export async function runCheckpointLoop(
     }
 
     // User-initiated re-plan: triggered when the user approves AND provides
-    // rescopeGuidance in the request body.
-    if (resolved.rescopeGuidance) {
+    // rescopeGuidance in the request body. Only allowed for failure/recovery
+    // checkpoints — not milestone_complete (which would supersede validated work).
+    const rescopeTriggers = new Set<CheckpointTrigger>([
+      "validation_failed",
+      "rescope_limit",
+      "unclassifiable_error",
+      "cost_cap_exceeded",
+      "quota_exhausted",
+    ]);
+    if (resolved.rescopeGuidance && rescopeTriggers.has(cp.trigger)) {
       const rescopeTarget = currentMilestones.find((ms) => ms.id === cp.milestoneId);
       if (rescopeTarget) {
         eventBus.emit({ type: "mission_log", missionId, phase: "rescope", message: `Re-planning milestone "${rescopeTarget.title}" after user rescope` });
         const [rescopeVerdicts, rescopeFindings, rescopeUnits] = await Promise.all([
-          lapis.getVerdicts(rescopeTarget.id).catch(() => []),
-          lapis.getFindings(missionId).catch(() => []),
-          lapis.getWorkingUnitsForMilestone(rescopeTarget.id).catch(() => [] as import("@aurex/shared").WorkingUnit[]),
+          fetchWithMissionError(
+            missionId,
+            cp.milestoneId,
+            "rescope_verdicts_fetch_failed",
+            "Could not load validator verdicts for rescope",
+            () => lapis.getVerdicts(rescopeTarget.id),
+            [] as ValidationVerdict[],
+            eventBus,
+          ),
+          fetchWithMissionError(
+            missionId,
+            cp.milestoneId,
+            "rescope_findings_fetch_failed",
+            "Could not load research findings for rescope",
+            () => lapis.getFindings(missionId),
+            [] as ResearchFinding[],
+            eventBus,
+          ),
+          fetchWithMissionError(
+            missionId,
+            cp.milestoneId,
+            "rescope_units_fetch_failed",
+            "Could not load working units for rescope",
+            () => lapis.getWorkingUnitsForMilestone(rescopeTarget.id),
+            [] as WorkingUnit[],
+            eventBus,
+          ),
         ]);
         const rescopeCompletedSummaries = rescopeUnits
           .filter((u) => u.status === "completed")
@@ -141,8 +173,24 @@ export async function runCheckpointLoop(
       // cause is a runtime/compliance failure (validator produced no verdict,
       // worker crashed, integration aborted) — silently re-running is unsafe
       // because the failure mode is unlikely to change without a re-plan.
-      const units = await lapis.getWorkingUnitsForMilestone(cp.milestoneId).catch(() => [] as import("@aurex/shared").WorkingUnit[]);
-      const verdicts = await lapis.getVerdicts(cp.milestoneId).catch(() => [] as import("@aurex/shared").ValidationVerdict[]);
+      const units = await fetchWithMissionError(
+        missionId,
+        cp.milestoneId,
+        "checkpoint_units_fetch_failed",
+        "Could not load working units for checkpoint recovery",
+        () => lapis.getWorkingUnitsForMilestone(cp.milestoneId),
+        [] as WorkingUnit[],
+        eventBus,
+      );
+      const verdicts = await fetchWithMissionError(
+        missionId,
+        cp.milestoneId,
+        "checkpoint_verdicts_fetch_failed",
+        "Could not load validator verdicts for checkpoint recovery",
+        () => lapis.getVerdicts(cp.milestoneId),
+        [] as ValidationVerdict[],
+        eventBus,
+      );
       const failedUnitIds = new Set(
         verdicts
           .filter((v) => v.verdict === "fail")
@@ -213,4 +261,30 @@ export async function runCheckpointLoop(
   await lapis.updateMissionStatus(missionId, "completed");
   eventBus.emit({ type: "mission_status", missionId, status: "completed" });
   return { status: "completed", milestones: currentMilestones, costCapApproved };
+}
+
+async function fetchWithMissionError<T>(
+  missionId: string,
+  milestoneId: string,
+  code: string,
+  context: string,
+  fetcher: () => Promise<T>,
+  fallback: T,
+  eventBus: CheckpointLoopDeps["eventBus"],
+): Promise<T> {
+  try {
+    return await fetcher();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    eventBus.emit({
+      type: "mission_error",
+      missionId,
+      code,
+      message: `${context}: ${msg}`,
+      milestoneId,
+      recoverable: true,
+      details: { error: msg },
+    });
+    return fallback;
+  }
 }

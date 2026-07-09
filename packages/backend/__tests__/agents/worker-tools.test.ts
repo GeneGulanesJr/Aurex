@@ -80,7 +80,7 @@ describe("worker tools", () => {
       assumptions: "A",
       unresolvedUncertainties: "U",
       errorsEncountered: "E",
-      commandsRun: "[]",
+      commandsRun: JSON.stringify([{ command: "npm test", exitCode: 0 }]),
       gitCommitHash: "deadbeef",
     });
 
@@ -103,7 +103,7 @@ describe("worker tools", () => {
       assumptions: "A",
       unresolvedUncertainties: "U",
       errorsEncountered: "E",
-      commandsRun: "[]",
+      commandsRun: JSON.stringify([{ command: "npm test", exitCode: 0 }]),
       gitCommitHash: "deadbeef",
     });
 
@@ -128,7 +128,7 @@ describe("worker tools", () => {
       assumptions: "A",
       unresolvedUncertainties: "U",
       errorsEncountered: "E",
-      commandsRun: "[]",
+      commandsRun: JSON.stringify([{ command: "npm test", exitCode: 0 }]),
       gitCommitHash: "deadbeef",
     });
 
@@ -155,7 +155,7 @@ describe("worker tools", () => {
       assumptions: "A",
       unresolvedUncertainties: "U",
       errorsEncountered: "E",
-      commandsRun: "[]",
+      commandsRun: JSON.stringify([{ command: "npm test", exitCode: 0 }]),
       gitCommitHash: "deadbeef",
     });
 
@@ -198,7 +198,7 @@ describe("worker tools", () => {
       assumptions: "A",
       unresolvedUncertainties: "U",
       errorsEncountered: "E",
-      commandsRun: "[]",
+      commandsRun: JSON.stringify([{ command: "npm test", exitCode: 0 }]),
       gitCommitHash: "abc123",
     };
 
@@ -417,6 +417,20 @@ describe("worker tools", () => {
       const result = await (handoffTool as any).execute("tc-1", { ...validParams, gitCommitHash: "abc123" });
       const content = result.content as Array<{ type: string; text: string }>;
       expect(content[0].text).toContain("accepted");
+    });
+
+    it("rejects malformed commandsRun entries", async () => {
+      const lapis = createMockLapis();
+      const tools = createWorkerTools(lapis, "unit-1");
+      const handoffTool = tools.find((t) => t.name === "write_handoff")!;
+
+      const result = await (handoffTool as any).execute("tc-1", {
+        ...validParams,
+        commandsRun: JSON.stringify([{ command: "npm test" }]),
+      });
+      const content = result.content as Array<{ type: string; text: string }>;
+      expect(content[0].text).toContain("exitCode");
+      expect(lapis.writeHandoff).not.toHaveBeenCalled();
     });
   });
 });

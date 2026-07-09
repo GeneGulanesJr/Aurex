@@ -248,13 +248,54 @@ function trimTrailingZero(value: number): string {
   return value.toFixed(1).replace(/\.0$/, "");
 }
 
+const ORCHESTRATION_WARNING_ERROR_CODES = new Set([
+  "feature_diff_failed",
+  "research_findings_fetch_failed",
+  "research_failed",
+  "research_spawn_failed",
+  "rescope_findings_fetch_failed",
+  "rescope_verdicts_fetch_failed",
+  "rescope_units_fetch_failed",
+  "checkpoint_units_fetch_failed",
+  "checkpoint_verdicts_fetch_failed",
+]);
+
+export function isOrchestrationWarningError(code: string): boolean {
+  return ORCHESTRATION_WARNING_ERROR_CODES.has(code);
+}
+
+export function getMissionErrorLabel(code: string): string {
+  switch (code) {
+    case "feature_diff_failed":
+      return "Feature diff unavailable";
+    case "research_findings_fetch_failed":
+      return "Research findings unavailable";
+    case "research_failed":
+      return "Research agent failed";
+    case "research_spawn_failed":
+      return "Research agent could not start";
+    case "rescope_findings_fetch_failed":
+      return "Rescope findings unavailable";
+    case "rescope_verdicts_fetch_failed":
+      return "Rescope verdicts unavailable";
+    case "rescope_units_fetch_failed":
+      return "Rescope units unavailable";
+    case "checkpoint_units_fetch_failed":
+      return "Checkpoint units unavailable";
+    case "checkpoint_verdicts_fetch_failed":
+      return "Checkpoint verdicts unavailable";
+    default:
+      return code.replace(/_/g, " ");
+  }
+}
+
 function eventToActivityItem(event: WsClientEvent, index: number, baseTimestamp: number): ActivityFeedItem {
   const timestamp = eventTimestamp(event, index, baseTimestamp);
   switch (event.type) {
     case "cost_update":
       return { id: `event-${index}-${event.type}`, kind: "cost", label: "COST", message: `$${event.totalCost.toFixed(2)} · ${formatCompactNumber(event.totalTokens)} tokens`, timestamp, color: "var(--text-muted)" };
     case "mission_error":
-      return { id: `event-${index}-${event.type}`, kind: "error", label: "ERROR", message: `${event.code}: ${event.message}`, timestamp, color: "var(--error)" };
+      return { id: `event-${index}-${event.type}`, kind: "error", label: getMissionErrorLabel(event.code).toUpperCase(), message: event.message, timestamp, color: "var(--error)" };
     case "agent_status":
       return { id: `event-${index}-${event.type}`, kind: "agent", label: "AGENT", message: `${event.agentType} → ${event.status.replace(/_/g, " ")}`, timestamp, color: "var(--accent)" };
     case "agent_output":

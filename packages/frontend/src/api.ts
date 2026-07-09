@@ -96,6 +96,9 @@ export async function submitCheckpoint(
 
 export async function getHealth(): Promise<HealthResponse> {
   const res = await apiFetch("/health");
+  if (!res.ok) {
+    throw new Error(`Health check failed: ${res.status}`);
+  }
   return res.json() as Promise<HealthResponse>;
 }
 

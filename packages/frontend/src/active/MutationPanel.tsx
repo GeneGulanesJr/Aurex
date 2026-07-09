@@ -71,6 +71,13 @@ export function MutationPanel({ repoName }: Props) {
         }
       } catch {
         stopPolling();
+        clearSessionState(runKey(repoName));
+        setRunStatus({
+          state: "failed",
+          runId: id,
+          error: "Lost connection to mutation run status",
+          exitCode: -1,
+        });
       }
     }, POLL_INTERVAL_MS);
   }, [repoName, stopPolling, handleTerminal]);
