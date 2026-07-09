@@ -42,7 +42,28 @@ describe("isolateIssues", () => {
     const issues = isolateIssues(summary, hotspots, emptyGraph, null, null);
     const dead = issues.filter((i) => i.category === "dead_code");
     expect(dead.length).toBeGreaterThanOrEqual(3);
+    expect(dead.length).toBeLessThanOrEqual(5);
     expect(dead.every((d) => d.scopePaths.length === 1)).toBe(true);
+  });
+
+  it("skips dead-code for files with inbound import edges", () => {
+    const summary = {
+      files: 10,
+      symbols: 50,
+      edges: 5,
+      modules: [{ name: "src", fileCount: 10 }],
+      entryPoints: ["main.ts"],
+      cycles: { count: 0, paths: [] },
+    };
+    const hotspots = {
+      files: [{ path: "src/used.ts", module: "src", complexity: 5, symbols: 3 }],
+    };
+    const graph = {
+      nodes: [{ id: "src/used.ts", module: "src", symbols: 3, importance: 1 }],
+      edges: [{ from: "src/main.ts", to: "src/used.ts", kind: "static" }],
+    };
+    const issues = isolateIssues(summary, hotspots, graph, null, null);
+    expect(issues.filter((i) => i.category === "dead_code")).toHaveLength(0);
   });
 
   it("limits scope paths to at most 3", () => {

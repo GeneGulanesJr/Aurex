@@ -81,12 +81,19 @@ function proposedFix(draft: IssueDraft): string {
         "2. Extract it with clear public exports.",
         "3. Leave the rest of the module unchanged in this change.",
       ].join("\n");
-    default:
+    case "test_coverage":
+    case "performance":
+    case "naming":
+    case "style":
       return [
         "1. Make the smallest change that resolves the issue described above.",
         "2. Stay within the scoped files/modules only.",
         "3. Run verification commands after the change.",
       ].join("\n");
+    default: {
+      const _exhaustive: never = cat;
+      return _exhaustive;
+    }
   }
 }
 

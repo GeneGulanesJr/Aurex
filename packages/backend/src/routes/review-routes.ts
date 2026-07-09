@@ -34,15 +34,6 @@ export function registerReviewRoutes(app: FastifyInstance, deps: ReviewRouteDeps
     return { report };
   });
 
-  app.get("/api/repos/:repoName/review/:reviewId", async (request, reply) => {
-    const { reviewId } = request.params as { reviewId: string };
-    const report = await getReview(lapis, reviewId);
-    if (!report) {
-      return reply.status(404).send({ error: "Review not found" });
-    }
-    return { report };
-  });
-
   app.get("/api/repos/:repoName/review/:reviewId/export", async (request, reply) => {
     const { repoName, reviewId } = request.params as { repoName: string; reviewId: string };
     const report = await getReview(lapis, reviewId);
@@ -52,6 +43,15 @@ export function registerReviewRoutes(app: FastifyInstance, deps: ReviewRouteDeps
     const markdown = exportReviewMarkdown(repoName, report.issues);
     reply.header("Content-Type", "text/markdown; charset=utf-8");
     return markdown;
+  });
+
+  app.get("/api/repos/:repoName/review/:reviewId", async (request, reply) => {
+    const { repoName, reviewId } = request.params as { repoName: string; reviewId: string };
+    const report = await getReview(lapis, reviewId);
+    if (!report || report.repoName !== repoName) {
+      return reply.status(404).send({ error: "Review not found" });
+    }
+    return { report };
   });
 
   app.patch("/api/repos/:repoName/review/:reviewId/issues/:issueId", async (request, reply) => {

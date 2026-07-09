@@ -211,7 +211,7 @@ export function MissionCreationView({
         </div>
 
         <ScanLaunchChecklist
-          systemReady={!!systemReady}
+          systemReady={!!github?.connected}
           githubConnected={!!github?.connected}
           repoCount={github?.repos.length ?? 0}
           selectedRepo={form.state.selectedRepoFullName}
@@ -220,13 +220,13 @@ export function MissionCreationView({
           issueCount={preparedRepo?.report?.issues.length ?? 0}
         />
 
-        {!systemReady ? (
+        {!github?.connected ? (
           <div className="creation-section" style={{ width: "100%", padding: "16px", background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "6px", textAlign: "center" }}>
             <div style={{ color: "var(--warning)", fontSize: "11px", fontFamily: '"JetBrains Mono", monospace', textTransform: "uppercase", letterSpacing: "1px", marginBottom: "8px" }}>
-              Integrations Required
+              GitHub Required
             </div>
             <div style={{ color: "var(--text-muted)", fontSize: "12px" }}>
-              Configure GitHub in the Integrations panel before scanning repositories.
+              Connect GitHub in the Integrations panel to scan repositories.
             </div>
           </div>
         ) : (

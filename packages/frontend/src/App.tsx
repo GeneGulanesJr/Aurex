@@ -26,7 +26,7 @@ import { QuotaPanel } from "./active/QuotaPanel";
 import { TopBar } from "./frame/TopBar";
 import { TelemetryBar } from "./frame/TelemetryBar";
 import { setTokenGetter, setAuthErrorHandler } from "./api";
-import { submitCheckpoint, createMission, restartMission, abortMission, runRepoReview, updateIssueStatus } from "./api";
+import { submitCheckpoint, createMission, restartMission, abortMission, runRepoReview, getRepoReview, updateIssueStatus } from "./api";
 import type { WsClientEvent, CheckpointDecision, ReviewReport } from "@aurex/shared";
 import type { CodeSummaryResponse } from "./api";
 
@@ -252,21 +252,33 @@ export function App() {
     clearSessionState("prepared_repo"); // mission started — don't restore overview
   }, [addOptimisticMission]);
 
-  const handleRepoPrepared = useCallback(async (info: { repoName: string; fullName: string; summary: CodeSummaryResponse | null }) => {
+  const handleRepoPrepared = useCallback(async (
+    info: { repoName: string; fullName: string; summary: CodeSummaryResponse | null },
+    opts?: { forceRescan?: boolean },
+  ) => {
     const { repoName, fullName, summary } = info;
     setSessionState("prepared_repo", { repoName, fullName });
     const version = Date.now();
     setPreparedRepo({ repoName, fullName, summary, report: null, loading: true, error: null, _version: version });
     try {
-      const { report } = await runRepoReview(repoName);
-      const error = report.errors?.length
+      let report: ReviewReport;
+      if (!opts?.forceRescan) {
+        try {
+          ({ report } = await getRepoReview(repoName));
+        } catch {
+          ({ report } = await runRepoReview(repoName));
+        }
+      } else {
+        ({ report } = await runRepoReview(repoName));
+      }
+      const warning = report.errors?.length
         ? report.errors.join("; ")
         : report.status === "partial"
           ? "Review completed with partial data."
           : null;
       setPreparedRepo((prev) => {
         if (!prev || prev._version !== version) return prev;
-        return { repoName, fullName, summary, report, loading: false, error };
+        return { repoName, fullName, summary, report, loading: false, error: warning };
       });
     } catch (err) {
       setPreparedRepo((prev) =>
@@ -283,27 +295,39 @@ export function App() {
 
   const handleRescanRepo = useCallback(async () => {
     if (!preparedRepo) return;
-    await handleRepoPrepared({
-      repoName: preparedRepo.repoName,
-      fullName: preparedRepo.fullName,
-      summary: preparedRepo.summary,
-    });
+    await handleRepoPrepared(
+      {
+        repoName: preparedRepo.repoName,
+        fullName: preparedRepo.fullName,
+        summary: preparedRepo.summary,
+      },
+      { forceRescan: true },
+    );
   }, [preparedRepo, handleRepoPrepared]);
 
   const handleIssueStatusChange = useCallback(async (issueId: string, status: import("@aurex/shared").IssueStatus) => {
-    if (!preparedRepo?.report) return;
+    let reviewId: string | null = null;
+    let repoName: string | null = null;
+    setPreparedRepo((prev) => {
+      if (!prev?.report) return prev;
+      reviewId = prev.report.id;
+      repoName = prev.repoName;
+      return {
+        ...prev,
+        report: {
+          ...prev.report,
+          issues: prev.report.issues.map((i) => (i.id === issueId ? { ...i, status } : i)),
+        },
+      };
+    });
+    if (!reviewId || !repoName) return;
     try {
-      const { report } = await updateIssueStatus(
-        preparedRepo.repoName,
-        preparedRepo.report.id,
-        issueId,
-        status,
-      );
+      const { report } = await updateIssueStatus(repoName, reviewId, issueId, status);
       setPreparedRepo((prev) => (prev ? { ...prev, report } : null));
     } catch {
-      // Keep local state if patch fails
+      // Optimistic update already applied; keep local state on PATCH failure.
     }
-  }, [preparedRepo]);
+  }, []);
 
   const handleRestartMission = useCallback(async (missionId: string) => {
     try {

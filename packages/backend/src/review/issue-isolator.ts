@@ -54,7 +54,11 @@ function pathsForCyclePath(
 ): string[] {
   const cycleSet = new Set(cyclePath);
   const matched = graph.nodes
-    .filter((n) => cycleSet.has(n.module) || cycleSet.has(n.id) || cyclePath.some((p) => n.id.includes(p)))
+    .filter((n) =>
+      cycleSet.has(n.module)
+      || cycleSet.has(n.id)
+      || cyclePath.some((p) => n.id === p || n.id.endsWith(`/${p}`)),
+    )
     .sort((a, b) => b.importance - a.importance)
     .map((n) => n.id);
   return matched.slice(0, MAX_SCOPE_PATHS);
@@ -167,11 +171,21 @@ export function isolateIssues(
     }
   }
 
+  const scopedPaths = new Set<string>();
+  for (const issue of issues) {
+    for (const p of issue.scopePaths) scopedPaths.add(p);
+  }
+
+  const inboundTargets = new Set(graph.edges.map((e) => e.to));
   const hotpaths = hotspots.files.slice(0, 20);
-  const orphanCandidates = hotpaths.filter(
-    (f) => !summary.entryPoints.some((ep) => fileName(f.path) === ep),
-  );
-  for (const file of orphanCandidates.slice(0, 10)) {
+  const orphanCandidates = hotpaths.filter((f) => {
+    if (scopedPaths.has(f.path)) return false;
+    if (inboundTargets.has(f.path)) return false;
+    return !summary.entryPoints.some(
+      (ep) => f.path === ep || f.path.endsWith(`/${ep}`) || fileName(f.path) === ep,
+    );
+  });
+  for (const file of orphanCandidates.slice(0, 5)) {
     issues.push(draft({
       id: `dead-code-${file.path.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
       tier: "P1",

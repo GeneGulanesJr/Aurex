@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type { IsolatedIssue, ReviewReport, SuggestionTier, IssueStatus } from "@aurex/shared";
 
 interface RepoScanDashboardProps {
@@ -34,6 +34,16 @@ export function RepoScanDashboard({
 
   const issues = report?.issues ?? [];
   const selected = issues.find((i) => i.id === selectedId) ?? issues[0] ?? null;
+
+  useEffect(() => {
+    setSelectedId(null);
+  }, [report?.id]);
+
+  useEffect(() => {
+    if (selectedId && !issues.some((i) => i.id === selectedId)) {
+      setSelectedId(null);
+    }
+  }, [issues, selectedId]);
 
   const handleCopy = useCallback(async (text: string, issueId?: string) => {
     try {

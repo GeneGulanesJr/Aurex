@@ -35,7 +35,12 @@ export async function updateIssueStatus(
   if (!report) return null;
   const idx = report.issues.findIndex((i) => i.id === issueId);
   if (idx < 0) return null;
-  report.issues[idx] = { ...report.issues[idx], status };
-  await lapis.setSetting(REVIEW_KEY(reviewId), report);
-  return report;
+  const updated: ReviewReport = {
+    ...report,
+    issues: report.issues.map((issue, i) =>
+      i === idx ? { ...issue, status } : issue,
+    ),
+  };
+  await lapis.setSetting(REVIEW_KEY(reviewId), updated);
+  return updated;
 }
