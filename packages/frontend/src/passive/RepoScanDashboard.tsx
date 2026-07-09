@@ -21,6 +21,19 @@ const tierConfig: Record<SuggestionTier, { color: string; label: string }> = {
   P5: { color: "var(--text-muted)", label: "P5 POLISH" },
 };
 
+function formatScanTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
 export function RepoScanDashboard({
   repoName,
   fullName,
@@ -123,6 +136,9 @@ export function RepoScanDashboard({
             {report && (
               <span style={{ color: "var(--text-secondary)", marginLeft: "8px", fontSize: "11px" }}>
                 · {report.summary.files} files · {issues.length} isolated issue{issues.length === 1 ? "" : "s"}
+                {report.createdAt && (
+                  <span style={{ color: "var(--text-muted)" }}> · scanned {formatScanTime(report.createdAt)}</span>
+                )}
               </span>
             )}
           </div>
@@ -145,7 +161,8 @@ export function RepoScanDashboard({
             <button
               type="button"
               onClick={onRescan}
-              style={{ padding: "6px 12px", background: "var(--bg-elevated)", color: "var(--text-secondary)", border: "1px solid var(--border)", borderRadius: "4px", cursor: "pointer", fontFamily: '"JetBrains Mono", monospace', fontSize: "10px" }}
+              disabled={loading || exporting}
+              style={{ padding: "6px 12px", background: "var(--bg-elevated)", color: "var(--text-secondary)", border: "1px solid var(--border)", borderRadius: "4px", cursor: loading || exporting ? "not-allowed" : "pointer", opacity: loading || exporting ? 0.6 : 1, fontFamily: '"JetBrains Mono", monospace', fontSize: "10px" }}
             >
               Re-scan
             </button>

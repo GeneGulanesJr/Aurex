@@ -282,15 +282,14 @@ export function App() {
         return { repoName, fullName, summary, report, loading: false, error: warning };
       });
     } catch (err) {
-      setPreparedRepo((prev) =>
-        prev
-          ? {
-              ...prev,
-              loading: false,
-              error: err instanceof Error ? err.message : "Repository scan failed.",
-            }
-          : null,
-      );
+      setPreparedRepo((prev) => {
+        if (!prev || prev._version !== version) return prev;
+        return {
+          ...prev,
+          loading: false,
+          error: err instanceof Error ? err.message : "Repository scan failed.",
+        };
+      });
     }
   }, []);
 

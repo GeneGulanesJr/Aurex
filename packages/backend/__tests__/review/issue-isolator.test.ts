@@ -252,6 +252,60 @@ describe("isolateIssues", () => {
     const doc = issues.find((i) => i.category === "documentation");
     expect(doc?.scopePaths).toEqual(["src/index.ts"]);
   });
+
+  it("prefers highest-importance file when multiple basename matches exist", () => {
+    const summary = {
+      files: 30,
+      symbols: 100,
+      edges: 50,
+      modules: [{ name: "src", fileCount: 30 }],
+      entryPoints: ["index.ts"],
+      cycles: { count: 0, paths: [] },
+    };
+    const hotspots = {
+      files: [
+        { path: "src/index.ts", module: "src", complexity: 5, symbols: 10 },
+        { path: "lib/index.ts", module: "lib", complexity: 3, symbols: 4 },
+      ],
+    };
+    const graph = {
+      nodes: [
+        { id: "src/index.ts", module: "src", symbols: 10, importance: 2 },
+        { id: "lib/index.ts", module: "lib", symbols: 4, importance: 9 },
+      ],
+      edges: [],
+    };
+    const issues = isolateIssues(summary, hotspots, graph, null, null);
+    const doc = issues.find((i) => i.category === "documentation");
+    expect(doc?.scopePaths).toEqual(["lib/index.ts"]);
+  });
+
+  it("scopes module-level cycles to crossing import edges", () => {
+    const graph = {
+      nodes: [
+        { id: "auth/a.ts", module: "auth", symbols: 5, importance: 10 },
+        { id: "auth/b.ts", module: "auth", symbols: 3, importance: 1 },
+        { id: "billing/c.ts", module: "billing", symbols: 4, importance: 8 },
+      ],
+      edges: [
+        { from: "auth/a.ts", to: "billing/c.ts", kind: "static" },
+        { from: "billing/c.ts", to: "auth/a.ts", kind: "static" },
+      ],
+    };
+    const summary = {
+      files: 3,
+      symbols: 12,
+      edges: 2,
+      modules: [{ name: "auth", fileCount: 2 }, { name: "billing", fileCount: 1 }],
+      entryPoints: [],
+      cycles: { count: 1, paths: [["auth", "billing", "auth"]] },
+    };
+    const issues = isolateIssues(summary, { files: [] }, graph, null, null);
+    const cycle = issues.find((i) => i.category === "critical_path");
+    expect(cycle?.scopePaths).toEqual(expect.arrayContaining(["auth/a.ts", "billing/c.ts"]));
+    expect(cycle?.scopePaths).not.toContain("auth/b.ts");
+    expect(cycle?.scopePaths?.length).toBeLessThanOrEqual(3);
+  });
 });
 
 describe("fix prompts", () => {

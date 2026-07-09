@@ -54,13 +54,37 @@ function resolveEntryPointPath(
   hotspots: HotspotsInput,
 ): string {
   const normEp = ep.replace(/\/+$/, "");
-  for (const n of graph.nodes) {
-    if (n.id === normEp || n.id.endsWith(`/${normEp}`)) return n.id;
-    if (fileName(n.id) === fileName(normEp)) return n.id;
+
+  const graphExact = graph.nodes.filter((n) => n.id === normEp);
+  if (graphExact.length === 1) return graphExact[0].id;
+
+  const graphSuffix = graph.nodes.filter((n) => n.id.endsWith(`/${normEp}`));
+  if (graphSuffix.length === 1) return graphSuffix[0].id;
+  if (graphSuffix.length > 1) {
+    return graphSuffix.sort((a, b) => b.importance - a.importance)[0].id;
   }
-  for (const f of hotspots.files) {
-    if (f.path === normEp || f.path.endsWith(`/${normEp}`)) return f.path;
-    if (fileName(f.path) === fileName(normEp)) return f.path;
+
+  const hotExact = hotspots.files.filter((f) => f.path === normEp);
+  if (hotExact.length === 1) return hotExact[0].path;
+
+  const hotSuffix = hotspots.files.filter((f) => f.path.endsWith(`/${normEp}`));
+  if (hotSuffix.length === 1) return hotSuffix[0].path;
+  if (hotSuffix.length > 1) {
+    return hotSuffix.sort((a, b) => b.complexity - a.complexity)[0].path;
+  }
+
+  if (!normEp.includes("/")) {
+    const base = fileName(normEp);
+    const graphHits = graph.nodes.filter((n) => fileName(n.id) === base);
+    if (graphHits.length === 1) return graphHits[0].id;
+    if (graphHits.length > 1) {
+      return graphHits.sort((a, b) => b.importance - a.importance)[0].id;
+    }
+    const hotHits = hotspots.files.filter((f) => fileName(f.path) === base);
+    if (hotHits.length === 1) return hotHits[0].path;
+    if (hotHits.length > 1) {
+      return hotHits.sort((a, b) => b.complexity - a.complexity)[0].path;
+    }
   }
   return ep;
 }
@@ -92,20 +116,70 @@ function packageIssueId(finding: BumblebeeFinding): string {
   return `package-${finding.severity}-${finding.packageName}-${finding.version}-${discriminator}`;
 }
 
+function topImportFanoutPaths(graph: CodeGraphInput, limit: number): string[] {
+  const outCount = new Map<string, number>();
+  for (const edge of graph.edges) {
+    outCount.set(edge.from, (outCount.get(edge.from) ?? 0) + 1);
+  }
+  return [...outCount.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([path]) => path);
+}
+
 function pathsForCyclePath(
   cyclePath: string[],
   graph: CodeGraphInput,
 ): string[] {
-  const cycleSet = new Set(cyclePath);
-  const matched = graph.nodes
-    .filter((n) =>
-      cycleSet.has(n.module)
-      || cycleSet.has(n.id)
-      || cyclePath.some((p) => n.id === p || n.id.endsWith(`/${p}`)),
-    )
-    .sort((a, b) => b.importance - a.importance)
-    .map((n) => n.id);
-  return matched.slice(0, MAX_SCOPE_PATHS);
+  const paths = new Set<string>();
+
+  for (const n of graph.nodes) {
+    for (const segment of cyclePath) {
+      if (n.id === segment || n.id.endsWith(`/${segment}`)) {
+        paths.add(n.id);
+      }
+    }
+  }
+
+  if (paths.size === 0 && cyclePath.length >= 2) {
+    const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
+    for (let i = 0; i < cyclePath.length; i++) {
+      const fromSeg = cyclePath[i];
+      const toSeg = cyclePath[(i + 1) % cyclePath.length];
+      for (const edge of graph.edges) {
+        const fromNode = nodeById.get(edge.from);
+        const toNode = nodeById.get(edge.to);
+        if (!fromNode || !toNode) continue;
+        const fromMatches = fromNode.module === fromSeg
+          || fromNode.id === fromSeg
+          || fromNode.id.endsWith(`/${fromSeg}`);
+        const toMatches = toNode.module === toSeg
+          || toNode.id === toSeg
+          || toNode.id.endsWith(`/${toSeg}`);
+        if (fromMatches && toMatches) {
+          paths.add(edge.from);
+          paths.add(edge.to);
+        }
+      }
+    }
+  }
+
+  if (paths.size === 0) {
+    for (const segment of cyclePath) {
+      const hit = graph.nodes
+        .filter((n) => n.module === segment || n.id === segment)
+        .sort((a, b) => b.importance - a.importance)[0];
+      if (hit) paths.add(hit.id);
+    }
+  }
+
+  return [...paths]
+    .sort((a, b) => {
+      const impA = graph.nodes.find((n) => n.id === a)?.importance ?? 0;
+      const impB = graph.nodes.find((n) => n.id === b)?.importance ?? 0;
+      return impB - impA;
+    })
+    .slice(0, MAX_SCOPE_PATHS);
 }
 
 function modulesFromPaths(paths: string[], hotspots: HotspotsInput): string[] {
@@ -152,7 +226,7 @@ export function isolateIssues(
       confidence: finding.confidence ?? "medium",
       estimatedEffort: finding.severity === "critical" || finding.severity === "high" ? "medium" : "small",
       estimatedRisk: finding.severity === "critical" || finding.severity === "high" ? "high" : "medium",
-      evidence: [{ type: "package_scan", message: finding.evidence, file: finding.sourceFile }],
+      evidence: [{ type: "package_scan", message: finding.evidence, file: scopePaths[0] }],
       labels: ["highest-impact", "supply-chain"],
     }));
   }
@@ -162,6 +236,7 @@ export function isolateIssues(
     if (!cyclePath || cyclePath.length === 0) continue;
     const scopePaths = pathsForCyclePath(cyclePath, graph);
     const pathLabel = cyclePath.join(" → ");
+    const cycleModules = modulesFromPaths(scopePaths, hotspots);
     issues.push(draft({
       id: `critical-cycle-${i}-${cyclePath.join("-").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80)}`,
       tier: "P0",
@@ -170,7 +245,9 @@ export function isolateIssues(
       description: "Circular dependencies prevent independent testing and can cause build failures.",
       detail: `Cycle ${i + 1}/${summary.cycles.count} · ${pathLabel}`,
       scopePaths,
-      scopeModules: [...new Set(cyclePath)].slice(0, MAX_SCOPE_PATHS),
+      scopeModules: cycleModules.length > 0
+        ? cycleModules.slice(0, MAX_SCOPE_PATHS)
+        : [...new Set(cyclePath)].slice(0, MAX_SCOPE_PATHS),
       confidence: "high",
       estimatedEffort: cyclePath.length > 3 ? "large" : "medium",
       estimatedRisk: "high",
@@ -226,7 +303,13 @@ export function isolateIssues(
     if (scopedPaths.has(f.path)) return false;
     if (inboundTargets.has(f.path)) return false;
     return !summary.entryPoints.some(
-      (ep) => f.path === ep || f.path.endsWith(`/${ep}`) || fileName(f.path) === ep,
+      (ep) => {
+        const resolved = resolveEntryPointPath(ep, graph, hotspots);
+        return f.path === ep
+          || f.path === resolved
+          || f.path.endsWith(`/${ep}`)
+          || fileName(f.path) === fileName(ep);
+      },
     );
   });
   for (const file of orphanCandidates.slice(0, 5)) {
@@ -278,7 +361,7 @@ export function isolateIssues(
         title: `Fix setup blocker: ${blocker.slice(0, 60)}${blocker.length > 60 ? "…" : ""}`,
         description: blocker,
         detail: "Readiness analysis",
-        scopePaths: [],
+        scopePaths: ["README.md"],
         scopeModules: [],
         confidence: "high",
         estimatedEffort: "small",
@@ -402,6 +485,7 @@ export function isolateIssues(
   }
 
   if (summary.files > 0 && summary.edges / Math.max(summary.files, 1) > 5) {
+    const fanoutPaths = topImportFanoutPaths(graph, MAX_SCOPE_PATHS);
     issues.push(draft({
       id: "performance-import-density",
       tier: "P4",
@@ -409,8 +493,8 @@ export function isolateIssues(
       title: `Audit import density — ${(summary.edges / summary.files).toFixed(1)} edges/file`,
       description: "High import density can slow builds and inflate bundles.",
       detail: `${summary.edges} imports across ${summary.files} files`,
-      scopePaths: [],
-      scopeModules: [],
+      scopePaths: fanoutPaths,
+      scopeModules: modulesFromPaths(fanoutPaths, hotspots),
       confidence: "medium",
       estimatedEffort: "medium",
       estimatedRisk: "low",
@@ -451,7 +535,7 @@ export function isolateIssues(
       title: "Add contributing guidelines and code style guide",
       description: `A project with ${summary.files} files and ${summary.modules.length} modules should have contributor documentation.`,
       detail: `${summary.files} files · ${summary.modules.length} modules`,
-      scopePaths: [],
+      scopePaths: ["CONTRIBUTING.md", "README.md"].slice(0, MAX_SCOPE_PATHS),
       scopeModules: [],
       confidence: "low",
       estimatedEffort: "small",

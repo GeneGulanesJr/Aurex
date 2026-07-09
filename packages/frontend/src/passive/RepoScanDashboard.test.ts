@@ -74,6 +74,7 @@ describe("RepoScanDashboard", () => {
     expect(html).toContain("REPO SCAN");
     expect(html).toContain("GeneGulanesJr/Aurex");
     expect(html).toContain("1 isolated issue");
+    expect(html).toContain("scanned");
     expect(html).toContain("Refactor heavy.ts");
     expect(html).toContain("FIX PROMPT");
     expect(html).toContain("Copy fix prompt");
