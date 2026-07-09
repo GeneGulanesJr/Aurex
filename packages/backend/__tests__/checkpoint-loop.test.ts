@@ -382,4 +382,90 @@ describe("checkpoint loop", () => {
     expect(lapis.updateWorkingUnitStatus).not.toHaveBeenCalled();
     expect(lapis.updateMilestoneStatus).not.toHaveBeenCalled();
   });
+
+  it("emits mission_error when rescope data fetches fail instead of swallowing errors", async () => {
+    const mission = makeMission();
+    const units: WorkingUnit[] = [
+      {
+        id: "u-timeout",
+        milestoneId: "ms-1",
+        description: "Timed out unit",
+        declaredPaths: ["src/server/mod.rs"],
+        declaredModules: ["server"],
+        status: "timed_out",
+        taskBranch: "task/timeout",
+        worktreePath: "/tmp/timeout",
+        sessionId: "s-timeout",
+      },
+    ];
+    const loop = {
+      run: vi.fn()
+        .mockResolvedValueOnce({ status: "checkpoint_needed", trigger: "validation_failed", milestoneId: "ms-1", summary: "validator failed" })
+        .mockResolvedValueOnce({ status: "completed" }),
+    };
+    const checkpointManager: CheckpointManager = {
+      create: vi.fn().mockResolvedValue("cp-1"),
+      waitForResolution: vi.fn().mockResolvedValue({
+        id: "cp-1",
+        missionId: "m-1",
+        trigger: "validation_failed",
+        milestoneId: "ms-1",
+        summary: "validator failed",
+        status: "resolved",
+        decision: "approve",
+        rescopeGuidance: "split the work into smaller units",
+        createdAt: "2026-01-01",
+      }),
+      resolve: vi.fn(),
+      getPendingForMission: vi.fn().mockResolvedValue([]),
+    };
+    const lapis = {
+      updateMissionStatus: vi.fn().mockResolvedValue(undefined),
+      createCheckpoint: vi.fn(),
+      getWorkingUnitsForMilestone: vi.fn().mockRejectedValue(new Error("db down")),
+      getVerdicts: vi.fn().mockRejectedValue(new Error("db down")),
+      getFindings: vi.fn().mockRejectedValue(new Error("db down")),
+      createWorkingUnit: vi.fn().mockResolvedValue(undefined),
+      updateWorkingUnitStatus: vi.fn().mockResolvedValue(undefined),
+      updateMilestoneStatus: vi.fn().mockResolvedValue(undefined),
+      getMission: vi.fn().mockResolvedValue(mission),
+    } as unknown as LaPisClient;
+    const pinyx = {
+      chat: vi.fn().mockResolvedValue({
+        content: JSON.stringify({
+          units: [{ description: "Smaller unit", declaredPaths: ["src/server/mod.rs"], declaredModules: ["server"] }],
+        }),
+      }),
+    } as unknown as PinyxClient;
+    const eventBus = { emit: vi.fn() };
+
+    await runCheckpointLoop(loop, {
+      missionId: "m-1",
+      mission,
+      milestones: [milestone],
+      costCapApproved: false,
+    }, {
+      checkpointManager,
+      lapis,
+      pinyx,
+      eventBus: eventBus as any,
+      setStatus: vi.fn(),
+    });
+
+    expect(eventBus.emit).toHaveBeenCalledWith(expect.objectContaining({
+      type: "mission_error",
+      code: "rescope_findings_fetch_failed",
+      recoverable: true,
+    }));
+    expect(eventBus.emit).toHaveBeenCalledWith(expect.objectContaining({
+      type: "mission_error",
+      code: "rescope_verdicts_fetch_failed",
+      recoverable: true,
+    }));
+    expect(eventBus.emit).toHaveBeenCalledWith(expect.objectContaining({
+      type: "mission_error",
+      code: "rescope_units_fetch_failed",
+      recoverable: true,
+    }));
+  });
 });

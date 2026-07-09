@@ -699,7 +699,15 @@ export function createMilestoneLoop(
           details: { worktreePath: featureWorktree.worktreePath, baseBranch: loopConfig.gitMainBranch, error: msg },
         },
       );
-      diffSummary = `[Feature diff unavailable: ${msg}]`;
+      return {
+        status: "checkpoint",
+        result: {
+          status: "checkpoint_needed",
+          trigger: "unclassifiable_error",
+          milestoneId: milestone.id,
+          summary: `Could not collect feature diff for validation: ${msg}. Validators require the diff to review milestone changes.`,
+        },
+      };
     }
 
     const validatorUnits: ValidatorUnitContext[] = units.map((u) => ({

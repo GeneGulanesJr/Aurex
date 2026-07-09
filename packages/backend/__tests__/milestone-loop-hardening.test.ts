@@ -357,8 +357,13 @@ describe("milestone loop — observability for recoverable failures", () => {
       agentDir: "/test/.pi/agent", repoRoot: "/test/repo", gitMainBranch: "main",
     });
 
-    await loop.run(makeMission(), [makeMilestone()]);
+    const result = await loop.run(makeMission(), [makeMilestone()]);
 
+    expect(result.status).toBe("checkpoint_needed");
+    if (result.status === "checkpoint_needed") {
+      expect(result.trigger).toBe("unclassifiable_error");
+      expect(result.summary).toContain("Could not collect feature diff");
+    }
     expect(callbacks.onError).toHaveBeenCalledWith(
       "m-1",
       "feature_diff_failed",
