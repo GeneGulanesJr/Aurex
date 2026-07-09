@@ -23,7 +23,7 @@ For shared request/response shapes see [`packages/shared/src/rest.ts`](../packag
 | **PiNyx**                    | [`GET /api/pinyx/status`](#get-apipinyxstatus), [`GET /api/pinyx/config`](#get-apipinyxconfig), [`POST /api/pinyx/config`](#post-apipinyxconfig), [`GET /api/pinyx/models`](#get-apipinyxmodels)                                                                                                                                                                                                                                                                                                                                                                                     |
 | **Quota**                    | [`GET /api/quota`](#get-apiquota), [`POST /api/quota/config`](#post-apiquotaconfig), [`POST /api/quota/prefire`](#post-apiquotaprefire), [`POST /api/quota/reset`](#post-apiquotareset), [`POST /api/quota/calculate-prefire`](#post-apiquotacalculate-prefire)                                                                                                                                                                                                                                                                                                                      |
 | **Mutation testing**         | [`GET /api/repos/:repoName/mutation`](#get-apireposreponamemutation), [`POST /api/repos/:repoName/mutation/run`](#post-apireposreponamemutationrun), [`GET /api/repos/:repoName/mutation/:runId`](#get-apireposreponamemutationrunid)                                                                                                                                                                                                                                                                                                                                                |
-| **Repo Explore**             | [`POST /api/repos/:repoName/explore`](#post-apireposreponameexplore), [`GET /api/repos/:repoName/summary`](#get-apireposreponamesummary), [`GET /api/repos/:repoName/hotspots`](#get-apireposreponamehotspots), [`GET /api/repos/:repoName/readiness`](#get-apireposreponamereadiness), [`POST /api/repos/:repoName/scans`](#post-apireposreponamescans), [`GET /api/repos/:repoName/scans`](#get-apireposreponamescans-1), [`GET /api/repos/:repoName/scans/:scanId`](#get-apireposreponamescansscanid), [`GET /api/repos/:repoName/suggestions`](#get-apireposreponamesuggestions) |
+| **Repo Explore**             | [`POST /api/repos/:repoName/explore`](#post-apireposreponameexplore), [`GET /api/repos/:repoName/summary`](#get-apireposreponamesummary), [`GET /api/repos/:repoName/hotspots`](#get-apireposreponamehotspots), [`GET /api/repos/:repoName/readiness`](#get-apireposreponamereadiness), [`POST /api/repos/:repoName/scans`](#post-apireposreponamescans), [`GET /api/repos/:repoName/scans`](#get-apireposreponamescans-1), [`GET /api/repos/:repoName/scans/:scanId`](#get-apireposreponamescansscanid) |
 | **Repo Review (v1)**         | [`POST /api/repos/:repoName/review`](#post-apireposreponamereview), [`GET /api/repos/:repoName/review`](#get-apireposreponamereview), [`GET /api/repos/:repoName/review/:reviewId`](#get-apireposreponamereviewreviewid), [`GET /api/repos/:repoName/review/:reviewId/export`](#get-apireposreponamereviewreviewidexport), [`PATCH /api/repos/:repoName/review/:reviewId/issues/:issueId`](#patch-apireposreponamereviewreviewidissuesissueid), [`GET /api/repos/:repoName/graph`](#get-apireposreponamegraph) |
 | **Bumblebee (supply chain)** | [`GET /api/bumblebee/status`](#get-apibumblebeestatus), [`GET /api/bumblebee/catalog`](#get-apibumblebeecatalog), [`POST /api/bumblebee/catalog`](#post-apibumblebeecatalog), [`POST /api/missions/:missionId/scans`](#post-apimissionsmissionidscans), [`GET /api/missions/:missionId/scans`](#get-apimissionsmissionidscans), [`GET /api/missions/:missionId/scans/:scanId`](#get-apimissionsmissionidscansscanid)                                                                                                                                                                 |
 | **Durable Execution**        | [`POST /api/agent-sessions/prepare`](#post-apiagent-sessionsprepare), [`POST /api/agent-sessions/:sessionId/start`](#post-apiagent-sessionssessionidstart), [`GET /api/execution-queue`](#get-apiexecution-queue), [`POST /api/execution-queue/reconcile`](#post-apiexecution-queuereconcile)                                                                                                                                                                                                                                                                                           |
@@ -298,7 +298,7 @@ Get the status / results of a specific mutation run. Implemented in `packages/ba
 
 ## Repo Explore
 
-Auto-explore + smart-suggestions endpoints, introduced in `2026-06-07-repo-auto-explore`. Live in `packages/backend/src/routes/repo-explore.ts`. All read endpoints are best-effort: if the repo isn't indexed yet, they return a 404 with `error: "not_indexed"`.
+Auto-explore endpoints for prepare/index flows. Live in `packages/backend/src/routes/repo-explore.ts`. Issue isolation and fix prompts use the [Repo Review](#repo-review-v1) endpoints instead of the removed legacy suggestions API.
 
 ### `POST /api/repos/:repoName/explore`
 
@@ -327,10 +327,6 @@ List scan results for the repo.
 ### `GET /api/repos/:repoName/scans/:scanId`
 
 Fetch a specific scan by id.
-
-### `GET /api/repos/:repoName/suggestions`
-
-Smart mission suggestions for the repo — "add tests for `src/foo`", "fix the top 3 lint errors", etc.
 
 ---
 

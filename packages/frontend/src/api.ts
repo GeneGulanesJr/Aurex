@@ -264,50 +264,12 @@ export async function getCodeHotspots(missionId: string): Promise<CodeHotspotsRe
   return res.json() as Promise<CodeHotspotsResponse>;
 }
 
-// Repo explore (auto-explore + suggestions)
+// Repo explore (prepare/index helpers — review uses /review endpoints)
 export interface ExploreRepoResponse {
   repoName: string;
   status: "completed" | "failed";
   summary?: CodeSummaryResponse;
   error?: string;
-}
-
-export type SuggestionTier = "P0" | "P1" | "P2" | "P3" | "P4" | "P5";
-
-export type SuggestionCategory =
-  | "critical_path"
-  | "security"
-  | "dead_code"
-  | "complexity"
-  | "coupling"
-  | "layer_violation"
-  | "test_coverage"
-  | "documentation"
-  | "performance"
-  | "structure"
-  | "naming"
-  | "style";
-
-export interface RepoSuggestion {
-  id: string;
-  tier: SuggestionTier;
-  category: SuggestionCategory;
-  title: string;
-  description: string;
-  affectedFiles: number;
-  detail: string;
-  prefill: string;
-  confidence?: "high" | "medium" | "low";
-  estimatedEffort?: "small" | "medium" | "large";
-  estimatedRisk?: "low" | "medium" | "high";
-  evidence?: Array<{ type: string; message: string; file?: string }>;
-  labels?: string[];
-}
-
-export interface RepoSuggestionsResponse {
-  suggestions: RepoSuggestion[];
-  analysisVersion: string;
-  recommended?: { highestImpact?: string; safestFirst?: string };
 }
 
 export interface RepoReadinessCommand {
@@ -349,12 +311,6 @@ export async function getRepoHotspots(repoName: string): Promise<CodeHotspotsRes
   const res = await apiFetch(`/api/repos/${repoName}/hotspots`);
   if (!res.ok) throw new Error(`Failed to fetch repo hotspots: ${res.status}`);
   return res.json() as Promise<CodeHotspotsResponse>;
-}
-
-export async function getRepoSuggestions(repoName: string): Promise<RepoSuggestionsResponse> {
-  const res = await apiFetch(`/api/repos/${repoName}/suggestions`);
-  if (!res.ok) throw new Error(`Failed to fetch repo suggestions: ${res.status}`);
-  return res.json() as Promise<RepoSuggestionsResponse>;
 }
 
 export async function getRepoReadiness(repoName: string): Promise<RepoReadinessProfile> {
