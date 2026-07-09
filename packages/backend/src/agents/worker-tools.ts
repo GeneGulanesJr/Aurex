@@ -6,6 +6,7 @@ import { Type } from "@sinclair/typebox";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { Handoff, ResearchFinding, StandingContext } from "@aurex/shared";
 import { enforceResearchTransition } from "../enforcement/enforcement-gate.js";
+import { parseCommandsRunJson } from "../enforcement/commands-run.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -157,38 +158,17 @@ You MUST actually run 'git add' and 'git commit' on your task branch, then pass 
         };
       }
 
-      let commandsRun: { command: string; exitCode: number }[];
-      try {
-        const parsed = JSON.parse(params.commandsRun as string);
-        if (!Array.isArray(parsed)) {
-          return {
-            content: [{
-              type: "text" as const,
-              text: "Handoff rejected — commandsRun must be a JSON array of {command, exitCode} objects.",
-            }],
-            details: {},
-          };
-        }
-        commandsRun = parsed;
-      } catch {
+      const commandsRunResult = parseCommandsRunJson(params.commandsRun as string);
+      if (!commandsRunResult.ok) {
         return {
           content: [{
             type: "text" as const,
-            text: "Handoff rejected — commandsRun must be valid JSON array of {command, exitCode} objects.",
+            text: `Handoff rejected — ${commandsRunResult.error}.`,
           }],
           details: {},
         };
       }
-
-      if (commandsRun.length === 0) {
-        return {
-          content: [{
-            type: "text" as const,
-            text: "Handoff rejected — commandsRun must contain at least one command you ran.",
-          }],
-          details: {},
-        };
-      }
+      const commandsRun = commandsRunResult.entries;
 
       const handoff: Handoff = {
         unitId,

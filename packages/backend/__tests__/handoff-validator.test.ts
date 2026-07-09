@@ -308,6 +308,16 @@ describe("validateHandoff", () => {
     expect(result.valid).toBe(true);
   });
 
+  it("rejects handoff with malformed commandsRun entry", () => {
+    const handoff = {
+      ...validHandoff,
+      commandsRun: [{ command: "npm test" }] as unknown as Handoff["commandsRun"],
+    };
+    const result = validateHandoff(handoff);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("exitCode"))).toBe(true);
+  });
+
   it("accepts 'none' as valid unresolvedUncertainties", () => {
     const handoff = { ...validHandoff, unresolvedUncertainties: "none" };
     const result = validateHandoff(handoff);

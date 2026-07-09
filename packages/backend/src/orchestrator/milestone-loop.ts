@@ -176,7 +176,13 @@ export function createMilestoneLoop(
     );
     await worktreeManager.installBranchGuard(featureWorktree.worktreePath, featureWorktree.featureBranch);
 
-    let researchFindings: ResearchFinding[] = await lapis.getFindings(mission.id).catch(() => [] as ResearchFinding[]);
+    let researchFindings: ResearchFinding[] = await loadResearchFindings(
+      mission.id,
+      milestone.id,
+      [],
+      "research_findings_fetch_failed",
+      "Could not load research findings from LaPis",
+    );
     let preResearchAttempted = false;
     const retryBudget = createRetryBudget();
 
@@ -259,7 +265,13 @@ export function createMilestoneLoop(
       // Refresh research findings first: workers may have verified/rejected
       // findings via verify_finding/reject_finding, and the validator (and any
       // rescope iteration) must see the latest statuses.
-      researchFindings = await lapis.getFindings(mission.id).catch(() => researchFindings);
+      researchFindings = await loadResearchFindings(
+        mission.id,
+        milestone.id,
+        researchFindings,
+        "research_findings_fetch_failed",
+        "Could not refresh research findings from LaPis",
+      );
       const validatorOutcome = await runEndOfMilestoneValidation({
         mission, milestone, units, criteria, testCommands, acceptanceBehavior,
         contractId, researchFindings, featureWorktree, ctx,
@@ -671,7 +683,24 @@ export function createMilestoneLoop(
     await reconcileMissionLedger(lapis, { missionId: mission.id, milestoneId: milestone.id, reason: "validation started", actorId: "orchestrator" });
 
     const validatorTypes = selectValidatorTypes(args.acceptanceBehavior);
-    const diffSummary = await collectFeatureDiff(featureWorktree.worktreePath, loopConfig.gitMainBranch).catch(() => "");
+    let diffSummary: string | undefined;
+    try {
+      const diff = await collectFeatureDiff(featureWorktree.worktreePath, loopConfig.gitMainBranch);
+      diffSummary = diff || undefined;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      callbacks.onError(
+        mission.id,
+        "feature_diff_failed",
+        `Could not collect feature diff for validation: ${msg}`,
+        {
+          milestoneId: milestone.id,
+          recoverable: true,
+          details: { worktreePath: featureWorktree.worktreePath, baseBranch: loopConfig.gitMainBranch, error: msg },
+        },
+      );
+      diffSummary = `[Feature diff unavailable: ${msg}]`;
+    }
 
     const validatorUnits: ValidatorUnitContext[] = units.map((u) => ({
       id: u.id, description: u.description,
@@ -833,7 +862,45 @@ export function createMilestoneLoop(
     ctx.activeHandles.delete(preResearchHandle);
     callbacks.onAgentStatus(preResearchId, "research", preResearchResult.status === "completed" ? "completed" : preResearchResult.status, milestone.id);
     preResearchHandle.dispose();
-    return lapis.getFindings(mission.id).catch(() => [] as ResearchFinding[]);
+    if (preResearchResult.status !== "completed") {
+      const msg = preResearchResult.status === "failed"
+        ? "Pre-worker research agent failed"
+        : `Pre-worker research ended with status ${preResearchResult.status}`;
+      callbacks.onError(
+        mission.id,
+        "research_failed",
+        msg,
+        { milestoneId: milestone.id, recoverable: true, details: { status: preResearchResult.status } },
+      );
+    }
+    return loadResearchFindings(
+      mission.id,
+      milestone.id,
+      [],
+      "research_findings_fetch_failed",
+      "Could not load research findings after pre-worker research",
+    );
+  }
+
+  async function loadResearchFindings(
+    missionId: string,
+    milestoneId: string,
+    fallback: ResearchFinding[],
+    errorCode: string,
+    errorContext: string,
+  ): Promise<ResearchFinding[]> {
+    try {
+      return await lapis.getFindings(missionId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      callbacks.onError(
+        missionId,
+        errorCode,
+        `${errorContext}: ${msg}`,
+        { milestoneId, recoverable: true, details: { error: msg } },
+      );
+      return fallback;
+    }
   }
 
   function unitFetchFailure(missionId: string, milestoneId: string, summary: string): MilestoneLoopResult {
@@ -925,20 +992,12 @@ function loadConfigDefensive(): {
  * could either omit work or include unrelated main-side changes.
  */
 async function collectFeatureDiff(worktreePath: string, baseBranch: string): Promise<string> {
-  try {
-    const { stdout } = await execFileAsync(
-      "git",
-      ["-C", worktreePath, "diff", `${baseBranch}...HEAD`, "--"],
-      { maxBuffer: 1024 * 1024 },
-    );
-    return stdout.trim();
-  } catch (err) {
-    console.warn(
-      `[milestone-loop] git diff failed for ${worktreePath} (${baseBranch}...HEAD):`,
-      err instanceof Error ? err.message : err,
-    );
-    return "";
-  }
+  const { stdout } = await execFileAsync(
+    "git",
+    ["-C", worktreePath, "diff", `${baseBranch}...HEAD`, "--"],
+    { maxBuffer: 1024 * 1024 },
+  );
+  return stdout.trim();
 }
 
 // --- Affected-code scaffold helpers (issue #114) ---

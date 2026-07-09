@@ -296,3 +296,94 @@ describe("milestone loop — interrupt hardening (worker spawn failure & validat
     expect(disposedSessions).toEqual(["user_testing"]);
   });
 });
+
+describe("milestone loop — observability for recoverable failures", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockExecAsync.mockResolvedValue({ stdout: "", stderr: "" });
+    mockSession.subscribe.mockImplementation((fn: any) => { setTimeout(() => fn({ type: "agent_end" }), 0); return () => {}; });
+    mockSession.prompt.mockResolvedValue(undefined);
+  });
+
+  it("reports research_spawn_failed when pre-worker research cannot spawn", async () => {
+    const units = [makeUnit("u-1")];
+    const lapis = createMockLapis(units);
+    const callbacks = makeCallbacks();
+
+    mockCreateAgentSession.mockReset();
+    mockCreateAgentSession.mockImplementation(async (opts: any) => {
+      const hasResearchTool = Array.isArray(opts.customTools)
+        && opts.customTools.some((t: any) => t?.name === "write_finding");
+      if (hasResearchTool) {
+        throw new Error("concurrency limit reached");
+      }
+      return { session: mockSession };
+    });
+
+    const loop = createMilestoneLoop(lapis, createMockPinyx(), callbacks, {
+      agentDir: "/test/.pi/agent", repoRoot: "/test/repo", gitMainBranch: "main",
+    });
+
+    await loop.run(makeMission(), [makeMilestone()]);
+
+    expect(callbacks.onError).toHaveBeenCalledWith(
+      "m-1",
+      "research_spawn_failed",
+      expect.stringContaining("could not be spawned"),
+      expect.objectContaining({ milestoneId: "ms-1", recoverable: true }),
+    );
+  });
+
+  it("reports feature_diff_failed when git diff fails during validation", async () => {
+    const completedUnit: WorkingUnit = {
+      id: "u-1", milestoneId: "ms-1", description: "Unit u-1",
+      declaredPaths: ["src/auth/"], declaredModules: ["auth"],
+      status: "completed", taskBranch: "feature/m-1/1", worktreePath: "/wt", sessionId: "sess-1",
+    };
+    const lapis = createMockLapis([completedUnit]);
+    (lapis.getFindings as any).mockResolvedValue([
+      { id: "f-1", missionId: "m-1", domain: ["auth"], title: "ctx", content: "skip research", relevance: "low", status: "active", createdAt: "" },
+    ]);
+    const callbacks = makeCallbacks();
+
+    mockExecAsync.mockImplementation(async (_cmd: string, args?: string[]) => {
+      if (args?.includes("diff")) {
+        throw new Error("fatal: bad revision");
+      }
+      return { stdout: "", stderr: "" };
+    });
+
+    const loop = createMilestoneLoop(lapis, createMockPinyx(), callbacks, {
+      agentDir: "/test/.pi/agent", repoRoot: "/test/repo", gitMainBranch: "main",
+    });
+
+    await loop.run(makeMission(), [makeMilestone()]);
+
+    expect(callbacks.onError).toHaveBeenCalledWith(
+      "m-1",
+      "feature_diff_failed",
+      expect.stringContaining("Could not collect feature diff"),
+      expect.objectContaining({ milestoneId: "ms-1", recoverable: true }),
+    );
+  });
+
+  it("reports research_findings_fetch_failed when LaPis findings cannot load", async () => {
+    const units = [makeUnit("u-1")];
+    const lapis = createMockLapis(units);
+    (lapis.getFindings as any).mockRejectedValue(new Error("db unavailable"));
+    const callbacks = makeCallbacks();
+
+    const loop = createMilestoneLoop(lapis, createMockPinyx(), callbacks, {
+      agentDir: "/test/.pi/agent", repoRoot: "/test/repo", gitMainBranch: "main",
+    });
+
+    await loop.run(makeMission(), [makeMilestone()]);
+
+    expect(callbacks.onError).toHaveBeenCalledWith(
+      "m-1",
+      "research_findings_fetch_failed",
+      expect.stringContaining("Could not load research findings"),
+      expect.objectContaining({ milestoneId: "ms-1", recoverable: true }),
+    );
+  });
+});
