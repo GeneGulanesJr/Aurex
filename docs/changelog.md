@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-07-09
+
+- **Orchestrator:** Mission runner resumes existing milestones instead of re-planning on restart/recovery; checkpoint waits honor abort signals; rescope only runs on failure/recovery triggers (not `milestone_complete`); validator fail verdicts downgrade previously passed todos; contract history loads latest version; empty rescope plans rejected; research spawn failures handled gracefully.
+- **Agents:** `write_handoff` rejects malformed/empty `commandsRun`; agent error events no longer fall through to tool processing.
+- **Pool:** Queued mission abort emits `mission_completed`; `drain()` resolves pending waiters.
+- **Frontend:** Supply-chain scan failures clear scanning state; agent log rehydration keys by worker unit id; prepared repo `cloneUrl` persisted across refresh; WebSocket shows connection-failed state after max retries; mission list load errors surfaced; restart/abort API failures reported; mutation poll errors mark run failed; `getHealth` checks HTTP status.
+
 ## 2026-06-15
 
 - **Docs:** README Quick Start documents `LAPIS_PULL` / `PINYX_PULL` rebuild commands for fresh LaPis/PiNyx Docker images.

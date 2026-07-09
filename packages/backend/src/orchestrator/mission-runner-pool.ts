@@ -141,6 +141,7 @@ export function createMissionRunnerPool(poolConfig: MissionRunnerPoolConfig): Mi
       if (idx !== -1) {
         pending.splice(idx, 1);
         drainWaiters(missionId);
+        eventBus.emit({ type: "mission_completed", missionId, finalState: "aborted" });
       }
     },
 
@@ -185,7 +186,11 @@ export function createMissionRunnerPool(poolConfig: MissionRunnerPoolConfig): Mi
     },
 
     async drain() {
+      const droppedPending = [...pending];
       pending.length = 0;
+      for (const missionId of droppedPending) {
+        drainWaiters(missionId);
+      }
       for (const [, entry] of running) {
         entry.runner.abort();
       }

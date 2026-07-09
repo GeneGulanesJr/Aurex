@@ -159,9 +159,35 @@ You MUST actually run 'git add' and 'git commit' on your task branch, then pass 
 
       let commandsRun: { command: string; exitCode: number }[];
       try {
-        commandsRun = JSON.parse(params.commandsRun as string);
+        const parsed = JSON.parse(params.commandsRun as string);
+        if (!Array.isArray(parsed)) {
+          return {
+            content: [{
+              type: "text" as const,
+              text: "Handoff rejected — commandsRun must be a JSON array of {command, exitCode} objects.",
+            }],
+            details: {},
+          };
+        }
+        commandsRun = parsed;
       } catch {
-        commandsRun = [];
+        return {
+          content: [{
+            type: "text" as const,
+            text: "Handoff rejected — commandsRun must be valid JSON array of {command, exitCode} objects.",
+          }],
+          details: {},
+        };
+      }
+
+      if (commandsRun.length === 0) {
+        return {
+          content: [{
+            type: "text" as const,
+            text: "Handoff rejected — commandsRun must contain at least one command you ran.",
+          }],
+          details: {},
+        };
       }
 
       const handoff: Handoff = {

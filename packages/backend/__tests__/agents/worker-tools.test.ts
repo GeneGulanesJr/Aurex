@@ -80,7 +80,7 @@ describe("worker tools", () => {
       assumptions: "A",
       unresolvedUncertainties: "U",
       errorsEncountered: "E",
-      commandsRun: "[]",
+      commandsRun: JSON.stringify([{ command: "npm test", exitCode: 0 }]),
       gitCommitHash: "deadbeef",
     });
 
@@ -103,7 +103,7 @@ describe("worker tools", () => {
       assumptions: "A",
       unresolvedUncertainties: "U",
       errorsEncountered: "E",
-      commandsRun: "[]",
+      commandsRun: JSON.stringify([{ command: "npm test", exitCode: 0 }]),
       gitCommitHash: "deadbeef",
     });
 
@@ -128,7 +128,7 @@ describe("worker tools", () => {
       assumptions: "A",
       unresolvedUncertainties: "U",
       errorsEncountered: "E",
-      commandsRun: "[]",
+      commandsRun: JSON.stringify([{ command: "npm test", exitCode: 0 }]),
       gitCommitHash: "deadbeef",
     });
 
@@ -155,7 +155,7 @@ describe("worker tools", () => {
       assumptions: "A",
       unresolvedUncertainties: "U",
       errorsEncountered: "E",
-      commandsRun: "[]",
+      commandsRun: JSON.stringify([{ command: "npm test", exitCode: 0 }]),
       gitCommitHash: "deadbeef",
     });
 
@@ -198,7 +198,7 @@ describe("worker tools", () => {
       assumptions: "A",
       unresolvedUncertainties: "U",
       errorsEncountered: "E",
-      commandsRun: "[]",
+      commandsRun: JSON.stringify([{ command: "npm test", exitCode: 0 }]),
       gitCommitHash: "abc123",
     };
 

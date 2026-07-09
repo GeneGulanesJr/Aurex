@@ -79,7 +79,7 @@ export async function runCheckpointLoop(
       context: { summary: cp.summary } as EscalationContext,
     });
 
-    const resolved = await checkpointManager.waitForResolution(checkpointId);
+    const resolved = await checkpointManager.waitForResolution(checkpointId, signal);
 
     if (resolved.decision === "reject") {
       await lapis.updateMissionStatus(missionId, "aborted");
@@ -88,8 +88,16 @@ export async function runCheckpointLoop(
     }
 
     // User-initiated re-plan: triggered when the user approves AND provides
-    // rescopeGuidance in the request body.
-    if (resolved.rescopeGuidance) {
+    // rescopeGuidance in the request body. Only allowed for failure/recovery
+    // checkpoints — not milestone_complete (which would supersede validated work).
+    const rescopeTriggers = new Set<CheckpointTrigger>([
+      "validation_failed",
+      "rescope_limit",
+      "unclassifiable_error",
+      "cost_cap_exceeded",
+      "quota_exhausted",
+    ]);
+    if (resolved.rescopeGuidance && rescopeTriggers.has(cp.trigger)) {
       const rescopeTarget = currentMilestones.find((ms) => ms.id === cp.milestoneId);
       if (rescopeTarget) {
         eventBus.emit({ type: "mission_log", missionId, phase: "rescope", message: `Re-planning milestone "${rescopeTarget.title}" after user rescope` });

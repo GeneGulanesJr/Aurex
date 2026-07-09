@@ -14,6 +14,8 @@ interface PreparedRepoInfo {
   repoName: string;
   fullName: string;
   summary: CodeSummaryResponse | null;
+  cloneUrl?: string;
+  repoId?: number;
 }
 
 interface MissionCreationViewProps {
@@ -78,7 +80,7 @@ export function MissionCreationView({
   useEffect(() => {
     if (preparedRepo) return; // parent still has it — nothing to restore
     if (!onRepoPrepared) return;
-    const persisted = getSessionState<{ repoName: string; fullName: string }>("prepared_repo");
+    const persisted = getSessionState<{ repoName: string; fullName: string; cloneUrl?: string; repoId?: number }>("prepared_repo");
     if (!persisted) return;
     let cancelled = false;
     (async () => {
@@ -89,7 +91,10 @@ export function MissionCreationView({
         summary = null; // repo may have been evicted; parent will show a loading-then-empty state
       }
       if (!cancelled) {
-        onRepoPrepared({ repoName: persisted.repoName, fullName: persisted.fullName, summary });
+        if (persisted.cloneUrl && persisted.repoId != null) {
+          form.setRepo(persisted.cloneUrl, persisted.repoId, persisted.fullName);
+        }
+        onRepoPrepared({ repoName: persisted.repoName, fullName: persisted.fullName, summary, cloneUrl: persisted.cloneUrl, repoId: persisted.repoId });
       }
     })();
     return () => { cancelled = true; };
@@ -130,11 +135,13 @@ export function MissionCreationView({
     if (cached) {
       setPendingRepo(null);
       form.setRepo(repo.clone_url, repo.id, repo.full_name);
-      onRepoPrepared?.({
-        repoName: cached.repoName,
-        fullName: repo.full_name,
-        summary: cached.summary,
-      });
+    onRepoPrepared?.({
+      repoName: cached.repoName,
+      fullName: repo.full_name,
+      summary: cached.summary,
+      cloneUrl: repo.clone_url,
+      repoId: repo.id,
+    });
       return;
     }
     setExploreSummary(null);
@@ -188,6 +195,8 @@ export function MissionCreationView({
       repoName: preparedRepoName,
       fullName: pendingRepo.full_name,
       summary: exploreSummary,
+      cloneUrl: pendingRepo.clone_url,
+      repoId: pendingRepo.id,
     });
     setPendingRepo(null);
   }

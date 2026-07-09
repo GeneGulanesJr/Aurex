@@ -151,6 +151,78 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
     });
   }
 
+  function throwIfAborted(): void {
+    if (abortController?.signal.aborted) {
+      throw new Error("Mission aborted");
+    }
+  }
+
+  function createLoopForMission(
+    pinyx: PinyxClient,
+    missionId: string,
+    missionRepoRoot: string,
+    mission: Awaited<ReturnType<LaPisClient["getMission"]>>,
+  ) {
+    return createMilestoneLoop(
+      lapis,
+      pinyx,
+      {
+        onEscalation: (mId, trigger, context) => {
+          const summary = "summary" in context && typeof context.summary === "string"
+            ? context.summary
+            : `Escalation: ${trigger.kind}`;
+          eventBus.emit({ type: "mission_log", missionId: mId, phase: "escalation", message: summary, data: { trigger, context } });
+        },
+        onAgentStatus: (agentId, agentType, agentStatus, milestoneId, workerSnapshot) => {
+          eventBus.emit({ type: "agent_status", agentId, agentType: agentType as AgentType, status: agentStatus as AgentStatus, milestoneId, workerSnapshot });
+        },
+        onMilestoneProgress: (milestoneId, milestoneStatus, completedUnits, totalUnits) => {
+          eventBus.emit({ type: "milestone_progress", milestoneId, status: milestoneStatus as MilestoneStatus, completedUnits, totalUnits });
+        },
+        onCostUpdate: (mId, totalCost, totalTokens, delta) => {
+          eventBus.emit({ type: "cost_update", missionId: mId, totalCost, totalTokens, delta });
+          if (mission.configJson.costCap > 0 && totalCost >= mission.configJson.costCap * 0.8) {
+            compression.run(mId, "budget_threshold" as any).catch(() => {});
+          }
+        },
+        onError: (mId, code, message, opts) => {
+          eventBus.emit({ type: "mission_error", missionId: mId, code, message, workerId: opts?.workerId, milestoneId: opts?.milestoneId, recoverable: opts?.recoverable ?? false, details: opts?.details });
+        },
+      },
+      { agentDir, repoRoot: missionRepoRoot, aurexRoot, gitMainBranch, eventBus, logger: config.logger, onCompression: (mId, trigger) => compression.run(mId, trigger), onPostMilestoneScan: config.onPostMilestoneScan, researchTimeout: config.researchTimeout, validatorTimeout: config.validatorTimeout },
+    );
+  }
+
+  async function buildMilestonesFromPlan(
+    missionId: string,
+    planMilestones: Array<{ id: string; title: string; description: string }>,
+    existingMilestones?: Milestone[],
+  ): Promise<Milestone[]> {
+    const contractLookup = new Map<string, string>();
+    for (const ms of planMilestones) {
+      const contracts = await lapis.getContractHistory(ms.id).catch(() => [] as any[]);
+      const latest = contracts.reduce(
+        (a: any, b: any) => ((b as any).version > (a as any).version ? b : a),
+        contracts[0],
+      );
+      if (latest) contractLookup.set(ms.id, (latest as any).id);
+    }
+    const milestones = planMilestones.map((ms, i) => {
+      const existing = existingMilestones?.find((m) => m.id === ms.id);
+      return {
+        id: ms.id,
+        missionId,
+        title: ms.title,
+        description: ms.description,
+        orderIndex: existing?.orderIndex ?? i,
+        status: existing?.status ?? ("planned" as const),
+        validationContractId: contractLookup.get(ms.id) ?? existing?.validationContractId ?? "",
+      };
+    });
+    eventBus.emit({ type: "milestones_set", missionId, milestones });
+    return milestones;
+  }
+
   async function runMission(missionId: string): Promise<void> {
     reentryCount++;
     if (reentryCount > MAX_REENTRY) {
@@ -270,10 +342,31 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
    * quota is hit during planning; the caller recovers and retries.
    */
   async function planAndBuild(missionId: string): Promise<{ loop: ReturnType<typeof createMilestoneLoop>; milestones: Milestone[] }> {
+    throwIfAborted();
     const pinyx = await resolvePinyx();
+    throwIfAborted();
     const mission = await lapis.getMission(missionId);
     eventBus.emit({ type: "mission_log", missionId, phase: "setup", message: `Resolving repo for mission: ${mission.description.slice(0, 80)}…` });
     const { repoPath: missionRepoRoot } = await prepareRepoForMission({ lapis, parentRepoRoot: repoRoot, cloneUrl: mission.configJson.cloneUrl });
+    throwIfAborted();
+
+    const existingMilestones = await lapis.getMilestonesForMission(missionId).catch(() => [] as Milestone[]);
+    if (existingMilestones.length > 0) {
+      eventBus.emit({
+        type: "mission_log",
+        missionId,
+        phase: "planning",
+        message: `Resuming mission with ${existingMilestones.length} existing milestone(s) — skipping re-plan.`,
+      });
+      const loop = createLoopForMission(pinyx, missionId, missionRepoRoot, mission);
+      const milestones = await buildMilestonesFromPlan(
+        missionId,
+        existingMilestones.map((ms) => ({ id: ms.id, title: ms.title, description: ms.description })),
+        existingMilestones,
+      );
+      return { loop, milestones };
+    }
+
     eventBus.emit({ type: "mission_log", missionId, phase: "planning", message: `Calling ${mission.configJson.modelHints.orchestrator} to plan milestones…` });
     let model = mission.configJson.modelHints.orchestrator || "kilo/kilo-auto/free";
     try {
@@ -335,6 +428,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
     const planner = createPlanner(lapis, pinyx, { model, eventBus, missionId, codeSummary, codeGraph, codeHotspots, maxMilestones: mission.configJson.maxMilestones, maxUnitsPerMilestone: mission.configJson.maxUnitsPerMilestone });
 
     const refinedDescription = await optimizeMissionPrompt(pinyx, mission.description, { model, eventBus, missionId });
+    throwIfAborted();
     if (refinedDescription !== mission.description) {
       eventBus.emit({ type: "mission_log", missionId, phase: "planning", message: `Mission prompt optimized (${mission.description.length} → ${refinedDescription.length} chars).` });
     }
@@ -348,55 +442,8 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
     });
     if (!planResult) throw PLANNER_FAILED;
 
-    const loop = createMilestoneLoop(
-      lapis,
-      pinyx,
-      {
-        onEscalation: (mId, trigger, context) => {
-          const summary = "summary" in context && typeof context.summary === "string"
-            ? context.summary
-            : `Escalation: ${trigger.kind}`;
-          eventBus.emit({ type: "mission_log", missionId: mId, phase: "escalation", message: summary, data: { trigger, context } });
-        },
-        onAgentStatus: (agentId, agentType, agentStatus, milestoneId, workerSnapshot) => {
-          eventBus.emit({ type: "agent_status", agentId, agentType: agentType as AgentType, status: agentStatus as AgentStatus, milestoneId, workerSnapshot });
-        },
-        onMilestoneProgress: (milestoneId, milestoneStatus, completedUnits, totalUnits) => {
-          eventBus.emit({ type: "milestone_progress", milestoneId, status: milestoneStatus as MilestoneStatus, completedUnits, totalUnits });
-        },
-        onCostUpdate: (mId, totalCost, totalTokens, delta) => {
-          eventBus.emit({ type: "cost_update", missionId: mId, totalCost, totalTokens, delta });
-          if (mission.configJson.costCap > 0 && totalCost >= mission.configJson.costCap * 0.8) {
-            compression.run(mId, "budget_threshold" as any).catch(() => {});
-          }
-        },
-        onError: (mId, code, message, opts) => {
-          eventBus.emit({ type: "mission_error", missionId: mId, code, message, workerId: opts?.workerId, milestoneId: opts?.milestoneId, recoverable: opts?.recoverable ?? false, details: opts?.details });
-        },
-      },
-      { agentDir, repoRoot: missionRepoRoot, aurexRoot, gitMainBranch, eventBus, logger: config.logger, onCompression: (mId, trigger) => compression.run(mId, trigger), onPostMilestoneScan: config.onPostMilestoneScan, researchTimeout: config.researchTimeout, validatorTimeout: config.validatorTimeout },
-    );
-
-    const contractLookup = new Map<string, string>();
-    for (const ms of planResult.milestones) {
-      const contracts = await lapis.getContractHistory(ms.id).catch(() => [] as any[]);
-      const latest = contracts.reduce(
-        (a: any, b: any) => ((b as any).version > (a as any).version ? b : a),
-        contracts[0],
-      );
-      if (latest) contractLookup.set(ms.id, (latest as any).id);
-    }
-    const milestones = planResult.milestones.map((ms, i) => ({
-      id: ms.id,
-      missionId,
-      title: ms.title,
-      description: ms.description,
-      orderIndex: i,
-      status: "planned" as const,
-      validationContractId: contractLookup.get(ms.id) ?? "",
-    }));
-    eventBus.emit({ type: "milestones_set", missionId, milestones });
-
+    const loop = createLoopForMission(pinyx, missionId, missionRepoRoot, mission);
+    const milestones = await buildMilestonesFromPlan(missionId, planResult.milestones);
     return { loop, milestones };
   }
 
@@ -437,7 +484,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
       context: { summary: `Quota exhausted for provider ${error.providerId}. Window resets at ${error.windowResetsAt}` } as EscalationContext,
     });
 
-    const resolved = await checkpointManager.waitForResolution(cpId);
+    const resolved = await checkpointManager.waitForResolution(cpId, abortController?.signal);
 
     if (resolved.decision === "reject") {
       return false;

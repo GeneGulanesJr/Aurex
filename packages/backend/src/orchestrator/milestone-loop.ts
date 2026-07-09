@@ -205,7 +205,11 @@ export function createMilestoneLoop(
         researchFindings = await runPreWorkerResearch(mission, milestone, units, featureWorktree.worktreePath, ctx);
       }
 
-      const contract = (await lapis.getContractHistory(milestone.id).catch(() => [] as any[]))[0] as any;
+      const contractHistory = await lapis.getContractHistory(milestone.id).catch(() => [] as any[]);
+      const contract = contractHistory.reduce(
+        (latest: any, entry: any) => (!latest || (entry?.version ?? 0) > (latest?.version ?? 0) ? entry : latest),
+        undefined as any,
+      ) as any;
       const contractContent = contract?.content ?? {};
       const criteria = contractContent.criteria ?? [];
       const testCommands: string[] = contractContent.testCommands ?? [];
@@ -798,18 +802,31 @@ export function createMilestoneLoop(
     });
 
     callbacks.onAgentStatus(preResearchId, "research", "spawned", milestone.id);
-    const preResearchHandle = await spawner.spawn({
-      agentType: "research",
-      agentId: preResearchId,
-      missionId: mission.id,
-      milestoneId: milestone.id,
-      cwd: repoRoot,
-      skillFilePath: `${loopConfig.aurexRoot}/packages/backend/src/skills/research.md`,
-      contextContent: preResearchContext,
-      taskPrompt: `Research domain knowledge for milestone "${milestone.title}" BEFORE workers begin. Investigate the codebase areas relevant to the declared paths and modules. Submit findings using write_finding.`,
-      timeout: loopConfig.researchTimeout ?? config.workerTimeouts.testHeavy,
-      model: config.modelHints.research,
-    });
+    let preResearchHandle;
+    try {
+      preResearchHandle = await spawner.spawn({
+        agentType: "research",
+        agentId: preResearchId,
+        missionId: mission.id,
+        milestoneId: milestone.id,
+        cwd: repoRoot,
+        skillFilePath: `${loopConfig.aurexRoot}/packages/backend/src/skills/research.md`,
+        contextContent: preResearchContext,
+        taskPrompt: `Research domain knowledge for milestone "${milestone.title}" BEFORE workers begin. Investigate the codebase areas relevant to the declared paths and modules. Submit findings using write_finding.`,
+        timeout: loopConfig.researchTimeout ?? config.workerTimeouts.testHeavy,
+        model: config.modelHints.research,
+      });
+    } catch (spawnErr) {
+      const msg = spawnErr instanceof Error ? spawnErr.message : String(spawnErr);
+      callbacks.onAgentStatus(preResearchId, "research", "failed", milestone.id);
+      callbacks.onError(
+        mission.id,
+        "research_spawn_failed",
+        `Pre-worker research could not be spawned: ${msg}`,
+        { milestoneId: milestone.id, recoverable: true, details: { error: msg } },
+      );
+      return [];
+    }
     ctx.activeHandles.add(preResearchHandle);
     callbacks.onAgentStatus(preResearchId, "research", "researching", milestone.id);
     const preResearchResult = await preResearchHandle.completed;
@@ -915,7 +932,11 @@ async function collectFeatureDiff(worktreePath: string, baseBranch: string): Pro
       { maxBuffer: 1024 * 1024 },
     );
     return stdout.trim();
-  } catch {
+  } catch (err) {
+    console.warn(
+      `[milestone-loop] git diff failed for ${worktreePath} (${baseBranch}...HEAD):`,
+      err instanceof Error ? err.message : err,
+    );
     return "";
   }
 }

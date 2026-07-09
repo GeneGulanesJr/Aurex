@@ -136,9 +136,7 @@ function createMockLapis(): LaPisClient {
     updateMilestoneStatus: vi.fn().mockResolvedValue(undefined),
     updateWorkingUnitStatus: vi.fn().mockResolvedValue(undefined),
     getWorkingUnitsForMilestone: vi.fn().mockResolvedValue([]),
-    getMilestonesForMission: vi.fn().mockResolvedValue([
-      { id: "ms-1", missionId: "m-1", title: "M1", description: "First", orderIndex: 0, status: "planned", validationContractId: "" },
-    ]),
+    getMilestonesForMission: vi.fn().mockResolvedValue([]),
     getContractHistory: vi.fn().mockResolvedValue([]),
     getHandoffsForMilestone: vi.fn().mockResolvedValue([makeHandoff("u-1"), makeHandoff("u-done")]),
     // v1 milestone loop looks up handoffs per-unit (lapis.getHandoffForUnit)
@@ -355,7 +353,7 @@ describe("MissionRunner", () => {
     expect(lapis.updateMilestoneStatus).toHaveBeenCalledWith(expect.any(String), "completed");
   });
 
-  it("rescope checkpoint decision re-plans the milestone instead of failing the mission", async () => {
+  it("does not re-plan on milestone_complete approval when rescopeGuidance is present", async () => {
     const lapis = createMockLapis();
     const mockPinyx = createPinyxClient({ endpoint: "http://pinyx:7331" });
 
@@ -368,19 +366,16 @@ describe("MissionRunner", () => {
       return { content, finishReason: "stop", usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 } };
     });
 
-    // 2) Rescope re-plan: pinyx.chat must return the rescope JSON shape `{ units: [...] }`
+    // 2) Rescope re-plan would use this if triggered — it must NOT be called
+    // for milestone_complete checkpoints even when rescopeGuidance is present.
     (mockPinyx.chat as any).mockResolvedValue({
       content: JSON.stringify({ units: [{ description: "Re-planned unit", declaredPaths: ["src/x.ts"], declaredModules: ["x"] }] }),
       finishReason: "stop",
       usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
     });
 
-    // 3) Mock completed working units so completedUnitSummaries is passed to rescope
-    (lapis.getWorkingUnitsForMilestone as any).mockResolvedValue([
-      { id: "u-done", description: "Already done unit", declaredPaths: ["src/done.ts"], declaredModules: ["done"], status: "completed", milestoneId: "ms-1", taskBranch: "", worktreePath: "", sessionId: "" },
-    ]);
-
-    // 4) Checkpoint poll: first call returns "approve" + rescopeGuidance, second returns plain "approve"
+    // 3) Checkpoint poll: first call returns "approve" + rescopeGuidance on
+    // milestone_complete, second returns plain "approve".
     (lapis.getCheckpoint as any)
       .mockResolvedValueOnce({ id: "cp-1", status: "resolved", decision: "approve", rescopeGuidance: "try a different approach" })
       .mockResolvedValue({ id: "cp-2", status: "resolved", decision: "approve" });
@@ -397,28 +392,15 @@ describe("MissionRunner", () => {
     runner.start("m-1");
     await done;
 
-    // The mission must NOT be marked failed. It should reach "completed" because
-    // the rescope branch should re-plan, fall through to loop again, and the
-    // second milestone_complete checkpoint is approved.
     expect(runner.getStatus().state).toBe("completed");
     expect(lapis.updateMissionStatus).toHaveBeenCalledWith("m-1", "completed");
     expect(lapis.updateMissionStatus).not.toHaveBeenCalledWith("m-1", "failed");
 
-    // Re-planning must have happened: a new working unit was created for the
-    // rescope re-plan output.
-    expect(lapis.createWorkingUnit).toHaveBeenCalledWith(
+    // Rescope must NOT run for milestone_complete — no new units from rescope plan.
+    expect(lapis.createWorkingUnit).not.toHaveBeenCalledWith(
       "ms-1",
       expect.objectContaining({ description: "Re-planned unit" }),
     );
-
-    // The rescope prompt must include the completed unit summary so it is not re-planned
-    const rescopeCall = (mockPinyx.chat as any).mock.calls.find((call: any) => {
-      const userMsg = call[0]?.messages?.find((m: any) => m.role === "user");
-      return userMsg?.content?.includes("Already Completed Units");
-    });
-    expect(rescopeCall).toBeDefined();
-    const userMessage = rescopeCall[0].messages.find((m: any) => m.role === "user").content;
-    expect(userMessage).toContain("Already done unit");
   });
 
   it("approval of cost_cap_exceeded checkpoint lets the mission continue", async () => {

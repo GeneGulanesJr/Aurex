@@ -247,6 +247,9 @@ export function useMission(missionId: string | null) {
       .then((response) => {
         if (cancelled) return;
         for (const entry of response.logs) {
+          const agentId = entry.unitId
+            ? `worker-${entry.unitId}`
+            : entry.sessionId;
           if (entry.event === "tool_call" || entry.event === "spawned" || entry.event === "completed" || entry.event === "failed" || entry.event === "timed_out" || entry.event === "prompt_sent") {
             dispatch({
               type: "MISSION_LOG",
@@ -257,7 +260,7 @@ export function useMission(missionId: string | null) {
           }
           dispatch({
             type: "AGENT_OUTPUT",
-            agentId: entry.sessionId,
+            agentId,
             eventType: entry.event as AgentOutputEventType,
             message: entry.message,
             timestamp: entry.timestamp,
