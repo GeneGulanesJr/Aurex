@@ -55,6 +55,9 @@ export function createCheckpointManager(
             // vs catch(() => undefined) — Stryker's perTest doesn't
             // attribute the null-retry test to this line.
             const checkpoint = await lapis.getCheckpoint(checkpointId).catch(() => null);
+            if (stopped || signal?.aborted) {
+              return;
+            }
             // Stryker disable next-line ConditionalExpression,BlockStatement:
             // the retry-on-null path is tested but Stryker's perTest
             // coverage tracking doesn't attribute the test.

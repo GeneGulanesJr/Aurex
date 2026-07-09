@@ -403,6 +403,32 @@ describe("MissionRunner", () => {
     );
   });
 
+  it("restart resets milestone execution without re-planning", async () => {
+    const lapis = createMockLapis();
+    (lapis.getMilestonesForMission as any).mockResolvedValue([
+      { id: "ms-1", missionId: "m-1", title: "M1", description: "First", orderIndex: 0, status: "completed", validationContractId: "" },
+    ]);
+    (lapis.getWorkingUnitsForMilestone as any).mockResolvedValue([
+      { id: "u-1", milestoneId: "ms-1", description: "Unit", declaredPaths: ["src/a.ts"], declaredModules: ["a"], status: "completed", taskBranch: "", worktreePath: "", sessionId: "" },
+    ]);
+
+    const runner = createMissionRunner({
+      lapis,
+      eventBus: mockEventBus as any,
+      agentDir: "/test/.pi/agent",
+      repoRoot: "/test/repo",
+      gitMainBranch: "main",
+    });
+
+    const done = runner.waitForCompletion();
+    runner.start("m-1", { restart: true });
+    await done;
+
+    expect(lapis.createMilestone).not.toHaveBeenCalled();
+    expect(lapis.updateMilestoneStatus).toHaveBeenCalledWith("ms-1", "planned");
+    expect(lapis.updateWorkingUnitStatus).toHaveBeenCalledWith("u-1", "planned");
+  });
+
   it("approval of cost_cap_exceeded checkpoint lets the mission continue", async () => {
     const lapis = createMockLapis();
     const mockPinyx = createPinyxClient({ endpoint: "http://pinyx:7331" });

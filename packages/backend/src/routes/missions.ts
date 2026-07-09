@@ -265,7 +265,7 @@ export async function missionRoutes(
     }
 
     await lapis.updateMissionStatus(id, "planning");
-    pool.submit(id);
+    pool.submit(id, { restart: true });
 
     // Notify frontend that mission status changed
     eventBus?.emit({

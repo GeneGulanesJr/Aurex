@@ -440,6 +440,7 @@ export function App() {
             systemReady={systemReady}
             totalCost={state.cost?.totalCost}
             collapsed={sidebarCollapsed}
+            loadError={missionsState.loadError}
           />
         )}
         <main className="app-main">
@@ -508,6 +509,7 @@ export function App() {
               systemReady={systemReady}
               totalCost={state.cost?.totalCost}
               collapsed={false}
+              loadError={missionsState.loadError}
             />
           </div>
         </>

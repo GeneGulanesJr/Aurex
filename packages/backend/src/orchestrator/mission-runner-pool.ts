@@ -10,7 +10,7 @@ export interface PoolMissionStatus {
 }
 
 export interface MissionRunnerPool {
-  submit(missionId: string): void;
+  submit(missionId: string, options?: { restart?: boolean }): void;
   abort(missionId: string): void;
   getStatus(missionId: string): PoolMissionStatus | null;
   getActiveMissions(): PoolMissionStatus[];
@@ -41,7 +41,7 @@ export function createMissionRunnerPool(poolConfig: MissionRunnerPoolConfig): Mi
   const { maxConcurrent, eventBus: _eventBus, queue: executionQueue, ...baseConfig } = poolConfig;
   const eventBus = _eventBus;
   const running = new Map<string, RunningEntry>();
-  const pending: string[] = [];
+  const pending: Array<{ missionId: string; options?: { restart?: boolean } }> = [];
   const completionWaiters = new Map<string, Array<() => void>>();
 
   function drainWaiters(missionId: string) {
@@ -67,12 +67,12 @@ export function createMissionRunnerPool(poolConfig: MissionRunnerPoolConfig): Mi
 
   function startNext() {
     while (running.size < maxConcurrent && pending.length > 0) {
-      const missionId = pending.shift()!;
-      void startRunner(missionId);
+      const next = pending.shift()!;
+      void startRunner(next.missionId, next.options);
     }
   }
 
-  async function startRunner(missionId: string) {
+  async function startRunner(missionId: string, options?: { restart?: boolean }) {
     let runnerConfig: MissionRunnerConfig = { ...baseConfig, eventBus };
 
     // When a durable queue is configured, enqueue + claim a mission lifecycle
@@ -106,7 +106,7 @@ export function createMissionRunnerPool(poolConfig: MissionRunnerPoolConfig): Mi
     running.set(missionId, { runner, state: "planning", completionPromise });
 
     eventBus.emit({ type: "mission_started", missionId });
-    runner.start(missionId);
+    runner.start(missionId, options);
 
     void completionPromise.then(() => {
       const entry = running.get(missionId);
@@ -118,15 +118,15 @@ export function createMissionRunnerPool(poolConfig: MissionRunnerPoolConfig): Mi
   }
 
   return {
-    submit(missionId) {
-      if (running.has(missionId) || pending.includes(missionId)) {
+    submit(missionId, options) {
+      if (running.has(missionId) || pending.some((entry) => entry.missionId === missionId)) {
         return;
       }
 
       if (running.size < maxConcurrent) {
-        void startRunner(missionId);
+        void startRunner(missionId, options);
       } else {
-        pending.push(missionId);
+        pending.push({ missionId, options });
         eventBus.emit({ type: "mission_queued", missionId, queuePosition: pending.length });
       }
     },
@@ -137,7 +137,7 @@ export function createMissionRunnerPool(poolConfig: MissionRunnerPoolConfig): Mi
         entry.runner.abort();
         return;
       }
-      const idx = pending.indexOf(missionId);
+      const idx = pending.findIndex((entry) => entry.missionId === missionId);
       if (idx !== -1) {
         pending.splice(idx, 1);
         drainWaiters(missionId);
@@ -151,7 +151,7 @@ export function createMissionRunnerPool(poolConfig: MissionRunnerPoolConfig): Mi
         const runnerState = entry.runner.getStatus().state;
         return { missionId, state: runnerState as PoolMissionStatus["state"] };
       }
-      const queueIdx = pending.indexOf(missionId);
+      const queueIdx = pending.findIndex((entry) => entry.missionId === missionId);
       if (queueIdx !== -1) {
         return { missionId, state: "queued", queuePosition: queueIdx + 1 };
       }
@@ -165,7 +165,7 @@ export function createMissionRunnerPool(poolConfig: MissionRunnerPoolConfig): Mi
         results.push({ missionId, state: runnerState as PoolMissionStatus["state"] });
       }
       for (let i = 0; i < pending.length; i++) {
-        results.push({ missionId: pending[i], state: "queued", queuePosition: i + 1 });
+        results.push({ missionId: pending[i].missionId, state: "queued", queuePosition: i + 1 });
       }
       return results;
     },
@@ -175,7 +175,7 @@ export function createMissionRunnerPool(poolConfig: MissionRunnerPoolConfig): Mi
       if (entry) {
         return entry.completionPromise;
       }
-      if (!pending.includes(missionId)) {
+      if (!pending.some((entry) => entry.missionId === missionId)) {
         return Promise.resolve();
       }
       return new Promise<void>((resolve) => {
@@ -186,7 +186,7 @@ export function createMissionRunnerPool(poolConfig: MissionRunnerPoolConfig): Mi
     },
 
     async drain() {
-      const droppedPending = [...pending];
+      const droppedPending = pending.map((entry) => entry.missionId);
       pending.length = 0;
       for (const missionId of droppedPending) {
         drainWaiters(missionId);

@@ -23,11 +23,16 @@ export interface RunnerStatus {
 }
 
 export interface MissionRunner {
-  start(missionId: string): void;
+  start(missionId: string, options?: MissionStartOptions): void;
   abort(): void;
   getStatus(): RunnerStatus;
   getActiveMissionId(): string | null;
   waitForCompletion(): Promise<void>;
+}
+
+export interface MissionStartOptions {
+  /** User-initiated restart from a terminal mission — reuse plan but reset execution state. */
+  restart?: boolean;
 }
 
 /** A claimed execution-queue job whose lifetime this runner mirrors. */
@@ -79,6 +84,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
   let abortController: AbortController | null = null;
   let completionWaiters: Array<() => void> = [];
   let reentryCount = 0;
+  let currentStartOptions: MissionStartOptions | undefined;
 
   function setStatus(state: RunnerStatus["state"], missionId = status.missionId) {
     status = { state, missionId };
@@ -197,6 +203,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
     missionId: string,
     planMilestones: Array<{ id: string; title: string; description: string }>,
     existingMilestones?: Milestone[],
+    defaultStatus?: Milestone["status"],
   ): Promise<Milestone[]> {
     const contractLookup = new Map<string, string>();
     for (const ms of planMilestones) {
@@ -215,12 +222,30 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         title: ms.title,
         description: ms.description,
         orderIndex: existing?.orderIndex ?? i,
-        status: existing?.status ?? ("planned" as const),
+        status: defaultStatus ?? existing?.status ?? ("planned" as const),
         validationContractId: contractLookup.get(ms.id) ?? existing?.validationContractId ?? "",
       };
     });
     eventBus.emit({ type: "milestones_set", missionId, milestones });
     return milestones;
+  }
+
+  async function resetMissionForRestart(missionId: string, milestones: Milestone[]): Promise<void> {
+    for (const ms of milestones) {
+      await lapis.updateMilestoneStatus(ms.id, "planned");
+      const units = await lapis.getWorkingUnitsForMilestone(ms.id).catch(() => []);
+      for (const unit of units) {
+        if (unit.status !== "superseded") {
+          await lapis.updateWorkingUnitStatus(unit.id, "planned");
+        }
+      }
+    }
+    eventBus.emit({
+      type: "mission_log",
+      missionId,
+      phase: "setup",
+      message: `Restarting mission: reset ${milestones.length} milestone(s) to planned.`,
+    });
   }
 
   async function runMission(missionId: string): Promise<void> {
@@ -331,6 +356,7 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
       }
     } finally {
       reentryCount = 0;
+      currentStartOptions = undefined;
       await finalizeJob(status.state);
       completeWaiters();
     }
@@ -351,7 +377,8 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
     throwIfAborted();
 
     const existingMilestones = await lapis.getMilestonesForMission(missionId).catch(() => [] as Milestone[]);
-    if (existingMilestones.length > 0) {
+    const isRestart = currentStartOptions?.restart === true;
+    if (existingMilestones.length > 0 && !isRestart) {
       eventBus.emit({
         type: "mission_log",
         missionId,
@@ -363,6 +390,24 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
         missionId,
         existingMilestones.map((ms) => ({ id: ms.id, title: ms.title, description: ms.description })),
         existingMilestones,
+      );
+      return { loop, milestones };
+    }
+
+    if (existingMilestones.length > 0 && isRestart) {
+      await resetMissionForRestart(missionId, existingMilestones);
+      eventBus.emit({
+        type: "mission_log",
+        missionId,
+        phase: "planning",
+        message: `Restarting mission with ${existingMilestones.length} existing milestone(s) — reusing plan, resetting execution.`,
+      });
+      const loop = createLoopForMission(pinyx, missionId, missionRepoRoot, mission);
+      const milestones = await buildMilestonesFromPlan(
+        missionId,
+        existingMilestones.map((ms) => ({ id: ms.id, title: ms.title, description: ms.description })),
+        existingMilestones,
+        "planned",
       );
       return { loop, milestones };
     }
@@ -501,11 +546,12 @@ export function createMissionRunner(config: MissionRunnerConfig): MissionRunner 
   }
 
   return {
-    start(missionId) {
+    start(missionId, options) {
       if (!["idle", "completed", "failed", "aborted"].includes(status.state)) {
         return;
       }
 
+      currentStartOptions = options;
       abortController = new AbortController();
       setStatus("planning", missionId);
       void runMission(missionId);
