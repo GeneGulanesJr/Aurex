@@ -76,7 +76,7 @@ describe("runReview", () => {
       completedAt: new Date().toISOString(),
     };
     const lapis = mockLapis({
-      "repo:my-repo:path": "/workspace",
+      "repo:my-repo:path": process.cwd(),
       "repo:my-repo:bumblebee_scans": { scanIds: ["failed-scan"] },
       "bumblebee_scan:failed-scan": failedScan,
     });

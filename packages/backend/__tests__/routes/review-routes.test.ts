@@ -78,7 +78,7 @@ describe("review routes", () => {
   beforeAll(async () => {
     app = Fastify();
     lapis = mockLapis();
-    await lapis.setSetting("repo:my-repo:path", "/workspace");
+    await lapis.setSetting("repo:my-repo:path", process.cwd());
     registerReviewRoutes(app, {
       lapis,
       buildReadinessProfile: async (repoName) => ({
