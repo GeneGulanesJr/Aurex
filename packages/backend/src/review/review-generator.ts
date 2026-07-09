@@ -34,7 +34,7 @@ async function getLatestRepoScan(lapis: LaPisClient, repoName: string): Promise<
 }
 
 function scanIsRecent(scan: BumblebeeScanResult | null): boolean {
-  if (!scan?.completedAt) return false;
+  if (!scan?.completedAt || scan.status !== "completed") return false;
   const completed = new Date(scan.completedAt).getTime();
   return Date.now() - completed < 24 * 60 * 60 * 1000;
 }

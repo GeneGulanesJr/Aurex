@@ -267,7 +267,15 @@ export function App() {
     // Persist so a page refresh can rehydrate the overview without re-cloning.
     setSessionState("prepared_repo", { repoName, fullName, cloneUrl, repoId });
     const version = Date.now();
-    setPreparedRepo({ repoName, fullName, summary, report: null, loading: true, error: null, _version: version });
+    setPreparedRepo((prev) => ({
+      repoName,
+      fullName,
+      summary,
+      report: opts?.forceRescan && prev?.repoName === repoName ? prev.report : null,
+      loading: true,
+      error: null,
+      _version: version,
+    }));
     try {
       let report: ReviewReport;
       const shouldRunFreshReview = opts?.forceRescan || info.freshIndex;

@@ -117,7 +117,18 @@ function scopePathsForFinding(finding: BumblebeeFinding): string[] {
 
 function packageIssueId(finding: BumblebeeFinding): string {
   const discriminator = finding.catalogId || finding.findingType || "finding";
-  return `package-${finding.severity}-${sanitizeIdSegment(finding.packageName)}-${sanitizeIdSegment(finding.version)}-${sanitizeIdSegment(discriminator)}-${finding.id}`;
+  return `package-${finding.severity}-${sanitizeIdSegment(finding.packageName)}-${sanitizeIdSegment(finding.version)}-${sanitizeIdSegment(discriminator)}-${sanitizeIdSegment(finding.id)}`;
+}
+
+function knownEntryPointPath(
+  ep: string,
+  graph: CodeGraphInput,
+  hotspots: HotspotsInput,
+): string | null {
+  const resolved = resolveEntryPointPath(ep, graph, hotspots);
+  const graphPaths = new Set(graph.nodes.map((n) => n.id));
+  const hotspotPaths = new Set(hotspots.files.map((f) => f.path));
+  return graphPaths.has(resolved) || hotspotPaths.has(resolved) ? resolved : null;
 }
 
 function entryPointScope(
@@ -479,10 +490,13 @@ export function isolateIssues(
   }
 
   if (summary.symbols > 50 && summary.entryPoints.length > 0) {
-    for (const [i, ep] of summary.entryPoints.slice(0, 5).entries()) {
-      const resolvedPath = resolveEntryPointPath(ep, graph, hotspots);
+    let docIndex = 0;
+    for (const ep of summary.entryPoints) {
+      if (docIndex >= 5) break;
+      const resolvedPath = knownEntryPointPath(ep, graph, hotspots);
+      if (!resolvedPath) continue;
       issues.push(draft({
-        id: `documentation-${i}-${resolvedPath.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 60)}`,
+        id: `documentation-${docIndex}-${resolvedPath.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 60)}`,
         tier: "P3",
         category: "documentation",
         title: `Document entry point: ${fileName(resolvedPath)}`,
@@ -496,6 +510,7 @@ export function isolateIssues(
         evidence: [{ type: "lapis", message: `Entry point among ${summary.entryPoints.length} detected`, file: resolvedPath }],
         labels: [],
       }));
+      docIndex++;
     }
   }
 

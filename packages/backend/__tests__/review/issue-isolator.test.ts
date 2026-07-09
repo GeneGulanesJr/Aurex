@@ -109,6 +109,15 @@ describe("isolateIssues", () => {
 
   it("creates one documentation issue per entry point (capped at 5)", () => {
     const entryPoints = Array.from({ length: 8 }, (_, i) => `src/ep-${i}.ts`);
+    const graph = {
+      nodes: entryPoints.map((path, i) => ({
+        id: path,
+        module: "src",
+        symbols: 5,
+        importance: 8 - i,
+      })),
+      edges: [],
+    };
     const summary = {
       files: 30,
       symbols: 100,
@@ -117,7 +126,7 @@ describe("isolateIssues", () => {
       entryPoints,
       cycles: { count: 0, paths: [] },
     };
-    const issues = isolateIssues(summary, { files: [] }, emptyGraph, null, null);
+    const issues = isolateIssues(summary, { files: [] }, graph, null, null);
     const docIssues = issues.filter((i) => i.category === "documentation" && i.id.startsWith("documentation-"));
     expect(docIssues).toHaveLength(5);
     expect(new Set(docIssues.map((d) => d.id)).size).toBe(5);
@@ -433,6 +442,66 @@ describe("isolateIssues", () => {
     const issues = isolateIssues(summary, hotspots, emptyGraph, null, null);
     const testIssue = issues.find((i) => i.id === "test-coverage-none");
     expect(testIssue?.scopePaths).toEqual(["src/main.ts"]);
+  });
+
+  it("sanitizes finding.id in package issue IDs", () => {
+    const scan = {
+      id: "scan-1",
+      missionId: "repo:test",
+      profile: "project" as const,
+      status: "completed" as const,
+      startedAt: "",
+      completedAt: new Date().toISOString(),
+      summary: { totalPackages: 1, totalFindings: 1, criticalCount: 0, highCount: 1, mediumCount: 0, lowCount: 0, ecosystems: ["npm"] },
+      findings: [{
+        id: "records/abc/def",
+        scanId: "scan-1",
+        missionId: "repo:test",
+        findingType: "cve",
+        severity: "high" as const,
+        catalogId: "",
+        catalogName: "CVE",
+        ecosystem: "npm",
+        packageName: "bad-pkg",
+        normalizedName: "bad-pkg",
+        version: "1.0.0",
+        sourceType: "dependency",
+        sourceFile: "package.json",
+        confidence: "high" as const,
+        evidence: "test",
+      }],
+    };
+    const issues = isolateIssues(
+      { files: 5, symbols: 10, edges: 5, modules: [{ name: "src", fileCount: 5 }], entryPoints: [], cycles: { count: 0, paths: [] } },
+      { files: [] },
+      emptyGraph,
+      scan,
+      null,
+    );
+    expect(issues[0].id).not.toContain("/");
+    expect(issues[0].id).toContain("records_abc_def");
+  });
+
+  it("skips documentation issues for entry points not in graph or hotspots", () => {
+    const summary = {
+      files: 30,
+      symbols: 100,
+      edges: 50,
+      modules: [{ name: "src", fileCount: 30 }],
+      entryPoints: ["missing-entry.ts", "index.ts"],
+      cycles: { count: 0, paths: [] },
+    };
+    const hotspots = {
+      files: [{ path: "src/index.ts", module: "src", complexity: 5, symbols: 10 }],
+    };
+    const graph = {
+      nodes: [{ id: "src/index.ts", module: "src", symbols: 10, importance: 5 }],
+      edges: [],
+    };
+    const issues = isolateIssues(summary, hotspots, graph, null, null);
+    const docIssues = issues.filter((i) => i.category === "documentation");
+    expect(docIssues).toHaveLength(1);
+    expect(docIssues[0].scopePaths).toEqual(["src/index.ts"]);
   });
 });
 
