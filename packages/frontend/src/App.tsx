@@ -133,7 +133,7 @@ export function App() {
     }, []),
   });
 
-  const { connected, send } = useWebSocket(combinedHandler, {
+  const { connected, connectionFailed, send } = useWebSocket(combinedHandler, {
     missionId: missionsState.selectedMissionId,
     getToken,
     enabled: isAuthenticated,
@@ -253,11 +253,19 @@ export function App() {
   }, [addOptimisticMission]);
 
   const handleRepoPrepared = useCallback(async (
-    info: { repoName: string; fullName: string; summary: CodeSummaryResponse | null; freshIndex?: boolean },
+    info: {
+      repoName: string;
+      fullName: string;
+      summary: CodeSummaryResponse | null;
+      freshIndex?: boolean;
+      cloneUrl?: string;
+      repoId?: number;
+    },
     opts?: { forceRescan?: boolean },
   ) => {
-    const { repoName, fullName, summary } = info;
-    setSessionState("prepared_repo", { repoName, fullName });
+    const { repoName, fullName, summary, cloneUrl, repoId } = info;
+    // Persist so a page refresh can rehydrate the overview without re-cloning.
+    setSessionState("prepared_repo", { repoName, fullName, cloneUrl, repoId });
     const version = Date.now();
     setPreparedRepo({ repoName, fullName, summary, report: null, loading: true, error: null, _version: version });
     try {
@@ -354,8 +362,8 @@ export function App() {
       dispatch({ type: "CLEAR_ERRORS" });
       dispatch({ type: "CLEAR_ESCALATION" });
       reloadMission();
-    } catch {
-      // Leave mission state unchanged when restart fails.
+    } catch (err) {
+      dispatch({ type: "MISSION_ERROR", code: "restart_failed", message: err instanceof Error ? err.message : "Failed to restart mission", recoverable: true });
     }
   }, [markMissionRestarted, selectMission, dispatch, reloadMission]);
 
@@ -375,8 +383,8 @@ export function App() {
         dispatch({ type: "MISSION_STATUS", status: "aborted" });
         dispatch({ type: "CLEAR_ESCALATION" });
       }
-    } catch {
-      // Leave mission state unchanged when abort fails (e.g. already finished).
+    } catch (err) {
+      dispatch({ type: "MISSION_ERROR", code: "abort_failed", message: err instanceof Error ? err.message : "Failed to abort mission", recoverable: true });
     } finally {
       setAbortingMissionId((current) => (current === targetId ? null : current));
     }
@@ -432,7 +440,16 @@ export function App() {
           color: "var(--accent)",
           marginBottom: "16px",
         }}>AUREX</div>
-        CONNECTING...
+        {connectionFailed ? (
+          <>
+            <div style={{ color: "var(--error)", marginBottom: "12px" }}>CONNECTION FAILED</div>
+            <div style={{ fontSize: "11px", letterSpacing: "1px", maxWidth: "360px", textAlign: "center", lineHeight: 1.6 }}>
+              Could not reconnect to the server after multiple attempts. Refresh the page to try again.
+            </div>
+          </>
+        ) : (
+          "CONNECTING..."
+        )}
       </div>
     );
   }
@@ -479,6 +496,7 @@ export function App() {
             systemReady={systemReady}
             totalCost={state.cost?.totalCost}
             collapsed={sidebarCollapsed}
+            loadError={missionsState.loadError}
           />
         )}
         <main className="app-main">
@@ -546,6 +564,7 @@ export function App() {
               systemReady={systemReady}
               totalCost={state.cost?.totalCost}
               collapsed={false}
+              loadError={missionsState.loadError}
             />
           </div>
         </>

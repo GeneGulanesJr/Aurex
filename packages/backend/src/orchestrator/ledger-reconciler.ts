@@ -196,7 +196,8 @@ export async function applyValidatorVerdictsToTodos(lapis: LaPisClient, input: V
       : todos.filter((todo) => todo.status === "implemented" || todo.status === "validating");
 
     for (const todo of candidateTodos) {
-      if (SKIP_STATUSES.has(todo.status)) continue;
+      if (todo.status === "merged" || todo.status === "cancelled") continue;
+      if (verdict.verdict === "pass" && todo.status === "passed") continue;
       const nextStatus: TodoStatus = verdict.verdict === "pass" ? "passed" : "needs_changes";
       const evidence = mergeEvidence(todo.evidence, {
         validatorVerdict: verdict,

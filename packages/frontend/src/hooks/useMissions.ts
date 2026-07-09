@@ -22,6 +22,7 @@ export interface MissionListItem {
 interface MissionsState {
   missions: MissionListItem[];
   selectedMissionId: string | null;
+  loadError: string | null;
 }
 
 type Action =
@@ -33,11 +34,13 @@ type Action =
   | { type: "WS_MISSION_COMPLETED"; missionId: string; finalState: string }
   | { type: "WS_MISSION_STATUS"; missionId: string; status: string }
   | { type: "MISSION_RESTARTED"; missionId: string }
-  | { type: "MISSION_ABORTED"; missionId: string };
+  | { type: "MISSION_ABORTED"; missionId: string }
+  | { type: "SET_LOAD_ERROR"; error: string };
 
 export const initialMissionsState: MissionsState = {
   missions: [],
   selectedMissionId: readPersistedSelection(),
+  loadError: null,
 };
 
 export function missionsReducer(state: MissionsState, action: Action): MissionsState {
@@ -45,7 +48,7 @@ export function missionsReducer(state: MissionsState, action: Action): MissionsS
     case "SET_MISSIONS": {
       const missions = action.missions;
       const selectedMissionId = state.selectedMissionId ?? missions.find((m) => m.state !== "queued" && m.state !== "completed" && m.state !== "failed" && m.state !== "aborted")?.missionId ?? missions[0]?.missionId ?? null;
-      return { ...state, missions, selectedMissionId };
+      return { ...state, missions, selectedMissionId, loadError: null };
     }
     case "SELECT":
       return { ...state, selectedMissionId: action.missionId };
@@ -117,6 +120,8 @@ export function missionsReducer(state: MissionsState, action: Action): MissionsS
         selectedMissionId: action.missionId,
       };
     }
+    case "SET_LOAD_ERROR":
+      return { ...state, loadError: action.error };
     default:
       return state;
   }
@@ -136,7 +141,14 @@ export function useMissions() {
           dispatch({ type: "SET_MISSIONS", missions });
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        if (!cancelled) {
+          dispatch({
+            type: "SET_LOAD_ERROR",
+            error: err instanceof Error ? err.message : "Failed to load missions",
+          });
+        }
+      });
 
     return () => { cancelled = true; };
   }, []);

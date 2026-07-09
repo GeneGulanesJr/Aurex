@@ -11,6 +11,10 @@
 - **Review URL safety:** Sanitize path/package segments in issue IDs (fixes dismiss/copy PATCH 404s); encode issueId in client PATCH; drop expired Bumblebee scan when refresh fails; entry-point scope ignores unresolved paths before hotspot fallback.
 - **Product:** Refocused reviewer-first plan on scan → isolated issues → copy-ready fix prompts (LaPis-heavy). Removed fix-with-agent from v1 scope.
 - **Docs:** New files `docs/superpowers/specs/2026-07-09-reviewer-first-pivot-design.md` and `docs/superpowers/plans/2026-07-09-reviewer-first-pivot.md`; indexed in `docs/INDEX.md`.
+- **Orchestrator:** Mission runner resumes existing milestones instead of re-planning on restart/recovery; user restarts reset milestone/unit execution without duplicating plan artifacts; checkpoint waits honor abort signals (abort wins over in-flight poll); rescope only runs on failure/recovery triggers (not `milestone_complete`); validator fail verdicts downgrade previously passed todos; contract history loads latest version; empty rescope plans rejected; feature diff and research findings failures surfaced via `onError`; feature diff failure checkpoints instead of running validators blind; checkpoint-loop rescope/recovery fetches emit `mission_error` instead of silent fallbacks.
+- **Frontend:** Orchestration warning banner for recoverable research/diff/checkpoint fetch errors; human-readable mission error labels in activity feed; supply-chain scan failures clear scanning state; agent log rehydration keys by worker unit id; prepared repo `cloneUrl` persisted across refresh; WebSocket shows connection-failed state after max retries; mission list load errors surfaced in sidebar; restart/abort API failures reported; mutation poll errors mark run failed; `getHealth` checks HTTP status.
+- **Agents:** `write_handoff` validates `commandsRun` element shape (`command` + `exitCode`); agent error events no longer fall through to tool processing.
+- **Pool:** Queued mission abort emits `mission_completed`; `drain()` resolves pending waiters.
 
 ## 2026-06-15
 

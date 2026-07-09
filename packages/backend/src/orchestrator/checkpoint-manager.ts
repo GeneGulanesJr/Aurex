@@ -8,7 +8,7 @@ export interface CheckpointManager {
     milestoneId: string;
     summary: string;
   }): Promise<string>;
-  waitForResolution(checkpointId: string): Promise<CheckpointRecord>;
+  waitForResolution(checkpointId: string, signal?: AbortSignal): Promise<CheckpointRecord>;
   resolve(checkpointId: string, decision: CheckpointDecision, guidance?: string, reason?: string, rescopeGuidance?: string): Promise<void>;
   getPendingForMission(missionId: string): Promise<CheckpointRecord[]>;
 }
@@ -25,20 +25,39 @@ export function createCheckpointManager(
       return checkpoint.id;
     },
 
-    async waitForResolution(checkpointId) {
+    async waitForResolution(checkpointId, signal) {
       return new Promise<CheckpointRecord>((resolve, reject) => {
         let stopped = false;
+
+        const abortOnSignal = () => {
+          if (stopped) return;
+          stopped = true;
+          reject(new Error("Mission aborted"));
+        };
+
+        if (signal?.aborted) {
+          abortOnSignal();
+          return;
+        }
+        signal?.addEventListener("abort", abortOnSignal, { once: true });
 
         const poll = async () => {
           // Stryker disable next-line ConditionalExpression: equivalent —
           // if stopped=true, the poll was already resolved/rejected.
           // Stryker's perTest doesn't attribute the stop tests correctly.
           if (stopped) return;
+          if (signal?.aborted) {
+            abortOnSignal();
+            return;
+          }
           try {
             // Stryker disable next-line ArrowFunction: catch(() => null)
             // vs catch(() => undefined) — Stryker's perTest doesn't
             // attribute the null-retry test to this line.
             const checkpoint = await lapis.getCheckpoint(checkpointId).catch(() => null);
+            if (stopped || signal?.aborted) {
+              return;
+            }
             // Stryker disable next-line ConditionalExpression,BlockStatement:
             // the retry-on-null path is tested but Stryker's perTest
             // coverage tracking doesn't attribute the test.
@@ -52,12 +71,14 @@ export function createCheckpointManager(
               // is equivalent — Stryker's perTest doesn't pick the
               // stop-after-resolve test.
               stopped = true;
+              signal?.removeEventListener("abort", abortOnSignal);
               resolve(checkpoint);
               return;
             }
             setTimeout(poll, pollIntervalMs);
           } catch (error) {
             stopped = true;
+            signal?.removeEventListener("abort", abortOnSignal);
             reject(error);
           }
         };

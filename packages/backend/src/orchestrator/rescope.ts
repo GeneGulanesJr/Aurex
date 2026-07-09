@@ -123,7 +123,7 @@ export async function rescopeMilestone(input: RescopeInput): Promise<RescopeResu
   } catch {
     return { ok: false, error: "invalid_plan", content: resp.content };
   }
-  if (!plan || !Array.isArray(plan.units)) {
+  if (!plan || !Array.isArray(plan.units) || plan.units.length === 0) {
     return { ok: false, error: "invalid_plan", content: resp.content };
   }
 

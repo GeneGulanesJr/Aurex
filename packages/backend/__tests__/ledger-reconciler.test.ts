@@ -184,6 +184,43 @@ describe("ledger reconciler", () => {
     expect(todos.get("td-1")?.evidence.validatorVerdict).toEqual(expect.objectContaining({ verdict: "pass" }));
   });
 
+  it("downgrades passed todos when a later validator verdict fails", async () => {
+    const todo = makeTodo({ status: "implemented" });
+    const { lapis, todos } = createMockLapis([todo]);
+
+    await applyValidatorVerdictsToTodos(lapis, {
+      missionId: "m-1",
+      reason: "validator done",
+      verdicts: [
+        {
+          id: "v-1",
+          milestoneId: "ms-1",
+          contractId: "c-1",
+          validatorType: "validator_scrutiny",
+          sessionId: "validator-s-1",
+          verdict: "pass",
+          findings: "Looks good",
+          failedUnitIds: [],
+          timestamp: "2026-01-01T00:00:00Z",
+        },
+        {
+          id: "v-2",
+          milestoneId: "ms-1",
+          contractId: "c-1",
+          validatorType: "validator_user_testing",
+          sessionId: "validator-s-2",
+          verdict: "fail",
+          findings: "UX issue",
+          failedUnitIds: [],
+          timestamp: "2026-01-01T00:00:01Z",
+        },
+      ],
+    });
+
+    expect(lapis.setTodoStatus).toHaveBeenLastCalledWith("td-1", "needs_changes");
+    expect(todos.get("td-1")?.status).toBe("needs_changes");
+  });
+
   it("marks passed todos as merged after merge evidence", async () => {
     const todo = makeTodo({ status: "passed" });
     const { lapis, todos } = createMockLapis([todo]);

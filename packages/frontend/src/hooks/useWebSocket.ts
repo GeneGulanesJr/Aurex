@@ -85,6 +85,7 @@ export interface UseWebSocketOptions {
 export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: UseWebSocketOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   const [connected, setConnected] = useState(false);
+  const [connectionFailed, setConnectionFailed] = useState(false);
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
   const onControlRef = useRef(opts?.onControl);
@@ -104,6 +105,7 @@ export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: Use
   useEffect(() => {
     mountedRef.current = true;
     authFailedRef.current = false;
+    setConnectionFailed(false);
 
     function connect() {
       if (!mountedRef.current) return;
@@ -230,6 +232,7 @@ export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: Use
       if (authFailedRef.current) return;
       if (optsRef.current?.enabled === false) return;
       if (reconnectAttemptsRef.current >= RECONNECT_MAX_ATTEMPTS) {
+        setConnectionFailed(true);
         return;
       }
       reconnectAttemptsRef.current += 1;
@@ -265,6 +268,7 @@ export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: Use
       reconnectDelayRef.current = RECONNECT_BASE_DELAY;
       reconnectAttemptsRef.current = 0;
       authFailedRef.current = false;
+      setConnectionFailed(false);
       connectFnRef.current();
     }
   }, [opts?.enabled]);
@@ -280,5 +284,5 @@ export function useWebSocket(onEvent: (event: WsClientEvent) => void, opts?: Use
     wsRef.current?.send(JSON.stringify(data));
   }, []);
 
-  return { connected, send };
+  return { connected, connectionFailed, send };
 }

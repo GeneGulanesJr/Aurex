@@ -3,7 +3,7 @@ import { MissionPipeline } from "./MissionPipeline";
 import { MissionComplete } from "./MissionComplete";
 import { MissionCreationView } from "../active/MissionCreationView";
 import { dimPassive, restorePassive } from "../animations/state-transitions";
-import { isMissionTerminal } from "./missionUiModel";
+import { isMissionTerminal, isOrchestrationWarningError, getMissionErrorLabel } from "./missionUiModel";
 import type { Mission, Milestone, WorkingUnit, CostSummary, WsClientEvent, BumblebeeFinding, BumblebeeScanResult } from "@aurex/shared";
 import type { MissionError, AgentLogEntry } from "../hooks/useMission";
 import type { CodeSummaryResponse } from "../api";
@@ -66,6 +66,7 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
   }, [blurred]);
 
   const nonRecoverableErrors = errors.filter((e) => !e.recoverable);
+  const orchestrationWarnings = errors.filter((e) => e.recoverable && isOrchestrationWarningError(e.code));
   const [errorBannerExpanded, setErrorBannerExpanded] = useState(() => nonRecoverableErrors.length > 0);
   const lastErrorCountRef = useRef(nonRecoverableErrors.length);
 
@@ -141,6 +142,12 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
           <span>{logsRehydrateError}</span>
         </div>
       )}
+      {!isTerminal && orchestrationWarnings.length > 0 && (
+        <OrchestrationWarningBanner
+          errors={orchestrationWarnings}
+          onDismiss={onDismissErrors}
+        />
+      )}
       {!isTerminal && nonRecoverableErrors.length > 0 && (
         <ErrorBanner
           errors={nonRecoverableErrors}
@@ -183,6 +190,55 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
           scanError={scanError}
           onDismissScanError={onDismissScanError}
         />
+      )}
+    </div>
+  );
+}
+
+function OrchestrationWarningBanner({ errors, onDismiss }: {
+  errors: MissionError[];
+  onDismiss?: () => void;
+}) {
+  const lastError = errors[errors.length - 1];
+  if (!lastError) return null;
+
+  return (
+    <div style={{
+      margin: "12px 16px 0",
+      padding: "12px 16px",
+      background: "var(--bg-inset)",
+      border: "1px solid var(--warning)",
+      borderRadius: "6px",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "11px", color: "var(--warning)", letterSpacing: "1px", textTransform: "uppercase" }}>
+          {getMissionErrorLabel(lastError.code)}
+        </span>
+        <span style={{ fontSize: "12px", color: "var(--text-secondary)", flex: 1 }}>
+          {lastError.message}
+        </span>
+        {onDismiss && (
+          <button
+            onClick={onDismiss}
+            style={{
+              fontFamily: '"JetBrains Mono", monospace',
+              fontSize: "9px",
+              background: "transparent",
+              color: "var(--text-muted)",
+              border: "1px solid var(--border)",
+              borderRadius: "3px",
+              padding: "2px 8px",
+              cursor: "pointer",
+            }}
+          >
+            DISMISS
+          </button>
+        )}
+      </div>
+      {errors.length > 1 && (
+        <div style={{ marginTop: "8px", fontSize: "11px", color: "var(--text-muted)" }}>
+          {errors.length - 1} additional orchestration warning{errors.length > 2 ? "s" : ""} logged in the activity feed.
+        </div>
       )}
     </div>
   );

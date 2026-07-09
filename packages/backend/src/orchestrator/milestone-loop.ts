@@ -176,7 +176,13 @@ export function createMilestoneLoop(
     );
     await worktreeManager.installBranchGuard(featureWorktree.worktreePath, featureWorktree.featureBranch);
 
-    let researchFindings: ResearchFinding[] = await lapis.getFindings(mission.id).catch(() => [] as ResearchFinding[]);
+    let researchFindings: ResearchFinding[] = await loadResearchFindings(
+      mission.id,
+      milestone.id,
+      [],
+      "research_findings_fetch_failed",
+      "Could not load research findings from LaPis",
+    );
     let preResearchAttempted = false;
     const retryBudget = createRetryBudget();
 
@@ -205,7 +211,11 @@ export function createMilestoneLoop(
         researchFindings = await runPreWorkerResearch(mission, milestone, units, featureWorktree.worktreePath, ctx);
       }
 
-      const contract = (await lapis.getContractHistory(milestone.id).catch(() => [] as any[]))[0] as any;
+      const contractHistory = await lapis.getContractHistory(milestone.id).catch(() => [] as any[]);
+      const contract = contractHistory.reduce(
+        (latest: any, entry: any) => (!latest || (entry?.version ?? 0) > (latest?.version ?? 0) ? entry : latest),
+        undefined as any,
+      ) as any;
       const contractContent = contract?.content ?? {};
       const criteria = contractContent.criteria ?? [];
       const testCommands: string[] = contractContent.testCommands ?? [];
@@ -255,7 +265,13 @@ export function createMilestoneLoop(
       // Refresh research findings first: workers may have verified/rejected
       // findings via verify_finding/reject_finding, and the validator (and any
       // rescope iteration) must see the latest statuses.
-      researchFindings = await lapis.getFindings(mission.id).catch(() => researchFindings);
+      researchFindings = await loadResearchFindings(
+        mission.id,
+        milestone.id,
+        researchFindings,
+        "research_findings_fetch_failed",
+        "Could not refresh research findings from LaPis",
+      );
       const validatorOutcome = await runEndOfMilestoneValidation({
         mission, milestone, units, criteria, testCommands, acceptanceBehavior,
         contractId, researchFindings, featureWorktree, ctx,
@@ -667,7 +683,32 @@ export function createMilestoneLoop(
     await reconcileMissionLedger(lapis, { missionId: mission.id, milestoneId: milestone.id, reason: "validation started", actorId: "orchestrator" });
 
     const validatorTypes = selectValidatorTypes(args.acceptanceBehavior);
-    const diffSummary = await collectFeatureDiff(featureWorktree.worktreePath, loopConfig.gitMainBranch).catch(() => "");
+    let diffSummary: string | undefined;
+    try {
+      const diff = await collectFeatureDiff(featureWorktree.worktreePath, loopConfig.gitMainBranch);
+      diffSummary = diff || undefined;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      callbacks.onError(
+        mission.id,
+        "feature_diff_failed",
+        `Could not collect feature diff for validation: ${msg}`,
+        {
+          milestoneId: milestone.id,
+          recoverable: true,
+          details: { worktreePath: featureWorktree.worktreePath, baseBranch: loopConfig.gitMainBranch, error: msg },
+        },
+      );
+      return {
+        status: "checkpoint",
+        result: {
+          status: "checkpoint_needed",
+          trigger: "unclassifiable_error",
+          milestoneId: milestone.id,
+          summary: `Could not collect feature diff for validation: ${msg}. Validators require the diff to review milestone changes.`,
+        },
+      };
+    }
 
     const validatorUnits: ValidatorUnitContext[] = units.map((u) => ({
       id: u.id, description: u.description,
@@ -798,25 +839,76 @@ export function createMilestoneLoop(
     });
 
     callbacks.onAgentStatus(preResearchId, "research", "spawned", milestone.id);
-    const preResearchHandle = await spawner.spawn({
-      agentType: "research",
-      agentId: preResearchId,
-      missionId: mission.id,
-      milestoneId: milestone.id,
-      cwd: repoRoot,
-      skillFilePath: `${loopConfig.aurexRoot}/packages/backend/src/skills/research.md`,
-      contextContent: preResearchContext,
-      taskPrompt: `Research domain knowledge for milestone "${milestone.title}" BEFORE workers begin. Investigate the codebase areas relevant to the declared paths and modules. Submit findings using write_finding.`,
-      timeout: loopConfig.researchTimeout ?? config.workerTimeouts.testHeavy,
-      model: config.modelHints.research,
-    });
+    let preResearchHandle;
+    try {
+      preResearchHandle = await spawner.spawn({
+        agentType: "research",
+        agentId: preResearchId,
+        missionId: mission.id,
+        milestoneId: milestone.id,
+        cwd: repoRoot,
+        skillFilePath: `${loopConfig.aurexRoot}/packages/backend/src/skills/research.md`,
+        contextContent: preResearchContext,
+        taskPrompt: `Research domain knowledge for milestone "${milestone.title}" BEFORE workers begin. Investigate the codebase areas relevant to the declared paths and modules. Submit findings using write_finding.`,
+        timeout: loopConfig.researchTimeout ?? config.workerTimeouts.testHeavy,
+        model: config.modelHints.research,
+      });
+    } catch (spawnErr) {
+      const msg = spawnErr instanceof Error ? spawnErr.message : String(spawnErr);
+      callbacks.onAgentStatus(preResearchId, "research", "failed", milestone.id);
+      callbacks.onError(
+        mission.id,
+        "research_spawn_failed",
+        `Pre-worker research could not be spawned: ${msg}`,
+        { milestoneId: milestone.id, recoverable: true, details: { error: msg } },
+      );
+      return [];
+    }
     ctx.activeHandles.add(preResearchHandle);
     callbacks.onAgentStatus(preResearchId, "research", "researching", milestone.id);
     const preResearchResult = await preResearchHandle.completed;
     ctx.activeHandles.delete(preResearchHandle);
     callbacks.onAgentStatus(preResearchId, "research", preResearchResult.status === "completed" ? "completed" : preResearchResult.status, milestone.id);
     preResearchHandle.dispose();
-    return lapis.getFindings(mission.id).catch(() => [] as ResearchFinding[]);
+    if (preResearchResult.status !== "completed") {
+      const msg = preResearchResult.status === "failed"
+        ? "Pre-worker research agent failed"
+        : `Pre-worker research ended with status ${preResearchResult.status}`;
+      callbacks.onError(
+        mission.id,
+        "research_failed",
+        msg,
+        { milestoneId: milestone.id, recoverable: true, details: { status: preResearchResult.status } },
+      );
+    }
+    return loadResearchFindings(
+      mission.id,
+      milestone.id,
+      [],
+      "research_findings_fetch_failed",
+      "Could not load research findings after pre-worker research",
+    );
+  }
+
+  async function loadResearchFindings(
+    missionId: string,
+    milestoneId: string,
+    fallback: ResearchFinding[],
+    errorCode: string,
+    errorContext: string,
+  ): Promise<ResearchFinding[]> {
+    try {
+      return await lapis.getFindings(missionId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      callbacks.onError(
+        missionId,
+        errorCode,
+        `${errorContext}: ${msg}`,
+        { milestoneId, recoverable: true, details: { error: msg } },
+      );
+      return fallback;
+    }
   }
 
   function unitFetchFailure(missionId: string, milestoneId: string, summary: string): MilestoneLoopResult {
@@ -908,16 +1000,12 @@ function loadConfigDefensive(): {
  * could either omit work or include unrelated main-side changes.
  */
 async function collectFeatureDiff(worktreePath: string, baseBranch: string): Promise<string> {
-  try {
-    const { stdout } = await execFileAsync(
-      "git",
-      ["-C", worktreePath, "diff", `${baseBranch}...HEAD`, "--"],
-      { maxBuffer: 1024 * 1024 },
-    );
-    return stdout.trim();
-  } catch {
-    return "";
-  }
+  const { stdout } = await execFileAsync(
+    "git",
+    ["-C", worktreePath, "diff", `${baseBranch}...HEAD`, "--"],
+    { maxBuffer: 1024 * 1024 },
+  );
+  return stdout.trim();
 }
 
 // --- Affected-code scaffold helpers (issue #114) ---

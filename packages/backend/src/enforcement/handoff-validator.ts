@@ -1,5 +1,6 @@
 // packages/backend/src/enforcement/handoff-validator.ts
 import type { Handoff } from "@aurex/shared";
+import { validateCommandsRunEntries } from "./commands-run.js";
 
 interface ValidationResult {
   valid: boolean;
@@ -41,8 +42,9 @@ export function validateHandoff(handoff: Handoff): ValidationResult {
     errors.push("rationale is too brief — must explain the reasoning, not just describe the change");
   }
 
-  if (!Array.isArray(handoff.commandsRun) || handoff.commandsRun.length === 0) {
-    errors.push("commandsRun must contain at least one command");
+  const commandsRunResult = validateCommandsRunEntries(handoff.commandsRun);
+  if (!commandsRunResult.ok) {
+    errors.push(commandsRunResult.error);
   }
 
   return { valid: errors.length === 0, errors };

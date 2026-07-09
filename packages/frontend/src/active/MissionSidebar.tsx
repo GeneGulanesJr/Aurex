@@ -13,9 +13,10 @@ interface MissionSidebarProps {
   systemReady?: boolean;
   totalCost?: number;
   collapsed?: boolean;
+  loadError?: string | null;
 }
 
-export function MissionSidebar({ missions, selectedMissionId, escalationMissionId, onSelect, onAbort, onRestart, abortingMissionId, systemReady, totalCost, collapsed = false }: MissionSidebarProps) {
+export function MissionSidebar({ missions, selectedMissionId, escalationMissionId, onSelect, onAbort, onRestart, abortingMissionId, systemReady, totalCost, collapsed = false, loadError }: MissionSidebarProps) {
   const handleNewMission = useCallback(() => {
     onSelect(null);
     requestAnimationFrame(() => {
@@ -119,6 +120,11 @@ export function MissionSidebar({ missions, selectedMissionId, escalationMissionI
           </button>
         )}
       </div>
+      {loadError && (
+        <div style={{ margin: "8px 12px 0", padding: "8px 10px", borderRadius: "4px", border: "1px solid var(--error)", background: "var(--bg-inset)", color: "var(--error)", fontSize: "11px", lineHeight: 1.5 }}>
+          {loadError}
+        </div>
+      )}
       <div style={{ flex: 1, overflowY: "auto", padding: "8px" }}>
         {missions.length === 0 && (
           <div style={{ padding: "16px", color: "var(--text-muted)", fontSize: "12px", textAlign: "center" }}>

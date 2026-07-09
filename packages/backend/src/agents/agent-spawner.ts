@@ -368,6 +368,7 @@ export function createAgentSpawner(config: AgentSpawnerConfig) {
               sessionId: session.sessionId,
               error: errorMsg,
             });
+            return;
           }
 
           const toolName = event.assistantMessageEvent?.toolCall?.name;
