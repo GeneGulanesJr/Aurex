@@ -107,7 +107,7 @@ describe("isolateIssues", () => {
     expect(testIssue?.labels).toContain("safest-first");
   });
 
-  it("creates one documentation issue per entry point (capped at 5)", () => {
+  it("creates one documentation issue per entry point (capped at 2)", () => {
     const entryPoints = Array.from({ length: 8 }, (_, i) => `src/ep-${i}.ts`);
     const graph = {
       nodes: entryPoints.map((path, i) => ({
@@ -128,8 +128,8 @@ describe("isolateIssues", () => {
     };
     const issues = isolateIssues(summary, { files: [] }, graph, null, null);
     const docIssues = issues.filter((i) => i.category === "documentation" && i.id.startsWith("documentation-"));
-    expect(docIssues).toHaveLength(5);
-    expect(new Set(docIssues.map((d) => d.id)).size).toBe(5);
+    expect(docIssues).toHaveLength(2);
+    expect(new Set(docIssues.map((d) => d.id)).size).toBe(2);
     expect(docIssues.every((d) => d.scopePaths.length === 1)).toBe(true);
   });
 
@@ -406,7 +406,7 @@ describe("isolateIssues", () => {
 
   it("sanitizes complexity issue IDs so PATCH routes stay URL-safe", () => {
     const hotspots = {
-      files: [{ path: "src/deep/file.ts", module: "src", complexity: 35, symbols: 10 }],
+      files: [{ path: "src/deep/file.ts", module: "src", complexity: 48, symbols: 10 }],
     };
     const issues = isolateIssues(
       {
@@ -504,7 +504,7 @@ describe("isolateIssues", () => {
     expect(docIssues[0].scopePaths).toEqual(["src/index.ts"]);
   });
 
-  it("caps complexity issues at 10 highest-complexity files", () => {
+  it("caps complexity issues at 5 highest-complexity files above threshold", () => {
     const summary = {
       files: 50,
       symbols: 500,
@@ -517,14 +517,57 @@ describe("isolateIssues", () => {
       files: Array.from({ length: 15 }, (_, i) => ({
         path: `src/file-${i}.ts`,
         module: "src",
-        complexity: 25 + i,
+        complexity: 46 + i,
         symbols: 5,
       })),
     };
     const issues = isolateIssues(summary, hotspots, emptyGraph, null, null);
     const complexity = issues.filter((i) => i.category === "complexity");
-    expect(complexity).toHaveLength(10);
+    expect(complexity).toHaveLength(5);
     expect(complexity[0].title).toContain("file-14.ts");
+  });
+
+  it("skips moderate complexity files below the alert threshold", () => {
+    const summary = {
+      files: 10,
+      symbols: 50,
+      edges: 20,
+      modules: [{ name: "src", fileCount: 10 }],
+      entryPoints: ["index.ts"],
+      cycles: { count: 0, paths: [] },
+    };
+    const hotspots = {
+      files: [{ path: "src/medium.ts", module: "src", complexity: 32, symbols: 8 }],
+    };
+    const issues = isolateIssues(summary, hotspots, emptyGraph, null, null);
+    expect(issues.filter((i) => i.category === "complexity")).toHaveLength(0);
+  });
+
+  it("creates a mutation-score issue when Stryker score is low", () => {
+    const summary = {
+      files: 20,
+      symbols: 100,
+      edges: 40,
+      modules: [{ name: "src", fileCount: 20 }],
+      entryPoints: ["src/index.ts"],
+      cycles: { count: 0, paths: [] },
+    };
+    const graph = {
+      nodes: [{ id: "src/index.ts", module: "src", symbols: 5, importance: 5 }],
+      edges: [],
+    };
+    const mutation = {
+      strykerConfigured: true,
+      configPath: "stryker.config.mjs",
+      reportPath: "reports/stryker-report.json",
+      score: 35,
+      counts: { killed: 35, survived: 65, timeout: 0, noCoverage: 0, ignored: 0, total: 100 },
+      generatedAt: new Date().toISOString(),
+    };
+    const issues = isolateIssues(summary, { files: [] }, graph, null, null, mutation);
+    const mutationIssue = issues.find((i) => i.id === "mutation-score-low");
+    expect(mutationIssue?.category).toBe("test_coverage");
+    expect(mutationIssue?.tier).toBe("P1");
   });
 
   it("creates issues for readiness warnings", () => {
@@ -569,7 +612,7 @@ describe("fix prompts", () => {
         cycles: { count: 0, paths: [] },
       },
       {
-        files: [{ path: "src/heavy.ts", module: "src", complexity: 35, symbols: 10 }],
+        files: [{ path: "src/heavy.ts", module: "src", complexity: 48, symbols: 10 }],
       },
       emptyGraph,
       null,

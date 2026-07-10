@@ -2,6 +2,7 @@ import type {
   BumblebeeFinding,
   BumblebeeScanResult,
   IsolatedIssue,
+  MutationReportSummary,
   ReviewReadinessProfile,
   SuggestionCategory,
   SuggestionConfidence,
@@ -42,8 +43,26 @@ export interface IssueDraft {
 }
 
 const MAX_SCOPE_PATHS = 3;
-const MAX_COMPLEXITY_ISSUES = 10;
+/** Only surface the worst complexity hotspots — moderate scores are polish, not defects. */
+const MAX_COMPLEXITY_ISSUES = 5;
+const COMPLEXITY_ALERT_THRESHOLD = 45;
+const MAX_ENTRYPOINT_DOC_ISSUES = 2;
+const MUTATION_SCORE_ALERT_THRESHOLD = 60;
 const TIER_ORDER: Record<SuggestionTier, number> = { P0: 0, P1: 1, P2: 2, P3: 3, P4: 4, P5: 5 };
+const CATEGORY_PRIORITY: Record<SuggestionCategory, number> = {
+  security: 0,
+  critical_path: 1,
+  dead_code: 2,
+  test_coverage: 3,
+  coupling: 4,
+  layer_violation: 5,
+  structure: 6,
+  performance: 7,
+  complexity: 8,
+  documentation: 9,
+  naming: 10,
+  style: 11,
+};
 
 function fileName(p: string): string {
   return p.split("/").pop() ?? p;
@@ -234,6 +253,7 @@ export function isolateIssues(
   graph: CodeGraphInput,
   scan: BumblebeeScanResult | null,
   readiness: ReviewReadinessProfile | null,
+  mutation: MutationReportSummary | null = null,
 ): IssueDraft[] {
   const issues: IssueDraft[] = [];
   const severityTier: Record<BumblebeeFinding["severity"], SuggestionTier> = {
@@ -288,44 +308,26 @@ export function isolateIssues(
   }
 
   const complexityCandidates = [...hotspots.files]
-    .filter((file) => file.complexity > 20)
+    .filter((file) => file.complexity > COMPLEXITY_ALERT_THRESHOLD)
     .sort((a, b) => b.complexity - a.complexity)
     .slice(0, MAX_COMPLEXITY_ISSUES);
 
   for (const file of complexityCandidates) {
-    if (file.complexity > 30) {
-      issues.push(draft({
-        id: `complexity-critical-${sanitizeIdSegment(file.path)}`,
-        tier: "P1",
-        category: "complexity",
-        title: `Refactor ${fileName(file.path)} — complexity ${file.complexity}`,
-        description: `Cyclomatic complexity of ${file.complexity} makes this file difficult to test and reason about.`,
-        detail: `Complexity: ${file.complexity} · ${file.symbols} symbols`,
-        scopePaths: [file.path],
-        scopeModules: [file.module],
-        confidence: "high",
-        estimatedEffort: "medium",
-        estimatedRisk: "medium",
-        evidence: [{ type: "lapis", message: `Complexity ${file.complexity} with ${file.symbols} symbols`, file: file.path }],
-        labels: [],
-      }));
-    } else if (file.complexity > 20) {
-      issues.push(draft({
-        id: `complexity-high-${sanitizeIdSegment(file.path)}`,
-        tier: "P4",
-        category: "complexity",
-        title: `Simplify ${fileName(file.path)} — complexity ${file.complexity}`,
-        description: `Moderate complexity (${file.complexity}) — consider extracting helpers.`,
-        detail: `Complexity: ${file.complexity} · ${file.symbols} symbols`,
-        scopePaths: [file.path],
-        scopeModules: [file.module],
-        confidence: "medium",
-        estimatedEffort: "small",
-        estimatedRisk: "low",
-        evidence: [{ type: "lapis", message: `Complexity ${file.complexity}`, file: file.path }],
-        labels: [],
-      }));
-    }
+    issues.push(draft({
+      id: `complexity-critical-${sanitizeIdSegment(file.path)}`,
+      tier: file.complexity > 60 ? "P1" : "P2",
+      category: "complexity",
+      title: `Refactor ${fileName(file.path)} — complexity ${file.complexity}`,
+      description: `Cyclomatic complexity of ${file.complexity} makes this file difficult to test and reason about.`,
+      detail: `Complexity: ${file.complexity} · ${file.symbols} symbols · threshold: > ${COMPLEXITY_ALERT_THRESHOLD}`,
+      scopePaths: [file.path],
+      scopeModules: [file.module],
+      confidence: "high",
+      estimatedEffort: file.complexity > 60 ? "large" : "medium",
+      estimatedRisk: "medium",
+      evidence: [{ type: "lapis", message: `Complexity ${file.complexity} with ${file.symbols} symbols`, file: file.path }],
+      labels: [],
+    }));
   }
 
   const scopedPaths = new Set<string>();
@@ -516,7 +518,7 @@ export function isolateIssues(
   if (summary.symbols > 50 && summary.entryPoints.length > 0) {
     let docIndex = 0;
     for (const ep of summary.entryPoints) {
-      if (docIndex >= 5) break;
+      if (docIndex >= MAX_ENTRYPOINT_DOC_ISSUES) break;
       const resolvedPath = knownEntryPointPath(ep, graph, hotspots);
       if (!resolvedPath) continue;
       issues.push(draft({
@@ -601,7 +603,30 @@ export function isolateIssues(
     }));
   }
 
-  issues.sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier]);
+  if (mutation?.strykerConfigured && mutation.score != null && mutation.score < MUTATION_SCORE_ALERT_THRESHOLD) {
+    const entryScope = entryPointScope(summary, graph, hotspots);
+    issues.push(draft({
+      id: "mutation-score-low",
+      tier: mutation.score < 40 ? "P1" : "P2",
+      category: "test_coverage",
+      title: `Improve mutation test score — ${Math.round(mutation.score)}%`,
+      description: `Stryker mutation score is below ${MUTATION_SCORE_ALERT_THRESHOLD}%. Surviving mutants indicate weak or missing tests.`,
+      detail: `Score: ${mutation.score.toFixed(1)}% · config: ${mutation.configPath ?? "stryker"}`,
+      scopePaths: entryScope,
+      scopeModules: [],
+      confidence: "high",
+      estimatedEffort: "large",
+      estimatedRisk: "low",
+      evidence: [{ type: "heuristic", message: `Stryker mutation score ${mutation.score.toFixed(1)}%` }],
+      labels: ["safest-first"],
+    }));
+  }
+
+  issues.sort((a, b) => {
+    const tierDiff = TIER_ORDER[a.tier] - TIER_ORDER[b.tier];
+    if (tierDiff !== 0) return tierDiff;
+    return CATEGORY_PRIORITY[a.category] - CATEGORY_PRIORITY[b.category];
+  });
   return issues;
 }
 
