@@ -16,7 +16,7 @@ For shared request/response shapes see [`packages/shared/src/rest.ts`](../packag
 
 | Group                        | Endpoints                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Missions**                 | [`POST /api/missions`](#post-apimissions), [`GET /api/missions/active`](#get-apimissionsactive), [`GET /api/missions/current`](#get-apimissionscurrent), [`GET /api/missions/:id`](#get-apimissionsid), [`GET /api/missions/:id/agent-logs`](#get-apimissionsidagent-logs), [`POST /api/missions/:id/abort`](#post-apimissionsidabort), [`POST /api/missions/:id/restart`](#post-apimissionsidrestart)                                                                                                                                                                               |
+| **Missions**                 | [`POST /api/missions`](#post-apimissions), [`GET /api/missions/active`](#get-apimissionsactive), [`GET /api/missions/current`](#get-apimissionscurrent), [`GET /api/missions/:id`](#get-apimissionsid), [`GET /api/missions/:id/agent-logs`](#get-apimissionsidagent-logs), [`POST /api/missions/:id/abort`](#post-apimissionsidabort), [`POST /api/missions/:id/restart`](#post-apimissionsidrestart), [`DELETE /api/missions/:id`](#delete-apimissionsid)                                                                                                                                                                               |
 | **Checkpoints**              | [`POST /api/missions/:id/checkpoints`](#post-apimissionsidcheckpoints)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | **GitHub**                   | [`GET /api/github/config`](#get-apigithubconfig), [`POST /api/github/config`](#post-apigithubconfig), [`GET /api/github/connect`](#get-apigithubconnect), [`GET /api/github/callback`](#get-apigithubcallback), [`GET /api/github/status`](#get-apigithubstatus), [`POST /api/github/disconnect`](#post-apigithubdisconnect), [`GET /api/github/repos`](#get-apigithubrepos), [`POST /api/github/repos/prepare`](#post-apigithubreposprepare)                                                                                                                                        |
 | **Code Context**             | [`GET /api/missions/:missionId/code/summary`](#get-apimissionsmissionidcodesummary), [`GET /api/missions/:missionId/code/graph`](#get-apimissionsmissionidcodegraph), [`GET /api/missions/:missionId/code/hotspots`](#get-apimissionsmissionidcodehotspots)                                                                                                                                                                                                                                                                                                                          |
@@ -50,6 +50,7 @@ Isolated issue review with copy-ready fix prompts. Requires a prepared repo (`PO
 
 Index repo via LaPis, run analysis (summary, graph, hotspots, readiness, Bumblebee supply chain), isolate issues, and generate template fix prompts.
 
+- **Body (optional):** `{ "forceRescan"?: boolean }` — when `true`, bypasses the 24h Bumblebee scan cache and runs a fresh supply-chain audit. The frontend also sends `forceRescan: true` on first-time repo prepare (`freshIndex`).
 - **Response (201):** `{ "report": ReviewReport }`
 - **Errors:** `404` if repo not prepared or review failed with zero issues (`{ "error": string, "report"?: ReviewReport }`)
 - **Source:** `packages/backend/src/routes/review-routes.ts`
@@ -154,6 +155,15 @@ Restart a completed, failed, or aborted mission. Resets status to `planning` and
 - **Response:** `{ "restarted": true, "missionId": string, "status": "planning" }`
 - **Errors:** `409` if the mission is currently active in the pool, or if its LaPis status is not in `["failed", "aborted", "completed"]`. `404` if not found.
 - **Source:** `packages/backend/src/routes/missions.ts:227`
+
+### `DELETE /api/missions/:id`
+
+Remove a mission from the Aurex sidebar/history. Active missions are aborted first. Because LaPis does not expose a hard-delete endpoint, Aurex records a tombstone in settings (`aurex:deleted_missions`) and filters those IDs from `GET /api/missions/active`.
+
+- **Response:** `{ "deleted": true }`
+- **Errors:** `404` if the mission is not found in LaPis and not in the runner pool.
+- **WebSocket:** emits `{ "type": "mission_deleted", "missionId": string }`
+- **Source:** `packages/backend/src/routes/missions.ts`
 
 ---
 

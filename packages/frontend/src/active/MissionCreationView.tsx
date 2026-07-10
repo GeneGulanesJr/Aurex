@@ -217,7 +217,7 @@ export function MissionCreationView({
             AUREX
           </div>
           <div style={{ fontSize: "13px", letterSpacing: "4px", textTransform: "uppercase", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace' }}>
-            Codebase Review
+            Repository Scanner
           </div>
         </div>
 
@@ -373,8 +373,12 @@ function ScanLaunchChecklist({
       active: systemReady && !selectedRepo,
     },
     {
-      label: "Scan for issues",
-      detail: repoLoading ? "Scan in progress…" : hasPreparedRepo ? `${issueCount} isolated issue(s) with fix prompts.` : "Pick a repo to run LaPis index + scan.",
+      label: "Scan repository",
+      detail: repoLoading
+        ? "Indexing, Bumblebee supply-chain audit, and heuristics…"
+        : hasPreparedRepo
+          ? `${issueCount} isolated issue(s) with fix prompts.`
+          : "Pick a repo to index, run Bumblebee, and isolate issues.",
       complete: hasPreparedRepo && !repoLoading,
       active: Boolean(selectedRepo) && (!hasPreparedRepo || repoLoading),
     },
@@ -387,9 +391,9 @@ function ScanLaunchChecklist({
   ];
 
   return (
-    <div className="creation-section mission-launch-checklist" aria-label="Review checklist">
+    <div className="creation-section mission-launch-checklist" aria-label="Scan checklist">
       <div className="mission-launch-checklist__header">
-        <span>Review checklist</span>
+        <span>Scan checklist</span>
         <span>{items.filter((item) => item.complete).length}/{items.length} ready</span>
       </div>
       <div className="mission-launch-checklist__items">

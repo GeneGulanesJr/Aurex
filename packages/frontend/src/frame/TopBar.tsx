@@ -145,8 +145,10 @@ export function TopBar({ connected, missionCount, missionsEnabled = true, uptime
         }}
       >
         <span className="hide-on-mobile">UPTIME <span style={{ color: "var(--accent)", fontWeight: 500 }}>{uptime}</span></span>
-        {missionsEnabled && (
+        {missionsEnabled ? (
           <span className="hide-on-tablet">MISSIONS <span style={{ color: "var(--accent)", fontWeight: 500 }}>{missionCount}</span> ACTIVE</span>
+        ) : (
+          <span className="hide-on-tablet">MODE <span style={{ color: "var(--accent)", fontWeight: 500 }}>SCANNER</span></span>
         )}
         <button
           onClick={onOpenIntegrations}

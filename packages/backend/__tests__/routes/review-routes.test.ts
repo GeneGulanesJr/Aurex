@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import Fastify from "fastify";
 import { registerReviewRoutes } from "../../src/routes/review-routes.js";
 import type { LaPisClient } from "../../src/clients/lapis-client.js";
@@ -197,5 +197,64 @@ describe("review routes", () => {
       url: "/api/repos/no-such-repo/graph",
     });
     expect(res.statusCode).toBe(404);
+  });
+});
+
+describe("review routes — forceRescan", () => {
+  it("POST /review with forceRescan bypasses a recent Bumblebee cache", async () => {
+    const recentScan = {
+      id: "recent-scan",
+      missionId: "repo:force-repo",
+      profile: "project" as const,
+      status: "completed" as const,
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      summary: {
+        totalPackages: 1,
+        totalFindings: 0,
+        criticalCount: 0,
+        highCount: 0,
+        mediumCount: 0,
+        lowCount: 0,
+        ecosystems: ["npm"],
+      },
+      findings: [],
+    };
+    const lapis = mockLapis();
+    await lapis.setSetting("repo:force-repo:path", process.cwd());
+    await lapis.setSetting("repo:force-repo:bumblebee_scans", { scanIds: ["recent-scan"] });
+    await lapis.setSetting("bumblebee_scan:recent-scan", recentScan);
+
+    const scan = vi.fn().mockResolvedValue({ packages: [], findings: [] });
+    const forceApp = Fastify();
+    registerReviewRoutes(forceApp, {
+      lapis,
+      bumblebeeClient: { scan },
+      buildReadinessProfile: async (repoName) => ({
+        repoName,
+        profile: "node",
+        packageManager: "pnpm",
+        languages: ["TypeScript"],
+        frameworks: [],
+        monorepo: false,
+        lockfiles: [],
+        commands: [],
+        blockers: [],
+        warnings: [],
+        confidence: "high",
+        generatedAt: new Date().toISOString(),
+      }),
+    });
+    await forceApp.ready();
+
+    const res = await forceApp.inject({
+      method: "POST",
+      url: "/api/repos/force-repo/review",
+      payload: { forceRescan: true },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(scan).toHaveBeenCalledOnce();
+    await forceApp.close();
   });
 });

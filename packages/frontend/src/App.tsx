@@ -27,7 +27,7 @@ import { QuotaPanel } from "./active/QuotaPanel";
 import { TopBar } from "./frame/TopBar";
 import { TelemetryBar } from "./frame/TelemetryBar";
 import { setTokenGetter, setAuthErrorHandler } from "./api";
-import { submitCheckpoint, createMission, restartMission, abortMission, runRepoReview, getRepoReview, updateIssueStatus } from "./api";
+import { submitCheckpoint, createMission, restartMission, abortMission, deleteMission, runRepoReview, getRepoReview, updateIssueStatus } from "./api";
 import type { WsClientEvent, CheckpointDecision, ReviewReport } from "@aurex/shared";
 import type { CodeSummaryResponse } from "./api";
 
@@ -69,9 +69,10 @@ export function App() {
   } | null>(null);
   const { settings, setSettings, resetSettings } = useSettings();
   const { missionsEnabled } = useAppFeatures();
-  const { state: missionsState, selectMission, addOptimisticMission, markMissionRestarted, markMissionAborted, handleWsEvent: missionsWsHandler } = useMissions();
-  const { state, dispatch, handleWsEvent: missionWsHandler, reloadMission } = useMission(missionsState.selectedMissionId);
-  const { state: supplyChainState, triggerScan: triggerSupplyChainScan, clearError: clearSupplyChainError, handleWsEvent: supplyChainWsHandler } = useSupplyChain(missionsState.selectedMissionId);
+  const { state: missionsState, selectMission, addOptimisticMission, markMissionRestarted, markMissionAborted, removeMission, handleWsEvent: missionsWsHandler } = useMissions({ enabled: missionsEnabled });
+  const selectedMissionId = missionsEnabled ? missionsState.selectedMissionId : null;
+  const { state, dispatch, handleWsEvent: missionWsHandler, reloadMission } = useMission(selectedMissionId);
+  const { state: supplyChainState, triggerScan: triggerSupplyChainScan, clearError: clearSupplyChainError, handleWsEvent: supplyChainWsHandler } = useSupplyChain(selectedMissionId);
   const quotaWsHandlerRef = useRef<((event: WsClientEvent) => void) | null>(null);
   const quota = useQuota({
     onWsEvent: useCallback((handler: (event: WsClientEvent) => void) => {
@@ -112,22 +113,25 @@ export function App() {
   }, [bp.isMobile]);
 
   const [abortingMissionId, setAbortingMissionId] = useState<string | null>(null);
+  const [deletingMissionId, setDeletingMissionId] = useState<string | null>(null);
   const [latestNotifEvent, setLatestNotifEvent] = useState<WsClientEvent | null>(null);
 
   const updateWsHandlerRef = useRef<((event: WsClientEvent) => void) | null>(null);
   const restFallbackRef = useRef<((checkpointId: string, decision: CheckpointDecision, opts?: { guidance?: string; reason?: string; rescopeGuidance?: string }) => Promise<void>) | null>(null);
 
   const combinedHandler = useCallback((event: WsClientEvent) => {
-    missionsWsHandler(event);
-    missionWsHandler(event);
-    supplyChainWsHandler(event);
+    if (missionsEnabled) {
+      missionsWsHandler(event);
+      missionWsHandler(event);
+      supplyChainWsHandler(event);
+    }
     setEvents((prev) => [...prev.slice(-49), event]);
-    if (event.type === "escalation" || event.type === "mission_completed") {
+    if (missionsEnabled && (event.type === "escalation" || event.type === "mission_completed")) {
       setLatestNotifEvent(event);
     }
     if (updateWsHandlerRef.current) updateWsHandlerRef.current(event);
     if (quotaWsHandlerRef.current) quotaWsHandlerRef.current(event);
-  }, [missionsWsHandler, missionWsHandler, supplyChainWsHandler]);
+  }, [missionsEnabled, missionsWsHandler, missionWsHandler, supplyChainWsHandler]);
 
   const updateStatus = useUpdateStatus({
     onWsEvent: useCallback((handler: (event: WsClientEvent) => void) => {
@@ -136,7 +140,7 @@ export function App() {
   });
 
   const { connected, connectionFailed, send } = useWebSocket(combinedHandler, {
-    missionId: missionsState.selectedMissionId,
+    missionId: selectedMissionId,
     getToken,
     enabled: isAuthenticated,
     onAuthError: useCallback(() => {
@@ -155,9 +159,11 @@ export function App() {
   });
 
   // Browser notifications + tab badge
-  useNotifications(latestNotifEvent, missionsState.selectedMissionId, settings.notificationsEnabled);
-  const pendingEscalations = state.escalation?.type === "escalation" ? 1 : 0;
-  const terminalMissions = countTerminalMissions(missionsState.missions.map((m) => m.state));
+  useNotifications(missionsEnabled ? latestNotifEvent : null, selectedMissionId, settings.notificationsEnabled);
+  const pendingEscalations = missionsEnabled && state.escalation?.type === "escalation" ? 1 : 0;
+  const terminalMissions = missionsEnabled
+    ? countTerminalMissions(missionsState.missions.map((m) => m.state))
+    : 0;
   useTabBadge(pendingEscalations, terminalMissions);
 
   const [uptime, setUptime] = useState("00:00:00");
@@ -288,7 +294,9 @@ export function App() {
           ({ report } = await runRepoReview(repoName));
         }
       } else {
-        ({ report } = await runRepoReview(repoName));
+        ({ report } = await runRepoReview(repoName, {
+          forceRescan: opts?.forceRescan === true || info.freshIndex === true,
+        }));
       }
       const warning = report.errors?.length
         ? report.errors.join("; ")
@@ -400,27 +408,49 @@ export function App() {
     }
   }, [state.mission?.id, dispatch, markMissionAborted]);
 
+  const handleDeleteMission = useCallback(async (missionId: string) => {
+    setDeletingMissionId(missionId);
+    try {
+      await deleteMission(missionId);
+      removeMission(missionId);
+      if (state.mission?.id === missionId) {
+        dispatch({ type: "RESET" });
+        dispatch({ type: "CLEAR_ESCALATION" });
+      }
+    } catch (err) {
+      dispatch({ type: "MISSION_ERROR", code: "delete_failed", message: err instanceof Error ? err.message : "Failed to delete mission", recoverable: true });
+    } finally {
+      setDeletingMissionId((current) => (current === missionId ? null : current));
+    }
+  }, [removeMission, state.mission?.id, dispatch]);
+
   // Keyboard shortcuts
   const { helpOpen, setHelpOpen } = useKeyboardShortcuts({
-    onSelectMissionByIndex: (i) => {
-      const mission = missionsState.missions[i];
-      if (mission) selectMission(mission.missionId);
-    },
-    onApprove: () => {
-      if (state.escalation?.type === "escalation" && state.escalation.checkpointId) {
-        handleDecision("approve");
-      }
-    },
-    onReject: () => {
-      if (state.escalation?.type === "escalation" && state.escalation.checkpointId) {
-        handleDecision("reject");
-      }
-    },
+    onSelectMissionByIndex: missionsEnabled
+      ? (i) => {
+          const mission = missionsState.missions[i];
+          if (mission) selectMission(mission.missionId);
+        }
+      : undefined,
+    onApprove: missionsEnabled
+      ? () => {
+          if (state.escalation?.type === "escalation" && state.escalation.checkpointId) {
+            handleDecision("approve");
+          }
+        }
+      : undefined,
+    onReject: missionsEnabled
+      ? () => {
+          if (state.escalation?.type === "escalation" && state.escalation.checkpointId) {
+            handleDecision("reject");
+          }
+        }
+      : undefined,
     // No onDismiss: Esc must not silently clear a pending checkpoint.
     onNewMission: missionsEnabled
       ? () => { selectMission(null); }
       : undefined,
-    onToggleSidebar: toggleSidebar,
+    onToggleSidebar: missionsEnabled ? toggleSidebar : undefined,
   });
 
   // Auth gate
@@ -505,6 +535,8 @@ export function App() {
             onSelect={selectMission}
             onAbort={handleAbortMission}
             onRestart={handleRestartMission}
+            onDelete={(missionId) => { void handleDeleteMission(missionId); }}
+            deletingMissionId={deletingMissionId}
             abortingMissionId={abortingMissionId}
             systemReady={systemReady}
             totalCost={state.cost?.totalCost}
@@ -576,6 +608,8 @@ export function App() {
               onSelect={(id) => { selectMission(id); if (id !== null) setMobileOverlayOpen(false); }}
               onAbort={handleAbortMission}
               onRestart={handleRestartMission}
+              onDelete={(missionId) => { void handleDeleteMission(missionId); }}
+              deletingMissionId={deletingMissionId}
               abortingMissionId={abortingMissionId}
               systemReady={systemReady}
               totalCost={state.cost?.totalCost}
@@ -603,21 +637,26 @@ export function App() {
           onDismissSubmitError={() => dispatch({ type: "CLEAR_PENDING_CHECKPOINT_ERROR" })}
         />
       )}
-      {helpOpen && <HelpOverlay onClose={() => setHelpOpen(false)} />}
+      {helpOpen && <HelpOverlay onClose={() => setHelpOpen(false)} missionsEnabled={missionsEnabled} />}
     </div>
   );
 }
 
-function HelpOverlay({ onClose }: { onClose: () => void }) {
-  const shortcuts = [
-    { keys: "1 - 9", desc: "Select mission by position" },
-    { keys: "Enter", desc: "Approve checkpoint" },
-    { keys: "Esc", desc: "Dismiss overlay / close help" },
-    { keys: "R", desc: "Reject checkpoint" },
-    { keys: "N", desc: "New mission" },
-    { keys: "[ / ]", desc: "Toggle sidebar" },
-    { keys: "?", desc: "Toggle this help" },
-  ];
+function HelpOverlay({ onClose, missionsEnabled = false }: { onClose: () => void; missionsEnabled?: boolean }) {
+  const shortcuts = missionsEnabled
+    ? [
+        { keys: "1 - 9", desc: "Select mission by position" },
+        { keys: "Enter", desc: "Approve checkpoint" },
+        { keys: "Esc", desc: "Dismiss overlay / close help" },
+        { keys: "R", desc: "Reject checkpoint" },
+        { keys: "N", desc: "New mission" },
+        { keys: "[ / ]", desc: "Toggle sidebar" },
+        { keys: "?", desc: "Toggle this help" },
+      ]
+    : [
+        { keys: "Esc", desc: "Dismiss overlay / close help" },
+        { keys: "?", desc: "Toggle this help" },
+      ];
   return (
     <div
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}

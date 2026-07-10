@@ -35,6 +35,7 @@ type Action =
   | { type: "WS_MISSION_STATUS"; missionId: string; status: string }
   | { type: "MISSION_RESTARTED"; missionId: string }
   | { type: "MISSION_ABORTED"; missionId: string }
+  | { type: "MISSION_DELETED"; missionId: string }
   | { type: "SET_LOAD_ERROR"; error: string };
 
 export const initialMissionsState: MissionsState = {
@@ -120,6 +121,13 @@ export function missionsReducer(state: MissionsState, action: Action): MissionsS
         selectedMissionId: action.missionId,
       };
     }
+    case "MISSION_DELETED": {
+      const missions = state.missions.filter((m) => m.missionId !== action.missionId);
+      const selectedMissionId = state.selectedMissionId === action.missionId
+        ? missions[0]?.missionId ?? null
+        : state.selectedMissionId;
+      return { ...state, missions, selectedMissionId };
+    }
     case "SET_LOAD_ERROR":
       return { ...state, loadError: action.error };
     default:
@@ -127,13 +135,25 @@ export function missionsReducer(state: MissionsState, action: Action): MissionsS
   }
 }
 
-export function useMissions() {
+export function useMissions(options?: { enabled?: boolean }) {
+  const enabled = options?.enabled ?? true;
   const [state, dispatch] = useReducer(missionsReducer, initialMissionsState);
   // Keep the last dispatched selection in a ref so we can persist on every change
   // without re-running effects (and without bouncing through localStorage in render).
   const selectedIdRef = useRef<string | null>(state.selectedMissionId);
 
   useEffect(() => {
+    if (!enabled) {
+      dispatch({ type: "SET_MISSIONS", missions: [] });
+      dispatch({ type: "SELECT", missionId: null });
+      try {
+        localStorage.removeItem(SELECTED_MISSION_STORAGE_KEY);
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
     let cancelled = false;
     getActiveMissions()
       .then(({ missions }) => {
@@ -151,7 +171,7 @@ export function useMissions() {
       });
 
     return () => { cancelled = true; };
-  }, []);
+  }, [enabled]);
 
   // Persist selection to localStorage so a refresh returns to the same mission.
   useEffect(() => {
@@ -193,6 +213,9 @@ export function useMissions() {
       case "mission_status":
         dispatch({ type: "WS_MISSION_STATUS", missionId: event.missionId, status: event.status });
         break;
+      case "mission_deleted":
+        dispatch({ type: "MISSION_DELETED", missionId: event.missionId });
+        break;
     }
   }, []);
 
@@ -212,5 +235,9 @@ export function useMissions() {
     dispatch({ type: "MISSION_ABORTED", missionId });
   }, []);
 
-  return { state, selectMission, addOptimisticMission, markMissionRestarted, markMissionAborted, handleWsEvent };
+  const removeMission = useCallback((missionId: string) => {
+    dispatch({ type: "MISSION_DELETED", missionId });
+  }, []);
+
+  return { state, selectMission, addOptimisticMission, markMissionRestarted, markMissionAborted, removeMission, handleWsEvent };
 }
