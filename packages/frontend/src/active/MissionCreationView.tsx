@@ -110,20 +110,6 @@ export function MissionCreationView({
     });
   }, []);
 
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail as string | undefined;
-      if (detail) {
-        form.openWithSuggestion(detail);
-      } else {
-        form.open();
-      }
-      setTimeout(() => textareaRef.current?.focus(), 50);
-    };
-    window.addEventListener("aurex:focus-new-mission", handler);
-    return () => window.removeEventListener("aurex:focus-new-mission", handler);
-  }, [form.open, form.openWithSuggestion]);
-
   const handleRepoSelect = (repo: GitHubRepoResponse) => {
     setPrepareError(null);
     const cached = preparedRepoCache.get(repo.id);
@@ -136,6 +122,7 @@ export function MissionCreationView({
       summary: cached.summary,
       cloneUrl: repo.clone_url,
       repoId: repo.id,
+      freshIndex: true,
     });
       return;
     }
@@ -249,7 +236,7 @@ export function MissionCreationView({
                   : "mission-creation-content"
               }
             >
-              {/* Create mission content */}
+              {/* Repo picker + scan status */}
               <div className="creation-section mission-create-card">
                 {github?.connected && github.repos.length > 0 && (
                   <RepoPicker repos={github.repos} selectedRepoId={form.state.selectedRepoId} onSelect={handleRepoSelect} />
@@ -383,8 +370,10 @@ function ScanLaunchChecklist({
       active: Boolean(selectedRepo) && (!hasPreparedRepo || repoLoading),
     },
     {
-      label: "Copy fix prompts",
-      detail: hasPreparedRepo && issueCount > 0 ? "Select an issue and copy its prompt." : "Fix prompts appear after scan completes.",
+      label: "Review fix suggestions",
+      detail: hasPreparedRepo && issueCount > 0
+        ? "Select a suggestion on the right and copy its fix prompt."
+        : "Fix suggestions appear after the scan completes.",
       complete: hasPreparedRepo && issueCount > 0 && !repoLoading,
       active: hasPreparedRepo && !repoLoading && issueCount === 0,
     },

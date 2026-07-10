@@ -6,7 +6,7 @@
 
 Aurex indexes your codebase with LaPis, runs supply-chain and heuristic analysis, and produces **one copy-ready fix prompt per isolated issue** — ready to paste into Cursor, Claude, or any coding workflow. No in-app agent execution required for the default scanner experience.
 
-**Optional (legacy coding-agent UI):** Set `AUREX_MISSIONS_ENABLED=true` on the backend **and** `VITE_MISSIONS_ENABLED=true` when building the frontend to expose the AI mission orchestrator — plan → build → validate → merge with workers and validators. The frontend defaults to scanner-only mode even when the backend flag is on.
+**Optional (legacy coding-agent UI):** Set `VITE_MISSIONS_ENABLED=true` when building the frontend to expose the AI mission orchestrator sidebar and pipeline. Set `AUREX_MISSIONS_ENABLED=true` on the backend for missions to actually run. The UI defaults to scanner-only mode.
 
 ---
 
@@ -24,7 +24,7 @@ Export all prompts as Markdown, filter by tier/category/status, or inspect archi
 
 ## Mission orchestrator (optional)
 
-**An AI-powered mission control for coding tasks** when both `AUREX_MISSIONS_ENABLED=true` (backend) and `VITE_MISSIONS_ENABLED=true` (frontend build) are set.
+**An AI-powered mission control for coding tasks** when `VITE_MISSIONS_ENABLED=true` at frontend build time and `AUREX_MISSIONS_ENABLED=true` on the backend.
 
 ---
 

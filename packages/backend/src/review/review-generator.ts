@@ -4,6 +4,7 @@ import type { BumblebeeFinding, BumblebeeScanResult, ReviewReport } from "@aurex
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { BumblebeeClient } from "../clients/bumblebee-client.js";
 import { cleanupExposureCatalogPath, resolveExposureCatalogPath } from "../clients/bumblebee-catalog.js";
+import { scanRepoForMutation } from "../scanner/mutation-scanner.js";
 import type { CodeGraphInput } from "../orchestrator/affected-code.js";
 import { attachFixPrompts, type FixPromptContext } from "./fix-prompt-builder.js";
 import {
@@ -108,6 +109,7 @@ export async function runReview(
   let graph: CodeGraphInput = { nodes: [], edges: [], cycles: [] };
   let scan: BumblebeeScanResult | null = null;
   let readiness: ReviewReadinessProfile | null = null;
+  let mutation: Awaited<ReturnType<typeof scanRepoForMutation>> | null = null;
 
   try {
     await lapis.indexRepo(repoPath, repoName);
@@ -132,6 +134,12 @@ export async function runReview(
     await lapis.setSetting(`repo:${repoName}:readiness`, readiness);
   } catch (err) {
     errors.push(`Readiness: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  try {
+    mutation = await scanRepoForMutation(repoPath);
+  } catch (err) {
+    errors.push(`Mutation scan: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   scan = await getLatestRepoScan(lapis, repoName);
@@ -168,7 +176,7 @@ export async function runReview(
   }
 
   const ctx: FixPromptContext = { graph, hotspots, readiness };
-  const drafts = isolateIssues(summary, hotspots, graph, scan, readiness);
+  const drafts = isolateIssues(summary, hotspots, graph, scan, readiness, mutation);
   const issues = attachFixPrompts(drafts, ctx);
 
   const status = errors.length > 0 && issues.length === 0

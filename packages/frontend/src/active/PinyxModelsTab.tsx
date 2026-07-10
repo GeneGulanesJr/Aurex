@@ -179,7 +179,7 @@ export function PinyxModelsTab({ config, onConfigUpdate }: PinyxModelsTabProps) 
           </div>
           {dirty && (
             <p style={{ color: "var(--warning)", fontSize: "11px", margin: "8px 0 0" }}>
-              Discovered models from PiNyx. Save model routing to use {defaultModel} for new missions.
+              Discovered models from PiNyx. Save model routing to use {defaultModel} for scans and analysis.
             </p>
           )}
           </>

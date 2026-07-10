@@ -19,7 +19,16 @@ interface RepoScanDashboardProps {
 }
 
 type StatusFilter = "open" | "dismissed" | "all";
-type DashboardTab = "issues" | "architecture";
+type DashboardTab = "suggestions" | "architecture";
+type PriorityFilter = "actionable" | "all";
+
+const POLISH_CATEGORIES = new Set<SuggestionCategory>([
+  "complexity",
+  "documentation",
+  "naming",
+  "style",
+  "performance",
+]);
 
 const SCAN_PHASES = [
   "INDEXING REPOSITORY",
@@ -81,6 +90,13 @@ function supplyChainLabel(report: ReviewReport): string | null {
   return parts.join(" · ");
 }
 
+function isActionableIssue(issue: IsolatedIssue): boolean {
+  if (issue.tier === "P0" || issue.tier === "P1" || issue.tier === "P2") return true;
+  if (issue.evidence.some((e) => e.type === "readiness" || e.type === "package_scan")) return true;
+  if (POLISH_CATEGORIES.has(issue.category)) return false;
+  return issue.tier === "P3";
+}
+
 function filterIssues(
   issues: IsolatedIssue[],
   opts: {
@@ -88,10 +104,12 @@ function filterIssues(
     category: SuggestionCategory | "all";
     status: StatusFilter;
     query: string;
+    priority: PriorityFilter;
   },
 ): IsolatedIssue[] {
   const q = opts.query.trim().toLowerCase();
   return issues.filter((issue) => {
+    if (opts.priority === "actionable" && !isActionableIssue(issue)) return false;
     if (opts.tier !== "all" && issue.tier !== opts.tier) return false;
     if (opts.category !== "all" && issue.category !== opts.category) return false;
     const status = issue.status ?? "open";
@@ -184,9 +202,10 @@ export function RepoScanDashboard({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<{ message: string; ok: boolean } | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [tab, setTab] = useState<DashboardTab>("issues");
+  const [tab, setTab] = useState<DashboardTab>("suggestions");
   const [tierFilter, setTierFilter] = useState<SuggestionTier | "all">("all");
   const [categoryFilter, setCategoryFilter] = useState<SuggestionCategory | "all">("all");
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("actionable");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("open");
   const [searchQuery, setSearchQuery] = useState("");
   const [listLimit, setListLimit] = useState(LIST_PAGE_SIZE);
@@ -200,8 +219,14 @@ export function RepoScanDashboard({
       category: categoryFilter,
       status: statusFilter,
       query: searchQuery,
+      priority: priorityFilter,
     }),
-    [issues, tierFilter, categoryFilter, statusFilter, searchQuery],
+    [issues, tierFilter, categoryFilter, statusFilter, searchQuery, priorityFilter],
+  );
+
+  const actionableCount = useMemo(
+    () => issues.filter((issue) => isActionableIssue(issue)).length,
+    [issues],
   );
 
   const visibleIssues = filteredIssues.slice(0, listLimit);
@@ -335,6 +360,17 @@ export function RepoScanDashboard({
               {supplyChain}
             </div>
           )}
+          {report && (
+            <div style={{ fontSize: "10px", color: "var(--text-muted)", marginTop: "6px", lineHeight: 1.5, maxWidth: "520px" }}>
+              Checks: dependency graph, supply-chain rules (Bumblebee), cycles, dead code, readiness, and test signals.
+              Does not run ESLint, TypeScript diagnostics, or line-by-line bug finders.
+              {actionableCount < issues.length && (
+                <span style={{ color: "var(--text-secondary)" }}>
+                  {" "}Showing {actionableCount} actionable of {issues.length} — switch to All issues for complexity/docs polish.
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
           {actionFeedback && (
@@ -364,7 +400,7 @@ export function RepoScanDashboard({
       </div>
 
       <div style={{ display: "flex", gap: "8px", padding: "8px 16px 0", borderBottom: "1px solid var(--border)" }}>
-        {(["issues", "architecture"] as const).map((t) => (
+        {(["suggestions", "architecture"] as const).map((t) => (
           <button
             key={t}
             type="button"
@@ -381,7 +417,7 @@ export function RepoScanDashboard({
               letterSpacing: "1px",
             }}
           >
-            {t.toUpperCase()}
+            {t === "suggestions" ? "SUGGESTIONS" : t.toUpperCase()}
           </button>
         ))}
       </div>
@@ -406,7 +442,7 @@ export function RepoScanDashboard({
               {recommendedHighest && (
                 <button
                   type="button"
-                  onClick={() => { setSelectedId(recommendedHighest.id); setTab("issues"); }}
+                  onClick={() => { setSelectedId(recommendedHighest.id); setTab("suggestions"); }}
                   style={{ padding: "4px 10px", background: "var(--bg-elevated)", border: "1px solid var(--error)", borderRadius: "4px", color: "var(--text-primary)", cursor: "pointer", fontSize: "10px" }}
                 >
                   Highest impact: {recommendedHighest.title.slice(0, 48)}{recommendedHighest.title.length > 48 ? "…" : ""}
@@ -415,7 +451,7 @@ export function RepoScanDashboard({
               {recommendedSafest && recommendedSafest.id !== recommendedHighest?.id && (
                 <button
                   type="button"
-                  onClick={() => { setSelectedId(recommendedSafest.id); setTab("issues"); }}
+                  onClick={() => { setSelectedId(recommendedSafest.id); setTab("suggestions"); }}
                   style={{ padding: "4px 10px", background: "var(--bg-elevated)", border: "1px solid var(--success)", borderRadius: "4px", color: "var(--text-primary)", cursor: "pointer", fontSize: "10px" }}
                 >
                   Safest first: {recommendedSafest.title.slice(0, 48)}{recommendedSafest.title.length > 48 ? "…" : ""}
@@ -427,11 +463,15 @@ export function RepoScanDashboard({
           <div style={{ padding: "8px 16px", display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center", borderBottom: "1px solid var(--border)" }}>
             <input
               type="search"
-              placeholder="Search issues…"
+              placeholder="Search suggestions…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{ flex: "1 1 140px", minWidth: "120px", padding: "6px 10px", background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: "4px", color: "var(--text-primary)", fontSize: "11px" }}
             />
+            <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value as PriorityFilter)} style={{ padding: "6px 8px", background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: "4px", color: "var(--text-secondary)", fontSize: "10px" }}>
+              <option value="actionable">Actionable</option>
+              <option value="all">All issues</option>
+            </select>
             <select value={tierFilter} onChange={(e) => setTierFilter(e.target.value as SuggestionTier | "all")} style={{ padding: "6px 8px", background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: "4px", color: "var(--text-secondary)", fontSize: "10px" }}>
               <option value="all">All tiers</option>
               {(["P0", "P1", "P2", "P3", "P4", "P5"] as const).map((t) => (
@@ -455,8 +495,10 @@ export function RepoScanDashboard({
           </div>
 
           {filteredIssues.length === 0 ? (
-            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', fontSize: "12px" }}>
-              No issues match the current filters.
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', fontSize: "12px", padding: "16px", textAlign: "center" }}>
+              {priorityFilter === "actionable" && issues.length > 0
+                ? "No actionable issues match the current filters. Try All issues or lower the tier filter."
+                : "No issues match the current filters."}
             </div>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "minmax(240px, 320px) 1fr", flex: 1, minHeight: 0, overflow: "hidden" }}>

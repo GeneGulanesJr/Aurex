@@ -20,10 +20,10 @@ function mockLapis(): LaPisClient {
       cycles: { count: 0, paths: [] },
     }),
     getCodeHotspots: async () => ({
-      files: [{ path: "src/a.ts", module: "src", complexity: 35, symbols: 5 }],
+      files: [{ path: "src/deep/a.ts", module: "src", complexity: 48, symbols: 5 }],
     }),
     getCodeGraph: async () => ({
-      nodes: [{ id: "src/a.ts", module: "src", symbols: 5, importance: 1 }],
+      nodes: [{ id: "src/deep/a.ts", module: "src", symbols: 5, importance: 1 }],
       edges: [],
     }),
     createMission: async () => { throw new Error("not implemented"); },
