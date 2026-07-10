@@ -43,7 +43,10 @@ async function main() {
   if (telemetry.enabled) {
     console.log("[startup] OpenTelemetry metrics enabled");
   }
-  const lapis = createLaPisClient({ lapisEndpoint: config.lapisEndpoint });
+  const lapis = createLaPisClient({
+    lapisEndpoint: config.lapisEndpoint,
+    lapisApiKey: config.lapisApiKey,
+  });
   const eventBus = createEventBus();
   const agentLogger = createAgentLogger();
   // Single shared dedup tracker so a checkpoint decision submitted over the

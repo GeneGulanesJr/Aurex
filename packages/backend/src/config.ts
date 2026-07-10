@@ -2,6 +2,8 @@
 
 export interface AppConfig {
   lapisEndpoint: string;
+  /** Optional API key sent to LaPis via x-api-key (required when LaPis binds to 0.0.0.0). */
+  lapisApiKey?: string;
 
   workerTimeouts: {
     simple: number;
@@ -94,6 +96,7 @@ export function loadConfig(): AppConfig {
 
   return {
     lapisEndpoint: env("LAPIS_ENDPOINT"),
+    lapisApiKey: process.env.LAPIS_API_KEY || undefined,
 
     workerTimeouts: {
       simple: envInt("WORKER_TIMEOUT_SIMPLE", 180_000),

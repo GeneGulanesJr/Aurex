@@ -14,6 +14,8 @@ import type { AgentType, CheckpointDecision, CompressionTrigger } from "@aurex/s
 
 export interface LaPisClientConfig {
   lapisEndpoint: string;
+  /** Optional API key forwarded as x-api-key. Required when LaPis binds to an unrestricted host. */
+  lapisApiKey?: string;
 }
 
 /**
@@ -211,10 +213,13 @@ export interface LaPisClient {
 
 export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
   const base = config.lapisEndpoint.replace(/\/$/, "");
+  const authHeaders = config.lapisApiKey
+    ? { "x-api-key": config.lapisApiKey }
+    : undefined;
 
   async function request<T>(path: string, opts?: RequestInit): Promise<T> {
     const res = await fetch(`${base}${path}`, {
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders },
       ...opts,
     });
     if (!res.ok) {
@@ -241,7 +246,10 @@ export function createLaPisClient(config: LaPisClientConfig): LaPisClient {
   }
 
   async function del(path: string): Promise<void> {
-    const res = await fetch(`${base}${path}`, { method: "DELETE" });
+    const res = await fetch(`${base}${path}`, {
+      method: "DELETE",
+      headers: authHeaders,
+    });
     if (!res.ok && res.status !== 404) {
       const text = await res.text().catch(() => "unknown error");
       throw new Error(`LaPis ${res.status}: ${path} — ${text}`);

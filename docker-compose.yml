@@ -35,6 +35,11 @@ services:
       args:
         LAPIS_PULL: ${LAPIS_PULL:-2026-06-15}
     ports: ["9100:9100"]
+    # LaPis binds to 0.0.0.0 so the backend can reach it over the compose
+    # network. Its host policy requires an API key for unrestricted binds, so
+    # we set one here and pass the matching key to the backend as LAPIS_API_KEY.
+    environment:
+      LAPIS_HTTP_API_KEY: ${LAPIS_API_KEY:?LAPIS_API_KEY must be set in .env}
     volumes:
       # lapis-data persists GitHub login, PiNyx API keys, mission history
       - lapis-data:/root/.pi
@@ -72,6 +77,7 @@ services:
     ports: ["3000:3000"]
     environment:
       LAPIS_ENDPOINT: http://lapis:9100
+      LAPIS_API_KEY: ${LAPIS_API_KEY:?LAPIS_API_KEY must be set in .env}
       REPO_ROOT: /workspace
       AUREX_ROOT: /aurex
       GIT_MAIN_BRANCH: main
