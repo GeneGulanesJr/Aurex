@@ -41,8 +41,8 @@ The source of truth is [`.env.example`](../.env.example). This document explains
 | `MAX_RESCOPES_PER_MILESTONE` | int | `2` | Max times a single milestone may be re-scoped. Note: `.env.example` ships `5`; the code default is `2`. | [`config.ts:82`](../packages/backend/src/config.ts) |
 | `VALIDATOR_TOOL_CALL_CAP` | int | `0` | Optional per-validator tool-call cap. `0` disables the cap; validator timeout and mission cost cap still apply. | [`config.ts`](../packages/backend/src/config.ts) |
 | `AFFECTED_CODE_TOKEN_BUDGET` | int | `1200` | Soft token budget for the compact affected-code scaffold (graph nodes, key import edges, complexity-ranked hotspots) injected into worker context so workers do not cold-start. The scaffold is a navigation map; full file bodies stay tool-fetched. `0` disables the scaffold. | [`config.ts`](../packages/backend/src/config.ts) |
-| `AUREX_MISSIONS_ENABLED` | bool | `false` | When `true`, the backend exposes mission orchestration APIs and reports `features.missionsEnabled` in `/health`. The frontend still defaults to scanner-only unless `VITE_MISSIONS_ENABLED=true` at build time. | [`config.ts`](../packages/backend/src/config.ts) |
-| `VITE_MISSIONS_ENABLED` | bool | `false` | Frontend build flag. Must be `true` **and** `AUREX_MISSIONS_ENABLED=true` for the mission sidebar, pipeline, and coding-agent UI to appear. | [`useAppFeatures.ts`](../packages/frontend/src/hooks/useAppFeatures.ts) |
+| `AUREX_MISSIONS_ENABLED` | bool | `false` | When `true`, the backend exposes mission orchestration APIs. Does **not** show mission UI by itself. | [`config.ts`](../packages/backend/src/config.ts) |
+| `VITE_MISSIONS_ENABLED` | bool | `false` | Frontend build flag. Set to `true` to show the mission sidebar, pipeline, and coding-agent UI. Requires `AUREX_MISSIONS_ENABLED=true` on the backend for missions to run. | [`useAppFeatures.ts`](../packages/frontend/src/hooks/useAppFeatures.ts) |
 
 ## Agent timeouts (milliseconds)
 

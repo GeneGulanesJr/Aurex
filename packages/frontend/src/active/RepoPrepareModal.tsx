@@ -13,8 +13,8 @@ interface RepoPrepareModalProps {
 
 const phases = [
   { key: "cloning", label: "Clone or update the repository" },
-  { key: "indexing", label: "Index code for AI context" },
-  { key: "complete", label: "Ready for mission work" },
+  { key: "indexing", label: "Index code for analysis" },
+  { key: "complete", label: "Ready to scan for issues" },
 ] as const;
 
 function phaseIndex(phase: RepoPrepareModalProps["phase"]): number {
@@ -88,7 +88,7 @@ export function RepoPrepareModal({ repo, phase, summary, error, onCancel, onConf
         {phase === "confirm" && (
           <>
             <p style={{ color: "var(--text-secondary)", fontSize: "13px", lineHeight: 1.5, marginTop: "12px" }}>
-              Aurex will prepare this repository before starting your mission.
+              Aurex will clone and index this repository, then run a supply-chain audit and heuristic scan to produce fix suggestions.
             </p>
             <ul style={{ color: "var(--text-secondary)", fontSize: "13px", lineHeight: 1.7, paddingLeft: "18px" }}>
               {phases.map((p) => (
@@ -157,7 +157,7 @@ export function RepoPrepareModal({ repo, phase, summary, error, onCancel, onConf
           )}
           {phase === "complete" && (
             <button className="pinyx-btn-primary" onClick={onConfirm} disabled={isWorking}>
-              Use Repo
+              Start Scan
             </button>
           )}
           {phase === "error" && onRetry && (

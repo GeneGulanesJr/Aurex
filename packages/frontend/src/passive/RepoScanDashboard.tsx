@@ -19,7 +19,7 @@ interface RepoScanDashboardProps {
 }
 
 type StatusFilter = "open" | "dismissed" | "all";
-type DashboardTab = "issues" | "architecture";
+type DashboardTab = "suggestions" | "architecture";
 
 const SCAN_PHASES = [
   "INDEXING REPOSITORY",
@@ -184,7 +184,7 @@ export function RepoScanDashboard({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<{ message: string; ok: boolean } | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [tab, setTab] = useState<DashboardTab>("issues");
+  const [tab, setTab] = useState<DashboardTab>("suggestions");
   const [tierFilter, setTierFilter] = useState<SuggestionTier | "all">("all");
   const [categoryFilter, setCategoryFilter] = useState<SuggestionCategory | "all">("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("open");
@@ -364,7 +364,7 @@ export function RepoScanDashboard({
       </div>
 
       <div style={{ display: "flex", gap: "8px", padding: "8px 16px 0", borderBottom: "1px solid var(--border)" }}>
-        {(["issues", "architecture"] as const).map((t) => (
+        {(["suggestions", "architecture"] as const).map((t) => (
           <button
             key={t}
             type="button"
@@ -381,7 +381,7 @@ export function RepoScanDashboard({
               letterSpacing: "1px",
             }}
           >
-            {t.toUpperCase()}
+            {t === "suggestions" ? "SUGGESTIONS" : t.toUpperCase()}
           </button>
         ))}
       </div>
@@ -406,7 +406,7 @@ export function RepoScanDashboard({
               {recommendedHighest && (
                 <button
                   type="button"
-                  onClick={() => { setSelectedId(recommendedHighest.id); setTab("issues"); }}
+                  onClick={() => { setSelectedId(recommendedHighest.id); setTab("suggestions"); }}
                   style={{ padding: "4px 10px", background: "var(--bg-elevated)", border: "1px solid var(--error)", borderRadius: "4px", color: "var(--text-primary)", cursor: "pointer", fontSize: "10px" }}
                 >
                   Highest impact: {recommendedHighest.title.slice(0, 48)}{recommendedHighest.title.length > 48 ? "…" : ""}
@@ -415,7 +415,7 @@ export function RepoScanDashboard({
               {recommendedSafest && recommendedSafest.id !== recommendedHighest?.id && (
                 <button
                   type="button"
-                  onClick={() => { setSelectedId(recommendedSafest.id); setTab("issues"); }}
+                  onClick={() => { setSelectedId(recommendedSafest.id); setTab("suggestions"); }}
                   style={{ padding: "4px 10px", background: "var(--bg-elevated)", border: "1px solid var(--success)", borderRadius: "4px", color: "var(--text-primary)", cursor: "pointer", fontSize: "10px" }}
                 >
                   Safest first: {recommendedSafest.title.slice(0, 48)}{recommendedSafest.title.length > 48 ? "…" : ""}
@@ -427,7 +427,7 @@ export function RepoScanDashboard({
           <div style={{ padding: "8px 16px", display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center", borderBottom: "1px solid var(--border)" }}>
             <input
               type="search"
-              placeholder="Search issues…"
+              placeholder="Search suggestions…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{ flex: "1 1 140px", minWidth: "120px", padding: "6px 10px", background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: "4px", color: "var(--text-primary)", fontSize: "11px" }}

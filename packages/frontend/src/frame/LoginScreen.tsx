@@ -39,7 +39,7 @@ export function LoginScreen() {
           marginBottom: "48px",
         }}
       >
-        MISSION CONTROL
+        REPOSITORY SCANNER
       </div>
       <button
         onClick={async () => {

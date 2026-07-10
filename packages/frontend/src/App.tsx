@@ -69,6 +69,16 @@ export function App() {
   } | null>(null);
   const { settings, setSettings, resetSettings } = useSettings();
   const { missionsEnabled } = useAppFeatures();
+
+  useEffect(() => {
+    if (missionsEnabled) return;
+    try {
+      localStorage.removeItem("aurex:selectedMissionId");
+    } catch {
+      // ignore
+    }
+  }, [missionsEnabled]);
+
   const { state: missionsState, selectMission, addOptimisticMission, markMissionRestarted, markMissionAborted, removeMission, handleWsEvent: missionsWsHandler } = useMissions({ enabled: missionsEnabled });
   const selectedMissionId = missionsEnabled ? missionsState.selectedMissionId : null;
   const { state, dispatch, handleWsEvent: missionWsHandler, reloadMission } = useMission(selectedMissionId);

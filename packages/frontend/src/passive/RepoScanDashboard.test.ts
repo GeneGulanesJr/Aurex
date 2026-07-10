@@ -106,9 +106,9 @@ describe("RepoScanDashboard", () => {
     expect(html).toContain("supply-chain finding");
     expect(html).toContain("START HERE");
     expect(html).toContain("Highest impact");
-    expect(html).toContain("Search issues");
+    expect(html).toContain("Search suggestions");
     expect(html).toContain("All tiers");
-    expect(html).toContain("ISSUES");
+    expect(html).toContain("SUGGESTIONS");
     expect(html).toContain("ARCHITECTURE");
     expect(html).toContain("Refactor heavy.ts");
     expect(html).toContain("complexity");
