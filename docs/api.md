@@ -50,6 +50,7 @@ Isolated issue review with copy-ready fix prompts. Requires a prepared repo (`PO
 
 Index repo via LaPis, run analysis (summary, graph, hotspots, readiness, Bumblebee supply chain), isolate issues, and generate template fix prompts.
 
+- **Body (optional):** `{ "forceRescan"?: boolean }` — when `true`, bypasses the 24h Bumblebee scan cache and runs a fresh supply-chain audit. The frontend also sends `forceRescan: true` on first-time repo prepare (`freshIndex`).
 - **Response (201):** `{ "report": ReviewReport }`
 - **Errors:** `404` if repo not prepared or review failed with zero issues (`{ "error": string, "report"?: ReviewReport }`)
 - **Source:** `packages/backend/src/routes/review-routes.ts`

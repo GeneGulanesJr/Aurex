@@ -294,7 +294,9 @@ export function App() {
           ({ report } = await runRepoReview(repoName));
         }
       } else {
-        ({ report } = await runRepoReview(repoName, { forceRescan: opts?.forceRescan === true }));
+        ({ report } = await runRepoReview(repoName, {
+          forceRescan: opts?.forceRescan === true || info.freshIndex === true,
+        }));
       }
       const warning = report.errors?.length
         ? report.errors.join("; ")

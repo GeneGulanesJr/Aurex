@@ -1,10 +1,8 @@
 import { randomUUID } from "crypto";
-import { writeFile, unlink } from "fs/promises";
-import { join } from "path";
-import { tmpdir } from "os";
-import type { BumblebeeScanResult, BumblebeeScanSummary, BumblebeeFinding, ExposureCatalog } from "@aurex/shared";
+import type { BumblebeeScanResult, BumblebeeScanSummary, BumblebeeFinding } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { BumblebeeClient, BumblebeeScanOptions } from "../clients/bumblebee-client.js";
+import { cleanupExposureCatalogPath, resolveExposureCatalogPath } from "../clients/bumblebee-catalog.js";
 import type { EventBus } from "../ws/events.js";
 
 export interface BumblebeeRunnerConfig {
@@ -56,21 +54,10 @@ export function createBumblebeeRunner(config: BumblebeeRunnerConfig) {
 
     // Resolve catalog file: if not configured, check KV store and write to temp
     let catalogFile = config.catalogPath;
-    // Stryker disable next-line ConditionalExpression: catalog resolution
-    // is tested but perTest doesn't attribute the tests correctly.
+    let tempCatalogFile: string | undefined;
     if (!catalogFile) {
-      const storedCatalog = await config.lapis.getSetting<ExposureCatalog>(
-        // Stryker disable next-line StringLiteral: setting key name —
-        // tested by checking the scan receives the catalog, not the key.
-        "bumblebee_catalog",
-      );
-      // Stryker disable next-line ConditionalExpression: the catalog check
-      // is tested by dedicated tests, but Stryker's perTest doesn't attribute.
-      // Stryker disable next-line OptionalChaining: same perTest issue.
-      if (storedCatalog?.entries?.length) {
-        catalogFile = join(tmpdir(), `bumblebee-catalog-${scanId}.json`);
-        await writeFile(catalogFile, JSON.stringify(storedCatalog), "utf-8");
-      }
+      tempCatalogFile = await resolveExposureCatalogPath(config.lapis, scanId);
+      catalogFile = tempCatalogFile;
     }
 
     const scanOptions: BumblebeeScanOptions = {
@@ -171,15 +158,7 @@ export function createBumblebeeRunner(config: BumblebeeRunnerConfig) {
         });
       } finally {
         ACTIVE_SCANS.delete(scanId);
-        // Clean up temp catalog file
-        // Stryker disable next-line ConditionalExpression: the catalogFile
-        // and config.catalogPath check is for temp file cleanup — tested
-        // indirectly but perTest doesn't attribute.
-        // Stryker disable next-line BooleanLiteral: same perTest issue.
-        if (catalogFile && !config.catalogPath) {
-          // Stryker disable next-line BlockStatement: cleanup is best-effort
-          await unlink(catalogFile).catch(() => {});
-        }
+        await cleanupExposureCatalogPath(tempCatalogFile);
       }
     });
 

@@ -2,11 +2,11 @@
 
 **Scan your repo → isolated issues → copy-ready fix prompts.**
 
-> _Last updated: 2026-07-09 · Reviewer-first v1: connect GitHub, scan a repo, copy LaPis-backed fix prompts per issue._
+> _Last updated: 2026-07-10 · Scanner-first default: connect GitHub, scan a repo, copy LaPis-backed fix prompts per issue._
 
-Aurex indexes your codebase with LaPis, runs supply-chain and heuristic analysis, and produces **one copy-ready fix prompt per isolated issue** — ready to paste into Cursor, Claude, or any coding workflow. No in-app agent execution required for the default reviewer experience.
+Aurex indexes your codebase with LaPis, runs supply-chain and heuristic analysis, and produces **one copy-ready fix prompt per isolated issue** — ready to paste into Cursor, Claude, or any coding workflow. No in-app agent execution required for the default scanner experience.
 
-**Optional (legacy):** Set `AUREX_MISSIONS_ENABLED=true` to expose the AI mission orchestrator — plan → build → validate → merge with workers and validators.
+**Optional (legacy coding-agent UI):** Set `AUREX_MISSIONS_ENABLED=true` on the backend **and** `VITE_MISSIONS_ENABLED=true` when building the frontend to expose the AI mission orchestrator — plan → build → validate → merge with workers and validators. The frontend defaults to scanner-only mode even when the backend flag is on.
 
 ---
 
@@ -24,7 +24,7 @@ Export all prompts as Markdown, filter by tier/category/status, or inspect archi
 
 ## Mission orchestrator (optional)
 
-**An AI-powered mission control for coding tasks** when `AUREX_MISSIONS_ENABLED=true`.
+**An AI-powered mission control for coding tasks** when both `AUREX_MISSIONS_ENABLED=true` (backend) and `VITE_MISSIONS_ENABLED=true` (frontend build) are set.
 
 ---
 
@@ -183,6 +183,7 @@ npx vitest --reporter=verbose     # detailed per-test output
 | `GET` | `/api/missions/:id/agent-logs` | Stream of agent lifecycle log entries |
 | `POST` | `/api/missions/:id/checkpoints` | Submit your decision on a checkpoint |
 | `POST` | `/api/missions/:id/abort` | Abort a running mission |
+| `DELETE` | `/api/missions/:id` | Remove a mission from sidebar/history (tombstone) |
 | `POST` | `/api/missions/:id/restart` | Restart a completed/failed/aborted mission |
 
 **WebSocket** — connect to `/ws` for real-time mission events (status changes, milestone transitions, cost updates, checkpoint escalations). Supports auth and replay.

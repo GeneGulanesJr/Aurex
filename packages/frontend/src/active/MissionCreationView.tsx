@@ -373,8 +373,12 @@ function ScanLaunchChecklist({
       active: systemReady && !selectedRepo,
     },
     {
-      label: "Run supply-chain audit",
-      detail: repoLoading ? "Bumblebee audit in progress…" : hasPreparedRepo ? `${issueCount} isolated issue(s) with fix prompts.` : "Pick a repo to index and run Bumblebee + heuristics.",
+      label: "Scan repository",
+      detail: repoLoading
+        ? "Indexing, Bumblebee supply-chain audit, and heuristics…"
+        : hasPreparedRepo
+          ? `${issueCount} isolated issue(s) with fix prompts.`
+          : "Pick a repo to index, run Bumblebee, and isolate issues.",
       complete: hasPreparedRepo && !repoLoading,
       active: Boolean(selectedRepo) && (!hasPreparedRepo || repoLoading),
     },

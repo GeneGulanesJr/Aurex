@@ -1,11 +1,9 @@
 import { randomUUID } from "crypto";
 import { stat } from "fs/promises";
-import { writeFile, unlink } from "fs/promises";
-import { join } from "path";
-import { tmpdir } from "os";
-import type { BumblebeeFinding, BumblebeeScanResult, ExposureCatalog, ReviewReport } from "@aurex/shared";
+import type { BumblebeeFinding, BumblebeeScanResult, ReviewReport } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { BumblebeeClient } from "../clients/bumblebee-client.js";
+import { cleanupExposureCatalogPath, resolveExposureCatalogPath } from "../clients/bumblebee-catalog.js";
 import type { CodeGraphInput } from "../orchestrator/affected-code.js";
 import { attachFixPrompts, type FixPromptContext } from "./fix-prompt-builder.js";
 import {
@@ -40,14 +38,6 @@ function scanIsRecent(scan: BumblebeeScanResult | null): boolean {
   if (!scan?.completedAt || scan.status !== "completed") return false;
   const completed = new Date(scan.completedAt).getTime();
   return Date.now() - completed < 24 * 60 * 60 * 1000;
-}
-
-async function resolveExposureCatalogPath(lapis: LaPisClient, id: string): Promise<string | undefined> {
-  const storedCatalog = await lapis.getSetting<ExposureCatalog>("bumblebee_catalog");
-  if (!storedCatalog?.entries?.length) return undefined;
-  const catalogFile = join(tmpdir(), `bumblebee-catalog-review-${id}.json`);
-  await writeFile(catalogFile, JSON.stringify(storedCatalog), "utf-8");
-  return catalogFile;
 }
 
 function makeScanSummary(
@@ -147,7 +137,7 @@ export async function runReview(
   scan = await getLatestRepoScan(lapis, repoName);
   const shouldRunBumblebee = bumblebeeClient && (!scanIsRecent(scan) || options?.forceRescan === true);
   if (shouldRunBumblebee) {
-    const catalogPath = await resolveExposureCatalogPath(lapis, reviewId);
+    const catalogPath = await resolveExposureCatalogPath(lapis, reviewId, "bumblebee-catalog-review");
     try {
       const startedAt = new Date().toISOString();
       const result = await bumblebeeClient!.scan({
@@ -173,7 +163,7 @@ export async function runReview(
       errors.push(`Package scan: ${err instanceof Error ? err.message : String(err)}`);
       if (!scanIsRecent(scan)) scan = null;
     } finally {
-      if (catalogPath) await unlink(catalogPath).catch(() => {});
+      await cleanupExposureCatalogPath(catalogPath);
     }
   }
 
