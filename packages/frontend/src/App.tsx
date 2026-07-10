@@ -14,6 +14,7 @@ import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useSupplyChain } from "./hooks/useSupplyChain";
 import { useQuota } from "./hooks/useQuota";
 import { useUpdateStatus } from "./hooks/useUpdateStatus";
+import { useAppFeatures } from "./hooks/useAppFeatures";
 import { countActiveMissions, countTerminalMissions } from "./passive/missionUiModel";
 import { MissionSidebar } from "./active/MissionSidebar";
 import { StatusBoard } from "./passive/StatusBoard";
@@ -26,10 +27,9 @@ import { QuotaPanel } from "./active/QuotaPanel";
 import { TopBar } from "./frame/TopBar";
 import { TelemetryBar } from "./frame/TelemetryBar";
 import { setTokenGetter, setAuthErrorHandler } from "./api";
-import { submitCheckpoint, createMission, restartMission, abortMission, getRepoHotspots, getRepoSuggestions, getRepoReadiness, listRepoScans } from "./api";
-import type { WsClientEvent, CheckpointDecision } from "@aurex/shared";
-import type { CodeSummaryResponse, CodeHotspotsResponse, RepoSuggestion, RepoReadinessProfile } from "./api";
-import type { BumblebeeScanResult, BumblebeeFinding, ListScansResponse } from "@aurex/shared";
+import { submitCheckpoint, createMission, restartMission, abortMission, runRepoReview, getRepoReview, updateIssueStatus } from "./api";
+import type { WsClientEvent, CheckpointDecision, ReviewReport } from "@aurex/shared";
+import type { CodeSummaryResponse } from "./api";
 
 export function App() {
   const { theme, setTheme } = useTheme();
@@ -62,16 +62,13 @@ export function App() {
     repoName: string;
     fullName: string;
     summary: CodeSummaryResponse | null;
-    hotspots: CodeHotspotsResponse | null;
-    suggestions: RepoSuggestion[];
-    readiness: RepoReadinessProfile | null;
-    packageScan: BumblebeeScanResult | null;
-    packageFindings: BumblebeeFinding[];
+    report: ReviewReport | null;
     loading: boolean;
     error: string | null;
     _version?: number;
   } | null>(null);
   const { settings, setSettings, resetSettings } = useSettings();
+  const { missionsEnabled } = useAppFeatures();
   const { state: missionsState, selectMission, addOptimisticMission, markMissionRestarted, markMissionAborted, handleWsEvent: missionsWsHandler } = useMissions();
   const { state, dispatch, handleWsEvent: missionWsHandler, reloadMission } = useMission(missionsState.selectedMissionId);
   const { state: supplyChainState, triggerScan: triggerSupplyChainScan, clearError: clearSupplyChainError, handleWsEvent: supplyChainWsHandler } = useSupplyChain(missionsState.selectedMissionId);
@@ -257,44 +254,113 @@ export function App() {
     clearSessionState("prepared_repo"); // mission started — don't restore overview
   }, [addOptimisticMission]);
 
-  const handleRepoPrepared = useCallback(async (info: { repoName: string; fullName: string; summary: CodeSummaryResponse | null; cloneUrl?: string; repoId?: number }) => {
+  const handleRepoPrepared = useCallback(async (
+    info: {
+      repoName: string;
+      fullName: string;
+      summary: CodeSummaryResponse | null;
+      freshIndex?: boolean;
+      cloneUrl?: string;
+      repoId?: number;
+    },
+    opts?: { forceRescan?: boolean },
+  ) => {
     const { repoName, fullName, summary, cloneUrl, repoId } = info;
     // Persist so a page refresh can rehydrate the overview without re-cloning.
     setSessionState("prepared_repo", { repoName, fullName, cloneUrl, repoId });
     const version = Date.now();
-    setPreparedRepo({ repoName, fullName, summary, hotspots: null, suggestions: [], readiness: null, packageScan: null, packageFindings: [], loading: true, error: null, _version: version } as any);
-    // Track which analysis sections fail so we can surface a real error to the
-    // user instead of silently showing empty cards for every section.
-    const failures: string[] = [];
-    const track = <T,>(p: Promise<T>, label: string, fallback: T): Promise<T> =>
-      p.catch(() => { failures.push(label); return fallback; });
+    setPreparedRepo((prev) => ({
+      repoName,
+      fullName,
+      summary,
+      report: opts?.forceRescan && prev?.repoName === repoName ? prev.report : null,
+      loading: true,
+      error: null,
+      _version: version,
+    }));
     try {
-      const [hotspots, readiness, scanList] = await Promise.all([
-        track(getRepoHotspots(repoName), "hotspots", null),
-        track(getRepoReadiness(repoName), "readiness", null),
-        track(listRepoScans(repoName), "scans", { scans: [] } as ListScansResponse),
-      ]);
-      const latestScan = scanList.scans.at(-1);
-      const suggestionsRes = await track(getRepoSuggestions(repoName), "suggestions", { suggestions: [], analysisVersion: "2.0" });
-      const error = failures.length > 0 ? `Some analysis sections could not be loaded (${failures.join(", ")}).` : null;
+      let report: ReviewReport;
+      const shouldRunFreshReview = opts?.forceRescan || info.freshIndex;
+      if (!shouldRunFreshReview) {
+        try {
+          ({ report } = await getRepoReview(repoName));
+        } catch {
+          ({ report } = await runRepoReview(repoName));
+        }
+      } else {
+        ({ report } = await runRepoReview(repoName));
+      }
+      const warning = report.errors?.length
+        ? report.errors.join("; ")
+        : report.status === "partial"
+          ? "Review completed with partial data."
+          : null;
       setPreparedRepo((prev) => {
-        // Don't overwrite if cleared (e.g., mission created while loading)
-        if (!prev || (prev as any)._version !== version) return prev;
+        if (!prev || prev._version !== version) return prev;
+        return { repoName, fullName, summary, report, loading: false, error: warning };
+      });
+    } catch (err) {
+      setPreparedRepo((prev) => {
+        if (!prev || prev._version !== version) return prev;
         return {
-          repoName,
-          fullName,
-          summary,
-          hotspots,
-          suggestions: suggestionsRes.suggestions,
-          readiness,
-          packageScan: latestScan ?? null,
-          packageFindings: latestScan?.findings ?? [],
+          ...prev,
           loading: false,
-          error,
+          error: err instanceof Error ? err.message : "Repository scan failed.",
         };
       });
+    }
+  }, []);
+
+  const handleRescanRepo = useCallback(async () => {
+    if (!preparedRepo || preparedRepo.loading) return;
+    await handleRepoPrepared(
+      {
+        repoName: preparedRepo.repoName,
+        fullName: preparedRepo.fullName,
+        summary: preparedRepo.summary,
+      },
+      { forceRescan: true },
+    );
+  }, [preparedRepo, handleRepoPrepared]);
+
+  const handleIssueStatusChange = useCallback(async (issueId: string, status: import("@aurex/shared").IssueStatus) => {
+    let reviewId: string | null = null;
+    let repoName: string | null = null;
+    let priorStatus: import("@aurex/shared").IssueStatus | undefined;
+    setPreparedRepo((prev) => {
+      if (!prev?.report) return prev;
+      reviewId = prev.report.id;
+      repoName = prev.repoName;
+      priorStatus = prev.report.issues.find((i) => i.id === issueId)?.status ?? "open";
+      return {
+        ...prev,
+        report: {
+          ...prev.report,
+          issues: prev.report.issues.map((i) => (i.id === issueId ? { ...i, status } : i)),
+        },
+      };
+    });
+    if (!reviewId || !repoName) return;
+    try {
+      const { report } = await updateIssueStatus(repoName, reviewId, issueId, status);
+      setPreparedRepo((prev) => {
+        if (!prev || prev.repoName !== repoName || prev.report?.id !== reviewId) return prev;
+        return { ...prev, report };
+      });
     } catch {
-      setPreparedRepo((prev) => prev ? { ...prev, loading: false, error: "Repository analysis failed unexpectedly." } : null);
+      setPreparedRepo((prev) => {
+        if (!prev?.report || prev.repoName !== repoName || prev.report.id !== reviewId) return prev;
+        return {
+          ...prev,
+          report: {
+            ...prev.report,
+            issues: prev.report.issues.map((i) =>
+              i.id === issueId ? { ...i, status: priorStatus ?? "open" } : i,
+            ),
+          },
+          error: prev.error ?? "Could not save issue status. Try again.",
+        };
+      });
     }
   }, []);
 
@@ -351,9 +417,9 @@ export function App() {
       }
     },
     // No onDismiss: Esc must not silently clear a pending checkpoint.
-    onNewMission: () => {
-      selectMission(null);
-    },
+    onNewMission: missionsEnabled
+      ? () => { selectMission(null); }
+      : undefined,
     onToggleSidebar: toggleSidebar,
   });
 
@@ -398,9 +464,11 @@ export function App() {
     );
   }
 
-  const activeMissionCount = countActiveMissions(missionsState.missions.map((m) => m.state));
+  const activeMissionCount = missionsEnabled
+    ? countActiveMissions(missionsState.missions.map((m) => m.state))
+    : 0;
 
-  const gridColumns = bp.isMobile
+  const gridColumns = bp.isMobile || !missionsEnabled
     ? "1fr"
     : sidebarCollapsed
       ? "48px 1fr"
@@ -413,6 +481,7 @@ export function App() {
       <TopBar
         connected={connected}
         missionCount={activeMissionCount}
+        missionsEnabled={missionsEnabled}
         uptime={uptime}
         theme={theme}
         onThemeChange={setTheme}
@@ -420,15 +489,15 @@ export function App() {
         pinyxConfigured={pinyxStatus.configured}
         systemReady={systemReady}
         onOpenIntegrations={() => setIntegrationsOpen(true)}
-        sidebarCollapsed={bp.isMobile ? !mobileOverlayOpen : sidebarCollapsed}
-        onToggleSidebar={toggleSidebar}
+        sidebarCollapsed={missionsEnabled ? (bp.isMobile ? !mobileOverlayOpen : sidebarCollapsed) : true}
+        onToggleSidebar={missionsEnabled ? toggleSidebar : undefined}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenQuota={() => setQuotaOpen(true)}
         quotaStatus={quotaStatus?.providers?.find(p => p.tracked)?.status ?? null}
         updateStatus={updateStatus}
       />
       <div className="app-workspace" style={{ gridTemplateColumns: gridColumns }}>
-        {!bp.isMobile && (
+        {!bp.isMobile && missionsEnabled && (
           <MissionSidebar
             missions={missionsState.missions}
             selectedMissionId={missionsState.selectedMissionId}
@@ -468,18 +537,19 @@ export function App() {
             scanError={supplyChainState.error}
             onDismissScanError={clearSupplyChainError}
             preparedRepo={preparedRepo}
-            onStartFromSuggestion={(prefill: string) => {
-              window.dispatchEvent(new CustomEvent("aurex:focus-new-mission", { detail: prefill }));
-            }}
+            onRescanRepo={() => { void handleRescanRepo(); }}
+            onIssueStatusChange={(issueId, status) => { void handleIssueStatusChange(issueId, status); }}
             onRepoPrepared={handleRepoPrepared}
             github={github}
             systemReady={systemReady}
+            missionsEnabled={missionsEnabled}
             loading={state.loading}
             loadError={state.loadError}
             logsRehydrateError={state.logsRehydrateError}
             onRetryMissionLoad={reloadMission}
           />
         </main>
+        {missionsEnabled && (
         <div className="app-telemetry-row">
           <TelemetryBar
             tokens={state.cost?.totalTokens ?? 0}
@@ -490,8 +560,9 @@ export function App() {
             isScanning={supplyChainState.isScanning}
           />
         </div>
+        )}
       </div>
-      {showMobileOverlay && (
+      {showMobileOverlay && missionsEnabled && (
         <>
           <div
             className="sidebar-backdrop"
@@ -523,7 +594,7 @@ export function App() {
         onReset={resetSettings}
         onClose={() => setSettingsOpen(false)}
       />
-      {state.escalation?.type === "escalation" && (
+      {state.escalation?.type === "escalation" && missionsEnabled && (
         <EscalationOverlay
           event={state.escalation}
           onDecision={handleDecision}

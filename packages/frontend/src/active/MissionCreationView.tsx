@@ -2,18 +2,19 @@ import { useState, useEffect, useRef } from "react";
 import { useNewMissionForm } from "./useNewMissionForm";
 import { RepoPicker } from "./RepoPicker";
 import { RepoPrepareModal } from "./RepoPrepareModal";
-import { RepoOverviewPanel } from "../passive/RepoOverviewPanel";
+import { RepoScanDashboard } from "../passive/RepoScanDashboard";
 import type { UseGitHubReturn } from "../hooks/useGitHub";
 import { prepareGitHubRepo, exploreRepo, getRepoSummary } from "../api";
 import { getSessionState } from "../lib/sessionState";
-import type { GitHubRepoResponse, CodeSummaryResponse, CodeHotspotsResponse, RepoSuggestion, RepoReadinessProfile } from "../api";
-import type { BumblebeeFinding, BumblebeeScanResult } from "@aurex/shared";
+import type { GitHubRepoResponse, CodeSummaryResponse } from "../api";
+import type { IssueStatus, ReviewReport } from "@aurex/shared";
 import { animate, stagger } from "animejs";
 
 interface PreparedRepoInfo {
   repoName: string;
   fullName: string;
   summary: CodeSummaryResponse | null;
+  freshIndex?: boolean;
   cloneUrl?: string;
   repoId?: number;
 }
@@ -25,24 +26,17 @@ interface MissionCreationViewProps {
     repoName: string;
     fullName: string;
     summary: CodeSummaryResponse | null;
-    hotspots: CodeHotspotsResponse | null;
-    suggestions: RepoSuggestion[];
-    readiness: RepoReadinessProfile | null;
-    packageScan: BumblebeeScanResult | null;
-    packageFindings: BumblebeeFinding[];
+    report: ReviewReport | null;
     loading: boolean;
     error?: string | null;
   } | null;
   onRepoPrepared?: (info: PreparedRepoInfo) => void;
   systemReady?: boolean;
-  onStartFromSuggestion?: (prefill: string) => void;
+  onRescanRepo?: () => void;
+  onIssueStatusChange?: (issueId: string, status: IssueStatus) => void;
 }
 
-const examples = [
-  '"Add OAuth2 login with Google and GitHub"',
-  '"Write tests for the payment module"',
-  '"Refactor the API to use Fastify"',
-];
+const examples: string[] = [];
 
 export function MissionCreationView({
   onSubmit,
@@ -50,7 +44,8 @@ export function MissionCreationView({
   preparedRepo,
   onRepoPrepared,
   systemReady,
-  onStartFromSuggestion,
+  onRescanRepo,
+  onIssueStatusChange,
 }: MissionCreationViewProps) {
   const form = useNewMissionForm(onSubmit);
   const [pendingRepo, setPendingRepo] = useState<GitHubRepoResponse | null>(null);
@@ -195,19 +190,15 @@ export function MissionCreationView({
       repoName: preparedRepoName,
       fullName: pendingRepo.full_name,
       summary: exploreSummary,
+      freshIndex: true,
       cloneUrl: pendingRepo.clone_url,
       repoId: pendingRepo.id,
     });
     setPendingRepo(null);
   }
 
-  const handleSuggestionClick = (prefill: string) => {
-    if (onStartFromSuggestion) {
-      onStartFromSuggestion(prefill);
-    } else {
-      form.openWithSuggestion(prefill);
-      setTimeout(() => textareaRef.current?.focus(), 50);
-    }
+  const handleSuggestionClick = (_prefill: string) => {
+    // Fix prompts are copied from RepoScanDashboard — no mission flow in v1.
   };
 
   const handleExampleClick = (text: string) => {
@@ -226,27 +217,27 @@ export function MissionCreationView({
             AUREX
           </div>
           <div style={{ fontSize: "13px", letterSpacing: "4px", textTransform: "uppercase", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace' }}>
-            Autonomous Mission Control
+            Codebase Review
           </div>
         </div>
 
-        <MissionLaunchChecklist
-          systemReady={!!systemReady}
+        <ScanLaunchChecklist
+          systemReady={!!github?.connected}
           githubConnected={!!github?.connected}
           repoCount={github?.repos.length ?? 0}
           selectedRepo={form.state.selectedRepoFullName}
-          hasDescription={form.state.description.trim().length > 0}
           hasPreparedRepo={hasPreparedRepo}
           repoLoading={preparedRepo?.loading ?? false}
+          issueCount={preparedRepo?.report?.issues.length ?? 0}
         />
 
-        {!systemReady ? (
+        {!github?.connected ? (
           <div className="creation-section" style={{ width: "100%", padding: "16px", background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "6px", textAlign: "center" }}>
             <div style={{ color: "var(--warning)", fontSize: "11px", fontFamily: '"JetBrains Mono", monospace', textTransform: "uppercase", letterSpacing: "1px", marginBottom: "8px" }}>
-              Integrations Required
+              GitHub Required
             </div>
             <div style={{ color: "var(--text-muted)", fontSize: "12px" }}>
-              Configure GitHub & PiNyx in the Integrations panel before creating missions.
+              Connect GitHub in the Integrations panel to scan repositories.
             </div>
           </div>
         ) : (
@@ -260,7 +251,6 @@ export function MissionCreationView({
             >
               {/* Create mission content */}
               <div className="creation-section mission-create-card">
-                {/* Repo picker */}
                 {github?.connected && github.repos.length > 0 && (
                   <RepoPicker repos={github.repos} selectedRepoId={form.state.selectedRepoId} onSelect={handleRepoSelect} />
                 )}
@@ -280,7 +270,6 @@ export function MissionCreationView({
                   </div>
                 )}
 
-                {/* Prepared repo card */}
                 {form.state.selectedRepoFullName && preparedRepo && (
                   <div style={{
                     background: "var(--bg-inset)",
@@ -291,140 +280,30 @@ export function MissionCreationView({
                     <div style={{ color: "var(--success)", fontFamily: '"JetBrains Mono", monospace', fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
                       ✓ {form.state.selectedRepoFullName}
                     </div>
-                    {preparedRepo.summary ? (
+                    {preparedRepo.summary && (
                       <div style={{ color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", marginTop: "4px" }}>
-                        {preparedRepo.summary.files} files · {preparedRepo.summary.symbols} symbols · {preparedRepo.summary.modules.length} modules
-                      </div>
-                    ) : (
-                      <div style={{ color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', fontSize: "10px", marginTop: "4px" }}>
-                        Status: READY
+                        {preparedRepo.summary.files} files · {preparedRepo.summary.symbols} symbols
                       </div>
                     )}
-                  </div>
-                )}
-                {form.state.selectedRepoFullName && !preparedRepo && (
-                  <div style={{ color: "var(--accent)", fontSize: "11px", fontFamily: '"JetBrains Mono", monospace' }}>
-                    REPO READY · {form.state.selectedRepoFullName}
                   </div>
                 )}
 
                 {github?.error && (
                   <p style={{ fontSize: "12px", color: "var(--error)", margin: 0 }}>{github.error}</p>
                 )}
-
-                {/* Description textarea */}
-                <textarea
-                  ref={textareaRef}
-                  value={form.state.description}
-                  onChange={(e) => form.setDescription(e.target.value)}
-                  onKeyDown={form.handleKeyDown}
-                  placeholder="Describe what you want done..."
-                  style={{
-                    width: "100%",
-                    background: "var(--bg-inset)",
-                    color: "var(--text-primary)",
-                    fontSize: "15px",
-                    borderRadius: "6px",
-                    padding: "14px 16px",
-                    border: "1px solid var(--border)",
-                    outline: "none",
-                    resize: "vertical",
-                    fontFamily: '"Inter", sans-serif',
-                    lineHeight: 1.6,
-                    minHeight: "140px",
-                  }}
-                  rows={7}
-                  autoFocus
-                  disabled={form.state.submitting}
-                />
-
-                {/* Submit row */}
-                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                  <button
-                    onClick={form.handleSubmit}
-                    disabled={!form.canSubmit}
-                    style={{
-                      padding: "8px 20px",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      background: form.canSubmit ? "var(--accent)" : "var(--bg-elevated)",
-                      color: form.canSubmit ? "var(--bg-deep)" : "var(--text-muted)",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: form.canSubmit ? "pointer" : "default",
-                      fontFamily: '"JetBrains Mono", monospace',
-                      textTransform: "uppercase",
-                      letterSpacing: "1px",
-                    }}
-                  >
-                    {form.state.submitting ? "Creating..." : "Create Mission"}
-                  </button>
-                  <span style={{ fontSize: "11px", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace' }}>
-                    Enter to submit
-                  </span>
-                </div>
-
-                {form.state.error && <p style={{ fontSize: "12px", color: "var(--error)", margin: 0 }}>{form.state.error}</p>}
-
-                {/* Example missions (only when no repo prepared) */}
-                {!hasPreparedRepo && (
-                  <div style={{ marginTop: "12px" }}>
-                    <div style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "2px", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', marginBottom: "12px" }}>
-                      EXAMPLE MISSIONS
-                    </div>
-                    {examples.map((text) => (
-                      <div
-                        key={text}
-                        onClick={() => handleExampleClick(text.replace(/^"|"$/g, ""))}
-                        style={{
-                          background: "var(--bg-surface)",
-                          border: "1px solid var(--border)",
-                          borderRadius: "6px",
-                          padding: "12px 16px",
-                          marginBottom: "8px",
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "12px",
-                          transition: "border-color 0.15s, background 0.15s, box-shadow 0.15s",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.borderColor = "var(--accent-dim)";
-                          e.currentTarget.style.background = "var(--bg-elevated)";
-                          e.currentTarget.style.boxShadow = "0 0 12px var(--accent-glow)";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.borderColor = "var(--border)";
-                          e.currentTarget.style.background = "var(--bg-surface)";
-                          e.currentTarget.style.boxShadow = "none";
-                        }}
-                      >
-                        <span style={{ color: "var(--accent)" }}>◈</span>
-                        <span style={{ fontSize: "13px", color: "var(--text-primary)", fontFamily: '"JetBrains Mono", monospace' }}>
-                          {text}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
 
-              {/* Repo overview stays visible so users do not have to hunt through tabs. */}
               {hasPreparedRepo && preparedRepo && (
-                <aside className="creation-section mission-overview-card">
-                <RepoOverviewPanel
-                  repoName={preparedRepo.repoName}
-                  fullName={preparedRepo.fullName}
-                  summary={preparedRepo.summary}
-                  hotspots={preparedRepo.hotspots}
-                  suggestions={preparedRepo.suggestions}
-                  readiness={preparedRepo.readiness}
-                  packageScan={preparedRepo.packageScan}
-                  packageFindings={preparedRepo.packageFindings}
-                  loading={preparedRepo.loading}
-                  error={preparedRepo.error}
-                  onStartMission={handleSuggestionClick}
-                />
+                <aside className="creation-section mission-overview-card" style={{ minHeight: "520px" }}>
+                  <RepoScanDashboard
+                    repoName={preparedRepo.repoName}
+                    fullName={preparedRepo.fullName}
+                    report={preparedRepo.report}
+                    loading={preparedRepo.loading}
+                    error={preparedRepo.error}
+                    onRescan={onRescanRepo}
+                    onIssueStatusChange={onIssueStatusChange}
+                  />
                 </aside>
               )}
             </div>
@@ -463,54 +342,54 @@ export function MissionCreationView({
 }
 
 
-function MissionLaunchChecklist({
+function ScanLaunchChecklist({
   systemReady,
   githubConnected,
   repoCount,
   selectedRepo,
-  hasDescription,
   hasPreparedRepo,
   repoLoading,
+  issueCount,
 }: {
   systemReady: boolean;
   githubConnected: boolean;
   repoCount: number;
   selectedRepo?: string;
-  hasDescription: boolean;
   hasPreparedRepo: boolean;
   repoLoading: boolean;
+  issueCount: number;
 }) {
   const items = [
     {
-      label: "Connect integrations",
-      detail: systemReady ? "GitHub and PiNyx are ready." : "Open Integrations to finish setup.",
+      label: "Connect GitHub",
+      detail: systemReady ? "GitHub is ready." : "Open Integrations to finish setup.",
       complete: systemReady,
       active: !systemReady,
     },
     {
       label: "Choose a repo",
-      detail: selectedRepo ?? (githubConnected ? `${repoCount} repositories available below.` : "Connect GitHub to load repositories."),
+      detail: selectedRepo ?? (githubConnected ? `${repoCount} repositories available.` : "Connect GitHub to load repositories."),
       complete: Boolean(selectedRepo),
       active: systemReady && !selectedRepo,
     },
     {
-      label: "Review repo context",
-      detail: repoLoading ? "Analysis is still running." : hasPreparedRepo ? "Suggestions are visible next to the prompt." : "Pick a repo to unlock suggested missions.",
+      label: "Scan for issues",
+      detail: repoLoading ? "Scan in progress…" : hasPreparedRepo ? `${issueCount} isolated issue(s) with fix prompts.` : "Pick a repo to run LaPis index + scan.",
       complete: hasPreparedRepo && !repoLoading,
       active: Boolean(selectedRepo) && (!hasPreparedRepo || repoLoading),
     },
     {
-      label: "Describe the mission",
-      detail: hasDescription ? "Prompt is ready to launch." : "Write a goal or click a suggested mission.",
-      complete: hasDescription,
-      active: systemReady && (hasPreparedRepo || Boolean(selectedRepo)) && !hasDescription,
+      label: "Copy fix prompts",
+      detail: hasPreparedRepo && issueCount > 0 ? "Select an issue and copy its prompt." : "Fix prompts appear after scan completes.",
+      complete: hasPreparedRepo && issueCount > 0 && !repoLoading,
+      active: hasPreparedRepo && !repoLoading && issueCount === 0,
     },
   ];
 
   return (
-    <div className="creation-section mission-launch-checklist" aria-label="Mission launch checklist">
+    <div className="creation-section mission-launch-checklist" aria-label="Review checklist">
       <div className="mission-launch-checklist__header">
-        <span>Launch checklist</span>
+        <span>Review checklist</span>
         <span>{items.filter((item) => item.complete).length}/{items.length} ready</span>
       </div>
       <div className="mission-launch-checklist__items">

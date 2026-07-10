@@ -12,7 +12,8 @@ import { registerGlobalAuth } from "./routes/auth.js";
 import { registerGitHubRoutes } from "./routes/github.js";
 import { registerPinyxRoutes } from "./routes/pinyx.js";
 import { registerCodeContextRoutes } from "./routes/code-context.js";
-import { registerRepoExploreRoutes } from "./routes/repo-explore.js";
+import { registerRepoExploreRoutes, buildReadinessProfile } from "./routes/repo-explore.js";
+import { registerReviewRoutes } from "./routes/review-routes.js";
 import { registerMutationRoutes } from "./routes/mutation-routes.js";
 import { createBumblebeeClient } from "./clients/bumblebee-client.js";
 import type { ExposureCatalog } from "@aurex/shared";
@@ -192,7 +193,12 @@ async function main() {
       pinyxOk = false;
     }
     const ok = lapisOk && pinyxOk;
-    return { status: ok ? "ok" : "degraded", lapis: lapisOk, pinyx: pinyxOk };
+    return {
+      status: ok ? "ok" : "degraded",
+      lapis: lapisOk,
+      pinyx: pinyxOk,
+      features: { missionsEnabled: config.missionsEnabled },
+    };
   });
 
   // REST routes
@@ -222,6 +228,9 @@ async function main() {
 
   // Repo explore (auto-explore + suggestions)
   registerRepoExploreRoutes(app, { lapis, bumblebeeClient });
+
+  // Repo review (isolated issues + fix prompts)
+  registerReviewRoutes(app, { lapis, bumblebeeClient, buildReadinessProfile });
 
   // Mutation testing routes (Stryker on scanned repos)
   registerMutationRoutes(app, { lapis, eventBus });

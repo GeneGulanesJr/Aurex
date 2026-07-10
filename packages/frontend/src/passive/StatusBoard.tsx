@@ -6,7 +6,8 @@ import { dimPassive, restorePassive } from "../animations/state-transitions";
 import { isMissionTerminal, isOrchestrationWarningError, getMissionErrorLabel } from "./missionUiModel";
 import type { Mission, Milestone, WorkingUnit, CostSummary, WsClientEvent, BumblebeeFinding, BumblebeeScanResult } from "@aurex/shared";
 import type { MissionError, AgentLogEntry } from "../hooks/useMission";
-import type { CodeSummaryResponse, CodeHotspotsResponse, RepoSuggestion, RepoReadinessProfile } from "../api";
+import type { CodeSummaryResponse } from "../api";
+import type { ReviewReport } from "@aurex/shared";
 import type { UseGitHubReturn } from "../hooks/useGitHub";
 
 interface StatusBoardProps {
@@ -36,15 +37,12 @@ interface StatusBoardProps {
     repoName: string;
     fullName: string;
     summary: CodeSummaryResponse | null;
-    hotspots: CodeHotspotsResponse | null;
-    suggestions: RepoSuggestion[];
-    readiness: RepoReadinessProfile | null;
-    packageScan: BumblebeeScanResult | null;
-    packageFindings: BumblebeeFinding[];
+    report: ReviewReport | null;
     loading: boolean;
     error?: string | null;
   } | null;
-  onStartFromSuggestion?: (prefill: string) => void;
+  onRescanRepo?: () => void;
+  onIssueStatusChange?: (issueId: string, status: import("@aurex/shared").IssueStatus) => void;
   onRepoPrepared?: (info: { repoName: string; fullName: string; summary: CodeSummaryResponse | null }) => void;
   github?: UseGitHubReturn;
   systemReady?: boolean;
@@ -52,9 +50,10 @@ interface StatusBoardProps {
   loadError?: string | null;
   logsRehydrateError?: string | null;
   onRetryMissionLoad?: () => void;
+  missionsEnabled?: boolean;
 }
 
-export function StatusBoard({ mission, milestones, workers, cost, events, logs, errors, agentLogs, blurred, eventStreamCount, autoCollapseContext, onExampleClick, onRetryMission, onAbortMission, abortingMission = false, onDismissErrors, scanFindings = [], isScanning = false, scans = [], onTriggerScan, scanError, onDismissScanError, preparedRepo, onStartFromSuggestion, onRepoPrepared, github, systemReady, loading, loadError, logsRehydrateError, onRetryMissionLoad }: StatusBoardProps) {
+export function StatusBoard({ mission, milestones, workers, cost, events, logs, errors, agentLogs, blurred, eventStreamCount, autoCollapseContext, onExampleClick, onRetryMission, onAbortMission, abortingMission = false, onDismissErrors, scanFindings = [], isScanning = false, scans = [], onTriggerScan, scanError, onDismissScanError, preparedRepo, onRescanRepo, onIssueStatusChange, onRepoPrepared, github, systemReady, loading, loadError, logsRehydrateError, onRetryMissionLoad, missionsEnabled = true }: StatusBoardProps) {
   const boardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -82,7 +81,7 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
     lastErrorCountRef.current = nonRecoverableErrors.length;
   }, [nonRecoverableErrors.length]);
 
-  if (loading && !mission) {
+  if (loading && !mission && missionsEnabled) {
     return (
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--text-muted)", fontFamily: '"JetBrains Mono", monospace', letterSpacing: "2px", fontSize: "12px" }}>
         <span style={{ animation: "spin 1s linear infinite", display: "inline-block", fontSize: "24px", marginBottom: "12px", color: "var(--accent)" }}>↻</span>
@@ -91,8 +90,8 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
     );
   }
 
-  if (!mission) {
-    if (loadError) {
+  if (!mission || !missionsEnabled) {
+    if (loadError && missionsEnabled) {
       return (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", padding: "24px", textAlign: "center" }}>
           <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: "13px", color: "var(--error)", letterSpacing: "2px", marginBottom: "12px" }}>
@@ -126,10 +125,11 @@ export function StatusBoard({ mission, milestones, workers, cost, events, logs, 
       <MissionCreationView
         onSubmit={async (description, cloneUrl) => { if (onExampleClick) await onExampleClick(description, cloneUrl); }}
         github={github}
-        preparedRepo={preparedRepo ? { repoName: preparedRepo.repoName, fullName: preparedRepo.fullName, summary: preparedRepo.summary, hotspots: preparedRepo.hotspots, suggestions: preparedRepo.suggestions, readiness: preparedRepo.readiness, packageScan: preparedRepo.packageScan, packageFindings: preparedRepo.packageFindings, loading: preparedRepo.loading, error: preparedRepo.error } : null}
+        preparedRepo={preparedRepo ? { repoName: preparedRepo.repoName, fullName: preparedRepo.fullName, summary: preparedRepo.summary, report: preparedRepo.report, loading: preparedRepo.loading, error: preparedRepo.error } : null}
+        onRescanRepo={onRescanRepo}
+        onIssueStatusChange={onIssueStatusChange}
         onRepoPrepared={onRepoPrepared}
         systemReady={systemReady}
-        onStartFromSuggestion={onStartFromSuggestion}
       />
     );
   }

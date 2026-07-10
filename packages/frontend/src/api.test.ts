@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createMission, getGitHubConnectUrl, getGitHubConfig, getPinyxConfig, savePinyxConfig, getPinyxModels, getPinyxStatus, exploreRepo, getRepoSummary, getRepoHotspots, getRepoSuggestions, getMutationSummary, runMutationTests, getMutationRunStatus, submitCheckpoint } from "./api";
+import { createMission, getGitHubConnectUrl, getGitHubConfig, getPinyxConfig, savePinyxConfig, getPinyxModels, getPinyxStatus, exploreRepo, getRepoSummary, getRepoHotspots, getMutationSummary, runMutationTests, getMutationRunStatus, submitCheckpoint } from "./api";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
@@ -120,14 +120,6 @@ describe("repo explore API", () => {
 
     const result = await getRepoHotspots("my-repo");
     expect(result).toEqual(hotspots);
-  });
-
-  it("getRepoSuggestions fetches suggestions", async () => {
-    const suggestions = { suggestions: [{ id: "complexity-a", category: "complexity", title: "Refactor a" }], analysisVersion: "1.0" };
-    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => suggestions });
-
-    const result = await getRepoSuggestions("my-repo");
-    expect(result.suggestions).toHaveLength(1);
   });
 
   // --- Mutation testing ---

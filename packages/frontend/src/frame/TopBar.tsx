@@ -5,6 +5,7 @@ import type { UpdateStatus } from "../hooks/useUpdateStatus";
 interface TopBarProps {
   connected: boolean;
   missionCount: number;
+  missionsEnabled?: boolean;
   uptime: string;
   theme: ThemeId;
   onThemeChange: (theme: ThemeId) => void;
@@ -55,7 +56,7 @@ function StatusItem({ color, label }: { color: string; label: string }) {
   );
 }
 
-export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, githubUser, pinyxConfigured, systemReady, onOpenIntegrations, sidebarCollapsed, onToggleSidebar, onOpenSettings, onOpenQuota, quotaStatus, updateStatus }: TopBarProps) {
+export function TopBar({ connected, missionCount, missionsEnabled = true, uptime, theme, onThemeChange, githubUser, pinyxConfigured, systemReady, onOpenIntegrations, sidebarCollapsed, onToggleSidebar, onOpenSettings, onOpenQuota, quotaStatus, updateStatus }: TopBarProps) {
   const dotColor = connected ? "var(--success)" : "var(--error)";
   return (
     <header
@@ -144,7 +145,9 @@ export function TopBar({ connected, missionCount, uptime, theme, onThemeChange, 
         }}
       >
         <span className="hide-on-mobile">UPTIME <span style={{ color: "var(--accent)", fontWeight: 500 }}>{uptime}</span></span>
-        <span className="hide-on-tablet">MISSIONS <span style={{ color: "var(--accent)", fontWeight: 500 }}>{missionCount}</span> ACTIVE</span>
+        {missionsEnabled && (
+          <span className="hide-on-tablet">MISSIONS <span style={{ color: "var(--accent)", fontWeight: 500 }}>{missionCount}</span> ACTIVE</span>
+        )}
         <button
           onClick={onOpenIntegrations}
           className="hide-on-mobile"

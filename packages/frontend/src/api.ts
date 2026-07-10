@@ -264,50 +264,12 @@ export async function getCodeHotspots(missionId: string): Promise<CodeHotspotsRe
   return res.json() as Promise<CodeHotspotsResponse>;
 }
 
-// Repo explore (auto-explore + suggestions)
+// Repo explore (prepare/index helpers — review uses /review endpoints)
 export interface ExploreRepoResponse {
   repoName: string;
   status: "completed" | "failed";
   summary?: CodeSummaryResponse;
   error?: string;
-}
-
-export type SuggestionTier = "P0" | "P1" | "P2" | "P3" | "P4" | "P5";
-
-export type SuggestionCategory =
-  | "critical_path"
-  | "security"
-  | "dead_code"
-  | "complexity"
-  | "coupling"
-  | "layer_violation"
-  | "test_coverage"
-  | "documentation"
-  | "performance"
-  | "structure"
-  | "naming"
-  | "style";
-
-export interface RepoSuggestion {
-  id: string;
-  tier: SuggestionTier;
-  category: SuggestionCategory;
-  title: string;
-  description: string;
-  affectedFiles: number;
-  detail: string;
-  prefill: string;
-  confidence?: "high" | "medium" | "low";
-  estimatedEffort?: "small" | "medium" | "large";
-  estimatedRisk?: "low" | "medium" | "high";
-  evidence?: Array<{ type: string; message: string; file?: string }>;
-  labels?: string[];
-}
-
-export interface RepoSuggestionsResponse {
-  suggestions: RepoSuggestion[];
-  analysisVersion: string;
-  recommended?: { highestImpact?: string; safestFirst?: string };
 }
 
 export interface RepoReadinessCommand {
@@ -351,12 +313,6 @@ export async function getRepoHotspots(repoName: string): Promise<CodeHotspotsRes
   return res.json() as Promise<CodeHotspotsResponse>;
 }
 
-export async function getRepoSuggestions(repoName: string): Promise<RepoSuggestionsResponse> {
-  const res = await apiFetch(`/api/repos/${repoName}/suggestions`);
-  if (!res.ok) throw new Error(`Failed to fetch repo suggestions: ${res.status}`);
-  return res.json() as Promise<RepoSuggestionsResponse>;
-}
-
 export async function getRepoReadiness(repoName: string): Promise<RepoReadinessProfile> {
   const res = await apiFetch(`/api/repos/${repoName}/readiness`);
   if (!res.ok) throw new Error(`Failed to fetch repo readiness: ${res.status}`);
@@ -367,6 +323,45 @@ export async function listRepoScans(repoName: string): Promise<ListScansResponse
   const res = await apiFetch(`/api/repos/${repoName}/scans`);
   if (!res.ok) throw new Error(`Failed to list repo scans: ${res.status}`);
   return res.json() as Promise<ListScansResponse>;
+}
+
+// Repo review (isolated issues + fix prompts)
+export type { IsolatedIssue, ReviewReport, IssueStatus, SuggestionTier as ReviewSuggestionTier } from "@aurex/shared";
+
+export async function runRepoReview(repoName: string): Promise<{ report: import("@aurex/shared").ReviewReport }> {
+  const res = await apiFetch(`/api/repos/${repoName}/review`, { method: "POST" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? `Failed to run repo review: ${res.status}`);
+  }
+  return res.json() as Promise<{ report: import("@aurex/shared").ReviewReport }>;
+}
+
+export async function getRepoReview(repoName: string): Promise<{ report: import("@aurex/shared").ReviewReport }> {
+  const res = await apiFetch(`/api/repos/${repoName}/review`);
+  if (!res.ok) throw new Error(`Failed to fetch repo review: ${res.status}`);
+  return res.json() as Promise<{ report: import("@aurex/shared").ReviewReport }>;
+}
+
+export async function updateIssueStatus(
+  repoName: string,
+  reviewId: string,
+  issueId: string,
+  status: import("@aurex/shared").IssueStatus,
+): Promise<{ report: import("@aurex/shared").ReviewReport }> {
+  const res = await apiFetch(`/api/repos/${repoName}/review/${reviewId}/issues/${encodeURIComponent(issueId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  if (!res.ok) throw new Error(`Failed to update issue status: ${res.status}`);
+  return res.json() as Promise<{ report: import("@aurex/shared").ReviewReport }>;
+}
+
+export async function exportRepoReview(repoName: string, reviewId: string): Promise<string> {
+  const res = await apiFetch(`/api/repos/${repoName}/review/${reviewId}/export`);
+  if (!res.ok) throw new Error(`Failed to export repo review: ${res.status}`);
+  return res.text();
 }
 
 // Bumblebee supply-chain scanner
