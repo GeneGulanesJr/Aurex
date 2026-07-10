@@ -7,7 +7,7 @@
 - **Bumblebee in repo review:** `POST /api/repos/:name/review` accepts `{ forceRescan: true }` to bypass the 24h scan cache; re-scan and first-time prepare (`freshIndex`) use it. Review pipeline loads the exposure catalog via shared `bumblebee-catalog` helper (parity with mission runner).
 - **Mission hooks:** `useMissions({ enabled })` skips loading/persisting missions when scanner mode is active.
 - **Delete mission:** `DELETE /api/missions/:id` tombstones missions in LaPis settings (LaPis has no hard delete), aborts active runs first, filters deleted missions from `GET /api/missions/active`, and emits `mission_deleted` over WebSocket. Frontend sidebar shows a Delete button when missions UI is enabled.
-- **Docs:** README, `.env.example`, and `docs/configuration.md` document scanner-only defaults and `VITE_MISSIONS_ENABLED` for legacy mission UI.
+- **Docs:** README, `.env.example`, and `docs/configuration.md` document scanner-only defaults; `VITE_MISSIONS_ENABLED` for mission UI and `AUREX_MISSIONS_ENABLED` for backend APIs.
 
 ## 2026-07-09
 
