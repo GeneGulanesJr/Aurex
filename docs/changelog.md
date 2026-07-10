@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-10
+
+- **Scanner mode:** Frontend defaults to scanner-only UI — mission sidebar, pipeline, telemetry, and coding-agent shortcuts are hidden unless both `AUREX_MISSIONS_ENABLED=true` and `VITE_MISSIONS_ENABLED=true`. Top bar shows `MODE SCANNER`; checklist copy updated for Bumblebee audit.
+- **Bumblebee in repo review:** `POST /api/repos/:name/review` accepts `{ forceRescan: true }` to bypass the 24h scan cache; re-scan button uses it. Review pipeline now loads the exposure catalog from LaPis (same as mission runner) when scanning dependencies.
+- **Mission hooks:** `useMissions({ enabled })` skips loading/persisting missions when scanner mode is active.
+
 ## 2026-07-09
 
 - **Review (Phase 1a):** Implemented scan → isolated issues → copy-ready fix prompts. Backend: `issue-isolator`, `fix-prompt-builder`, `review-generator`, `review-store`, `POST/GET /api/repos/:name/review`, repo graph endpoint. Frontend: `RepoScanDashboard` with issue list, fix prompt panel, copy/export. LaPis-heavy context via `affected-code` scaffold in each prompt.

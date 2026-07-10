@@ -328,8 +328,15 @@ export async function listRepoScans(repoName: string): Promise<ListScansResponse
 // Repo review (isolated issues + fix prompts)
 export type { IsolatedIssue, ReviewReport, IssueStatus, SuggestionTier as ReviewSuggestionTier } from "@aurex/shared";
 
-export async function runRepoReview(repoName: string): Promise<{ report: import("@aurex/shared").ReviewReport }> {
-  const res = await apiFetch(`/api/repos/${repoName}/review`, { method: "POST" });
+export async function runRepoReview(
+  repoName: string,
+  options?: { forceRescan?: boolean },
+): Promise<{ report: import("@aurex/shared").ReviewReport }> {
+  const res = await apiFetch(`/api/repos/${repoName}/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ forceRescan: options?.forceRescan ?? false }),
+  });
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { error?: string };
     throw new Error(body.error ?? `Failed to run repo review: ${res.status}`);

@@ -1,6 +1,9 @@
 import { randomUUID } from "crypto";
 import { stat } from "fs/promises";
-import type { BumblebeeFinding, BumblebeeScanResult, ReviewReport } from "@aurex/shared";
+import { writeFile, unlink } from "fs/promises";
+import { join } from "path";
+import { tmpdir } from "os";
+import type { BumblebeeFinding, BumblebeeScanResult, ExposureCatalog, ReviewReport } from "@aurex/shared";
 import type { LaPisClient } from "../clients/lapis-client.js";
 import type { BumblebeeClient } from "../clients/bumblebee-client.js";
 import type { CodeGraphInput } from "../orchestrator/affected-code.js";
@@ -39,6 +42,14 @@ function scanIsRecent(scan: BumblebeeScanResult | null): boolean {
   return Date.now() - completed < 24 * 60 * 60 * 1000;
 }
 
+async function resolveExposureCatalogPath(lapis: LaPisClient, id: string): Promise<string | undefined> {
+  const storedCatalog = await lapis.getSetting<ExposureCatalog>("bumblebee_catalog");
+  if (!storedCatalog?.entries?.length) return undefined;
+  const catalogFile = join(tmpdir(), `bumblebee-catalog-review-${id}.json`);
+  await writeFile(catalogFile, JSON.stringify(storedCatalog), "utf-8");
+  return catalogFile;
+}
+
 function makeScanSummary(
   packages: Array<{ ecosystem: string }>,
   findings: BumblebeeFinding[],
@@ -64,6 +75,10 @@ export interface RunReviewDeps {
   buildReadinessProfile: (repoName: string, repoPath: string) => Promise<ReviewReadinessProfile>;
 }
 
+export interface RunReviewOptions {
+  forceRescan?: boolean;
+}
+
 export interface RunReviewResult {
   report: ReviewReport;
 }
@@ -71,6 +86,7 @@ export interface RunReviewResult {
 export async function runReview(
   deps: RunReviewDeps,
   repoName: string,
+  options?: RunReviewOptions,
 ): Promise<RunReviewResult> {
   const { lapis, bumblebeeClient, buildReadinessProfile } = deps;
   const errors: string[] = [];
@@ -129,10 +145,16 @@ export async function runReview(
   }
 
   scan = await getLatestRepoScan(lapis, repoName);
-  if (!scanIsRecent(scan) && bumblebeeClient) {
+  const shouldRunBumblebee = bumblebeeClient && (!scanIsRecent(scan) || options?.forceRescan === true);
+  if (shouldRunBumblebee) {
+    const catalogPath = await resolveExposureCatalogPath(lapis, reviewId);
     try {
       const startedAt = new Date().toISOString();
-      const result = await bumblebeeClient.scan({ root: repoPath, profile: "project" });
+      const result = await bumblebeeClient!.scan({
+        root: repoPath,
+        profile: "project",
+        exposureCatalog: catalogPath,
+      });
       const scanId = result.packages[0]?.scanId ?? result.findings[0]?.scanId ?? randomUUID();
       const findings = result.findings.map((f) => ({ ...f, scanId, missionId: `repo:${repoName}` }));
       scan = {
@@ -150,6 +172,8 @@ export async function runReview(
     } catch (err) {
       errors.push(`Package scan: ${err instanceof Error ? err.message : String(err)}`);
       if (!scanIsRecent(scan)) scan = null;
+    } finally {
+      if (catalogPath) await unlink(catalogPath).catch(() => {});
     }
   }
 

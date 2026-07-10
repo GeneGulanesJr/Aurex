@@ -122,4 +122,54 @@ describe("runReview", () => {
     expect(scan).toHaveBeenCalledOnce();
     expect(report.issues.some((i) => i.category === "security")).toBe(true);
   });
+
+  it("re-runs Bumblebee when forceRescan is true even with a recent cached scan", async () => {
+    const recentScan: BumblebeeScanResult = {
+      id: "recent-scan",
+      missionId: "repo:my-repo",
+      profile: "project",
+      status: "completed",
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      summary: {
+        totalPackages: 1,
+        totalFindings: 0,
+        criticalCount: 0,
+        highCount: 0,
+        mediumCount: 0,
+        lowCount: 0,
+        ecosystems: ["npm"],
+      },
+      findings: [],
+    };
+    const lapis = mockLapis({
+      "repo:my-repo:path": process.cwd(),
+      "repo:my-repo:bumblebee_scans": { scanIds: ["recent-scan"] },
+      "bumblebee_scan:recent-scan": recentScan,
+    });
+    const scan = vi.fn().mockResolvedValue({
+      packages: [{ scanId: "forced-scan", ecosystem: "npm" }],
+      findings: [],
+    });
+    await runReview({
+      lapis,
+      bumblebeeClient: { scan },
+      buildReadinessProfile: async (repoName) => ({
+        repoName,
+        profile: "node",
+        packageManager: "pnpm",
+        languages: ["TypeScript"],
+        frameworks: [],
+        monorepo: false,
+        lockfiles: [],
+        commands: [],
+        blockers: [],
+        warnings: [],
+        confidence: "high",
+        generatedAt: new Date().toISOString(),
+      }),
+    }, "my-repo", { forceRescan: true });
+
+    expect(scan).toHaveBeenCalledOnce();
+  });
 });

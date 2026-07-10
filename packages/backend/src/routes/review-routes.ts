@@ -17,7 +17,12 @@ export function registerReviewRoutes(app: FastifyInstance, deps: ReviewRouteDeps
 
   app.post("/api/repos/:repoName/review", async (request, reply) => {
     const { repoName } = request.params as { repoName: string };
-    const { report } = await runReview({ lapis, bumblebeeClient, buildReadinessProfile }, repoName);
+    const body = (request.body ?? {}) as { forceRescan?: boolean };
+    const { report } = await runReview(
+      { lapis, bumblebeeClient, buildReadinessProfile },
+      repoName,
+      { forceRescan: body.forceRescan === true },
+    );
     if (report.status === "failed" && report.issues.length === 0) {
       return reply.status(404).send({ error: report.errors?.[0] ?? "Review failed", report });
     }

@@ -15,7 +15,11 @@ export function useAppFeatures(): AppFeatures {
     getHealth()
       .then((health) => {
         if (cancelled) return;
-        setMissionsEnabled(health.features?.missionsEnabled ?? false);
+        // Scanner-only by default. Re-enable the legacy coding-agent UI only when
+        // both the backend flag and VITE_MISSIONS_ENABLED=true are set.
+        const backendEnabled = health.features?.missionsEnabled ?? false;
+        const explicitFrontendEnable = import.meta.env.VITE_MISSIONS_ENABLED === "true";
+        setMissionsEnabled(explicitFrontendEnable && backendEnabled);
         setLoaded(true);
       })
       .catch(() => {
