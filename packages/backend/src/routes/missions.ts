@@ -7,6 +7,7 @@ import type { AgentLogger } from "../agents/agent-logger.js";
 import { checkQuota, resetWindow } from "../enforcement/quota-gate.js";
 import { listRepos } from "../clients/github-client.js";
 import { normalizeGitHubCloneUrl } from "../orchestrator/repo-prep.js";
+import { filterDeletedMissions, getDeletedMissionIds, isMissionDeleted, tombstoneMission } from "../missions/mission-tombstones.js";
 
 
 interface GitHubTokenSetting {
@@ -186,7 +187,8 @@ export async function missionRoutes(
     const active = pool.getActiveMissions();
 
     if (includeHistory === 0) {
-      return { missions: active };
+      const deleted = await getDeletedMissionIds(lapis);
+      return { missions: filterDeletedMissions(active, deleted) };
     }
 
     // Pull recent terminal missions from LaPis so the sidebar can survive
@@ -213,7 +215,9 @@ export async function missionRoutes(
       // LaPis unavailable for history: return pool-only rather than 500ing
     }
 
-    return { missions: [...active, ...history] };
+    const deleted = await getDeletedMissionIds(lapis);
+    const missions = filterDeletedMissions([...active, ...history], deleted);
+    return { missions };
   });
 
   app.post("/api/missions/:id/abort", async (request, reply) => {
@@ -244,6 +248,41 @@ export async function missionRoutes(
     }
 
     return { aborted: true };
+  });
+
+  app.delete("/api/missions/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    if (await isMissionDeleted(lapis, id)) {
+      return { deleted: true };
+    }
+
+    const poolStatus = pool.getStatus(id);
+    let mission: { status: string } | null = null;
+    try {
+      mission = await lapis.getMission(id);
+    } catch {
+      if (!poolStatus) {
+        return reply.status(404).send({ error: "Mission not found" });
+      }
+    }
+
+    if (poolStatus) {
+      pool.abort(id);
+      await lapis.updateMissionStatus(id, "aborted").catch(() => {});
+      eventBus?.emit({ type: "mission_status", missionId: id, status: "aborted" });
+      if (!["completed", "failed", "aborted"].includes(poolStatus.state)) {
+        eventBus?.emit({ type: "mission_completed", missionId: id, finalState: "aborted" });
+      }
+    } else if (mission && !["completed", "failed", "aborted"].includes(mission.status)) {
+      await lapis.updateMissionStatus(id, "aborted").catch(() => {});
+      eventBus?.emit({ type: "mission_status", missionId: id, status: "aborted" });
+      eventBus?.emit({ type: "mission_completed", missionId: id, finalState: "aborted" });
+    }
+
+    await tombstoneMission(lapis, id);
+    eventBus?.emit({ type: "mission_deleted", missionId: id });
+    return { deleted: true };
   });
 
   app.post("/api/missions/:id/restart", async (request, reply) => {

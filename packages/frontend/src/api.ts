@@ -76,6 +76,15 @@ export async function restartMission(missionId: string): Promise<{ restarted: bo
   return res.json() as Promise<{ restarted: boolean; missionId: string; status: string }>;
 }
 
+export async function deleteMission(missionId: string): Promise<{ deleted: boolean }> {
+  const res = await apiFetch(`/api/missions/${missionId}`, { method: "DELETE" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? `Failed to delete mission: ${res.status}`);
+  }
+  return res.json() as Promise<{ deleted: boolean }>;
+}
+
 export async function submitCheckpoint(
   missionId: string,
   checkpointId: string,

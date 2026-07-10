@@ -35,6 +35,7 @@ type Action =
   | { type: "WS_MISSION_STATUS"; missionId: string; status: string }
   | { type: "MISSION_RESTARTED"; missionId: string }
   | { type: "MISSION_ABORTED"; missionId: string }
+  | { type: "MISSION_DELETED"; missionId: string }
   | { type: "SET_LOAD_ERROR"; error: string };
 
 export const initialMissionsState: MissionsState = {
@@ -119,6 +120,13 @@ export function missionsReducer(state: MissionsState, action: Action): MissionsS
         ),
         selectedMissionId: action.missionId,
       };
+    }
+    case "MISSION_DELETED": {
+      const missions = state.missions.filter((m) => m.missionId !== action.missionId);
+      const selectedMissionId = state.selectedMissionId === action.missionId
+        ? missions[0]?.missionId ?? null
+        : state.selectedMissionId;
+      return { ...state, missions, selectedMissionId };
     }
     case "SET_LOAD_ERROR":
       return { ...state, loadError: action.error };
@@ -205,6 +213,9 @@ export function useMissions(options?: { enabled?: boolean }) {
       case "mission_status":
         dispatch({ type: "WS_MISSION_STATUS", missionId: event.missionId, status: event.status });
         break;
+      case "mission_deleted":
+        dispatch({ type: "MISSION_DELETED", missionId: event.missionId });
+        break;
     }
   }, []);
 
@@ -224,5 +235,9 @@ export function useMissions(options?: { enabled?: boolean }) {
     dispatch({ type: "MISSION_ABORTED", missionId });
   }, []);
 
-  return { state, selectMission, addOptimisticMission, markMissionRestarted, markMissionAborted, handleWsEvent };
+  const removeMission = useCallback((missionId: string) => {
+    dispatch({ type: "MISSION_DELETED", missionId });
+  }, []);
+
+  return { state, selectMission, addOptimisticMission, markMissionRestarted, markMissionAborted, removeMission, handleWsEvent };
 }

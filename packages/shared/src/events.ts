@@ -61,6 +61,7 @@ export type WsClientEvent =
   | { type: "mission_queued"; missionId: string; queuePosition: number }
   | { type: "mission_started"; missionId: string }
   | { type: "mission_completed"; missionId: string; finalState: string }
+  | { type: "mission_deleted"; missionId: string }
   | { type: "mission_status"; missionId: string; status: string }
   | {
       type: "milestones_set";

@@ -27,7 +27,7 @@ import { QuotaPanel } from "./active/QuotaPanel";
 import { TopBar } from "./frame/TopBar";
 import { TelemetryBar } from "./frame/TelemetryBar";
 import { setTokenGetter, setAuthErrorHandler } from "./api";
-import { submitCheckpoint, createMission, restartMission, abortMission, runRepoReview, getRepoReview, updateIssueStatus } from "./api";
+import { submitCheckpoint, createMission, restartMission, abortMission, deleteMission, runRepoReview, getRepoReview, updateIssueStatus } from "./api";
 import type { WsClientEvent, CheckpointDecision, ReviewReport } from "@aurex/shared";
 import type { CodeSummaryResponse } from "./api";
 
@@ -69,7 +69,7 @@ export function App() {
   } | null>(null);
   const { settings, setSettings, resetSettings } = useSettings();
   const { missionsEnabled } = useAppFeatures();
-  const { state: missionsState, selectMission, addOptimisticMission, markMissionRestarted, markMissionAborted, handleWsEvent: missionsWsHandler } = useMissions({ enabled: missionsEnabled });
+  const { state: missionsState, selectMission, addOptimisticMission, markMissionRestarted, markMissionAborted, removeMission, handleWsEvent: missionsWsHandler } = useMissions({ enabled: missionsEnabled });
   const selectedMissionId = missionsEnabled ? missionsState.selectedMissionId : null;
   const { state, dispatch, handleWsEvent: missionWsHandler, reloadMission } = useMission(selectedMissionId);
   const { state: supplyChainState, triggerScan: triggerSupplyChainScan, clearError: clearSupplyChainError, handleWsEvent: supplyChainWsHandler } = useSupplyChain(selectedMissionId);
@@ -113,6 +113,7 @@ export function App() {
   }, [bp.isMobile]);
 
   const [abortingMissionId, setAbortingMissionId] = useState<string | null>(null);
+  const [deletingMissionId, setDeletingMissionId] = useState<string | null>(null);
   const [latestNotifEvent, setLatestNotifEvent] = useState<WsClientEvent | null>(null);
 
   const updateWsHandlerRef = useRef<((event: WsClientEvent) => void) | null>(null);
@@ -405,6 +406,22 @@ export function App() {
     }
   }, [state.mission?.id, dispatch, markMissionAborted]);
 
+  const handleDeleteMission = useCallback(async (missionId: string) => {
+    setDeletingMissionId(missionId);
+    try {
+      await deleteMission(missionId);
+      removeMission(missionId);
+      if (state.mission?.id === missionId) {
+        dispatch({ type: "RESET" });
+        dispatch({ type: "CLEAR_ESCALATION" });
+      }
+    } catch (err) {
+      dispatch({ type: "MISSION_ERROR", code: "delete_failed", message: err instanceof Error ? err.message : "Failed to delete mission", recoverable: true });
+    } finally {
+      setDeletingMissionId((current) => (current === missionId ? null : current));
+    }
+  }, [removeMission, state.mission?.id, dispatch]);
+
   // Keyboard shortcuts
   const { helpOpen, setHelpOpen } = useKeyboardShortcuts({
     onSelectMissionByIndex: missionsEnabled
@@ -516,6 +533,8 @@ export function App() {
             onSelect={selectMission}
             onAbort={handleAbortMission}
             onRestart={handleRestartMission}
+            onDelete={(missionId) => { void handleDeleteMission(missionId); }}
+            deletingMissionId={deletingMissionId}
             abortingMissionId={abortingMissionId}
             systemReady={systemReady}
             totalCost={state.cost?.totalCost}
@@ -587,6 +606,8 @@ export function App() {
               onSelect={(id) => { selectMission(id); if (id !== null) setMobileOverlayOpen(false); }}
               onAbort={handleAbortMission}
               onRestart={handleRestartMission}
+              onDelete={(missionId) => { void handleDeleteMission(missionId); }}
+              deletingMissionId={deletingMissionId}
               abortingMissionId={abortingMissionId}
               systemReady={systemReady}
               totalCost={state.cost?.totalCost}

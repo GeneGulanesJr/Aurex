@@ -5,6 +5,7 @@
 - **Scanner mode:** Frontend defaults to scanner-only UI — mission sidebar, pipeline, telemetry, and coding-agent shortcuts are hidden unless both `AUREX_MISSIONS_ENABLED=true` and `VITE_MISSIONS_ENABLED=true`. Top bar shows `MODE SCANNER`; checklist copy updated for Bumblebee audit.
 - **Bumblebee in repo review:** `POST /api/repos/:name/review` accepts `{ forceRescan: true }` to bypass the 24h scan cache; re-scan button uses it. Review pipeline now loads the exposure catalog from LaPis (same as mission runner) when scanning dependencies.
 - **Mission hooks:** `useMissions({ enabled })` skips loading/persisting missions when scanner mode is active.
+- **Delete mission:** `DELETE /api/missions/:id` tombstones missions in LaPis settings (LaPis has no hard delete), aborts active runs first, filters deleted missions from `GET /api/missions/active`, and emits `mission_deleted` over WebSocket. Frontend sidebar shows a Delete button when missions UI is enabled.
 
 ## 2026-07-09
 

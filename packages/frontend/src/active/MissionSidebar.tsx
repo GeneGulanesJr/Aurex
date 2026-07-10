@@ -9,6 +9,8 @@ interface MissionSidebarProps {
   onSelect: (missionId: string | null) => void;
   onAbort: (missionId: string) => void;
   onRestart: (missionId: string) => void;
+  onDelete?: (missionId: string) => void;
+  deletingMissionId?: string | null;
   abortingMissionId?: string | null;
   systemReady?: boolean;
   totalCost?: number;
@@ -16,7 +18,7 @@ interface MissionSidebarProps {
   loadError?: string | null;
 }
 
-export function MissionSidebar({ missions, selectedMissionId, escalationMissionId, onSelect, onAbort, onRestart, abortingMissionId, systemReady, totalCost, collapsed = false, loadError }: MissionSidebarProps) {
+export function MissionSidebar({ missions, selectedMissionId, escalationMissionId, onSelect, onAbort, onRestart, onDelete, deletingMissionId, abortingMissionId, systemReady, totalCost, collapsed = false, loadError }: MissionSidebarProps) {
   const handleNewMission = useCallback(() => {
     onSelect(null);
     requestAnimationFrame(() => {
@@ -33,6 +35,11 @@ export function MissionSidebar({ missions, selectedMissionId, escalationMissionI
     e.stopPropagation();
     onRestart(missionId);
   }, [onRestart]);
+
+  const handleDelete = useCallback((e: React.MouseEvent, missionId: string) => {
+    e.stopPropagation();
+    onDelete?.(missionId);
+  }, [onDelete]);
 
   if (collapsed) {
     return (
@@ -179,6 +186,15 @@ export function MissionSidebar({ missions, selectedMissionId, escalationMissionI
                     style={{ fontSize: "10px", padding: "2px 8px", borderRadius: "3px", border: "1px solid var(--error)", background: "transparent", color: "var(--error)", cursor: abortingMissionId === mission.missionId ? "wait" : "pointer", opacity: abortingMissionId === mission.missionId ? 0.6 : 1 }}
                   >
                     {abortingMissionId === mission.missionId ? "Stopping…" : "Stop"}
+                  </button>
+                )}
+                {onDelete && (
+                  <button
+                    onClick={(e) => handleDelete(e, mission.missionId)}
+                    disabled={deletingMissionId === mission.missionId}
+                    style={{ fontSize: "10px", padding: "2px 8px", borderRadius: "3px", border: "1px solid var(--border)", background: "transparent", color: "var(--text-muted)", cursor: deletingMissionId === mission.missionId ? "wait" : "pointer", opacity: deletingMissionId === mission.missionId ? 0.6 : 1 }}
+                  >
+                    {deletingMissionId === mission.missionId ? "Deleting…" : "Delete"}
                   </button>
                 )}
               </div>

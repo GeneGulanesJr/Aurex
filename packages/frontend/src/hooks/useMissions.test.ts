@@ -56,4 +56,20 @@ describe("missionsReducer", () => {
     });
     expect(state.selectedMissionId).toBe("m-2");
   });
+
+  it("removes a mission on MISSION_DELETED and clears selection when needed", () => {
+    const withMissions = missionsReducer(initialMissionsState, {
+      type: "SET_MISSIONS",
+      missions: [
+        { missionId: "m-1", state: "completed" },
+        { missionId: "m-2", state: "failed" },
+      ],
+    });
+    const selected = missionsReducer({ ...withMissions, selectedMissionId: "m-2" }, {
+      type: "MISSION_DELETED",
+      missionId: "m-2",
+    });
+    expect(selected.missions.map((m) => m.missionId)).toEqual(["m-1"]);
+    expect(selected.selectedMissionId).toBe("m-1");
+  });
 });

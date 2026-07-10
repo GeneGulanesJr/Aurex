@@ -415,6 +415,7 @@ describe("GET /api/missions/active", () => {
   it("includes aborted missions in sidebar history hydrate", async () => {
     const app = Fastify();
     const mockLapis = {
+      getSetting: vi.fn().mockResolvedValue(null),
       listMissions: vi.fn().mockImplementation((query: { status?: string }) => {
         if (query.status === "completed") {
           return Promise.resolve([{ id: "m-done", description: "Done", status: "completed" }]);
@@ -484,5 +485,85 @@ describe("GET /api/missions/:id", () => {
     const response = await app.inject({ method: "GET", url: "/api/missions/unknown" });
 
     expect(response.statusCode).toBe(404);
+  });
+});
+
+describe("DELETE /api/missions/:id", () => {
+  it("tombstones a terminal mission and emits mission_deleted", async () => {
+    const app = Fastify();
+    const emitted: unknown[] = [];
+    const mockLapis = {
+      getSetting: vi.fn().mockResolvedValue(null),
+      setSetting: vi.fn().mockResolvedValue(undefined),
+      getMission: vi.fn().mockResolvedValue({ id: "m-done", description: "Done", status: "completed", configJson: {}, createdAt: "now" }),
+    } as unknown as LaPisClient;
+    const pool = createMockPool();
+
+    app.register(missionRoutes, {
+      lapis: mockLapis,
+      pool,
+      eventBus: { emit: (event) => emitted.push(event) },
+    });
+
+    const response = await app.inject({ method: "DELETE", url: "/api/missions/m-done" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ deleted: true });
+    expect(mockLapis.setSetting).toHaveBeenCalledWith("aurex:deleted_missions", { ids: ["m-done"] });
+    expect(emitted).toContainEqual({ type: "mission_deleted", missionId: "m-done" });
+  });
+
+  it("aborts an active mission before tombstoning", async () => {
+    const app = Fastify();
+    const mockLapis = {
+      getSetting: vi.fn().mockResolvedValue(null),
+      setSetting: vi.fn().mockResolvedValue(undefined),
+      getMission: vi.fn().mockResolvedValue({ id: "m-run", description: "Running", status: "running", configJson: {}, createdAt: "now" }),
+      updateMissionStatus: vi.fn().mockResolvedValue(undefined),
+    } as unknown as LaPisClient;
+    const pool = createMockPool([{ missionId: "m-run", state: "executing" }]);
+
+    app.register(missionRoutes, { lapis: mockLapis, pool });
+
+    const response = await app.inject({ method: "DELETE", url: "/api/missions/m-run" });
+
+    expect(response.statusCode).toBe(200);
+    expect(pool.abort).toHaveBeenCalledWith("m-run");
+    expect(mockLapis.updateMissionStatus).toHaveBeenCalledWith("m-run", "aborted");
+    expect(mockLapis.setSetting).toHaveBeenCalledWith("aurex:deleted_missions", { ids: ["m-run"] });
+  });
+
+  it("returns 404 when mission is missing", async () => {
+    const app = Fastify();
+    const mockLapis = {
+      getSetting: vi.fn().mockResolvedValue(null),
+      getMission: vi.fn().mockRejectedValue(new Error("not found")),
+    } as unknown as LaPisClient;
+    const pool = createMockPool();
+
+    app.register(missionRoutes, { lapis: mockLapis, pool });
+
+    const response = await app.inject({ method: "DELETE", url: "/api/missions/missing" });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it("filters tombstoned missions from GET /api/missions/active", async () => {
+    const app = Fastify();
+    const mockLapis = {
+      getSetting: vi.fn().mockResolvedValue({ ids: ["m-old"] }),
+      listMissions: vi.fn().mockResolvedValue([]),
+    } as unknown as LaPisClient;
+    const pool = createMockPool([
+      { missionId: "m-live", state: "executing" },
+      { missionId: "m-old", state: "completed" },
+    ]);
+
+    app.register(missionRoutes, { lapis: mockLapis, pool });
+
+    const response = await app.inject({ method: "GET", url: "/api/missions/active?includeHistory=0" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().missions.map((m: { missionId: string }) => m.missionId)).toEqual(["m-live"]);
   });
 });
